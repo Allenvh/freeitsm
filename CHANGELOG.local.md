@@ -14,6 +14,7 @@ When publishing to the website, move entries from **Unpublished** to the **Publi
 |-----|-------------------|-------------|-------------|
 | 165 | Homepage          | Fix         | Add the missing **Watchtower** card to the homepage module grid. Watchtower was already wired into the waffle menu and module-colours but had been left out of the post-login landing page, so analysts could only reach it via the cross-module waffle menu. The card now appears as the first tile on the home grid (matching the waffle-menu order), with its existing slate-blue gradient and alert-circle icon, and respects the per-analyst `allowed_modules` permission |
 | 166 | Homepage          | Fix         | Add the missing **Tasks** card to the homepage module grid. Tasks was already in the waffle menu and module-colours but had been left out of the post-login landing page. The card now appears between Processes and System (matching the waffle-menu order), with its existing purple gradient and check-square icon, and respects the per-analyst `allowed_modules` permission |
+| 167 | Homepage          | Improvement | Tighten the homepage module-grid layout so all 17 modules fit on three rows instead of four. Card padding cut from `30px 16px` to `16px 8px`, icon size from 60×60 to 48×48 (svg 30→24, icon-to-label gap 20→10), grid gap from 20→14px, max-width from 940→1180px, and columns from 5 to 7. Hover lift reduced from −8px to −6px to suit the smaller cards |
 
 ---
 

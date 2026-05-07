@@ -91,17 +91,17 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
 
         .modules-grid {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 20px;
-            max-width: 940px;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 14px;
+            max-width: 1180px;
             width: 100%;
             justify-content: center;
         }
 
         .module-card {
             background: white;
-            border-radius: 16px;
-            padding: 30px 16px;
+            border-radius: 14px;
+            padding: 16px 8px;
             text-align: center;
             text-decoration: none;
             color: #333;
@@ -111,7 +111,7 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
         }
 
         .module-card:hover {
-            transform: translateY(-8px);
+            transform: translateY(-6px);
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
         }
 
@@ -120,18 +120,18 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
         <?php endforeach; ?>
 
         .module-icon {
-            width: 60px;
-            height: 60px;
-            border-radius: 16px;
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 20px;
+            margin: 0 auto 10px;
         }
 
         .module-icon svg {
-            width: 30px;
-            height: 30px;
+            width: 24px;
+            height: 24px;
             color: white;
         }
 
