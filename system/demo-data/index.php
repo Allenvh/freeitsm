@@ -416,6 +416,16 @@ if (!isset($_SESSION['analyst_id'])) {
                 </div>
                 <div class="error-text" id="err-tasks" style="display:none"></div>
             </div>
+
+            <div class="module-card" data-module="process-mapper">
+                <h4>Process Mapper</h4>
+                <p class="module-desc">6 ITSM flowcharts (incident triage, onboarding, change approval, major incident, asset disposal, password reset) with auto-laid-out steps and connectors.</p>
+                <div class="module-footer">
+                    <span class="record-count">~125 records</span>
+                    <button class="import-btn" id="btn-process-mapper" onclick="importModule('process-mapper', this)" disabled>Import</button>
+                </div>
+                <div class="error-text" id="err-process-mapper" style="display:none"></div>
+            </div>
         </div>
 
         <!-- Bonus: cross-module linking (appears after both software + assets imported) -->
@@ -497,7 +507,7 @@ if (!isset($_SESSION['analyst_id'])) {
         }
 
         function enableModuleButtons() {
-            const modules = ['tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'tasks'];
+            const modules = ['tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'tasks', 'process-mapper'];
             modules.forEach(function(m) {
                 const btn = document.getElementById('btn-' + m);
                 if (btn && !btn.classList.contains('success')) {

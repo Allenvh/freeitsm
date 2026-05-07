@@ -176,7 +176,7 @@ Then open [http://localhost:8080/setup/](http://localhost:8080/setup/) to verify
 8. **Import demo data** (optional)
    - Navigate to **System → Demo Data** to populate modules with realistic sample data
    - Import **Core** first (creates analysts, departments, teams, and end users), then choose which modules to populate
-   - Includes tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, service status, software licences, and forms
+   - Includes tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, service status, software licences, forms, tasks, and process-mapper flowcharts
    - Demo analysts use password `demo1234`
    - Designed for fresh installations only — each module can be imported once
 
@@ -627,7 +627,8 @@ System administration and configuration.
   - Position preference saved per-browser in localStorage
   - Slide-in animations, auto-dismiss after 4 seconds, manual close button
 - **Demo Data** (`system/demo-data/`): One-click import of realistic sample data across all modules
-  - Populates tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, services, software, forms, tasks, analysts, and end users
+  - Populates tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, services, software, forms, tasks, process-mapper flowcharts, analysts, and end users
+  - Process Mapper demo data is **auto-laid-out**: the JSON omits step coordinates and a server-side layered-DAG layout pass assigns x/y on import
   - Designed for fresh installations — makes the system feel alive for evaluation and testing
 
 ### Forms (`forms/`)

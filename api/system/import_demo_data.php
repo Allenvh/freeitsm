@@ -15,7 +15,7 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
-$allowedModules = ['core', 'tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'software-assets', 'dashboards', 'tasks'];
+$allowedModules = ['core', 'tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'software-assets', 'dashboards', 'tasks', 'process-mapper'];
 $module = $_POST['module'] ?? '';
 if (!in_array($module, $allowedModules)) {
     echo json_encode(['success' => false, 'error' => 'Invalid module: ' . $module]);
@@ -78,6 +78,125 @@ function resolveTokens($record, $conn) {
     return $record;
 }
 
+// Helper: pick canvas-default size for a step type
+function processMapperDefaultSize($type) {
+    switch ($type) {
+        case 'decision': return [140, 140];
+        case 'start':    return [160, 50];
+        case 'document': return [160, 80];
+        default:         return [160, 80];
+    }
+}
+
+// Auto-layout for the process-mapper module: writes x/y/width/height onto each step
+// in $demoData['tier2']['process_steps'] using a left-to-right layered placement.
+// Each process is laid out independently. Edges that point "backwards" in JSON
+// authoring order are treated as cycle-closing back-edges and ignored for ranking.
+function autoLayoutProcessMapper(array &$demoData) {
+    if (empty($demoData['tier2']['process_steps'])) return;
+    $allSteps = &$demoData['tier2']['process_steps'];
+    $conns    = $demoData['tier3']['process_connectors'] ?? [];
+
+    // Group step indexes by their process_id ref string (e.g. "@processes.p_incident")
+    $byProcess = [];
+    foreach ($allSteps as $i => $step) {
+        $proc = $step['process_id'] ?? '';
+        if ($proc === '') continue;
+        $byProcess[$proc][] = $i;
+    }
+
+    // Group connectors the same way
+    $connsByProcess = [];
+    foreach ($conns as $c) {
+        $proc = $c['process_id'] ?? '';
+        if ($proc === '') continue;
+        $connsByProcess[$proc][] = $c;
+    }
+
+    // Layout constants
+    $LEFT_PAD   = 60;
+    $BASELINE_Y = 320;
+    $COL_W      = 220;
+    $ROW_H      = 160;
+    $SLOT_W     = 160; // canvas process-step width — narrower types are centered within
+
+    foreach ($byProcess as $procRef => $stepIdxs) {
+        // Build ref → array index map and capture JSON authoring order
+        $refToIdx  = [];
+        $jsonOrder = [];
+        $orderN = 0;
+        foreach ($stepIdxs as $idx) {
+            $ref = $allSteps[$idx]['_ref'] ?? null;
+            if ($ref === null) continue;
+            $refToIdx[$ref]  = $idx;
+            $jsonOrder[$ref] = $orderN++;
+        }
+        if (empty($refToIdx)) continue;
+
+        // Build forward adjacency, dropping back-edges (where target appears earlier in JSON)
+        $adj = [];
+        $hasIncoming = array_fill_keys(array_keys($refToIdx), false);
+        $procConns = $connsByProcess[$procRef] ?? [];
+        foreach ($procConns as $c) {
+            $fromRef = '';
+            $toRef   = '';
+            if (preg_match('/^@process_steps\.(.+)$/', $c['from_step_id'] ?? '', $m)) $fromRef = $m[1];
+            if (preg_match('/^@process_steps\.(.+)$/', $c['to_step_id']   ?? '', $m)) $toRef   = $m[1];
+            if (!isset($refToIdx[$fromRef]) || !isset($refToIdx[$toRef])) continue;
+            if ($jsonOrder[$toRef] <= $jsonOrder[$fromRef]) continue; // back-edge → skip for ranking
+            $adj[$fromRef][] = $toRef;
+            $hasIncoming[$toRef] = true;
+        }
+
+        // Initialise rank: 0 for nodes with no forward incoming edges, else 0 (relaxed below)
+        $rank = array_fill_keys(array_keys($refToIdx), 0);
+
+        // Longest-path relaxation along forward edges (DAG by construction → terminates)
+        $iter = 0;
+        $maxIter = count($refToIdx) + 2;
+        do {
+            $changed = false;
+            foreach ($adj as $u => $vs) {
+                foreach ($vs as $v) {
+                    $newRank = $rank[$u] + 1;
+                    if ($newRank > $rank[$v]) {
+                        $rank[$v] = $newRank;
+                        $changed = true;
+                    }
+                }
+            }
+        } while ($changed && ++$iter < $maxIter);
+
+        // Group refs by rank in their JSON authoring order (stable top-to-bottom slotting)
+        $byRank = [];
+        foreach ($refToIdx as $ref => $_) $byRank[$rank[$ref]][] = $ref;
+        ksort($byRank);
+
+        // Place each step: x by rank column, y stacked & vertically centered around BASELINE_Y
+        foreach ($byRank as $r => $refs) {
+            $n = count($refs);
+            $slot = 0;
+            foreach ($refs as $ref) {
+                $idx = $refToIdx[$ref];
+                // Fill in width/height defaults from type if not explicitly set
+                $type = $allSteps[$idx]['type'] ?? 'process';
+                if (!isset($allSteps[$idx]['width']) || !isset($allSteps[$idx]['height'])) {
+                    [$dw, $dh] = processMapperDefaultSize($type);
+                    if (!isset($allSteps[$idx]['width']))  $allSteps[$idx]['width']  = $dw;
+                    if (!isset($allSteps[$idx]['height'])) $allSteps[$idx]['height'] = $dh;
+                }
+                $w = (int)$allSteps[$idx]['width'];
+                $h = (int)$allSteps[$idx]['height'];
+                $x = $LEFT_PAD + $r * $COL_W + (int)(($SLOT_W - $w) / 2);
+                $y = $BASELINE_Y + (int)(($slot - ($n - 1) / 2) * $ROW_H) - (int)($h / 2);
+                $allSteps[$idx]['x'] = $x;
+                $allSteps[$idx]['y'] = $y;
+                $slot++;
+            }
+        }
+    }
+}
+
 // Helper: generate unique ticket number
 function generateDemoTicketNumber($conn) {
     for ($i = 0; $i < 20; $i++) {
@@ -101,6 +220,12 @@ try {
     $demoData = json_decode(file_get_contents($jsonPath), true);
     if (!$demoData) {
         throw new Exception('Failed to parse demo data JSON: ' . json_last_error_msg());
+    }
+
+    // Module-specific preprocessing: process-mapper auto-layouts steps into a
+    // left-to-right layered diagram so the JSON can omit x/y coordinates.
+    if ($module === 'process-mapper') {
+        autoLayoutProcessMapper($demoData);
     }
 
     $conn = connectToDatabase();

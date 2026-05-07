@@ -1,0 +1,199 @@
+{
+    "tier1": {
+        "analysts": [
+            {
+                "_ref": "admin",
+                "_skip_insert": true,
+                "_match_by": "username",
+                "_match_value": "admin"
+            }
+        ],
+        "processes": [
+            {
+                "_ref": "p_incident",
+                "title": "Incident triage",
+                "description": "Standard flow for receiving, prioritising and resolving an inbound incident.",
+                "created_by": "@analysts.admin",
+                "created_datetime": "__RELATIVE_DATE:-45d__",
+                "updated_datetime": "__RELATIVE_DATE:-3d__"
+            },
+            {
+                "_ref": "p_onboarding",
+                "title": "New starter onboarding",
+                "description": "End-to-end flow run by the service desk when a new employee joins.",
+                "created_by": "@analysts.admin",
+                "created_datetime": "__RELATIVE_DATE:-60d__",
+                "updated_datetime": "__RELATIVE_DATE:-7d__"
+            },
+            {
+                "_ref": "p_change",
+                "title": "Standard change approval",
+                "description": "ITIL-style change flow covering normal and emergency changes through CAB.",
+                "created_by": "@analysts.admin",
+                "created_datetime": "__RELATIVE_DATE:-90d__",
+                "updated_datetime": "__RELATIVE_DATE:-14d__"
+            },
+            {
+                "_ref": "p_major",
+                "title": "Major incident response",
+                "description": "P1 declaration through bridge call, comms and post-incident review.",
+                "created_by": "@analysts.admin",
+                "created_datetime": "__RELATIVE_DATE:-50d__",
+                "updated_datetime": "__RELATIVE_DATE:-10d__"
+            },
+            {
+                "_ref": "p_disposal",
+                "title": "Asset disposal",
+                "description": "Returned hardware decision flow - reuse, recycle, certify destruction.",
+                "created_by": "@analysts.admin",
+                "created_datetime": "__RELATIVE_DATE:-30d__",
+                "updated_datetime": "__RELATIVE_DATE:-5d__"
+            },
+            {
+                "_ref": "p_password",
+                "title": "Self-service password reset",
+                "description": "MFA-aware reset flow with help-desk fallback for non-enrolled users.",
+                "created_by": "@analysts.admin",
+                "created_datetime": "__RELATIVE_DATE:-25d__",
+                "updated_datetime": "__RELATIVE_DATE:-2d__"
+            }
+        ]
+    },
+    "tier2": {
+        "process_steps": [
+
+            { "_ref": "it_start",     "process_id": "@processes.p_incident",   "type": "start",    "label": "Ticket received" },
+            { "_ref": "it_log",       "process_id": "@processes.p_incident",   "type": "process",  "label": "Log ticket details" },
+            { "_ref": "it_priority",  "process_id": "@processes.p_incident",   "type": "decision", "label": "Priority?" },
+            { "_ref": "it_p1",        "process_id": "@processes.p_incident",   "type": "process",  "label": "Escalate to MIM" },
+            { "_ref": "it_p2",        "process_id": "@processes.p_incident",   "type": "process",  "label": "Assign to L2 team" },
+            { "_ref": "it_p3",        "process_id": "@processes.p_incident",   "type": "process",  "label": "Service desk handles" },
+            { "_ref": "it_resolve",   "process_id": "@processes.p_incident",   "type": "process",  "label": "Investigate & resolve" },
+            { "_ref": "it_close",     "process_id": "@processes.p_incident",   "type": "process",  "label": "Close & notify user" },
+            { "_ref": "it_end",       "process_id": "@processes.p_incident",   "type": "start",    "label": "End" },
+
+            { "_ref": "ns_start",     "process_id": "@processes.p_onboarding", "type": "start",    "label": "New starter form" },
+            { "_ref": "ns_review",    "process_id": "@processes.p_onboarding", "type": "process",  "label": "Confirm with line manager" },
+            { "_ref": "ns_account",   "process_id": "@processes.p_onboarding", "type": "process",  "label": "Create AD account & licences" },
+            { "_ref": "ns_laptop",    "process_id": "@processes.p_onboarding", "type": "process",  "label": "Provision laptop" },
+            { "_ref": "ns_remote",    "process_id": "@processes.p_onboarding", "type": "decision", "label": "Remote worker?" },
+            { "_ref": "ns_ship",      "process_id": "@processes.p_onboarding", "type": "process",  "label": "Ship to home address" },
+            { "_ref": "ns_collect",   "process_id": "@processes.p_onboarding", "type": "process",  "label": "Collect from office" },
+            { "_ref": "ns_groups",    "process_id": "@processes.p_onboarding", "type": "process",  "label": "Add to security groups" },
+            { "_ref": "ns_induct",    "process_id": "@processes.p_onboarding", "type": "process",  "label": "Day 1 induction call" },
+            { "_ref": "ns_end",       "process_id": "@processes.p_onboarding", "type": "start",    "label": "Onboarded" },
+
+            { "_ref": "ch_start",     "process_id": "@processes.p_change",     "type": "start",    "label": "RFC submitted" },
+            { "_ref": "ch_classify",  "process_id": "@processes.p_change",     "type": "process",  "label": "Classify change type" },
+            { "_ref": "ch_emergency", "process_id": "@processes.p_change",     "type": "decision", "label": "Emergency?" },
+            { "_ref": "ch_ecab",      "process_id": "@processes.p_change",     "type": "process",  "label": "Convene ECAB" },
+            { "_ref": "ch_cab",       "process_id": "@processes.p_change",     "type": "process",  "label": "CAB review (weekly)" },
+            { "_ref": "ch_approved",  "process_id": "@processes.p_change",     "type": "decision", "label": "Approved?" },
+            { "_ref": "ch_reject",    "process_id": "@processes.p_change",     "type": "process",  "label": "Notify requester - rejected" },
+            { "_ref": "ch_schedule",  "process_id": "@processes.p_change",     "type": "process",  "label": "Schedule implementation" },
+            { "_ref": "ch_implement", "process_id": "@processes.p_change",     "type": "process",  "label": "Implement change" },
+            { "_ref": "ch_verify",    "process_id": "@processes.p_change",     "type": "process",  "label": "Verify & test" },
+            { "_ref": "ch_close",     "process_id": "@processes.p_change",     "type": "process",  "label": "Close change record" },
+            { "_ref": "ch_end",       "process_id": "@processes.p_change",     "type": "start",    "label": "End" },
+            { "_ref": "ch_reject_end","process_id": "@processes.p_change",     "type": "start",    "label": "Closed - rejected" },
+
+            { "_ref": "mi_start",     "process_id": "@processes.p_major",      "type": "start",    "label": "P1 declared" },
+            { "_ref": "mi_bridge",    "process_id": "@processes.p_major",      "type": "process",  "label": "Open bridge call" },
+            { "_ref": "mi_notify",    "process_id": "@processes.p_major",      "type": "process",  "label": "Notify stakeholders" },
+            { "_ref": "mi_investigate","process_id": "@processes.p_major",     "type": "process",  "label": "Investigate root cause" },
+            { "_ref": "mi_resolved",  "process_id": "@processes.p_major",      "type": "decision", "label": "Service restored?" },
+            { "_ref": "mi_communicate","process_id": "@processes.p_major",     "type": "process",  "label": "Send all-clear comms" },
+            { "_ref": "mi_pir",       "process_id": "@processes.p_major",      "type": "document", "label": "Post-incident review" },
+            { "_ref": "mi_end",       "process_id": "@processes.p_major",      "type": "start",    "label": "End" },
+
+            { "_ref": "ad_start",     "process_id": "@processes.p_disposal",   "type": "start",    "label": "Asset returned" },
+            { "_ref": "ad_inspect",   "process_id": "@processes.p_disposal",   "type": "process",  "label": "Inspect & catalogue" },
+            { "_ref": "ad_wipe",      "process_id": "@processes.p_disposal",   "type": "process",  "label": "Wipe data (NCSC standard)" },
+            { "_ref": "ad_state",     "process_id": "@processes.p_disposal",   "type": "decision", "label": "Reusable?" },
+            { "_ref": "ad_reimage",   "process_id": "@processes.p_disposal",   "type": "process",  "label": "Re-image for re-issue" },
+            { "_ref": "ad_recycle",   "process_id": "@processes.p_disposal",   "type": "process",  "label": "Send to certified recycler" },
+            { "_ref": "ad_cert",      "process_id": "@processes.p_disposal",   "type": "document", "label": "Destruction certificate" },
+            { "_ref": "ad_cmdb",      "process_id": "@processes.p_disposal",   "type": "process",  "label": "Update CMDB" },
+            { "_ref": "ad_end",       "process_id": "@processes.p_disposal",   "type": "start",    "label": "Complete" },
+
+            { "_ref": "pr_start",     "process_id": "@processes.p_password",   "type": "start",    "label": "User locked out" },
+            { "_ref": "pr_portal",    "process_id": "@processes.p_password",   "type": "process",  "label": "Visit reset portal" },
+            { "_ref": "pr_mfa",       "process_id": "@processes.p_password",   "type": "decision", "label": "MFA enrolled?" },
+            { "_ref": "pr_sms",       "process_id": "@processes.p_password",   "type": "process",  "label": "Send SMS code" },
+            { "_ref": "pr_helpdesk",  "process_id": "@processes.p_password",   "type": "process",  "label": "Call service desk" },
+            { "_ref": "pr_verify",    "process_id": "@processes.p_password",   "type": "process",  "label": "Verify identity" },
+            { "_ref": "pr_reset",     "process_id": "@processes.p_password",   "type": "process",  "label": "Reset password" },
+            { "_ref": "pr_notify",    "process_id": "@processes.p_password",   "type": "process",  "label": "Email confirmation" },
+            { "_ref": "pr_end",       "process_id": "@processes.p_password",   "type": "start",    "label": "Account restored" }
+        ]
+    },
+    "tier3": {
+        "process_connectors": [
+
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_start",    "to_step_id": "@process_steps.it_log" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_log",      "to_step_id": "@process_steps.it_priority" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_priority", "to_step_id": "@process_steps.it_p1",     "label": "P1" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_priority", "to_step_id": "@process_steps.it_p2",     "label": "P2/P3" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_priority", "to_step_id": "@process_steps.it_p3",     "label": "P4/P5" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_p1",       "to_step_id": "@process_steps.it_resolve" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_p2",       "to_step_id": "@process_steps.it_resolve" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_p3",       "to_step_id": "@process_steps.it_resolve" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_resolve",  "to_step_id": "@process_steps.it_close" },
+            { "process_id": "@processes.p_incident", "from_step_id": "@process_steps.it_close",    "to_step_id": "@process_steps.it_end" },
+
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_start",   "to_step_id": "@process_steps.ns_review" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_review",  "to_step_id": "@process_steps.ns_account" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_account", "to_step_id": "@process_steps.ns_laptop" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_laptop",  "to_step_id": "@process_steps.ns_remote" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_remote",  "to_step_id": "@process_steps.ns_ship",    "label": "Yes" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_remote",  "to_step_id": "@process_steps.ns_collect", "label": "No" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_ship",    "to_step_id": "@process_steps.ns_groups" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_collect", "to_step_id": "@process_steps.ns_groups" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_groups",  "to_step_id": "@process_steps.ns_induct" },
+            { "process_id": "@processes.p_onboarding", "from_step_id": "@process_steps.ns_induct",  "to_step_id": "@process_steps.ns_end" },
+
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_start",     "to_step_id": "@process_steps.ch_classify" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_classify",  "to_step_id": "@process_steps.ch_emergency" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_emergency", "to_step_id": "@process_steps.ch_ecab",     "label": "Yes" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_emergency", "to_step_id": "@process_steps.ch_cab",      "label": "No" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_ecab",      "to_step_id": "@process_steps.ch_approved" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_cab",       "to_step_id": "@process_steps.ch_approved" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_approved",  "to_step_id": "@process_steps.ch_schedule", "label": "Yes" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_approved",  "to_step_id": "@process_steps.ch_reject",   "label": "No" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_reject",    "to_step_id": "@process_steps.ch_reject_end" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_schedule",  "to_step_id": "@process_steps.ch_implement" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_implement", "to_step_id": "@process_steps.ch_verify" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_verify",    "to_step_id": "@process_steps.ch_close" },
+            { "process_id": "@processes.p_change", "from_step_id": "@process_steps.ch_close",     "to_step_id": "@process_steps.ch_end" },
+
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_start",       "to_step_id": "@process_steps.mi_bridge" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_bridge",      "to_step_id": "@process_steps.mi_notify" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_notify",      "to_step_id": "@process_steps.mi_investigate" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_investigate", "to_step_id": "@process_steps.mi_resolved" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_resolved",    "to_step_id": "@process_steps.mi_investigate", "label": "No" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_resolved",    "to_step_id": "@process_steps.mi_communicate", "label": "Yes" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_communicate", "to_step_id": "@process_steps.mi_pir" },
+            { "process_id": "@processes.p_major", "from_step_id": "@process_steps.mi_pir",         "to_step_id": "@process_steps.mi_end" },
+
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_start",   "to_step_id": "@process_steps.ad_inspect" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_inspect", "to_step_id": "@process_steps.ad_wipe" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_wipe",    "to_step_id": "@process_steps.ad_state" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_state",   "to_step_id": "@process_steps.ad_reimage", "label": "Yes" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_state",   "to_step_id": "@process_steps.ad_recycle", "label": "No" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_reimage", "to_step_id": "@process_steps.ad_cmdb" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_recycle", "to_step_id": "@process_steps.ad_cert" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_cert",    "to_step_id": "@process_steps.ad_cmdb" },
+            { "process_id": "@processes.p_disposal", "from_step_id": "@process_steps.ad_cmdb",    "to_step_id": "@process_steps.ad_end" },
+
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_start",    "to_step_id": "@process_steps.pr_portal" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_portal",   "to_step_id": "@process_steps.pr_mfa" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_mfa",      "to_step_id": "@process_steps.pr_sms",      "label": "Yes" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_mfa",      "to_step_id": "@process_steps.pr_helpdesk", "label": "No" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_sms",      "to_step_id": "@process_steps.pr_reset" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_helpdesk", "to_step_id": "@process_steps.pr_verify" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_verify",   "to_step_id": "@process_steps.pr_reset" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_reset",    "to_step_id": "@process_steps.pr_notify" },
+            { "process_id": "@processes.p_password", "from_step_id": "@process_steps.pr_notify",   "to_step_id": "@process_steps.pr_end" }
+        ]
+    }
+}
