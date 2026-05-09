@@ -20,6 +20,7 @@ function showToast(message, isError = false) {
 let departments = [];
 let ticketTypes = [];
 let ticketOrigins = [];
+let ticketStatuses = [];
 let analysts = [];
 let currentEmail = null;
 let folderCounts = {};
@@ -72,6 +73,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadDepartments();
     loadTicketTypes();
     loadTicketOrigins();
+    loadTicketStatuses();
     loadAnalysts();
     loadFolderCounts();
     initTinyMCE();
@@ -262,6 +264,20 @@ async function loadTicketOrigins() {
         }
     } catch (error) {
         console.error('Error loading ticket origins:', error);
+    }
+}
+
+// Load ticket statuses (active only) for the reading-pane Status dropdown
+async function loadTicketStatuses() {
+    try {
+        const response = await fetch(API_BASE + 'get_ticket_statuses.php');
+        const data = await response.json();
+
+        if (data.success) {
+            ticketStatuses = data.statuses.filter(s => s.is_active);
+        }
+    } catch (error) {
+        console.error('Error loading ticket statuses:', error);
     }
 }
 
@@ -721,10 +737,9 @@ function displayEmail(email) {
         `<option value="${type.id}" ${email.ticket_type_id == type.id ? 'selected' : ''}>${escapeHtml(type.name)}</option>`
     ).join('');
 
-    // Build status dropdown
-    const statuses = ['Open', 'In Progress', 'On Hold', 'Closed'];
-    const statusOptions = statuses.map(status =>
-        `<option value="${status}" ${email.status === status ? 'selected' : ''}>${status}</option>`
+    // Build status dropdown from the active ticket_statuses lookup
+    const statusOptions = ticketStatuses.map(s =>
+        `<option value="${escapeHtml(s.name)}" ${email.status === s.name ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
     ).join('');
 
     // Build ticket origin dropdown
