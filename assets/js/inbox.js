@@ -542,18 +542,29 @@ async function handleTicketDrop(targetEl, ticketId, ticketNumber) {
     const payload = { ticket_id: parseInt(ticketId, 10) };
     let toastMsg = '';
 
+    // Capture old values from the in-memory email row for audit logging
+    const sourceEmail = emails.find(e => String(e.ticket_id) === String(ticketId));
+    const oldDeptName = sourceEmail ? getDisplayName('department', sourceEmail.department_id) : null;
+    const oldStatusName = sourceEmail ? sourceEmail.status : null;
+
+    let newDeptName = null;
+    let newStatusName = null;
+
     if (dropType === 'unassigned') {
         payload.department_id = '';
         toastMsg = `${ticketNumber || 'Ticket'} → Unassigned`;
     } else if (dropType === 'department') {
         payload.department_id = parseInt(targetEl.dataset.deptId, 10);
         const dept = folderCounts.departments.find(d => d.id == payload.department_id);
-        toastMsg = `${ticketNumber || 'Ticket'} → ${dept ? dept.name : 'Department'}`;
+        newDeptName = dept ? dept.name : null;
+        toastMsg = `${ticketNumber || 'Ticket'} → ${newDeptName || 'Department'}`;
     } else if (dropType === 'dept_status') {
         payload.department_id = parseInt(targetEl.dataset.deptId, 10);
         payload.status = targetEl.dataset.status;
         const dept = folderCounts.departments.find(d => d.id == payload.department_id);
-        toastMsg = `${ticketNumber || 'Ticket'} → ${dept ? dept.name : 'Department'} / ${payload.status}`;
+        newDeptName = dept ? dept.name : null;
+        newStatusName = payload.status;
+        toastMsg = `${ticketNumber || 'Ticket'} → ${newDeptName || 'Department'} / ${payload.status}`;
     } else {
         return;
     }
@@ -566,6 +577,17 @@ async function handleTicketDrop(targetEl, ticketId, ticketNumber) {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Update failed');
+
+        // Audit log — only for fields that actually changed
+        const ticketIdInt = parseInt(ticketId, 10);
+        const auditCalls = [];
+        if (newDeptName !== oldDeptName) {
+            auditCalls.push(logAudit(ticketIdInt, 'Department', oldDeptName, newDeptName));
+        }
+        if (newStatusName !== null && newStatusName !== oldStatusName) {
+            auditCalls.push(logAudit(ticketIdInt, 'Status', oldStatusName, newStatusName));
+        }
+        await Promise.all(auditCalls);
 
         showToast(toastMsg);
         await loadFolderCounts();
