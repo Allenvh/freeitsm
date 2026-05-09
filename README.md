@@ -491,6 +491,7 @@ The primary module. Three-panel Outlook-style interface.
 - **Middle panel**: Ticket list (searchable)
 - **Right panel**: Reading pane with full email thread
 - **Features**: Create tickets, reply/forward emails, attachments, internal notes, audit trail, team-based filtering, scheduling
+- **Drag-and-drop triage**: Drag any ticket from the list onto a department folder to reassign it, or onto a status subfolder (Open / In Progress / On Hold / Closed) to update both department and status in one action; drop on **Unassigned** to clear the department. Hovering a collapsed department folder during a drag auto-expands it (Outlook-style spring-loaded folders) so any nested status is reachable
 - **Settings**: Departments, ticket types, origins, mailboxes (Microsoft 365 + Google Workspace), email templates, analysts, teams
 - **Mailbox whitelist**: Per-mailbox domain and email address whitelisting — non-whitelisted senders are rejected
 - **Email actions**: Configurable per-mailbox actions for rejected emails (delete, move to Deleted Items, mark as read) and imported emails (delete, move to folder) with folder verification

@@ -186,6 +186,21 @@ body {
     background: #005a9e;
 }
 
+.subfolder-group {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 200ms ease;
+}
+
+.subfolder-group.expanded {
+    grid-template-rows: 1fr;
+}
+
+.subfolder-group-inner {
+    overflow: hidden;
+    min-height: 0;
+}
+
 .subfolder-item {
     padding: 6px 20px 6px 52px;
     cursor: pointer;
@@ -207,8 +222,26 @@ body {
     font-weight: 600;
 }
 
-.subfolder-hidden {
-    display: none;
+.subfolder-item.empty .folder-count {
+    background: #ccc;
+    opacity: 0.6;
+}
+
+/* Drag-and-drop visual feedback */
+.email-item[draggable="true"] {
+    cursor: grab;
+}
+
+.email-item.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+}
+
+.folder-item.drop-target,
+.subfolder-item.drop-target {
+    background: #d4ebfb;
+    outline: 2px dashed #0078d4;
+    outline-offset: -2px;
 }
 
 .folder-divider {

@@ -311,18 +311,17 @@ function renderFolders() {
         </div>
     `;
 
-    // Unassigned folder
-    if (folderCounts.unassigned_count > 0) {
-        html += `
-            <div class="folder-item ${currentFilter.type === 'unassigned' ? 'active' : ''}" onclick="selectFolder('unassigned')">
-                <div class="folder-name">
-                    <span class="folder-icon">⚠️</span>
-                    <span>Unassigned</span>
-                </div>
-                <span class="folder-count">${folderCounts.unassigned_count}</span>
+    // Unassigned folder — always rendered as a drop target so tickets can be returned to it
+    html += `
+        <div class="folder-item drop-zone ${currentFilter.type === 'unassigned' ? 'active' : ''}"
+             data-drop-type="unassigned" onclick="selectFolder('unassigned')">
+            <div class="folder-name">
+                <span class="folder-icon">⚠️</span>
+                <span>Unassigned</span>
             </div>
-        `;
-    }
+            <span class="folder-count">${folderCounts.unassigned_count || 0}</span>
+        </div>
+    `;
 
     html += '<div class="folder-divider"></div>';
 
@@ -333,7 +332,9 @@ function renderFolders() {
             const isActive = currentFilter.type === 'department' && currentFilter.id == dept.id;
 
             html += `
-                <div class="folder-item ${isExpanded ? 'expanded' : ''} ${isActive ? 'active' : ''}" onclick="toggleFolder('dept_${dept.id}', ${dept.id})">
+                <div class="folder-item drop-zone ${isExpanded ? 'expanded' : ''} ${isActive ? 'active' : ''}"
+                     data-drop-type="department" data-dept-id="${dept.id}"
+                     onclick="toggleFolder('dept_${dept.id}', ${dept.id})">
                     <div class="folder-name">
                         <span class="folder-icon"></span>
                         <span>${escapeHtml(dept.name)}</span>
@@ -342,31 +343,47 @@ function renderFolders() {
                 </div>
             `;
 
-            // Status subfolders
+            // Status subfolders — always render all four; group is collapsed/expanded as a unit
+            html += `<div class="subfolder-group ${isExpanded ? 'expanded' : ''}"><div class="subfolder-group-inner">`;
             const statuses = ['Open', 'In Progress', 'On Hold', 'Closed'];
             statuses.forEach(status => {
                 const count = dept.statuses[status] || 0;
-                if (count > 0) {
-                    const subActive = currentFilter.type === 'dept_status' && currentFilter.dept_id == dept.id && currentFilter.status === status;
-                    html += `
-                        <div class="subfolder-item ${isExpanded ? '' : 'subfolder-hidden'} ${subActive ? 'active' : ''}" onclick="event.stopPropagation(); selectDeptStatus(${dept.id}, '${status}')">
-                            <span>${status}</span>
-                            <span class="folder-count">${count}</span>
-                        </div>
-                    `;
-                }
+                const subActive = currentFilter.type === 'dept_status' && currentFilter.dept_id == dept.id && currentFilter.status === status;
+                html += `
+                    <div class="subfolder-item drop-zone ${subActive ? 'active' : ''} ${count === 0 ? 'empty' : ''}"
+                         data-drop-type="dept_status" data-dept-id="${dept.id}" data-status="${escapeHtml(status)}"
+                         onclick="event.stopPropagation(); selectDeptStatus(${dept.id}, '${status}')">
+                        <span>${status}</span>
+                        <span class="folder-count">${count}</span>
+                    </div>
+                `;
             });
+            html += `</div></div>`;
         });
     }
 
     folderListEl.innerHTML = html;
+
+    // Wire drag-and-drop on freshly rendered folder rows
+    attachFolderDropHandlers();
 }
 
 // Toggle folder expansion
-function toggleFolder(folderId, deptId) {
-    expandedFolders[folderId] = !expandedFolders[folderId];
-    selectFolder('department', deptId);
-    renderFolders();
+// opts.selectAfter — if false, don't change the active filter/view (used by drag hover)
+// opts.forceExpand — if true, only expand (no toggle), used by drag hover
+function toggleFolder(folderId, deptId, opts = {}) {
+    const { selectAfter = true, forceExpand = false } = opts;
+    if (forceExpand) {
+        if (expandedFolders[folderId]) return;
+        expandedFolders[folderId] = true;
+    } else {
+        expandedFolders[folderId] = !expandedFolders[folderId];
+    }
+    if (selectAfter) {
+        selectFolder('department', deptId);
+    } else {
+        renderFolders();
+    }
 }
 
 // Select folder
@@ -395,6 +412,120 @@ function selectDeptStatus(deptId, status) {
 
     renderFolders();
     loadEmails();
+}
+
+// ===== Drag-and-drop: tickets onto folders =====
+let draggedTicketId = null;
+let draggedTicketNumber = null;
+let dragHoverTimer = null;
+let dragHoverFolderId = null;
+
+function attachEmailDragHandlers() {
+    document.querySelectorAll('#emailList .email-item').forEach(el => {
+        el.addEventListener('dragstart', (e) => {
+            draggedTicketId = el.dataset.ticketId;
+            draggedTicketNumber = el.dataset.ticketNumber;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', draggedTicketId);
+            el.classList.add('dragging');
+        });
+        el.addEventListener('dragend', () => {
+            el.classList.remove('dragging');
+            draggedTicketId = null;
+            draggedTicketNumber = null;
+            cancelDragHover();
+            document.querySelectorAll('.drop-target').forEach(t => t.classList.remove('drop-target'));
+        });
+    });
+}
+
+function attachFolderDropHandlers() {
+    document.querySelectorAll('#folderList .drop-zone').forEach(el => {
+        el.addEventListener('dragover', (e) => {
+            if (!draggedTicketId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            el.classList.add('drop-target');
+
+            // Hover-to-expand on collapsed dept folders
+            if (el.dataset.dropType === 'department') {
+                const folderId = `dept_${el.dataset.deptId}`;
+                if (!expandedFolders[folderId]) {
+                    if (dragHoverFolderId !== folderId) {
+                        cancelDragHover();
+                        dragHoverFolderId = folderId;
+                        const deptId = el.dataset.deptId;
+                        dragHoverTimer = setTimeout(() => {
+                            toggleFolder(folderId, deptId, { selectAfter: false, forceExpand: true });
+                            dragHoverTimer = null;
+                        }, 600);
+                    }
+                }
+            }
+        });
+        el.addEventListener('dragleave', (e) => {
+            el.classList.remove('drop-target');
+            // Only cancel hover timer if leaving the dept row that started it
+            if (el.dataset.dropType === 'department' &&
+                dragHoverFolderId === `dept_${el.dataset.deptId}`) {
+                cancelDragHover();
+            }
+        });
+        el.addEventListener('drop', (e) => {
+            e.preventDefault();
+            el.classList.remove('drop-target');
+            cancelDragHover();
+            if (!draggedTicketId) return;
+            handleTicketDrop(el, draggedTicketId, draggedTicketNumber);
+        });
+    });
+}
+
+function cancelDragHover() {
+    if (dragHoverTimer) {
+        clearTimeout(dragHoverTimer);
+        dragHoverTimer = null;
+    }
+    dragHoverFolderId = null;
+}
+
+async function handleTicketDrop(targetEl, ticketId, ticketNumber) {
+    const dropType = targetEl.dataset.dropType;
+    const payload = { ticket_id: parseInt(ticketId, 10) };
+    let toastMsg = '';
+
+    if (dropType === 'unassigned') {
+        payload.department_id = '';
+        toastMsg = `${ticketNumber || 'Ticket'} → Unassigned`;
+    } else if (dropType === 'department') {
+        payload.department_id = parseInt(targetEl.dataset.deptId, 10);
+        const dept = folderCounts.departments.find(d => d.id == payload.department_id);
+        toastMsg = `${ticketNumber || 'Ticket'} → ${dept ? dept.name : 'Department'}`;
+    } else if (dropType === 'dept_status') {
+        payload.department_id = parseInt(targetEl.dataset.deptId, 10);
+        payload.status = targetEl.dataset.status;
+        const dept = folderCounts.departments.find(d => d.id == payload.department_id);
+        toastMsg = `${ticketNumber || 'Ticket'} → ${dept ? dept.name : 'Department'} / ${payload.status}`;
+    } else {
+        return;
+    }
+
+    try {
+        const res = await fetch(API_BASE + 'assign_ticket.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Update failed');
+
+        showToast(toastMsg);
+        await loadFolderCounts();
+        loadEmails();
+    } catch (err) {
+        console.error('Drop assign error:', err);
+        showToast('Failed to move ticket: ' + (err.message || err), true);
+    }
 }
 
 // Load emails based on current filter
@@ -437,8 +568,10 @@ function renderEmailList() {
     emailListEl.innerHTML = emails.map(email => {
         const emailCount = email.email_count || 1;
         const countBadge = emailCount > 1 ? `<span class="email-count-badge">${emailCount}</span>` : '';
+        const ticketId = email.ticket_id || email.id;
         return `
             <div class="email-item ${email.id === selectedEmailId ? 'selected' : ''} ${!email.is_read ? 'unread' : ''}"
+                 draggable="true" data-ticket-id="${ticketId}" data-ticket-number="${escapeHtml(email.ticket_number || '')}"
                  onclick="selectEmail(${email.id})">
                 <div class="email-from">${escapeHtml(email.ticket_number || '')} - ${escapeHtml(email.from_name || email.from_address)} ${countBadge}</div>
                 <div class="email-subject">${escapeHtml(email.subject)}</div>
@@ -447,6 +580,9 @@ function renderEmailList() {
             </div>
         `;
     }).join('');
+
+    // Wire drag handlers on freshly rendered email rows
+    attachEmailDragHandlers();
 }
 
 // Select and display email by email ID

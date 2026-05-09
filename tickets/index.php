@@ -14,7 +14,7 @@ $current_page = 'inbox';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Inbox</title>
-    <link rel="stylesheet" href="../assets/css/inbox.css?v=4">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=5">
     <script src="../assets/js/tinymce/tinymce.min.js"></script>
 </head>
 <body>
@@ -225,7 +225,7 @@ $current_page = 'inbox';
 
     <div class="toast" id="toast"></div>
     <script>window.API_BASE = '../api/tickets/';</script>
-    <script src="../assets/js/inbox.js?v=8"></script>
+    <script src="../assets/js/inbox.js?v=9"></script>
     <script>
     // Auto-check mailboxes every 60 seconds
     (function() {
