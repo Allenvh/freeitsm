@@ -426,6 +426,16 @@ if (!isset($_SESSION['analyst_id'])) {
                 </div>
                 <div class="error-text" id="err-process-mapper" style="display:none"></div>
             </div>
+
+            <div class="module-card" data-module="cmdb">
+                <h4>CMDB</h4>
+                <p class="module-desc">A small IT estate &mdash; 8 classes (Server, Database, Application, Service, Person, Team, Network Device, Endpoint) with ~50 properties (incl. coloured criticality / environment / tier dropdowns), 39 objects (8 people, 4 teams, 5 servers, 4 databases hierarchically parented, 6 apps, 6 services, 3 network devices, 3 endpoints), and ~30 relationships across 6 verbs (depends on, connects to, managed by, hosted on, uses identity from, monitors).</p>
+                <div class="module-footer">
+                    <span class="record-count">~310 records</span>
+                    <button class="import-btn" id="btn-cmdb" onclick="importModule('cmdb', this)" disabled>Import</button>
+                </div>
+                <div class="error-text" id="err-cmdb" style="display:none"></div>
+            </div>
         </div>
 
         <!-- Bonus: cross-module linking (appears after both software + assets imported) -->
@@ -507,7 +517,7 @@ if (!isset($_SESSION['analyst_id'])) {
         }
 
         function enableModuleButtons() {
-            const modules = ['tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'tasks', 'process-mapper'];
+            const modules = ['tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'tasks', 'process-mapper', 'cmdb'];
             modules.forEach(function(m) {
                 const btn = document.getElementById('btn-' + m);
                 if (btn && !btn.classList.contains('success')) {

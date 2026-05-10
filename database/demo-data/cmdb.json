@@ -1,0 +1,491 @@
+{
+    "tier1": {
+        "cmdb_icons": [
+            { "_ref": "server",      "_skip_insert": true, "_match_by": "icon_key", "_match_value": "server" },
+            { "_ref": "database",    "_skip_insert": true, "_match_by": "icon_key", "_match_value": "database" },
+            { "_ref": "application", "_skip_insert": true, "_match_by": "icon_key", "_match_value": "application" },
+            { "_ref": "service",     "_skip_insert": true, "_match_by": "icon_key", "_match_value": "service" },
+            { "_ref": "person",      "_skip_insert": true, "_match_by": "icon_key", "_match_value": "person" },
+            { "_ref": "team",        "_skip_insert": true, "_match_by": "icon_key", "_match_value": "team" },
+            { "_ref": "network",     "_skip_insert": true, "_match_by": "icon_key", "_match_value": "network" },
+            { "_ref": "workstation", "_skip_insert": true, "_match_by": "icon_key", "_match_value": "workstation" }
+        ],
+        "cmdb_relationship_types": [
+            { "_ref": "depends_on",  "_skip_insert": true, "_match_by": "verb", "_match_value": "depends on" },
+            { "_ref": "connects_to", "_skip_insert": true, "_match_by": "verb", "_match_value": "connects to" },
+            { "_ref": "managed_by",  "_skip_insert": true, "_match_by": "verb", "_match_value": "managed by" },
+            { "_ref": "hosted_on",          "verb": "hosted on",          "inverse_verb": "hosts",                "description": "A runs on the hardware/host B",                  "display_order": 40, "is_active": 1 },
+            { "_ref": "uses_identity_from", "verb": "uses identity from", "inverse_verb": "provides identity to", "description": "A authenticates against B (SSO, federated auth)", "display_order": 50, "is_active": 1 },
+            { "_ref": "monitors",           "verb": "monitors",           "inverse_verb": "is monitored by",      "description": "A watches B for availability / health",         "display_order": 60, "is_active": 1 }
+        ]
+    },
+    "tier2": {
+        "cmdb_classes": [
+            { "_ref": "server",         "class_key": "server",         "name": "Server",         "description": "Physical or virtual machine",          "icon_id": "@cmdb_icons.server",      "display_order":  10, "is_active": 1 },
+            { "_ref": "database",       "class_key": "database",       "name": "Database",       "description": "A database or DB instance",            "icon_id": "@cmdb_icons.database",    "display_order":  20, "is_active": 1 },
+            { "_ref": "application",    "class_key": "application",    "name": "Application",    "description": "Internal or SaaS application",         "icon_id": "@cmdb_icons.application", "display_order":  30, "is_active": 1 },
+            { "_ref": "service",        "class_key": "service",        "name": "Service",        "description": "Underlying IT service (auth, monitoring, file shares, etc)", "icon_id": "@cmdb_icons.service",     "display_order":  40, "is_active": 1 },
+            { "_ref": "person",         "class_key": "person",         "name": "Person",         "description": "An individual — owners, admins, contacts", "icon_id": "@cmdb_icons.person",      "display_order":  50, "is_active": 1 },
+            { "_ref": "team",           "class_key": "team",           "name": "Team",           "description": "A group of people with shared responsibility", "icon_id": "@cmdb_icons.team",        "display_order":  60, "is_active": 1 },
+            { "_ref": "network_device", "class_key": "network_device", "name": "Network Device", "description": "Switch / router / firewall / load balancer", "icon_id": "@cmdb_icons.network",     "display_order":  70, "is_active": 1 },
+            { "_ref": "endpoint",       "class_key": "endpoint",       "name": "Endpoint",       "description": "Workstation, laptop, kiosk",           "icon_id": "@cmdb_icons.workstation", "display_order":  80, "is_active": 1 }
+        ]
+    },
+    "tier3": {
+        "cmdb_class_properties": [
+            { "_ref": "server_hostname",      "class_id": "@cmdb_classes.server",         "property_key": "hostname",      "label": "Hostname",      "property_type": "text",       "is_required": 1, "display_order": 10 },
+            { "_ref": "server_os",            "class_id": "@cmdb_classes.server",         "property_key": "os",            "label": "OS",            "property_type": "dropdown",   "is_required": 0, "display_order": 20 },
+            { "_ref": "server_environment",   "class_id": "@cmdb_classes.server",         "property_key": "environment",   "label": "Environment",   "property_type": "dropdown",   "is_required": 0, "display_order": 30 },
+            { "_ref": "server_criticality",   "class_id": "@cmdb_classes.server",         "property_key": "criticality",   "label": "Criticality",   "property_type": "dropdown",   "is_required": 0, "display_order": 40 },
+            { "_ref": "server_ip",            "class_id": "@cmdb_classes.server",         "property_key": "ip_address",    "label": "IP Address",    "property_type": "text",       "is_required": 0, "display_order": 50 },
+            { "_ref": "server_location",      "class_id": "@cmdb_classes.server",         "property_key": "location",      "label": "Location",      "property_type": "dropdown",   "is_required": 0, "display_order": 60 },
+            { "_ref": "server_owner",         "class_id": "@cmdb_classes.server",         "property_key": "owner",         "label": "Owner",         "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 70 },
+            { "_ref": "server_last_patched",  "class_id": "@cmdb_classes.server",         "property_key": "last_patched",  "label": "Last Patched",  "property_type": "date",       "is_required": 0, "display_order": 80 },
+
+            { "_ref": "db_db_name",        "class_id": "@cmdb_classes.database",       "property_key": "db_name",        "label": "DB Name",        "property_type": "text",     "is_required": 1, "display_order": 10 },
+            { "_ref": "db_engine",         "class_id": "@cmdb_classes.database",       "property_key": "engine",         "label": "Engine",         "property_type": "dropdown", "is_required": 0, "display_order": 20 },
+            { "_ref": "db_version",        "class_id": "@cmdb_classes.database",       "property_key": "version",        "label": "Version",        "property_type": "text",     "is_required": 0, "display_order": 30 },
+            { "_ref": "db_recovery_model", "class_id": "@cmdb_classes.database",       "property_key": "recovery_model", "label": "Recovery Model", "property_type": "dropdown", "is_required": 0, "display_order": 40 },
+            { "_ref": "db_size_gb",        "class_id": "@cmdb_classes.database",       "property_key": "size_gb",        "label": "Size (GB)",      "property_type": "number",   "is_required": 0, "display_order": 50 },
+            { "_ref": "db_owner",          "class_id": "@cmdb_classes.database",       "property_key": "owner",          "label": "Owner",          "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 60 },
+            { "_ref": "db_backup",         "class_id": "@cmdb_classes.database",       "property_key": "backup_schedule","label": "Backup Schedule","property_type": "text",     "is_required": 0, "display_order": 70 },
+
+            { "_ref": "app_name",          "class_id": "@cmdb_classes.application",    "property_key": "app_name",      "label": "App Name",       "property_type": "text",     "is_required": 1, "display_order": 10 },
+            { "_ref": "app_vendor",        "class_id": "@cmdb_classes.application",    "property_key": "vendor",        "label": "Vendor",         "property_type": "text",     "is_required": 0, "display_order": 20 },
+            { "_ref": "app_hosting",       "class_id": "@cmdb_classes.application",    "property_key": "hosting_type",  "label": "Hosting Type",   "property_type": "dropdown", "is_required": 0, "display_order": 30 },
+            { "_ref": "app_criticality",   "class_id": "@cmdb_classes.application",    "property_key": "criticality",   "label": "Criticality",    "property_type": "dropdown", "is_required": 0, "display_order": 40 },
+            { "_ref": "app_version",       "class_id": "@cmdb_classes.application",    "property_key": "version",       "label": "Version",        "property_type": "text",     "is_required": 0, "display_order": 50 },
+            { "_ref": "app_licenses",      "class_id": "@cmdb_classes.application",    "property_key": "license_count", "label": "License Count",  "property_type": "number",   "is_required": 0, "display_order": 60 },
+            { "_ref": "app_owner",         "class_id": "@cmdb_classes.application",    "property_key": "owner",         "label": "Owner",          "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 70 },
+            { "_ref": "app_live_date",     "class_id": "@cmdb_classes.application",    "property_key": "live_date",     "label": "Live Date",      "property_type": "date",     "is_required": 0, "display_order": 80 },
+
+            { "_ref": "svc_name",      "class_id": "@cmdb_classes.service", "property_key": "service_name",      "label": "Service Name",      "property_type": "text",       "is_required": 1, "display_order": 10 },
+            { "_ref": "svc_provider",  "class_id": "@cmdb_classes.service", "property_key": "provider",          "label": "Provider",          "property_type": "text",       "is_required": 0, "display_order": 20 },
+            { "_ref": "svc_tier",      "class_id": "@cmdb_classes.service", "property_key": "tier",              "label": "Tier",              "property_type": "dropdown",   "is_required": 0, "display_order": 30 },
+            { "_ref": "svc_owner",     "class_id": "@cmdb_classes.service", "property_key": "owner",             "label": "Owner",             "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 40 },
+            { "_ref": "svc_docs",      "class_id": "@cmdb_classes.service", "property_key": "documentation_url", "label": "Documentation URL", "property_type": "text",       "is_required": 0, "display_order": 50 },
+
+            { "_ref": "person_full_name",  "class_id": "@cmdb_classes.person", "property_key": "full_name",  "label": "Full Name",  "property_type": "text",     "is_required": 1, "display_order": 10 },
+            { "_ref": "person_email",      "class_id": "@cmdb_classes.person", "property_key": "email",      "label": "Email",      "property_type": "text",     "is_required": 0, "display_order": 20 },
+            { "_ref": "person_job_title",  "class_id": "@cmdb_classes.person", "property_key": "job_title",  "label": "Job Title",  "property_type": "text",     "is_required": 0, "display_order": 30 },
+            { "_ref": "person_department", "class_id": "@cmdb_classes.person", "property_key": "department", "label": "Department", "property_type": "dropdown", "is_required": 0, "display_order": 40 },
+            { "_ref": "person_phone",      "class_id": "@cmdb_classes.person", "property_key": "phone",      "label": "Phone",      "property_type": "text",     "is_required": 0, "display_order": 50 },
+
+            { "_ref": "team_name",       "class_id": "@cmdb_classes.team", "property_key": "team_name",          "label": "Team Name",          "property_type": "text",       "is_required": 1, "display_order": 10 },
+            { "_ref": "team_lead",       "class_id": "@cmdb_classes.team", "property_key": "lead",               "label": "Lead",               "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 20 },
+            { "_ref": "team_email",      "class_id": "@cmdb_classes.team", "property_key": "email_distribution", "label": "Email Distribution", "property_type": "text",       "is_required": 0, "display_order": 30 },
+            { "_ref": "team_headcount",  "class_id": "@cmdb_classes.team", "property_key": "headcount",          "label": "Headcount",          "property_type": "number",     "is_required": 0, "display_order": 40 },
+
+            { "_ref": "nd_hostname",  "class_id": "@cmdb_classes.network_device", "property_key": "hostname",      "label": "Hostname",      "property_type": "text",       "is_required": 1, "display_order": 10 },
+            { "_ref": "nd_type",      "class_id": "@cmdb_classes.network_device", "property_key": "device_type",   "label": "Device Type",   "property_type": "dropdown",   "is_required": 0, "display_order": 20 },
+            { "_ref": "nd_vendor",    "class_id": "@cmdb_classes.network_device", "property_key": "vendor",        "label": "Vendor",        "property_type": "dropdown",   "is_required": 0, "display_order": 30 },
+            { "_ref": "nd_model",     "class_id": "@cmdb_classes.network_device", "property_key": "model",         "label": "Model",         "property_type": "text",       "is_required": 0, "display_order": 40 },
+            { "_ref": "nd_mgmt_ip",   "class_id": "@cmdb_classes.network_device", "property_key": "management_ip", "label": "Management IP", "property_type": "text",       "is_required": 0, "display_order": 50 },
+            { "_ref": "nd_owner",     "class_id": "@cmdb_classes.network_device", "property_key": "owner",         "label": "Owner",         "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 60 },
+
+            { "_ref": "ep_hostname",     "class_id": "@cmdb_classes.endpoint", "property_key": "hostname",     "label": "Hostname",     "property_type": "text",       "is_required": 1, "display_order": 10 },
+            { "_ref": "ep_os",           "class_id": "@cmdb_classes.endpoint", "property_key": "os",           "label": "OS",           "property_type": "dropdown",   "is_required": 0, "display_order": 20 },
+            { "_ref": "ep_user",         "class_id": "@cmdb_classes.endpoint", "property_key": "user",         "label": "User",         "property_type": "object_ref", "target_class_id": "@cmdb_classes.person", "is_required": 0, "display_order": 30 },
+            { "_ref": "ep_manufacturer", "class_id": "@cmdb_classes.endpoint", "property_key": "manufacturer", "label": "Manufacturer", "property_type": "text",       "is_required": 0, "display_order": 40 },
+            { "_ref": "ep_model",        "class_id": "@cmdb_classes.endpoint", "property_key": "model",        "label": "Model",        "property_type": "text",       "is_required": 0, "display_order": 50 }
+        ],
+        "cmdb_class_property_options": [
+            { "property_id": "@cmdb_class_properties.server_os", "option_value": "Windows Server 2019",  "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.server_os", "option_value": "Windows Server 2022",  "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.server_os", "option_value": "RHEL 8",               "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.server_os", "option_value": "RHEL 9",               "display_order": 40 },
+            { "property_id": "@cmdb_class_properties.server_os", "option_value": "Ubuntu 22.04",         "display_order": 50 },
+
+            { "property_id": "@cmdb_class_properties.server_environment", "option_value": "Production", "colour": "#dc2626", "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.server_environment", "option_value": "DR",         "colour": "#f59e0b", "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.server_environment", "option_value": "Test",       "colour": "#6b7280", "display_order": 30 },
+
+            { "property_id": "@cmdb_class_properties.server_criticality", "option_value": "Critical", "colour": "#dc2626", "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.server_criticality", "option_value": "High",     "colour": "#ea580c", "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.server_criticality", "option_value": "Medium",   "colour": "#f59e0b", "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.server_criticality", "option_value": "Low",      "colour": "#22c55e", "display_order": 40 },
+
+            { "property_id": "@cmdb_class_properties.server_location", "option_value": "London DC",      "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.server_location", "option_value": "Reading DC",     "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.server_location", "option_value": "Azure UK South", "display_order": 30 },
+
+            { "property_id": "@cmdb_class_properties.db_engine", "option_value": "SQL Server", "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.db_engine", "option_value": "PostgreSQL", "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.db_engine", "option_value": "MySQL",      "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.db_engine", "option_value": "MongoDB",    "display_order": 40 },
+            { "property_id": "@cmdb_class_properties.db_engine", "option_value": "Redis",      "display_order": 50 },
+
+            { "property_id": "@cmdb_class_properties.db_recovery_model", "option_value": "Full",         "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.db_recovery_model", "option_value": "Simple",       "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.db_recovery_model", "option_value": "Bulk-logged",  "display_order": 30 },
+
+            { "property_id": "@cmdb_class_properties.app_hosting", "option_value": "Internal",        "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.app_hosting", "option_value": "SaaS",            "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.app_hosting", "option_value": "On-prem Vendor",  "display_order": 30 },
+
+            { "property_id": "@cmdb_class_properties.app_criticality", "option_value": "Critical", "colour": "#dc2626", "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.app_criticality", "option_value": "High",     "colour": "#ea580c", "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.app_criticality", "option_value": "Medium",   "colour": "#f59e0b", "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.app_criticality", "option_value": "Low",      "colour": "#22c55e", "display_order": 40 },
+
+            { "property_id": "@cmdb_class_properties.svc_tier", "option_value": "Tier 0", "colour": "#dc2626", "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.svc_tier", "option_value": "Tier 1", "colour": "#ea580c", "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.svc_tier", "option_value": "Tier 2", "colour": "#f59e0b", "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.svc_tier", "option_value": "Tier 3", "colour": "#6b7280", "display_order": 40 },
+
+            { "property_id": "@cmdb_class_properties.person_department", "option_value": "IT",          "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.person_department", "option_value": "Finance",     "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.person_department", "option_value": "HR",          "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.person_department", "option_value": "Sales",       "display_order": 40 },
+            { "property_id": "@cmdb_class_properties.person_department", "option_value": "Engineering", "display_order": 50 },
+            { "property_id": "@cmdb_class_properties.person_department", "option_value": "Support",     "display_order": 60 },
+
+            { "property_id": "@cmdb_class_properties.nd_type", "option_value": "Firewall",      "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.nd_type", "option_value": "Router",        "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.nd_type", "option_value": "Switch",        "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.nd_type", "option_value": "Load Balancer", "display_order": 40 },
+
+            { "property_id": "@cmdb_class_properties.nd_vendor", "option_value": "Cisco",      "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.nd_vendor", "option_value": "Fortinet",   "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.nd_vendor", "option_value": "Palo Alto",  "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.nd_vendor", "option_value": "Juniper",    "display_order": 40 },
+            { "property_id": "@cmdb_class_properties.nd_vendor", "option_value": "HP Aruba",   "display_order": 50 },
+
+            { "property_id": "@cmdb_class_properties.ep_os", "option_value": "Windows 11", "display_order": 10 },
+            { "property_id": "@cmdb_class_properties.ep_os", "option_value": "Windows 10", "display_order": 20 },
+            { "property_id": "@cmdb_class_properties.ep_os", "option_value": "macOS",      "display_order": 30 },
+            { "property_id": "@cmdb_class_properties.ep_os", "option_value": "Linux",      "display_order": 40 }
+        ]
+    },
+    "tier4": {
+        "cmdb_objects": [
+            { "_ref": "p_sarah", "class_id": "@cmdb_classes.person", "name": "Sarah Williams", "parent_id": null },
+            { "_ref": "p_mike",  "class_id": "@cmdb_classes.person", "name": "Mike Jones",     "parent_id": null },
+            { "_ref": "p_lisa",  "class_id": "@cmdb_classes.person", "name": "Lisa Brown",     "parent_id": null },
+            { "_ref": "p_john",  "class_id": "@cmdb_classes.person", "name": "John Smith",     "parent_id": null },
+            { "_ref": "p_david", "class_id": "@cmdb_classes.person", "name": "David Patel",    "parent_id": null },
+            { "_ref": "p_emily", "class_id": "@cmdb_classes.person", "name": "Emily Watson",   "parent_id": null },
+            { "_ref": "p_tom",   "class_id": "@cmdb_classes.person", "name": "Tom Clark",      "parent_id": null },
+            { "_ref": "p_anna",  "class_id": "@cmdb_classes.person", "name": "Anna Khan",      "parent_id": null },
+
+            { "_ref": "t_dba",          "class_id": "@cmdb_classes.team", "name": "DBA Team",            "parent_id": null },
+            { "_ref": "t_network",      "class_id": "@cmdb_classes.team", "name": "Network Team",        "parent_id": null },
+            { "_ref": "t_servicedesk",  "class_id": "@cmdb_classes.team", "name": "Service Desk",        "parent_id": null },
+            { "_ref": "t_appsupport",   "class_id": "@cmdb_classes.team", "name": "Application Support", "parent_id": null },
+
+            { "_ref": "s_sqlsvr01", "class_id": "@cmdb_classes.server", "name": "SQLSVR01", "parent_id": null },
+            { "_ref": "s_sqlsvr02", "class_id": "@cmdb_classes.server", "name": "SQLSVR02", "parent_id": null },
+            { "_ref": "s_websvr01", "class_id": "@cmdb_classes.server", "name": "WEBSVR01", "parent_id": null },
+            { "_ref": "s_appsvr01", "class_id": "@cmdb_classes.server", "name": "APPSVR01", "parent_id": null },
+            { "_ref": "s_dcsvr01",  "class_id": "@cmdb_classes.server", "name": "DCSVR01",  "parent_id": null },
+
+            { "_ref": "d_freeitsm", "class_id": "@cmdb_classes.database", "name": "FREEITSM",      "parent_id": "@cmdb_objects.s_sqlsvr01" },
+            { "_ref": "d_intranet", "class_id": "@cmdb_classes.database", "name": "INTRANET_DB",   "parent_id": "@cmdb_objects.s_sqlsvr01" },
+            { "_ref": "d_crm",      "class_id": "@cmdb_classes.database", "name": "CRM_DB",        "parent_id": "@cmdb_objects.s_sqlsvr02" },
+            { "_ref": "d_archive",  "class_id": "@cmdb_classes.database", "name": "ARCHIVE_DB",    "parent_id": "@cmdb_objects.s_sqlsvr02" },
+
+            { "_ref": "a_freeitsm",  "class_id": "@cmdb_classes.application", "name": "FreeITSM",         "parent_id": null },
+            { "_ref": "a_intranet",  "class_id": "@cmdb_classes.application", "name": "Intranet Portal",  "parent_id": null },
+            { "_ref": "a_crm",       "class_id": "@cmdb_classes.application", "name": "CRM",              "parent_id": null },
+            { "_ref": "a_hrsystem",  "class_id": "@cmdb_classes.application", "name": "HR System",        "parent_id": null },
+            { "_ref": "a_m365",      "class_id": "@cmdb_classes.application", "name": "Microsoft 365",    "parent_id": null },
+            { "_ref": "a_vpn",       "class_id": "@cmdb_classes.application", "name": "VPN Gateway",      "parent_id": null },
+
+            { "_ref": "sv_ad",         "class_id": "@cmdb_classes.service", "name": "Active Directory",       "parent_id": null },
+            { "_ref": "sv_dns",        "class_id": "@cmdb_classes.service", "name": "DNS",                    "parent_id": null },
+            { "_ref": "sv_email",      "class_id": "@cmdb_classes.service", "name": "Email Relay",            "parent_id": null },
+            { "_ref": "sv_fileshare",  "class_id": "@cmdb_classes.service", "name": "File Server",            "parent_id": null },
+            { "_ref": "sv_backup",     "class_id": "@cmdb_classes.service", "name": "Backup Service",         "parent_id": null },
+            { "_ref": "sv_monitoring", "class_id": "@cmdb_classes.service", "name": "SolarWinds Monitoring",  "parent_id": null },
+
+            { "_ref": "nd_fw01",      "class_id": "@cmdb_classes.network_device", "name": "FW01",        "parent_id": null },
+            { "_ref": "nd_coresw01",  "class_id": "@cmdb_classes.network_device", "name": "CORE-SW01",   "parent_id": null },
+            { "_ref": "nd_corertr01", "class_id": "@cmdb_classes.network_device", "name": "CORE-RTR01",  "parent_id": null },
+
+            { "_ref": "e_wks_david", "class_id": "@cmdb_classes.endpoint", "name": "WKS-DAVID", "parent_id": null },
+            { "_ref": "e_wks_mike",  "class_id": "@cmdb_classes.endpoint", "name": "WKS-MIKE",  "parent_id": null },
+            { "_ref": "e_wks_sarah", "class_id": "@cmdb_classes.endpoint", "name": "WKS-SARAH", "parent_id": null }
+        ]
+    },
+    "tier5": {
+        "cmdb_object_properties": [
+            { "object_id": "@cmdb_objects.p_sarah", "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "Sarah Williams" },
+            { "object_id": "@cmdb_objects.p_sarah", "property_id": "@cmdb_class_properties.person_email",      "value_text": "sarah.williams@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_sarah", "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Senior DBA" },
+            { "object_id": "@cmdb_objects.p_sarah", "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.p_mike",  "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "Mike Jones" },
+            { "object_id": "@cmdb_objects.p_mike",  "property_id": "@cmdb_class_properties.person_email",      "value_text": "mike.jones@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_mike",  "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Network Manager" },
+            { "object_id": "@cmdb_objects.p_mike",  "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.p_lisa",  "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "Lisa Brown" },
+            { "object_id": "@cmdb_objects.p_lisa",  "property_id": "@cmdb_class_properties.person_email",      "value_text": "lisa.brown@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_lisa",  "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Application Manager" },
+            { "object_id": "@cmdb_objects.p_lisa",  "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.p_john",  "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "John Smith" },
+            { "object_id": "@cmdb_objects.p_john",  "property_id": "@cmdb_class_properties.person_email",      "value_text": "john.smith@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_john",  "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Service Desk Analyst" },
+            { "object_id": "@cmdb_objects.p_john",  "property_id": "@cmdb_class_properties.person_department", "value_text": "Support" },
+
+            { "object_id": "@cmdb_objects.p_david", "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "David Patel" },
+            { "object_id": "@cmdb_objects.p_david", "property_id": "@cmdb_class_properties.person_email",      "value_text": "david.patel@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_david", "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "CTO" },
+            { "object_id": "@cmdb_objects.p_david", "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.p_emily", "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "Emily Watson" },
+            { "object_id": "@cmdb_objects.p_emily", "property_id": "@cmdb_class_properties.person_email",      "value_text": "emily.watson@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_emily", "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Information Security Officer" },
+            { "object_id": "@cmdb_objects.p_emily", "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.p_tom",   "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "Tom Clark" },
+            { "object_id": "@cmdb_objects.p_tom",   "property_id": "@cmdb_class_properties.person_email",      "value_text": "tom.clark@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_tom",   "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Service Manager" },
+            { "object_id": "@cmdb_objects.p_tom",   "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.p_anna",  "property_id": "@cmdb_class_properties.person_full_name",  "value_text": "Anna Khan" },
+            { "object_id": "@cmdb_objects.p_anna",  "property_id": "@cmdb_class_properties.person_email",      "value_text": "anna.khan@billcorp.com" },
+            { "object_id": "@cmdb_objects.p_anna",  "property_id": "@cmdb_class_properties.person_job_title",  "value_text": "Junior Sysadmin" },
+            { "object_id": "@cmdb_objects.p_anna",  "property_id": "@cmdb_class_properties.person_department", "value_text": "IT" },
+
+            { "object_id": "@cmdb_objects.t_dba",         "property_id": "@cmdb_class_properties.team_name",      "value_text": "DBA Team" },
+            { "object_id": "@cmdb_objects.t_dba",         "property_id": "@cmdb_class_properties.team_lead",      "value_object_id": "@cmdb_objects.p_sarah" },
+            { "object_id": "@cmdb_objects.t_dba",         "property_id": "@cmdb_class_properties.team_email",     "value_text": "dba@billcorp.com" },
+            { "object_id": "@cmdb_objects.t_dba",         "property_id": "@cmdb_class_properties.team_headcount", "value_number": 3 },
+
+            { "object_id": "@cmdb_objects.t_network",     "property_id": "@cmdb_class_properties.team_name",      "value_text": "Network Team" },
+            { "object_id": "@cmdb_objects.t_network",     "property_id": "@cmdb_class_properties.team_lead",      "value_object_id": "@cmdb_objects.p_mike" },
+            { "object_id": "@cmdb_objects.t_network",     "property_id": "@cmdb_class_properties.team_email",     "value_text": "network@billcorp.com" },
+            { "object_id": "@cmdb_objects.t_network",     "property_id": "@cmdb_class_properties.team_headcount", "value_number": 4 },
+
+            { "object_id": "@cmdb_objects.t_servicedesk", "property_id": "@cmdb_class_properties.team_name",      "value_text": "Service Desk" },
+            { "object_id": "@cmdb_objects.t_servicedesk", "property_id": "@cmdb_class_properties.team_lead",      "value_object_id": "@cmdb_objects.p_tom" },
+            { "object_id": "@cmdb_objects.t_servicedesk", "property_id": "@cmdb_class_properties.team_email",     "value_text": "servicedesk@billcorp.com" },
+            { "object_id": "@cmdb_objects.t_servicedesk", "property_id": "@cmdb_class_properties.team_headcount", "value_number": 6 },
+
+            { "object_id": "@cmdb_objects.t_appsupport",  "property_id": "@cmdb_class_properties.team_name",      "value_text": "Application Support" },
+            { "object_id": "@cmdb_objects.t_appsupport",  "property_id": "@cmdb_class_properties.team_lead",      "value_object_id": "@cmdb_objects.p_lisa" },
+            { "object_id": "@cmdb_objects.t_appsupport",  "property_id": "@cmdb_class_properties.team_email",     "value_text": "appsupport@billcorp.com" },
+            { "object_id": "@cmdb_objects.t_appsupport",  "property_id": "@cmdb_class_properties.team_headcount", "value_number": 5 },
+
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_hostname",     "value_text": "SQLSVR01" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_os",           "value_text": "Windows Server 2022" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_environment",  "value_text": "Production" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_criticality",  "value_text": "Critical" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_ip",           "value_text": "10.10.20.10" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_location",     "value_text": "London DC" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_owner",        "value_object_id": "@cmdb_objects.p_sarah" },
+            { "object_id": "@cmdb_objects.s_sqlsvr01", "property_id": "@cmdb_class_properties.server_last_patched", "value_date": "2026-04-15" },
+
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_hostname",     "value_text": "SQLSVR02" },
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_os",           "value_text": "Windows Server 2022" },
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_environment",  "value_text": "DR" },
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_criticality",  "value_text": "Critical" },
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_ip",           "value_text": "10.20.20.10" },
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_location",     "value_text": "Reading DC" },
+            { "object_id": "@cmdb_objects.s_sqlsvr02", "property_id": "@cmdb_class_properties.server_owner",        "value_object_id": "@cmdb_objects.p_sarah" },
+
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_hostname",     "value_text": "WEBSVR01" },
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_os",           "value_text": "Ubuntu 22.04" },
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_environment",  "value_text": "Production" },
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_criticality",  "value_text": "High" },
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_ip",           "value_text": "10.10.30.10" },
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_location",     "value_text": "London DC" },
+            { "object_id": "@cmdb_objects.s_websvr01", "property_id": "@cmdb_class_properties.server_owner",        "value_object_id": "@cmdb_objects.p_lisa" },
+
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_hostname",     "value_text": "APPSVR01" },
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_os",           "value_text": "Windows Server 2019" },
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_environment",  "value_text": "Production" },
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_criticality",  "value_text": "High" },
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_ip",           "value_text": "10.10.40.10" },
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_location",     "value_text": "Azure UK South" },
+            { "object_id": "@cmdb_objects.s_appsvr01", "property_id": "@cmdb_class_properties.server_owner",        "value_object_id": "@cmdb_objects.p_lisa" },
+
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_hostname",      "value_text": "DCSVR01" },
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_os",            "value_text": "Windows Server 2022" },
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_environment",   "value_text": "Production" },
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_criticality",   "value_text": "Critical" },
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_ip",            "value_text": "10.10.10.10" },
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_location",      "value_text": "London DC" },
+            { "object_id": "@cmdb_objects.s_dcsvr01", "property_id": "@cmdb_class_properties.server_owner",         "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_db_name",        "value_text": "FREEITSM" },
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_engine",         "value_text": "SQL Server" },
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_version",        "value_text": "2019 (15.0.4360.2)" },
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_recovery_model", "value_text": "Full" },
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_size_gb",        "value_number": 25 },
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_owner",          "value_object_id": "@cmdb_objects.p_sarah" },
+            { "object_id": "@cmdb_objects.d_freeitsm", "property_id": "@cmdb_class_properties.db_backup",         "value_text": "Full Sun 22:00, Diff Mon-Sat 22:00, Log every 30m" },
+
+            { "object_id": "@cmdb_objects.d_intranet", "property_id": "@cmdb_class_properties.db_db_name",        "value_text": "INTRANET_DB" },
+            { "object_id": "@cmdb_objects.d_intranet", "property_id": "@cmdb_class_properties.db_engine",         "value_text": "SQL Server" },
+            { "object_id": "@cmdb_objects.d_intranet", "property_id": "@cmdb_class_properties.db_version",        "value_text": "2019 (15.0.4360.2)" },
+            { "object_id": "@cmdb_objects.d_intranet", "property_id": "@cmdb_class_properties.db_recovery_model", "value_text": "Full" },
+            { "object_id": "@cmdb_objects.d_intranet", "property_id": "@cmdb_class_properties.db_size_gb",        "value_number": 8 },
+            { "object_id": "@cmdb_objects.d_intranet", "property_id": "@cmdb_class_properties.db_owner",          "value_object_id": "@cmdb_objects.p_sarah" },
+
+            { "object_id": "@cmdb_objects.d_crm", "property_id": "@cmdb_class_properties.db_db_name",        "value_text": "CRM_DB" },
+            { "object_id": "@cmdb_objects.d_crm", "property_id": "@cmdb_class_properties.db_engine",         "value_text": "SQL Server" },
+            { "object_id": "@cmdb_objects.d_crm", "property_id": "@cmdb_class_properties.db_version",        "value_text": "2019" },
+            { "object_id": "@cmdb_objects.d_crm", "property_id": "@cmdb_class_properties.db_recovery_model", "value_text": "Full" },
+            { "object_id": "@cmdb_objects.d_crm", "property_id": "@cmdb_class_properties.db_size_gb",        "value_number": 50 },
+            { "object_id": "@cmdb_objects.d_crm", "property_id": "@cmdb_class_properties.db_owner",          "value_object_id": "@cmdb_objects.p_sarah" },
+
+            { "object_id": "@cmdb_objects.d_archive", "property_id": "@cmdb_class_properties.db_db_name",        "value_text": "ARCHIVE_DB" },
+            { "object_id": "@cmdb_objects.d_archive", "property_id": "@cmdb_class_properties.db_engine",         "value_text": "SQL Server" },
+            { "object_id": "@cmdb_objects.d_archive", "property_id": "@cmdb_class_properties.db_recovery_model", "value_text": "Simple" },
+            { "object_id": "@cmdb_objects.d_archive", "property_id": "@cmdb_class_properties.db_size_gb",        "value_number": 200 },
+            { "object_id": "@cmdb_objects.d_archive", "property_id": "@cmdb_class_properties.db_owner",          "value_object_id": "@cmdb_objects.p_sarah" },
+
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_name",        "value_text": "FreeITSM" },
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_vendor",      "value_text": "BillCorp (internal)" },
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_hosting",     "value_text": "Internal" },
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_criticality", "value_text": "Critical" },
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_version",     "value_text": "1.0" },
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_licenses",    "value_number": 50 },
+            { "object_id": "@cmdb_objects.a_freeitsm", "property_id": "@cmdb_class_properties.app_owner",       "value_object_id": "@cmdb_objects.p_lisa" },
+
+            { "object_id": "@cmdb_objects.a_intranet", "property_id": "@cmdb_class_properties.app_name",        "value_text": "Intranet Portal" },
+            { "object_id": "@cmdb_objects.a_intranet", "property_id": "@cmdb_class_properties.app_vendor",      "value_text": "BillCorp (internal)" },
+            { "object_id": "@cmdb_objects.a_intranet", "property_id": "@cmdb_class_properties.app_hosting",     "value_text": "Internal" },
+            { "object_id": "@cmdb_objects.a_intranet", "property_id": "@cmdb_class_properties.app_criticality", "value_text": "High" },
+            { "object_id": "@cmdb_objects.a_intranet", "property_id": "@cmdb_class_properties.app_version",     "value_text": "3.2" },
+            { "object_id": "@cmdb_objects.a_intranet", "property_id": "@cmdb_class_properties.app_owner",       "value_object_id": "@cmdb_objects.p_lisa" },
+
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_name",        "value_text": "CRM" },
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_vendor",      "value_text": "Salesforce" },
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_hosting",     "value_text": "SaaS" },
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_criticality", "value_text": "Critical" },
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_version",     "value_text": "Spring 2026" },
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_licenses",    "value_number": 100 },
+            { "object_id": "@cmdb_objects.a_crm", "property_id": "@cmdb_class_properties.app_owner",       "value_object_id": "@cmdb_objects.p_tom" },
+
+            { "object_id": "@cmdb_objects.a_hrsystem", "property_id": "@cmdb_class_properties.app_name",        "value_text": "HR System" },
+            { "object_id": "@cmdb_objects.a_hrsystem", "property_id": "@cmdb_class_properties.app_vendor",      "value_text": "BambooHR" },
+            { "object_id": "@cmdb_objects.a_hrsystem", "property_id": "@cmdb_class_properties.app_hosting",     "value_text": "SaaS" },
+            { "object_id": "@cmdb_objects.a_hrsystem", "property_id": "@cmdb_class_properties.app_criticality", "value_text": "High" },
+            { "object_id": "@cmdb_objects.a_hrsystem", "property_id": "@cmdb_class_properties.app_licenses",    "value_number": 200 },
+            { "object_id": "@cmdb_objects.a_hrsystem", "property_id": "@cmdb_class_properties.app_owner",       "value_object_id": "@cmdb_objects.p_anna" },
+
+            { "object_id": "@cmdb_objects.a_m365", "property_id": "@cmdb_class_properties.app_name",        "value_text": "Microsoft 365" },
+            { "object_id": "@cmdb_objects.a_m365", "property_id": "@cmdb_class_properties.app_vendor",      "value_text": "Microsoft" },
+            { "object_id": "@cmdb_objects.a_m365", "property_id": "@cmdb_class_properties.app_hosting",     "value_text": "SaaS" },
+            { "object_id": "@cmdb_objects.a_m365", "property_id": "@cmdb_class_properties.app_criticality", "value_text": "Critical" },
+            { "object_id": "@cmdb_objects.a_m365", "property_id": "@cmdb_class_properties.app_licenses",    "value_number": 250 },
+            { "object_id": "@cmdb_objects.a_m365", "property_id": "@cmdb_class_properties.app_owner",       "value_object_id": "@cmdb_objects.p_emily" },
+
+            { "object_id": "@cmdb_objects.a_vpn", "property_id": "@cmdb_class_properties.app_name",        "value_text": "VPN Gateway" },
+            { "object_id": "@cmdb_objects.a_vpn", "property_id": "@cmdb_class_properties.app_vendor",      "value_text": "Fortinet" },
+            { "object_id": "@cmdb_objects.a_vpn", "property_id": "@cmdb_class_properties.app_hosting",     "value_text": "On-prem Vendor" },
+            { "object_id": "@cmdb_objects.a_vpn", "property_id": "@cmdb_class_properties.app_criticality", "value_text": "High" },
+            { "object_id": "@cmdb_objects.a_vpn", "property_id": "@cmdb_class_properties.app_owner",       "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.sv_ad",         "property_id": "@cmdb_class_properties.svc_name",     "value_text": "Active Directory" },
+            { "object_id": "@cmdb_objects.sv_ad",         "property_id": "@cmdb_class_properties.svc_provider", "value_text": "BillCorp (internal)" },
+            { "object_id": "@cmdb_objects.sv_ad",         "property_id": "@cmdb_class_properties.svc_tier",     "value_text": "Tier 0" },
+            { "object_id": "@cmdb_objects.sv_ad",         "property_id": "@cmdb_class_properties.svc_owner",    "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.sv_dns",        "property_id": "@cmdb_class_properties.svc_name",     "value_text": "DNS" },
+            { "object_id": "@cmdb_objects.sv_dns",        "property_id": "@cmdb_class_properties.svc_provider", "value_text": "BillCorp (internal)" },
+            { "object_id": "@cmdb_objects.sv_dns",        "property_id": "@cmdb_class_properties.svc_tier",     "value_text": "Tier 0" },
+            { "object_id": "@cmdb_objects.sv_dns",        "property_id": "@cmdb_class_properties.svc_owner",    "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.sv_email",      "property_id": "@cmdb_class_properties.svc_name",     "value_text": "Email Relay" },
+            { "object_id": "@cmdb_objects.sv_email",      "property_id": "@cmdb_class_properties.svc_provider", "value_text": "Microsoft (Exchange Online)" },
+            { "object_id": "@cmdb_objects.sv_email",      "property_id": "@cmdb_class_properties.svc_tier",     "value_text": "Tier 1" },
+            { "object_id": "@cmdb_objects.sv_email",      "property_id": "@cmdb_class_properties.svc_owner",    "value_object_id": "@cmdb_objects.p_emily" },
+
+            { "object_id": "@cmdb_objects.sv_fileshare",  "property_id": "@cmdb_class_properties.svc_name",     "value_text": "File Server" },
+            { "object_id": "@cmdb_objects.sv_fileshare",  "property_id": "@cmdb_class_properties.svc_provider", "value_text": "BillCorp (internal)" },
+            { "object_id": "@cmdb_objects.sv_fileshare",  "property_id": "@cmdb_class_properties.svc_tier",     "value_text": "Tier 2" },
+            { "object_id": "@cmdb_objects.sv_fileshare",  "property_id": "@cmdb_class_properties.svc_owner",    "value_object_id": "@cmdb_objects.p_lisa" },
+
+            { "object_id": "@cmdb_objects.sv_backup",     "property_id": "@cmdb_class_properties.svc_name",     "value_text": "Backup Service" },
+            { "object_id": "@cmdb_objects.sv_backup",     "property_id": "@cmdb_class_properties.svc_provider", "value_text": "Veeam" },
+            { "object_id": "@cmdb_objects.sv_backup",     "property_id": "@cmdb_class_properties.svc_tier",     "value_text": "Tier 1" },
+            { "object_id": "@cmdb_objects.sv_backup",     "property_id": "@cmdb_class_properties.svc_owner",    "value_object_id": "@cmdb_objects.p_anna" },
+
+            { "object_id": "@cmdb_objects.sv_monitoring", "property_id": "@cmdb_class_properties.svc_name",     "value_text": "SolarWinds Monitoring" },
+            { "object_id": "@cmdb_objects.sv_monitoring", "property_id": "@cmdb_class_properties.svc_provider", "value_text": "SolarWinds" },
+            { "object_id": "@cmdb_objects.sv_monitoring", "property_id": "@cmdb_class_properties.svc_tier",     "value_text": "Tier 2" },
+            { "object_id": "@cmdb_objects.sv_monitoring", "property_id": "@cmdb_class_properties.svc_owner",    "value_object_id": "@cmdb_objects.p_anna" },
+
+            { "object_id": "@cmdb_objects.nd_fw01",      "property_id": "@cmdb_class_properties.nd_hostname",  "value_text": "FW01" },
+            { "object_id": "@cmdb_objects.nd_fw01",      "property_id": "@cmdb_class_properties.nd_type",      "value_text": "Firewall" },
+            { "object_id": "@cmdb_objects.nd_fw01",      "property_id": "@cmdb_class_properties.nd_vendor",    "value_text": "Fortinet" },
+            { "object_id": "@cmdb_objects.nd_fw01",      "property_id": "@cmdb_class_properties.nd_model",     "value_text": "FortiGate 200F" },
+            { "object_id": "@cmdb_objects.nd_fw01",      "property_id": "@cmdb_class_properties.nd_mgmt_ip",   "value_text": "10.0.0.1" },
+            { "object_id": "@cmdb_objects.nd_fw01",      "property_id": "@cmdb_class_properties.nd_owner",     "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.nd_coresw01",  "property_id": "@cmdb_class_properties.nd_hostname",  "value_text": "CORE-SW01" },
+            { "object_id": "@cmdb_objects.nd_coresw01",  "property_id": "@cmdb_class_properties.nd_type",      "value_text": "Switch" },
+            { "object_id": "@cmdb_objects.nd_coresw01",  "property_id": "@cmdb_class_properties.nd_vendor",    "value_text": "Cisco" },
+            { "object_id": "@cmdb_objects.nd_coresw01",  "property_id": "@cmdb_class_properties.nd_model",     "value_text": "Catalyst 9300" },
+            { "object_id": "@cmdb_objects.nd_coresw01",  "property_id": "@cmdb_class_properties.nd_mgmt_ip",   "value_text": "10.0.0.5" },
+            { "object_id": "@cmdb_objects.nd_coresw01",  "property_id": "@cmdb_class_properties.nd_owner",     "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.nd_corertr01", "property_id": "@cmdb_class_properties.nd_hostname",  "value_text": "CORE-RTR01" },
+            { "object_id": "@cmdb_objects.nd_corertr01", "property_id": "@cmdb_class_properties.nd_type",      "value_text": "Router" },
+            { "object_id": "@cmdb_objects.nd_corertr01", "property_id": "@cmdb_class_properties.nd_vendor",    "value_text": "Cisco" },
+            { "object_id": "@cmdb_objects.nd_corertr01", "property_id": "@cmdb_class_properties.nd_model",     "value_text": "ISR 4451" },
+            { "object_id": "@cmdb_objects.nd_corertr01", "property_id": "@cmdb_class_properties.nd_mgmt_ip",   "value_text": "10.0.0.10" },
+            { "object_id": "@cmdb_objects.nd_corertr01", "property_id": "@cmdb_class_properties.nd_owner",     "value_object_id": "@cmdb_objects.p_mike" },
+
+            { "object_id": "@cmdb_objects.e_wks_david", "property_id": "@cmdb_class_properties.ep_hostname",     "value_text": "WKS-DAVID" },
+            { "object_id": "@cmdb_objects.e_wks_david", "property_id": "@cmdb_class_properties.ep_os",           "value_text": "Windows 11" },
+            { "object_id": "@cmdb_objects.e_wks_david", "property_id": "@cmdb_class_properties.ep_user",         "value_object_id": "@cmdb_objects.p_david" },
+            { "object_id": "@cmdb_objects.e_wks_david", "property_id": "@cmdb_class_properties.ep_manufacturer", "value_text": "Dell" },
+            { "object_id": "@cmdb_objects.e_wks_david", "property_id": "@cmdb_class_properties.ep_model",        "value_text": "Latitude 7440" },
+
+            { "object_id": "@cmdb_objects.e_wks_mike",  "property_id": "@cmdb_class_properties.ep_hostname",     "value_text": "WKS-MIKE" },
+            { "object_id": "@cmdb_objects.e_wks_mike",  "property_id": "@cmdb_class_properties.ep_os",           "value_text": "Windows 11" },
+            { "object_id": "@cmdb_objects.e_wks_mike",  "property_id": "@cmdb_class_properties.ep_user",         "value_object_id": "@cmdb_objects.p_mike" },
+            { "object_id": "@cmdb_objects.e_wks_mike",  "property_id": "@cmdb_class_properties.ep_manufacturer", "value_text": "Dell" },
+            { "object_id": "@cmdb_objects.e_wks_mike",  "property_id": "@cmdb_class_properties.ep_model",        "value_text": "Precision 5570" },
+
+            { "object_id": "@cmdb_objects.e_wks_sarah", "property_id": "@cmdb_class_properties.ep_hostname",     "value_text": "WKS-SARAH" },
+            { "object_id": "@cmdb_objects.e_wks_sarah", "property_id": "@cmdb_class_properties.ep_os",           "value_text": "Windows 11" },
+            { "object_id": "@cmdb_objects.e_wks_sarah", "property_id": "@cmdb_class_properties.ep_user",         "value_object_id": "@cmdb_objects.p_sarah" },
+            { "object_id": "@cmdb_objects.e_wks_sarah", "property_id": "@cmdb_class_properties.ep_manufacturer", "value_text": "Lenovo" },
+            { "object_id": "@cmdb_objects.e_wks_sarah", "property_id": "@cmdb_class_properties.ep_model",        "value_text": "ThinkPad X1 Carbon" }
+        ],
+        "cmdb_object_relationships": [
+            { "from_object_id": "@cmdb_objects.a_freeitsm", "to_object_id": "@cmdb_objects.d_freeitsm", "relationship_type_id": "@cmdb_relationship_types.depends_on" },
+            { "from_object_id": "@cmdb_objects.a_freeitsm", "to_object_id": "@cmdb_objects.sv_ad",      "relationship_type_id": "@cmdb_relationship_types.uses_identity_from" },
+            { "from_object_id": "@cmdb_objects.a_intranet", "to_object_id": "@cmdb_objects.d_intranet", "relationship_type_id": "@cmdb_relationship_types.depends_on" },
+            { "from_object_id": "@cmdb_objects.a_intranet", "to_object_id": "@cmdb_objects.sv_ad",      "relationship_type_id": "@cmdb_relationship_types.uses_identity_from" },
+            { "from_object_id": "@cmdb_objects.a_crm",      "to_object_id": "@cmdb_objects.d_crm",      "relationship_type_id": "@cmdb_relationship_types.depends_on" },
+            { "from_object_id": "@cmdb_objects.a_crm",      "to_object_id": "@cmdb_objects.sv_ad",      "relationship_type_id": "@cmdb_relationship_types.uses_identity_from" },
+            { "from_object_id": "@cmdb_objects.a_hrsystem", "to_object_id": "@cmdb_objects.sv_ad",      "relationship_type_id": "@cmdb_relationship_types.uses_identity_from" },
+            { "from_object_id": "@cmdb_objects.a_m365",     "to_object_id": "@cmdb_objects.sv_ad",      "relationship_type_id": "@cmdb_relationship_types.uses_identity_from" },
+            { "from_object_id": "@cmdb_objects.a_vpn",      "to_object_id": "@cmdb_objects.sv_ad",      "relationship_type_id": "@cmdb_relationship_types.uses_identity_from" },
+
+            { "from_object_id": "@cmdb_objects.sv_ad",         "to_object_id": "@cmdb_objects.s_dcsvr01",    "relationship_type_id": "@cmdb_relationship_types.hosted_on" },
+            { "from_object_id": "@cmdb_objects.sv_dns",        "to_object_id": "@cmdb_objects.s_dcsvr01",    "relationship_type_id": "@cmdb_relationship_types.hosted_on" },
+            { "from_object_id": "@cmdb_objects.sv_email",      "to_object_id": "@cmdb_objects.a_m365",       "relationship_type_id": "@cmdb_relationship_types.depends_on" },
+            { "from_object_id": "@cmdb_objects.sv_fileshare",  "to_object_id": "@cmdb_objects.s_appsvr01",   "relationship_type_id": "@cmdb_relationship_types.hosted_on" },
+            { "from_object_id": "@cmdb_objects.sv_backup",     "to_object_id": "@cmdb_objects.sv_fileshare", "relationship_type_id": "@cmdb_relationship_types.depends_on" },
+
+            { "from_object_id": "@cmdb_objects.sv_monitoring", "to_object_id": "@cmdb_objects.s_sqlsvr01",   "relationship_type_id": "@cmdb_relationship_types.monitors" },
+            { "from_object_id": "@cmdb_objects.sv_monitoring", "to_object_id": "@cmdb_objects.s_sqlsvr02",   "relationship_type_id": "@cmdb_relationship_types.monitors" },
+            { "from_object_id": "@cmdb_objects.sv_monitoring", "to_object_id": "@cmdb_objects.s_websvr01",   "relationship_type_id": "@cmdb_relationship_types.monitors" },
+            { "from_object_id": "@cmdb_objects.sv_monitoring", "to_object_id": "@cmdb_objects.s_appsvr01",   "relationship_type_id": "@cmdb_relationship_types.monitors" },
+            { "from_object_id": "@cmdb_objects.sv_monitoring", "to_object_id": "@cmdb_objects.s_dcsvr01",    "relationship_type_id": "@cmdb_relationship_types.monitors" },
+
+            { "from_object_id": "@cmdb_objects.s_sqlsvr01", "to_object_id": "@cmdb_objects.nd_coresw01",  "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+            { "from_object_id": "@cmdb_objects.s_sqlsvr02", "to_object_id": "@cmdb_objects.nd_coresw01",  "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+            { "from_object_id": "@cmdb_objects.s_websvr01", "to_object_id": "@cmdb_objects.nd_coresw01",  "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+            { "from_object_id": "@cmdb_objects.s_appsvr01", "to_object_id": "@cmdb_objects.nd_coresw01",  "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+            { "from_object_id": "@cmdb_objects.s_dcsvr01",  "to_object_id": "@cmdb_objects.nd_coresw01",  "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+            { "from_object_id": "@cmdb_objects.nd_coresw01","to_object_id": "@cmdb_objects.nd_corertr01", "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+            { "from_object_id": "@cmdb_objects.nd_corertr01","to_object_id": "@cmdb_objects.nd_fw01",     "relationship_type_id": "@cmdb_relationship_types.connects_to" },
+
+            { "from_object_id": "@cmdb_objects.s_sqlsvr01", "to_object_id": "@cmdb_objects.t_dba",         "relationship_type_id": "@cmdb_relationship_types.managed_by" },
+            { "from_object_id": "@cmdb_objects.s_sqlsvr02", "to_object_id": "@cmdb_objects.t_dba",         "relationship_type_id": "@cmdb_relationship_types.managed_by" },
+            { "from_object_id": "@cmdb_objects.s_websvr01", "to_object_id": "@cmdb_objects.t_appsupport", "relationship_type_id": "@cmdb_relationship_types.managed_by" },
+            { "from_object_id": "@cmdb_objects.s_appsvr01", "to_object_id": "@cmdb_objects.t_appsupport", "relationship_type_id": "@cmdb_relationship_types.managed_by" },
+            { "from_object_id": "@cmdb_objects.s_dcsvr01",  "to_object_id": "@cmdb_objects.t_network",     "relationship_type_id": "@cmdb_relationship_types.managed_by" }
+        ]
+    }
+}
