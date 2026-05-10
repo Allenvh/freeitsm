@@ -140,6 +140,184 @@ $current_page = 'browse';
         }
         .prop-edit:focus { outline: none; }
 
+        /* AI summary card — sits at the very top of the detail page */
+        .ai-summary-card {
+            background: linear-gradient(135deg, #fdf2f8, #fce7f3);
+            border: 1px solid #fbcfe8;
+            border-radius: 8px;
+            padding: 18px 22px;
+            margin-bottom: 16px;
+        }
+        .ai-summary-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .ai-summary-label {
+            color: #be185d;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .ai-summary-text {
+            color: #1f2937;
+            font-size: 15px;
+            line-height: 1.55;
+        }
+        .ai-summary-empty {
+            color: #6b7280;
+            font-style: italic;
+            font-size: 14px;
+        }
+        .ai-summary-meta {
+            color: #9d174d;
+            font-size: 12px;
+            margin-top: 8px;
+            opacity: 0.75;
+        }
+        .ai-summary-spinner-dot {
+            display: inline-block; width: 6px; height: 6px; margin: 0 2px;
+            background: #be185d; border-radius: 50%; animation: aiblink2 1.4s infinite both;
+        }
+        .ai-summary-spinner-dot:nth-child(2) { animation-delay: 0.2s; }
+        .ai-summary-spinner-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes aiblink2 { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+
+        /* Impact panel — what would break if this object went offline */
+        .impact-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        @media (max-width: 900px) { .impact-grid { grid-template-columns: 1fr; } }
+        .impact-bucket {
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px 14px;
+        }
+        .impact-bucket h4 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .impact-bucket .count-badge {
+            background: white;
+            color: #be185d;
+            padding: 1px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            border: 1px solid #fbcfe8;
+        }
+        .impact-bucket ul { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow-y: auto; }
+        .impact-bucket li {
+            padding: 5px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .impact-bucket li:last-child { border-bottom: none; }
+        .impact-bucket a { color: #be185d; text-decoration: none; font-weight: 500; }
+        .impact-bucket a:hover { text-decoration: underline; }
+        .impact-bucket .meta { color: #6b7280; font-size: 11px; }
+        .impact-bucket .empty { color: #9ca3af; font-style: italic; font-size: 13px; }
+
+        /* Inline mini-graph — parent / this / children + related */
+        .mini-graph {
+            background: white;
+            padding: 24px 12px;
+            border-radius: 6px;
+            border: 1px dashed #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+        .mg-row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            position: relative;
+            max-width: 100%;
+        }
+        .mg-node {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            color: #374151;
+            text-decoration: none;
+            font-size: 13px;
+            max-width: 220px;
+        }
+        .mg-node:hover { background: #fdf2f8; border-color: #fbcfe8; color: #be185d; }
+        .mg-node.this {
+            background: linear-gradient(135deg, #be185d, #9d174d);
+            color: white;
+            border-color: #9d174d;
+            font-weight: 600;
+            cursor: default;
+        }
+        .mg-node .mg-class { font-size: 11px; opacity: 0.7; }
+        .mg-node.this .mg-class { color: rgba(255, 255, 255, 0.85); opacity: 1; }
+        .mg-node-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 160px;
+        }
+        .mg-connector {
+            width: 2px;
+            height: 16px;
+            background: #d1d5db;
+            margin: 0 auto;
+        }
+        .mg-side-rels {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+            margin-top: 12px;
+            gap: 16px;
+        }
+        .mg-side {
+            flex: 1;
+            min-width: 0;
+        }
+        .mg-side-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 6px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+        }
+        .mg-rel-link {
+            display: block;
+            font-size: 12px;
+            color: #6b7280;
+            padding: 3px 0;
+            text-decoration: none;
+        }
+        .mg-rel-link:hover { color: #be185d; }
+        .mg-rel-link strong { color: #374151; }
+        .mg-rel-link:hover strong { color: #be185d; }
+        .mg-rel-verb { color: #9ca3af; font-style: italic; margin: 0 4px; }
+
         /* Coloured dropdown value pill */
         .prop-display.dropdown-pill {
             display: inline-block;
@@ -464,6 +642,6 @@ $current_page = 'browse';
         window.OBJECT_ID = <?php echo isset($_GET['id']) ? (int)$_GET['id'] : 0; ?>;
     </script>
     <script src="options-editor.js?v=1"></script>
-    <script src="object.js?v=3"></script>
+    <script src="object.js?v=4"></script>
 </body>
 </html>

@@ -12,10 +12,12 @@ const API = '../api/cmdb/';
 const OBJECT_ID = window.OBJECT_ID;
 
 let obj = null;
+let impact = null; // {descendants, referenced_by_property, referenced_by_relationship}
 let relationshipTypes = [];
 let allClasses = []; // cached for the property-edit target-class dropdown
 let acTimer = null;
 let acHighlightedIdx = -1;
+let summaryGenerating = false;
 
 function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -45,11 +47,19 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('objPage').innerHTML = '<div style="padding:40px;text-align:center;color:#b91c1c;">Missing object id</div>';
         return;
     }
-    Promise.all([loadObject(), loadRelationshipTypes(), loadAllClasses()]).then(() => {
+    Promise.all([loadObject(), loadImpact(), loadRelationshipTypes(), loadAllClasses()]).then(() => {
         if (obj) render();
     });
     initPropDefModalDrag();
 });
+
+async function loadImpact() {
+    try {
+        const res = await fetch(API + 'get_object_impact.php?id=' + OBJECT_ID);
+        const data = await res.json();
+        if (data.success) impact = data.impact;
+    } catch (e) { /* impact panel will just show "computing…" */ }
+}
 
 async function loadAllClasses() {
     try {
@@ -109,6 +119,15 @@ function render() {
             </div>
         </div>
 
+        ${renderAiSummaryCard()}
+
+        ${renderImpactPanel()}
+
+        <div class="obj-section">
+            <h3>Map</h3>
+            ${renderMiniGraph()}
+        </div>
+
         <div class="obj-section">
             <h3>Properties</h3>
             ${renderPropertiesTable()}
@@ -157,6 +176,161 @@ function render() {
     document.querySelectorAll('.prop-display').forEach(el => {
         el.addEventListener('click', () => beginEditProperty(parseInt(el.dataset.pid, 10)));
     });
+}
+
+function renderAiSummaryCard() {
+    const sparkleSvg = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8L20 10l-5 4.5L16.5 21 12 17.8 7.5 21 9 14.5 4 10l6.1-1.2z"/></svg>`;
+    const hasSummary = !!obj.ai_summary;
+    let body;
+    if (summaryGenerating) {
+        body = `<div class="ai-summary-empty">Synthesising
+            <span class="ai-summary-spinner-dot"></span><span class="ai-summary-spinner-dot"></span><span class="ai-summary-spinner-dot"></span>
+        </div>`;
+    } else if (hasSummary) {
+        body = `<div class="ai-summary-text">${escapeHtml(obj.ai_summary)}</div>
+                <div class="ai-summary-meta">Generated ${formatDate(obj.ai_summary_generated_at)}</div>`;
+    } else {
+        body = `<div class="ai-summary-empty">No summary yet — click <strong>Generate</strong> to have the AI synthesise this object's context in 2-3 sentences.</div>`;
+    }
+    const btnLabel = hasSummary ? 'Regenerate' : 'Generate';
+    return `
+        <div class="ai-summary-card">
+            <div class="ai-summary-head">
+                <span class="ai-summary-label">${sparkleSvg} AI Summary</span>
+                <button class="btn-mini" onclick="generateSummary()" ${summaryGenerating ? 'disabled' : ''}>${btnLabel}</button>
+            </div>
+            ${body}
+        </div>
+    `;
+}
+
+function renderImpactPanel() {
+    if (!impact) return ''; // suppressed until loaded
+    const desc  = impact.descendants || [];
+    const props = impact.referenced_by_property || [];
+    const rels  = impact.referenced_by_relationship || [];
+    const total = desc.length + props.length + rels.length;
+
+    const bucket = (title, items, emptyMsg, renderItem) => `
+        <div class="impact-bucket">
+            <h4><span>${title}</span><span class="count-badge">${items.length}</span></h4>
+            ${items.length === 0
+                ? `<div class="empty">${emptyMsg}</div>`
+                : `<ul>${items.map(renderItem).join('')}</ul>`}
+        </div>
+    `;
+
+    return `
+        <div class="obj-section">
+            <h3>
+                <span>Impact — what depends on this object</span>
+                <span style="color: #6b7280; font-weight: 400; font-size: 12px;">${total} ${total === 1 ? 'item' : 'items'}</span>
+            </h3>
+            <div class="impact-grid">
+                ${bucket('Descendants', desc, 'No children — nothing cascades.',
+                    d => `<li>
+                        <a href="object.php?id=${d.id}">${escapeHtml(d.name)}</a>
+                        <span class="meta"> ${escapeHtml(d.class_name)}${d.depth > 1 ? ` · ${d.depth} levels deep` : ''}</span>
+                    </li>`)}
+                ${bucket('Referenced by property', props, 'Nothing references this via a property.',
+                    p => `<li>
+                        <a href="object.php?id=${p.id}">${escapeHtml(p.name)}</a>
+                        <span class="meta"> ${escapeHtml(p.class_name)} · via <em>${escapeHtml(p.property_label)}</em></span>
+                    </li>`)}
+                ${bucket('Things that link in', rels, 'No incoming relationships.',
+                    r => `<li>
+                        <a href="object.php?id=${r.id}">${escapeHtml(r.name)}</a>
+                        <span class="meta"> ${escapeHtml(r.class_name)} · ${escapeHtml(r.inverse_verb)} this</span>
+                    </li>`)}
+            </div>
+        </div>
+    `;
+}
+
+function renderMiniGraph() {
+    const parent = obj.parent_id ? {
+        id: obj.parent_id, name: obj.parent_name, class_name: obj.parent_class_name
+    } : null;
+    const children = obj.children || [];
+    const outgoing = (obj.relationships && obj.relationships.outgoing) || [];
+    const incoming = (obj.relationships && obj.relationships.incoming) || [];
+
+    // Cap nodes shown so the graph stays readable; overflow hint at the bottom
+    const CAP = 6;
+    const childrenShown = children.slice(0, CAP);
+    const outgoingShown = outgoing.slice(0, CAP);
+    const incomingShown = incoming.slice(0, CAP);
+    const overflowParts = [];
+    if (children.length > CAP) overflowParts.push(`+${children.length - CAP} more children`);
+    if (outgoing.length > CAP) overflowParts.push(`+${outgoing.length - CAP} more outgoing relationships`);
+    if (incoming.length > CAP) overflowParts.push(`+${incoming.length - CAP} more incoming relationships`);
+
+    const node = (o, isThis = false) => `
+        <a class="mg-node ${isThis ? 'this' : ''}" ${isThis ? '' : `href="object.php?id=${o.id}"`}>
+            <span class="mg-node-name">${escapeHtml(o.name)}</span>
+            <span class="mg-class">${escapeHtml(o.class_name || '')}</span>
+        </a>
+    `;
+
+    let html = '';
+    if (parent) {
+        html += `<div class="mg-row">${node(parent)}</div>`;
+        html += `<div class="mg-connector"></div>`;
+    }
+    html += `<div class="mg-row">${node({ name: obj.name, class_name: obj.class_name }, true)}</div>`;
+    if (childrenShown.length > 0) {
+        html += `<div class="mg-connector"></div>`;
+        html += `<div class="mg-row">${childrenShown.map(c => node(c)).join('')}</div>`;
+    }
+    if (outgoingShown.length > 0 || incomingShown.length > 0) {
+        html += `<div class="mg-side-rels">
+            <div class="mg-side">
+                <div class="mg-side-label">Outgoing — this …</div>
+                ${outgoingShown.length === 0
+                    ? '<div class="empty-row" style="padding: 0; font-size: 12px;">none</div>'
+                    : outgoingShown.map(r => `
+                        <a class="mg-rel-link" href="object.php?id=${r.other_id}">
+                            <span class="mg-rel-verb">${escapeHtml(r.verb)}</span>
+                            <strong>${escapeHtml(r.other_name)}</strong>
+                            <span style="color:#9ca3af; font-size: 10px;">${escapeHtml(r.other_class_name)}</span>
+                        </a>`).join('')
+                }
+            </div>
+            <div class="mg-side">
+                <div class="mg-side-label">Incoming — other objects …</div>
+                ${incomingShown.length === 0
+                    ? '<div class="empty-row" style="padding: 0; font-size: 12px;">none</div>'
+                    : incomingShown.map(r => `
+                        <a class="mg-rel-link" href="object.php?id=${r.other_id}">
+                            <span class="mg-rel-verb">${escapeHtml(r.inverse_verb)}</span>
+                            <strong>${escapeHtml(r.other_name)}</strong>
+                            <span style="color:#9ca3af; font-size: 10px;">${escapeHtml(r.other_class_name)}</span>
+                        </a>`).join('')
+                }
+            </div>
+        </div>`;
+    }
+    if (overflowParts.length > 0) {
+        html += `<div style="margin-top: 10px; color: #9ca3af; font-size: 11px;">${overflowParts.join(' · ')}</div>`;
+    }
+
+    return `<div class="mini-graph">${html}</div>`;
+}
+
+async function generateSummary() {
+    summaryGenerating = true;
+    render();
+    try {
+        const data = await postJson(API + 'generate_object_summary.php', { id: obj.id });
+        if (!data.success) throw new Error(data.error || 'Failed to generate summary');
+        obj.ai_summary = data.summary;
+        obj.ai_summary_generated_at = data.generated_at;
+    } catch (err) {
+        showInlineToast('Error: ' + err.message, true);
+    } finally {
+        summaryGenerating = false;
+        render();
+    }
 }
 
 function renderPropertiesTable() {
@@ -387,7 +561,7 @@ async function savePropertyValue(prop, newRawValue) {
         });
         if (!data.success) throw new Error(data.error || 'Save failed');
         // Reload to pick up the rendered value (esp. object_ref hydration)
-        await loadObject();
+        await Promise.all([loadObject(), loadImpact()]);
         render();
     } catch (err) {
         showInlineToast('Error saving "' + prop.label + '": ' + err.message, true);
@@ -418,13 +592,13 @@ async function savePartial(patch) {
         };
         const data = await postJson(API + 'save_object.php', payload);
         if (!data.success) throw new Error(data.error || 'Save failed');
-        await loadObject();
+        await Promise.all([loadObject(), loadImpact()]);
         render();
         showInlineToast('Saved');
     } catch (err) {
         showInlineToast('Error: ' + err.message, true);
         // Reload from DB to discard the optimistic edit
-        await loadObject();
+        await Promise.all([loadObject(), loadImpact()]);
         render();
     }
 }
@@ -528,7 +702,7 @@ async function saveRelationship() {
         if (!data.success) throw new Error(data.error || 'Save failed');
         closeRelModal();
         showInlineToast('Relationship added');
-        await loadObject();
+        await Promise.all([loadObject(), loadImpact()]);
         render();
     } catch (err) {
         showInlineToast('Error: ' + err.message, true);
@@ -541,7 +715,7 @@ async function deleteRelationship(id) {
         const data = await postJson(API + 'delete_object_relationship.php', { id });
         if (!data.success) throw new Error(data.error || 'Delete failed');
         showInlineToast('Removed');
-        await loadObject();
+        await Promise.all([loadObject(), loadImpact()]);
         render();
     } catch (err) {
         showInlineToast('Error: ' + err.message, true);
@@ -689,7 +863,7 @@ async function savePropDef() {
         closePropDefModal();
         showInlineToast('Property updated');
         // Reload to pick up new options / type changes
-        await loadObject();
+        await Promise.all([loadObject(), loadImpact()]);
         render();
     } catch (err) {
         showInlineToast('Error: ' + err.message, true);

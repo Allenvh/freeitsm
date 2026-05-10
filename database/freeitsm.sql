@@ -2137,6 +2137,8 @@ CREATE TABLE IF NOT EXISTS `cmdb_objects` (
     `class_id`          INT NOT NULL,
     `name`              VARCHAR(255) NOT NULL,
     `parent_id`         INT NULL,
+    `ai_summary`        LONGTEXT NULL,
+    `ai_summary_generated_at` DATETIME NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
