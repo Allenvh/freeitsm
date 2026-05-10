@@ -154,6 +154,54 @@ $current_page = 'browse';
         .btn-primary { background: #be185d; color: white; }
         .btn-primary:hover { background: #9d174d; }
         .btn-secondary { background: white; color: #374151; border-color: #d1d5db; }
+
+        /* Required-fields section in the New Object modal */
+        .req-fields-divider {
+            margin: 18px 0 10px 0;
+            padding-top: 16px;
+            border-top: 1px solid #f3f4f6;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #9ca3af;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .req-mark { color: #be185d; margin-left: 3px; }
+        .form-group select, .form-group textarea {
+            width: 100%; padding: 9px 12px; border: 1px solid #d1d5db;
+            border-radius: 4px; font-size: 14px; font-family: inherit;
+        }
+        .form-group select:focus, .form-group textarea:focus {
+            outline: none; border-color: #be185d;
+            box-shadow: 0 0 0 3px rgba(190, 24, 93, 0.1);
+        }
+
+        /* Tiny autocomplete used for object_ref required fields */
+        .ac-wrap { position: relative; }
+        .ac-results {
+            position: absolute;
+            top: 100%; left: 0; right: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            max-height: 180px;
+            overflow-y: auto;
+            z-index: 10;
+            margin-top: 4px;
+            display: none;
+        }
+        .ac-results.active { display: block; }
+        .ac-result {
+            padding: 7px 10px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .ac-result:hover, .ac-result.highlighted { background: #fdf2f8; color: #be185d; }
+        .ac-result .ac-class { color: #9ca3af; font-size: 11px; }
+        .ac-empty { padding: 8px; color: #9ca3af; font-size: 12px; text-align: center; }
     </style>
 </head>
 <body>
@@ -194,6 +242,10 @@ $current_page = 'browse';
                     <input type="text" id="newObjectName" placeholder="e.g. DBPROD01" maxlength="255">
                     <small>The unique label for this object (you can edit it later).</small>
                 </div>
+
+                <!-- Required-property fields injected by JS when the class has any.
+                     Optional properties are filled on the detail page after creation. -->
+                <div id="newObjectReqFields"></div>
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeNewObjectModal()">Cancel</button>
@@ -202,6 +254,6 @@ $current_page = 'browse';
         </div>
     </div>
 
-    <script src="browse.js?v=1"></script>
+    <script src="browse.js?v=2"></script>
 </body>
 </html>

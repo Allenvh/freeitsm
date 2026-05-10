@@ -140,17 +140,176 @@ function openObject(id) {
     window.location.href = 'object.php?id=' + id;
 }
 
-// New Object modal
-function openNewObjectModal() {
+// New Object modal — fetches the class's properties so any required ones can be
+// filled inline before saving. Optional properties stay on the detail page.
+
+let newObjectRequiredProps = []; // properties that must be filled to create
+
+async function openNewObjectModal() {
     if (!activeClass) return;
     document.getElementById('newObjectClassName').textContent = activeClass.name;
     document.getElementById('newObjectName').value = '';
+    document.getElementById('newObjectReqFields').innerHTML = '';
+    newObjectRequiredProps = [];
     document.getElementById('newObjectModal').classList.add('active');
     setTimeout(() => document.getElementById('newObjectName').focus(), 0);
+
+    // Pull property defs and render required ones
+    try {
+        const res = await fetch(API + 'get_class_properties.php?class_id=' + activeClass.id);
+        const data = await res.json();
+        if (!data.success) return;
+        newObjectRequiredProps = (data.properties || []).filter(p => p.is_required);
+        if (newObjectRequiredProps.length > 0) renderRequiredFieldEditors(newObjectRequiredProps);
+    } catch (e) { /* silent — modal still works for non-required-field classes */ }
 }
 
 function closeNewObjectModal() {
     document.getElementById('newObjectModal').classList.remove('active');
+    newObjectRequiredProps = [];
+}
+
+function renderRequiredFieldEditors(reqProps) {
+    const container = document.getElementById('newObjectReqFields');
+    let html = `<div class="req-fields-divider">Required fields for ${escapeHtml(activeClass.name)}</div>`;
+    reqProps.forEach(p => {
+        html += `<div class="form-group">
+            <label>${escapeHtml(p.label)}<span class="req-mark">*</span></label>
+            ${renderFieldEditor(p)}
+        </div>`;
+    });
+    container.innerHTML = html;
+    // Wire any object_ref autocompletes that got rendered
+    reqProps.forEach(p => { if (p.property_type === 'object_ref') wireRefAutocomplete(p); });
+}
+
+function renderFieldEditor(p) {
+    const id = 'newProp_' + p.id;
+    switch (p.property_type) {
+        case 'text':
+            return `<input type="text" id="${id}" data-pid="${p.id}" data-ptype="text">`;
+        case 'number':
+            return `<input type="number" id="${id}" data-pid="${p.id}" data-ptype="number" step="any">`;
+        case 'date':
+            return `<input type="date" id="${id}" data-pid="${p.id}" data-ptype="date">`;
+        case 'boolean':
+            return `<select id="${id}" data-pid="${p.id}" data-ptype="boolean">
+                <option value="">— Pick one —</option>
+                <option value="1">Yes</option>
+                <option value="0">No</option>
+            </select>`;
+        case 'dropdown':
+            return `<select id="${id}" data-pid="${p.id}" data-ptype="dropdown">
+                <option value="">— Pick one —</option>
+                ${(p.options || []).map(o => {
+                    const v = (o && typeof o === 'object') ? o.value : o;
+                    return `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
+                }).join('')}
+            </select>`;
+        case 'object_ref':
+            return `<div class="ac-wrap">
+                <input type="text" id="${id}" data-pid="${p.id}" data-ptype="object_ref" data-targetclass="${p.target_class_id || ''}"
+                       autocomplete="off" placeholder="Type to search ${escapeHtml(p.target_class_name || 'objects')}…">
+                <input type="hidden" id="${id}_id">
+                <div class="ac-results" id="${id}_results"></div>
+            </div>
+            ${p.target_class_name ? `<small style="color:#6b7280;font-size:12px;">Picks from <strong>${escapeHtml(p.target_class_name)}</strong> objects.</small>` : ''}`;
+        default:
+            return `<input type="text" id="${id}" data-pid="${p.id}" data-ptype="text">`;
+    }
+}
+
+function wireRefAutocomplete(prop) {
+    const inputEl   = document.getElementById('newProp_' + prop.id);
+    const idEl      = document.getElementById('newProp_' + prop.id + '_id');
+    const resultsEl = document.getElementById('newProp_' + prop.id + '_results');
+    if (!inputEl || !idEl || !resultsEl) return;
+    let timer = null;
+    let highlighted = -1;
+    let current = [];
+
+    const renderResults = () => {
+        if (current.length === 0) {
+            resultsEl.innerHTML = '<div class="ac-empty">No matches.</div>';
+            resultsEl.classList.add('active');
+            return;
+        }
+        resultsEl.innerHTML = current.map((r, i) => `
+            <div class="ac-result ${i === highlighted ? 'highlighted' : ''}" data-idx="${i}">
+                <span>${escapeHtml(r.name)}</span>
+                <span class="ac-class">${escapeHtml(r.class_name)}</span>
+            </div>`).join('');
+        resultsEl.classList.add('active');
+        resultsEl.querySelectorAll('.ac-result').forEach(el => {
+            // mousedown so the pick fires before the input's blur handler
+            el.addEventListener('mousedown', e => {
+                e.preventDefault();
+                pick(current[parseInt(el.dataset.idx, 10)]);
+            });
+        });
+    };
+
+    const pick = (r) => {
+        inputEl.value = r.name;
+        idEl.value = r.id;
+        resultsEl.classList.remove('active');
+    };
+
+    inputEl.addEventListener('input', () => {
+        // If the user changes the text after picking, the previous id is stale — clear it
+        idEl.value = '';
+        const q = inputEl.value.trim();
+        if (timer) clearTimeout(timer);
+        if (q === '') { resultsEl.classList.remove('active'); return; }
+        timer = setTimeout(async () => {
+            try {
+                const url = API + 'search_objects.php?q=' + encodeURIComponent(q)
+                    + (prop.target_class_id ? '&class_id=' + prop.target_class_id : '');
+                const res = await fetch(url);
+                const data = await res.json();
+                current = data.success ? (data.results || []) : [];
+                highlighted = -1;
+                renderResults();
+            } catch (e) { /* silent */ }
+        }, 200);
+    });
+
+    inputEl.addEventListener('keydown', e => {
+        if (!resultsEl.classList.contains('active')) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); highlighted = Math.min(current.length - 1, highlighted + 1); renderResults(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); highlighted = Math.max(0, highlighted - 1); renderResults(); }
+        else if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); pick(current[highlighted]); }
+        else if (e.key === 'Escape') resultsEl.classList.remove('active');
+    });
+
+    inputEl.addEventListener('blur', () => {
+        // Hide after a beat so a result click can still register
+        setTimeout(() => resultsEl.classList.remove('active'), 200);
+    });
+}
+
+function collectRequiredFieldValues() {
+    const out = [];
+    const missing = [];
+    newObjectRequiredProps.forEach(p => {
+        const id = 'newProp_' + p.id;
+        let raw = null;
+        if (p.property_type === 'object_ref') {
+            const refIdEl = document.getElementById(id + '_id');
+            raw = refIdEl ? refIdEl.value : '';
+            if (raw === '') { missing.push(p.label); return; }
+            out.push({ property_id: p.id, value: parseInt(raw, 10) });
+        } else {
+            const el = document.getElementById(id);
+            if (!el) return;
+            raw = el.value;
+            if (raw === '' || raw === null) { missing.push(p.label); return; }
+            if (p.property_type === 'boolean') out.push({ property_id: p.id, value: raw === '1' });
+            else if (p.property_type === 'number') out.push({ property_id: p.id, value: Number(raw) });
+            else out.push({ property_id: p.id, value: raw });
+        }
+    });
+    return { values: out, missing };
 }
 
 async function createObject() {
@@ -159,16 +318,21 @@ async function createObject() {
         showInlineToast('Name is required', true);
         return;
     }
+    const { values, missing } = collectRequiredFieldValues();
+    if (missing.length > 0) {
+        showInlineToast('Missing required: ' + missing.join(', '), true);
+        return;
+    }
     try {
         const data = await postJson(API + 'save_object.php', {
             class_id: activeClass.id,
             name,
             parent_id: null,
-            property_values: []
+            property_values: values
         });
         if (!data.success) throw new Error(data.error || 'Save failed');
         closeNewObjectModal();
-        // Jump straight into the new object's detail page so the analyst can fill in properties
+        // Jump straight into the new object's detail page so the analyst can fill in optional properties
         window.location.href = 'object.php?id=' + data.id;
     } catch (err) {
         showInlineToast('Error: ' + err.message, true);
