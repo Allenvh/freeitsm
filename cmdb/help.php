@@ -60,8 +60,30 @@ $path_prefix = '../';
         }
         .cmdb-help-nav-link:hover { background: #fdf2f8; color: #be185d; }
         .cmdb-help-nav-link.active { background: #fce7f3; color: #be185d; font-weight: 600; }
-        .cmdb-help-nav-link.highlight { color: #be185d; }
+        .cmdb-help-nav-link.highlight { color: #be185d; flex-wrap: wrap; }
         .cmdb-help-nav-link.highlight.active { background: linear-gradient(135deg, #be185d, #9d174d); color: white; }
+
+        /* "Critical reading" indicator under the title of each highlighted link.
+           Pseudo-element + flex-wrap so we don't have to change the markup of every
+           non-highlight link too. */
+        .cmdb-help-nav-link.highlight::after {
+            content: '\2605  Critical reading';
+            display: block;
+            width: 100%;
+            margin-left: 34px;
+            margin-top: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #be185d;
+            opacity: 0.7;
+            line-height: 1;
+        }
+        .cmdb-help-nav-link.highlight.active::after {
+            color: rgba(255,255,255,0.85);
+            opacity: 1;
+        }
         .cmdb-help-nav-num {
             display: flex; align-items: center; justify-content: center;
             min-width: 24px; height: 24px;
