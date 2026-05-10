@@ -458,9 +458,9 @@ $path_prefix = '../../';
                         <small>The class of objects this property can point at.</small>
                     </div>
                     <div class="form-group" id="dropdownOptionsGroup" style="display: none;">
-                        <label for="propertyOptions">Dropdown Options</label>
-                        <textarea id="propertyOptions" rows="4" placeholder="One option per line"></textarea>
-                        <small>List the allowed values, one per line.</small>
+                        <label>Dropdown Options</label>
+                        <div id="propertyOptionsContainer"></div>
+                        <small>One row per allowed value. The optional colour swatch drives a coloured pill on the object detail page; leave it grey for plain text.</small>
                     </div>
                     <div class="form-group">
                         <label class="form-check">
@@ -585,6 +585,7 @@ $path_prefix = '../../';
         </div>
     </div>
 
-    <script src="settings.js?v=4"></script>
+    <script src="../options-editor.js?v=1"></script>
+    <script src="settings.js?v=5"></script>
 </body>
 </html>

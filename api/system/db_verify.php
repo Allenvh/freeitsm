@@ -1556,6 +1556,7 @@ $schema = [
         'id'                => 'INT NOT NULL AUTO_INCREMENT',
         'property_id'       => 'INT NOT NULL',
         'option_value'      => 'VARCHAR(255) NOT NULL',
+        'colour'            => 'VARCHAR(7) NULL',
         'display_order'     => 'INT NULL DEFAULT 0',
     ],
 

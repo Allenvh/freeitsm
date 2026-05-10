@@ -197,10 +197,25 @@ function renderPropertyDisplay(p) {
         }
         return `<span class="prop-display empty" data-pid="${p.property_id}">(not set)</span>`;
     }
-    let displayValue = '';
     if (p.value === null || p.value === undefined || p.value === '') {
         return `<span class="prop-display empty" data-pid="${p.property_id}">(not set)</span>`;
     }
+
+    // Dropdown: render as a coloured pill if the matched option has a colour set
+    if (p.property_type === 'dropdown') {
+        const matched = (p.options || []).find(o => (o && typeof o === 'object' ? o.value : o) === p.value);
+        const colour = matched && typeof matched === 'object' ? matched.colour : null;
+        if (colour) {
+            // Tinted background + matching-colour text — same pattern as ticket status badges
+            return `<span class="prop-display dropdown-pill" data-pid="${p.property_id}"
+                          style="background:${colour}22; color:${colour}; border-color:${colour}55;">
+                ${escapeHtml(p.value)}
+            </span>`;
+        }
+        return `<span class="prop-display" data-pid="${p.property_id}">${escapeHtml(p.value)}</span>`;
+    }
+
+    let displayValue = '';
     if (p.property_type === 'boolean') displayValue = p.value ? 'Yes' : 'No';
     else if (p.property_type === 'date') displayValue = String(p.value).substring(0, 10);
     else displayValue = String(p.value);
@@ -279,7 +294,10 @@ function beginEditProperty(propertyId) {
         case 'dropdown':
             editorHtml = `<select class="prop-edit" id="propEdit_${propertyId}">
                 <option value="">— Not set —</option>
-                ${p.options.map(opt => `<option value="${escapeHtml(opt)}" ${v === opt ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('')}
+                ${p.options.map(opt => {
+                    const val = (opt && typeof opt === 'object') ? opt.value : opt;
+                    return `<option value="${escapeHtml(val)}" ${v === val ? 'selected' : ''}>${escapeHtml(val)}</option>`;
+                }).join('')}
             </select>`;
             break;
         case 'object_ref':
@@ -609,8 +627,10 @@ function openPropDefModal(propertyId) {
         `<option value="${c.id}" ${p.target_class_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
     ).join('');
 
-    // Populate dropdown options textarea
-    document.getElementById('pdOptions').value = (p.options || []).join('\n');
+    // Render the row-based options editor (only visible when type === dropdown)
+    if (typeof renderOptionsEditor === 'function') {
+        renderOptionsEditor('pdOptionsContainer', p.options || []);
+    }
 
     onPropDefTypeChange();
 
@@ -637,9 +657,8 @@ function onPropDefTypeChange() {
 async function savePropDef() {
     const id = document.getElementById('pdId').value;
     const type = document.getElementById('pdType').value;
-    const optionsText = document.getElementById('pdOptions').value;
-    const options = type === 'dropdown'
-        ? optionsText.split('\n').map(s => s.trim()).filter(s => s !== '')
+    const options = type === 'dropdown' && typeof collectOptionsFromEditor === 'function'
+        ? collectOptionsFromEditor('pdOptionsContainer')
         : [];
     const targetClassId = document.getElementById('pdTargetClass').value;
 

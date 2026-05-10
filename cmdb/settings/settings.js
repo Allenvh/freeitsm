@@ -234,8 +234,10 @@ function openPropertyModal(id = null) {
         `<option value="${c.id}" ${prop && prop.target_class_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
     ).join('');
 
-    // Populate options textarea (dropdown only)
-    document.getElementById('propertyOptions').value = prop && prop.options ? prop.options.join('\n') : '';
+    // Render the row-based options editor (dropdown only — section is hidden otherwise)
+    if (typeof renderOptionsEditor === 'function') {
+        renderOptionsEditor('propertyOptionsContainer', (prop && prop.options) ? prop.options : []);
+    }
 
     onPropertyTypeChange();
     document.getElementById('propertyModal').classList.add('active');
@@ -270,9 +272,8 @@ async function saveProperty(ev) {
     if (!activeClassForProps) return;
 
     const type = document.getElementById('propertyType').value;
-    const optionsText = document.getElementById('propertyOptions').value;
-    const options = type === 'dropdown'
-        ? optionsText.split('\n').map(s => s.trim()).filter(s => s !== '')
+    const options = type === 'dropdown' && typeof collectOptionsFromEditor === 'function'
+        ? collectOptionsFromEditor('propertyOptionsContainer')
         : [];
     const targetClassId = document.getElementById('propertyTargetClass').value;
 

@@ -140,6 +140,17 @@ $current_page = 'browse';
         }
         .prop-edit:focus { outline: none; }
 
+        /* Coloured dropdown value pill */
+        .prop-display.dropdown-pill {
+            display: inline-block;
+            padding: 3px 12px;
+            border: 1px solid;
+            border-radius: 999px;
+            font-weight: 500;
+            font-size: 13px;
+        }
+        .prop-display.dropdown-pill:hover { filter: brightness(0.95); }
+
         /* Object-ref value pill */
         .obj-ref-pill {
             display: inline-flex;
@@ -432,9 +443,9 @@ $current_page = 'browse';
                     <small>The class of objects this property can point at.</small>
                 </div>
                 <div class="form-group" id="pdOptionsGroup" style="display: none;">
-                    <label for="pdOptions">Dropdown Options</label>
-                    <textarea id="pdOptions" rows="5" placeholder="One option per line" style="width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; font-family: inherit; resize: vertical;"></textarea>
-                    <small>One value per line. Existing object values that match the new list are preserved; values no longer in the list become invalid until cleared.</small>
+                    <label>Dropdown Options</label>
+                    <div id="pdOptionsContainer"></div>
+                    <small>One row per allowed value, with an optional colour. The colour drives a coloured pill on the object detail page when set; leave grey for plain text. Existing object values matching the new list are preserved; values no longer in the list stay on existing objects but are no longer offered in the picker until you clear them.</small>
                 </div>
                 <div class="form-group">
                     <label class="form-check">
@@ -452,6 +463,7 @@ $current_page = 'browse';
     <script>
         window.OBJECT_ID = <?php echo isset($_GET['id']) ? (int)$_GET['id'] : 0; ?>;
     </script>
-    <script src="object.js?v=2"></script>
+    <script src="options-editor.js?v=1"></script>
+    <script src="object.js?v=3"></script>
 </body>
 </html>

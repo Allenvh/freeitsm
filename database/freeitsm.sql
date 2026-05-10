@@ -2123,6 +2123,9 @@ CREATE TABLE IF NOT EXISTS `cmdb_class_property_options` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `property_id`       INT NOT NULL,
     `option_value`      VARCHAR(255) NOT NULL,
+    `colour`            VARCHAR(7) NULL,
+    -- hex colour like "#22c55e", optional. Drives the coloured pill on the
+    -- object detail page when set; plain text fallback otherwise.
     `display_order`     INT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     KEY `ix_cmdb_cpo_property_id` (`property_id`),

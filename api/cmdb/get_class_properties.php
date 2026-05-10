@@ -31,9 +31,10 @@ try {
     $stmt->execute([$classId]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Pull dropdown options per property in one pass
+    // Pull dropdown options per property in one pass.
+    // Returns objects (value + colour) so the row-based editor can render swatches.
     $optStmt = $conn->prepare(
-        "SELECT o.property_id, o.option_value
+        "SELECT o.property_id, o.option_value, o.colour, o.display_order
            FROM cmdb_class_property_options o
            JOIN cmdb_class_properties p ON p.id = o.property_id
           WHERE p.class_id = ?
@@ -42,7 +43,11 @@ try {
     $optStmt->execute([$classId]);
     $optionsByProp = [];
     foreach ($optStmt->fetchAll(PDO::FETCH_ASSOC) as $opt) {
-        $optionsByProp[(int)$opt['property_id']][] = $opt['option_value'];
+        $optionsByProp[(int)$opt['property_id']][] = [
+            'value'  => $opt['option_value'],
+            'colour' => $opt['colour'],
+            'display_order' => (int)$opt['display_order'],
+        ];
     }
 
     foreach ($rows as &$r) {

@@ -90,14 +90,26 @@ try {
     }
 
     // Refresh dropdown options. Wipe + reinsert is simplest and safe inside the txn.
+    // Each option may be either a plain string (legacy / from AI suggest flow)
+    // or an object {value, colour} from the new row-based editor.
     if ($type === 'dropdown' && is_array($options)) {
         $conn->prepare("DELETE FROM cmdb_class_property_options WHERE property_id = ?")->execute([$newId]);
-        $insOpt = $conn->prepare("INSERT INTO cmdb_class_property_options (property_id, option_value, display_order) VALUES (?, ?, ?)");
+        $insOpt = $conn->prepare("INSERT INTO cmdb_class_property_options (property_id, option_value, colour, display_order) VALUES (?, ?, ?, ?)");
         $order = 0;
         foreach ($options as $opt) {
-            $opt = trim((string)$opt);
-            if ($opt === '') continue;
-            $insOpt->execute([$newId, $opt, $order]);
+            if (is_array($opt)) {
+                $value  = trim((string)($opt['value']  ?? ''));
+                $colour = trim((string)($opt['colour'] ?? ''));
+            } else {
+                $value  = trim((string)$opt);
+                $colour = '';
+            }
+            if ($value === '') continue;
+            // Validate colour as #RGB or #RRGGBB; otherwise store as null
+            if ($colour !== '' && !preg_match('/^#([0-9a-f]{3}|[0-9a-f]{6})$/i', $colour)) {
+                throw new Exception('Invalid colour for option "' . $value . '" (must be a #RGB or #RRGGBB hex)');
+            }
+            $insOpt->execute([$newId, $value, $colour !== '' ? $colour : null, $order]);
             $order += 10;
         }
     } elseif ($type !== 'dropdown') {

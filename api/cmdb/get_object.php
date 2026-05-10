@@ -89,9 +89,10 @@ try {
         $valuesByProp[(int)$v['property_id']] = $v;
     }
 
-    // Dropdown options for any dropdown-typed properties on this class
+    // Dropdown options for any dropdown-typed properties on this class.
+    // Returned as {value, colour} so the detail page can render coloured pills.
     $optStmt = $conn->prepare(
-        "SELECT o.property_id, o.option_value
+        "SELECT o.property_id, o.option_value, o.colour
            FROM cmdb_class_property_options o
            JOIN cmdb_class_properties p ON p.id = o.property_id
           WHERE p.class_id = ?
@@ -100,7 +101,10 @@ try {
     $optStmt->execute([$obj['class_id']]);
     $optionsByProp = [];
     foreach ($optStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $optionsByProp[(int)$row['property_id']][] = $row['option_value'];
+        $optionsByProp[(int)$row['property_id']][] = [
+            'value'  => $row['option_value'],
+            'colour' => $row['colour'],
+        ];
     }
 
     $properties = [];
