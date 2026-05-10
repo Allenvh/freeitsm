@@ -1,10 +1,8 @@
 <?php
 /**
- * CMDB - Configuration Management Database
- * Browse / search / detail view for objects across all classes.
- *
- * V1 status: settings page (classes, properties, relationship types, AI integration)
- * is shipping first. The browse + object detail UI lands in the next pass.
+ * CMDB - Browse page
+ * Sidebar = class list with object counts. Main = table of objects in the
+ * selected class. Click a row to open the object detail page.
  */
 session_start();
 require_once '../config.php';
@@ -18,50 +16,192 @@ $current_page = 'browse';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FreeITSM - CMDB</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
+    <script src="../assets/js/toast.js"></script>
     <style>
-        body { overflow: auto; height: auto; background: #f5f5f5; }
-        .empty-state {
-            max-width: 700px;
-            margin: 60px auto;
+        body { overflow: hidden; height: 100vh; background: #f5f5f5; }
+        .browse-container { display: flex; height: calc(100vh - 60px); }
+
+        .browse-sidebar {
+            width: 260px;
             background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
         }
-        .empty-state h2 {
-            color: #be185d;
-            margin-bottom: 12px;
+        .browse-sidebar .sidebar-header {
+            padding: 16px 18px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        .empty-state p {
-            color: #555;
-            line-height: 1.6;
-            margin-bottom: 16px;
+        .browse-sidebar .sidebar-header h2 { font-size: 15px; color: #111827; margin: 0; }
+        .browse-sidebar .class-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+        .class-item {
+            padding: 10px 18px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            color: #374151;
+            border-left: 3px solid transparent;
+            transition: background 0.12s, border-color 0.12s, color 0.12s;
         }
-        .empty-state a.btn {
-            display: inline-block;
-            margin-top: 16px;
-            padding: 10px 22px;
+        .class-item:hover { background: #fdf2f8; }
+        .class-item.active { background: #fce7f3; color: #be185d; border-left-color: #be185d; font-weight: 600; }
+        .class-item .count {
+            background: #f3f4f6;
+            color: #6b7280;
+            padding: 2px 8px;
+            font-size: 12px;
+            border-radius: 999px;
+        }
+        .class-item.active .count { background: #fbcfe8; color: #be185d; }
+        .class-item.empty { color: #9ca3af; }
+
+        .browse-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .main-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e7eb;
+            background: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .main-header h2 { font-size: 18px; color: #111827; margin: 0; }
+        .main-header .actions { display: flex; gap: 10px; align-items: center; }
+        .main-header input[type="text"] {
+            padding: 7px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+            width: 240px;
+        }
+        .main-header input[type="text"]:focus { outline: none; border-color: #be185d; }
+        .add-btn {
             background: #be185d;
             color: white;
-            text-decoration: none;
+            border: none;
+            padding: 8px 18px;
             border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 13px;
+        }
+        .add-btn:hover { background: #9d174d; }
+        .add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .object-list { flex: 1; overflow: auto; padding: 0; background: white; }
+        .object-list table { width: 100%; border-collapse: collapse; }
+        .object-list thead { position: sticky; top: 0; background: #fafafa; z-index: 1; }
+        .object-list th {
+            text-align: left;
+            padding: 10px 16px;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #6b7280;
+            border-bottom: 1px solid #e5e7eb;
             font-weight: 600;
         }
-        .empty-state a.btn:hover {
-            background: #9d174d;
+        .object-list td { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #1f2937; }
+        .object-list tbody tr { cursor: pointer; transition: background 0.1s; }
+        .object-list tbody tr:hover { background: #fafafa; }
+        .object-list tbody tr:hover .object-name { color: #be185d; }
+
+        .object-name { font-weight: 600; color: #111827; }
+        .empty-state { padding: 80px 40px; text-align: center; color: #9ca3af; }
+        .empty-state h3 { color: #374151; font-weight: 600; margin-bottom: 8px; }
+        .empty-state p { margin-bottom: 16px; font-size: 14px; }
+
+        .badge-count {
+            background: #f3f4f6;
+            color: #4b5563;
+            padding: 2px 8px;
+            font-size: 12px;
+            border-radius: 999px;
+            font-weight: 500;
         }
+        .parent-link { color: #6b7280; font-size: 13px; }
+        .parent-link strong { color: #374151; }
+
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: white; border-radius: 8px; width: 480px; max-width: 95vw; }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 16px; }
+        .modal-body { padding: 24px; }
+        .modal-actions {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 6px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 9px 12px; border: 1px solid #d1d5db;
+            border-radius: 4px; font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none; border-color: #be185d;
+            box-shadow: 0 0 0 3px rgba(190, 24, 93, 0.1);
+        }
+        .form-group small { color: #6b7280; font-size: 12px; display: block; margin-top: 4px; }
+        .btn { padding: 9px 18px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; border: 1px solid transparent; }
+        .btn-primary { background: #be185d; color: white; }
+        .btn-primary:hover { background: #9d174d; }
+        .btn-secondary { background: white; color: #374151; border-color: #d1d5db; }
     </style>
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
 
-    <div class="empty-state">
-        <h2>CMDB — Configuration Management Database</h2>
-        <p>Model your IT estate as a graph of typed objects. Define classes (Server, Database, Application…), give each class its own properties, and link objects through a strict containment hierarchy plus user-defined relationships.</p>
-        <p>Start by configuring classes, properties, and relationship types in Settings. Object browsing and the AI-powered detail view ship in the next release.</p>
-        <a href="settings/" class="btn">Open Settings</a>
+    <div class="browse-container">
+        <aside class="browse-sidebar">
+            <div class="sidebar-header"><h2>Classes</h2></div>
+            <div class="class-list" id="classList">
+                <div style="padding: 16px; color: #9ca3af; font-size: 13px;">Loading…</div>
+            </div>
+        </aside>
+
+        <main class="browse-main">
+            <div class="main-header">
+                <h2 id="mainTitle">Select a class</h2>
+                <div class="actions">
+                    <input type="text" id="searchInput" placeholder="Filter by name…" oninput="onSearchInput(event)">
+                    <button class="add-btn" id="newObjectBtn" onclick="openNewObjectModal()" disabled>+ New</button>
+                </div>
+            </div>
+            <div class="object-list" id="objectList">
+                <div class="empty-state">
+                    <h3>Pick a class on the left to see its objects.</h3>
+                    <p>If you don't have any classes yet, head to <a href="settings/" style="color: #be185d;">Settings → Classes</a> first.</p>
+                </div>
+            </div>
+        </main>
     </div>
+
+    <!-- New Object Modal -->
+    <div class="modal" id="newObjectModal">
+        <div class="modal-content">
+            <div class="modal-header">New <span id="newObjectClassName"></span></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newObjectName">Name *</label>
+                    <input type="text" id="newObjectName" placeholder="e.g. DBPROD01" maxlength="255">
+                    <small>The unique label for this object (you can edit it later).</small>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeNewObjectModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createObject()">Create &amp; open</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="browse.js?v=1"></script>
 </body>
 </html>

@@ -709,15 +709,16 @@ Kanban-style task management with board and list views for tracking internal wor
 - **Watchtower integration**: Overdue and due-today counts shown on attention dashboard
 
 ### CMDB (`cmdb/`)
-Configuration Management Database — model your IT estate as a graph of typed objects (servers, databases, applications, etc.) with a strict containment hierarchy and a separate user-defined relationships layer.
+Configuration Management Database — model your IT estate as a graph of typed objects (servers, databases, applications, etc.) with a strict containment hierarchy and a separate user-defined relationships layer. See [`docs/cmdb.md`](docs/cmdb.md) for the full design and roadmap.
 
-**v1 ships the foundation: schema + settings page.** Object browsing and the AI-powered detail view land in the next pass. See [`docs/cmdb.md`](docs/cmdb.md) for the full design and roadmap.
-
+- **Browse page** (`cmdb/`): class sidebar with object counts → table of objects in the selected class with name, parent, child count, last updated. Search box filters by name. **+ New** creates an object and opens it for editing.
+- **Object detail page** (`cmdb/object.php?id=X`): name editable inline (click and type, save on Enter/blur), class + parent breadcrumb, and three sections — **Properties** (dynamic form built from the class's property definitions, with type-aware inline editors: text input / number / date picker / Yes-No select / dropdown / object-reference picker with autocomplete), **Hierarchy** (parent + children list with clickable navigation), **Relationships** (outgoing and incoming columns side-by-side, each link clickable to navigate, X button to remove, + Add relationship modal with verb picker and global object autocomplete). Object references are rendered as pink pills you can click to drill through. Delete cascades to all descendants (with a clear confirmation showing how many will go).
 - **Settings page** with three tabs:
   - **Classes**: define types of things (e.g. Server, Database). Each class has its own auto-generated immutable `class_key` plus an editable display name. Click the property-count badge on any class to manage its properties (label, immutable key, type — text/number/date/boolean/dropdown/object_ref, target class for object references, required flag, dropdown options, display order). Property keys are immutable so renaming a label never breaks references.
   - **Relationship Types**: define the verbs that link objects (e.g. *depends on* ↔ *is depended on by*). Three defaults seeded on first run.
   - **AI Integration**: provider/key/model + custom-instructions textarea + Test connection button, mirroring the established per-feature Anthropic key pattern (separate from RFP AI / Knowledge AI / Reply Cleanup for granular billing visibility).
-- **Data model** (7 tables, all prefixed `cmdb_`): classes, class_properties, class_property_options, objects, object_properties, relationship_types, object_relationships. Strict cascade-delete on parent_id (per the design's *ontological dependency* parent semantics).
+- **AI Suggest Properties** (in the Properties manager): two-stage wizard — Claude asks 3-5 clarifying questions about the analyst's specific environment (e.g. for *Database*: "What kind — SQL Server / Postgres / Mongo?"), then suggests 6-12 tailored properties with rationale. Object-reference suggestions automatically create the missing target class on the fly (e.g. suggesting "Owner → Person" auto-creates a Person class if one doesn't exist).
+- **Data model** (8 tables, all prefixed `cmdb_`): icons (curated lookup), classes, class_properties, class_property_options, objects, object_properties, relationship_types, object_relationships. Strict cascade-delete on parent_id (per the design's *ontological dependency* parent semantics). Cycle prevention on parent assignment.
 
 ---
 
