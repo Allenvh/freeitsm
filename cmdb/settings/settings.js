@@ -587,9 +587,11 @@ async function aiPrimaryAction() {
     } else if (aiSuggestStage === 'suggestions') {
         await applyAiSuggestions();
     } else if (aiSuggestStage === 'result') {
-        // Result acknowledged — close modal and refresh
+        // Result acknowledged — close modal and refresh both the props for this
+        // class and the Classes tab (auto-create may have added new rows there).
         closeAiSuggestModal();
         loadPropsForClass();
+        loadClasses();
     }
 }
 
@@ -629,24 +631,66 @@ async function applyAiSuggestions() {
     document.getElementById('aiSuggestPrimaryBtn').textContent = 'Adding…';
 
     const added = [];
-    const skippedObjectRefs = []; // {label, hint}
-    const errors = [];            // {label, error}
+    const created = []; // {name, id} — classes auto-created during this run
+    const errors = []; // {label, error}
 
-    // object_ref suggestions need the analyst to pick a target class — skip those
-    // for the bulk-add and surface them so the analyst knows to add manually.
+    // Map of existing class names (lowercased) → class id, for object_ref resolution
+    const targetClassMap = {};
+    classes.forEach(c => { targetClassMap[c.name.toLowerCase()] = c.id; });
+
     for (const idx of checked) {
         const s = aiSuggestSuggestions[idx];
+        let targetClassId = null;
+
+        // Resolve / auto-create target class for object_ref suggestions
         if (s.property_type === 'object_ref') {
-            skippedObjectRefs.push({ label: s.label, hint: s.target_class_hint || '' });
-            continue;
+            const hint = (s.target_class_hint || '').trim();
+            if (!hint) {
+                errors.push({ label: s.label, error: 'AI did not provide a target class hint' });
+                continue;
+            }
+            const key = hint.toLowerCase();
+            if (targetClassMap[key]) {
+                targetClassId = targetClassMap[key];
+            } else {
+                // Class doesn't exist — auto-create it with the AI's suggested name
+                try {
+                    const createRes = await postJson(API + 'save_class.php', {
+                        name: hint,
+                        display_order: 0,
+                        is_active: true
+                    });
+                    if (!createRes.success) throw new Error(createRes.error || 'Failed to create class');
+                    targetClassId = createRes.id;
+                    targetClassMap[key] = targetClassId;
+                    created.push({ name: hint, id: targetClassId });
+                    // Push into local classes array so subsequent suggestions in this batch can reuse it
+                    classes.push({
+                        id: targetClassId,
+                        class_key: createRes.class_key,
+                        name: hint,
+                        description: null,
+                        icon_id: null,
+                        display_order: 0,
+                        is_active: true,
+                        property_count: 0,
+                        object_count: 0
+                    });
+                } catch (err) {
+                    errors.push({ label: s.label, error: 'Could not create target class "' + hint + '": ' + err.message });
+                    continue;
+                }
+            }
         }
+
+        // Save the property (with target_class_id set if object_ref)
         try {
             const payload = {
                 class_id: activeClassForProps.id,
                 label: s.label,
                 property_key: s.property_key,
                 property_type: s.property_type,
-                target_class_id: null,
+                target_class_id: targetClassId,
                 is_required: !!s.is_required,
                 display_order: 0,
                 options: s.property_type === 'dropdown' ? (s.options || []) : []
@@ -659,46 +703,54 @@ async function applyAiSuggestions() {
         }
     }
 
-    renderAiResult(added, skippedObjectRefs, errors);
+    renderAiResult(added, created, errors);
     setAiStage('result');
 }
 
-function renderAiResult(added, skippedObjectRefs, errors) {
+function renderAiResult(added, created, errors) {
     const summary = document.getElementById('aiResultSummary');
     const details = document.getElementById('aiResultDetails');
 
-    const hasIssues = skippedObjectRefs.length > 0 || errors.length > 0;
-    const tone = hasIssues
+    const hasErrors = errors.length > 0;
+    const tone = hasErrors
         ? { bg: '#fef3c7', border: '#f59e0b', color: '#92400e', icon: '⚠' }
         : { bg: '#dcfce7', border: '#22c55e', color: '#166534', icon: '✓' };
 
     summary.style.background = tone.bg;
     summary.style.border = '1px solid ' + tone.border;
     summary.style.color = tone.color;
-    summary.innerHTML = `<strong>${tone.icon} Added ${added.length} ${added.length === 1 ? 'property' : 'properties'}.</strong>` +
-        (hasIssues ? ` ${skippedObjectRefs.length + errors.length} need${(skippedObjectRefs.length + errors.length) === 1 ? 's' : ''} your attention — see below.` : '');
+
+    const summaryParts = [];
+    summaryParts.push(`<strong>${tone.icon} Added ${added.length} ${added.length === 1 ? 'property' : 'properties'}.</strong>`);
+    if (created.length > 0) {
+        summaryParts.push(`Auto-created ${created.length} ${created.length === 1 ? 'class' : 'classes'} so the object references could link properly.`);
+    }
+    if (hasErrors) {
+        summaryParts.push(`${errors.length} ${errors.length === 1 ? 'item' : 'items'} couldn't be added — see below.`);
+    }
+    summary.innerHTML = summaryParts.join(' ');
 
     let html = '';
     if (added.length > 0) {
         html += `<div style="margin-bottom: 16px;">
-            <div style="font-weight: 600; color: #166534; margin-bottom: 6px; font-size: 13px;">Added</div>
+            <div style="font-weight: 600; color: #166534; margin-bottom: 6px; font-size: 13px;">Properties added to <em>${escapeHtml(activeClassForProps.name)}</em></div>
             <ul style="margin: 0; padding-left: 20px; color: #1f2937; font-size: 13px;">
                 ${added.map(l => `<li>${escapeHtml(l)}</li>`).join('')}
             </ul>
         </div>`;
     }
-    if (skippedObjectRefs.length > 0) {
-        html += `<div style="margin-bottom: 16px;">
-            <div style="font-weight: 600; color: #92400e; margin-bottom: 6px; font-size: 13px;">Skipped — object references (need a target class picked manually)</div>
-            <ul style="margin: 0; padding-left: 20px; color: #1f2937; font-size: 13px;">
-                ${skippedObjectRefs.map(s => `<li><strong>${escapeHtml(s.label)}</strong>${s.hint ? ` — should reference <em>${escapeHtml(s.hint)}</em>` : ''}</li>`).join('')}
+    if (created.length > 0) {
+        html += `<div style="margin-bottom: 16px; padding: 12px; background: #fdf4ff; border: 1px solid #f3e8ff; border-radius: 6px;">
+            <div style="font-weight: 600; color: #6b21a8; margin-bottom: 6px; font-size: 13px;">Classes auto-created for object references</div>
+            <ul style="margin: 0 0 8px 0; padding-left: 20px; color: #1f2937; font-size: 13px;">
+                ${created.map(c => `<li><strong>${escapeHtml(c.name)}</strong> — empty (no properties yet)</li>`).join('')}
             </ul>
-            <div style="margin-top: 8px; color: #6b7280; font-size: 12px;">
-                Add these via <strong>Add Property</strong> after the matching target class exists, then pick "Object Reference" as the type.
+            <div style="color: #6b21a8; font-size: 12px;">
+                These new classes have no properties of their own yet. Once you close this, open them from the Classes tab and run <strong>✨ Suggest with AI</strong> on each to flesh them out.
             </div>
         </div>`;
     }
-    if (errors.length > 0) {
+    if (hasErrors) {
         html += `<div style="margin-bottom: 8px;">
             <div style="font-weight: 600; color: #b91c1c; margin-bottom: 6px; font-size: 13px;">Failed</div>
             <ul style="margin: 0; padding-left: 20px; color: #1f2937; font-size: 13px;">

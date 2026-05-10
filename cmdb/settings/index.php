@@ -585,6 +585,6 @@ $path_prefix = '../../';
         </div>
     </div>
 
-    <script src="settings.js?v=3"></script>
+    <script src="settings.js?v=4"></script>
 </body>
 </html>
