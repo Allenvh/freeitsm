@@ -23,13 +23,58 @@ if (!$contract_id) {
     <link rel="stylesheet" href="../assets/css/inbox.css">
     <script src="../assets/js/toast.js"></script>
     <style>
-        body { overflow: auto; height: auto; }
-
-        .contract-container {
-            max-width: 1120px;
-            margin: 0 auto;
+        /* Full-screen layout with sidebar - matches contracts dashboard */
+        .contracts-layout {
+            display: flex;
+            height: calc(100vh - 48px);
+            background: #f5f5f5;
+        }
+        .contracts-sidebar {
+            width: 260px;
+            background: white;
+            border-right: 1px solid #ddd;
+            padding: 20px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .contracts-main {
+            flex: 1;
+            overflow-y: auto;
             padding: 30px;
         }
+
+        .sidebar-section { margin-bottom: 24px; }
+        .sidebar-section h3 {
+            font-size: 14px; font-weight: 600; color: #333;
+            margin: 0 0 12px 0;
+        }
+        .sidebar-stat {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 12px; border-radius: 6px;
+            font-size: 14px; color: #333; cursor: default; margin-bottom: 4px;
+        }
+        .sidebar-stat .stat-value { font-weight: 700; font-size: 16px; }
+        .sidebar-stat.warning .stat-value { color: #f59e0b; }
+        .sidebar-links { display: flex; flex-direction: column; gap: 4px; }
+        .sidebar-link {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border-radius: 6px;
+            font-size: 14px; color: #333;
+            text-decoration: none; transition: all 0.15s;
+        }
+        .sidebar-link:hover { background: #fff7ed; color: #f59e0b; }
+        .sidebar-link svg { width: 18px; height: 18px; flex-shrink: 0; }
+        .sidebar-add-btn {
+            display: block; width: 100%;
+            padding: 10px 16px;
+            background: #f59e0b; color: white;
+            border: none; border-radius: 6px;
+            font-size: 14px; font-weight: 500;
+            cursor: pointer; transition: background 0.2s;
+            text-align: center; text-decoration: none;
+            box-sizing: border-box;
+        }
+        .sidebar-add-btn:hover { background: #d97706; }
 
         .contract-card {
             background: #fff;
@@ -219,9 +264,69 @@ if (!$contract_id) {
 <body>
     <?php include 'includes/header.php'; ?>
 
-    <div class="contract-container">
-        <div class="contract-card" id="contractCard">
-            <div class="loading">Loading contract...</div>
+    <div class="contracts-layout">
+        <!-- Left Sidebar -->
+        <div class="contracts-sidebar">
+            <div class="sidebar-section">
+                <h3>Overview</h3>
+                <div class="sidebar-stat">
+                    <span>Contracts</span>
+                    <span class="stat-value" id="sideContracts">-</span>
+                </div>
+                <div class="sidebar-stat">
+                    <span>Active</span>
+                    <span class="stat-value" id="sideActive">-</span>
+                </div>
+                <div class="sidebar-stat warning">
+                    <span>Expiring (90d)</span>
+                    <span class="stat-value" id="sideExpiring">-</span>
+                </div>
+                <div class="sidebar-stat">
+                    <span>Suppliers</span>
+                    <span class="stat-value" id="sideSuppliers">-</span>
+                </div>
+                <div class="sidebar-stat">
+                    <span>Contacts</span>
+                    <span class="stat-value" id="sideContacts">-</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Quick Links</h3>
+                <div class="sidebar-links">
+                    <a href="index.php" class="sidebar-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                        Contracts
+                    </a>
+                    <a href="suppliers/" class="sidebar-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        Suppliers
+                    </a>
+                    <a href="contacts/" class="sidebar-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        Contacts
+                    </a>
+                    <a href="rfp-builder/" class="sidebar-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M9 13h6"></path><path d="M9 17h6"></path></svg>
+                        RFP Builder
+                    </a>
+                    <a href="settings/" class="sidebar-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        Settings
+                    </a>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <a href="edit.php" class="sidebar-add-btn">+ New Contract</a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="contracts-main">
+            <div class="contract-card" id="contractCard">
+                <div class="loading">Loading contract...</div>
+            </div>
         </div>
     </div>
 
@@ -235,7 +340,24 @@ if (!$contract_id) {
         let teamOptions = [];
         let categoryOptions = [];
 
-        document.addEventListener('DOMContentLoaded', loadContract);
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+            loadContract();
+        });
+
+        async function loadStats() {
+            try {
+                const response = await fetch(API_BASE + 'get_dashboard_stats.php');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('sideContracts').textContent = data.stats.contracts;
+                    document.getElementById('sideActive').textContent = data.stats.active_contracts;
+                    document.getElementById('sideExpiring').textContent = data.stats.expiring_soon;
+                    document.getElementById('sideSuppliers').textContent = data.stats.suppliers;
+                    document.getElementById('sideContacts').textContent = data.stats.contacts;
+                }
+            } catch (error) { console.error('Error loading stats:', error); }
+        }
 
         async function loadContract() {
             try {
