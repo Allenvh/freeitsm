@@ -129,7 +129,7 @@ $contract_id = $_GET['id'] ?? null;
             background: #fff;
             border-top: 1px solid #ddd;
             box-shadow: 0 -2px 6px rgba(0,0,0,0.04);
-            padding: 16px;
+            padding: 10px 16px 22px 16px;
             margin: 16px -30px 0 -30px;
             display: flex;
             align-items: center;
