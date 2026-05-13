@@ -90,6 +90,11 @@ body {
     stroke: currentColor;
 }
 
+.contracts-header .header-nav .nav-btn {
+    min-width: 130px;
+    justify-content: center;
+}
+
 .header-right {
     display: flex;
     align-items: center;
