@@ -124,8 +124,17 @@ $contract_id = $_GET['id'] ?? null;
         .form-hint { font-size: 12px; color: #888; margin-top: 4px; }
 
         .form-actions {
-            display: flex; align-items: center; gap: 12px;
-            padding-top: 20px; border-top: 1px solid #eee; margin-top: 10px;
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            border-top: 1px solid #ddd;
+            box-shadow: 0 -2px 6px rgba(0,0,0,0.04);
+            padding: 14px 30px;
+            margin: 16px -30px -30px -30px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
         }
 
         .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; text-decoration: none; }
@@ -369,13 +378,12 @@ $contract_id = $_GET['id'] ?? null;
                     <div id="contractTermsEmpty" class="terms-empty">
                         No contract terms tabs configured. <a href="settings/">Configure in settings</a>.
                     </div>
-
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-primary" id="saveBtn">Save</button>
-                        <a href="index.php" class="btn btn-secondary">Cancel</a>
-                    </div>
                 </form>
             </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" form="contractForm" class="btn btn-primary" id="saveBtn">Save</button>
+            <a href="index.php" class="btn btn-secondary">Cancel</a>
         </div>
         </div>
     </div>
