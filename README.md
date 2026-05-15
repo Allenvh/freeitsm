@@ -632,6 +632,11 @@ System administration and configuration.
   - Populates tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, services, software, forms, tasks, process-mapper flowcharts, analysts, and end users
   - Process Mapper demo data is **auto-laid-out**: the JSON omits step coordinates and a server-side layered-DAG layout pass assigns x/y on import
   - Designed for fresh installations — makes the system feel alive for evaluation and testing
+- **Debug Tools** (`system/debug-tools/`): Library of self-contained diagnostics for troubleshooting failed flows
+  - App-store-style landing page lists each diagnostic with an ID badge (D001, D002…), category tag, "when to run" description, the full list of checks performed, runtime estimate, and side-effect notes
+  - Each diagnostic is a single PHP file under `api/system/debug-tools/` that emits a plain-text section-delimited report — designed so the user can click **Run**, click **Copy**, and paste the entire report back to support without back-and-forth
+  - Defensive by design: every section is wrapped so one failure doesn't kill the rest, and each diagnostic carries its own expected-state data so it works even when `db_verify.php`, `config.php`, the import script, or the JSON files are missing or broken
+  - **D001 — Demo Core Data Import**: 9-section report covering environment (PHP, OS, extensions, limits), config files (`config.php`, `db_config.php`, DB constants), required files, `core.json` parse + record counts, DB connection (server version, charset), per-table schema sanity (expected vs actual columns, row counts, redacted sample row), transactional write probe (sentinel insert per table inside a rolled-back transaction), and a live import attempt that captures the real response + any PHP warnings + post-import row counts. Adding more diagnostics is just `Dnnn_short_name.php` + a registry entry on the landing page.
 
 ### Forms (`forms/`)
 Dynamic form builder and submission system with a unified sidebar + editor layout.

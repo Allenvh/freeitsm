@@ -163,6 +163,18 @@ $path_prefix = '../';
                     <h3>Demo Data</h3>
                     <p>Import realistic sample data across all modules. Ideal for evaluation and testing on a fresh install.</p>
                 </a>
+
+                <a href="debug-tools/" class="system-card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M8 2v4"></path>
+                        <path d="M16 2v4"></path>
+                        <rect x="3" y="6" width="18" height="15" rx="2"></rect>
+                        <path d="M3 13h18"></path>
+                        <path d="M9 17l2 2 4-4"></path>
+                    </svg>
+                    <h3>Debug Tools</h3>
+                    <p>Library of diagnostics for troubleshooting failed flows. Run on request and send the output back to support.</p>
+                </a>
             </div>
         </div>
     </div>

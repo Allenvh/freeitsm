@@ -82,6 +82,16 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Demo Data</span>
         </a>
+        <a href="<?php echo $path_prefix; ?>system/debug-tools/" class="nav-btn <?php echo $current_page === 'debug-tools' ? 'active' : ''; ?>" title="Debug Tools">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 2v4"></path>
+                <path d="M16 2v4"></path>
+                <rect x="3" y="6" width="18" height="15" rx="2"></rect>
+                <path d="M3 13h18"></path>
+                <path d="M9 17l2 2 4-4"></path>
+            </svg>
+            <span>Debug Tools</span>
+        </a>
     </nav>
     <?php renderHeaderRight($analyst_name, $path_prefix); ?>
 </div>
