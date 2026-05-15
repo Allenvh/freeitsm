@@ -1303,30 +1303,25 @@ const PM = (() => {
         updateSelectionVisuals();
     }
 
-    // Resize lane to `newHeight`, shifting all steps and groups in lanes below
-    // by the delta (so they stay anchored to their own lane band as their
-    // bandTop moves). Groups have no persistent lane_id, so we compute their
-    // current lane from their vertical centre before changing anything.
+    // Resize lane to `newHeight`. Everything visually below the lane's bottom
+    // edge (steps and groups) shifts by the delta so the bottom half of the
+    // canvas physically moves down/up with the divider. Visual position is
+    // used as the shift criterion (matching how groups already worked) so
+    // untagged or stale-tagged steps come along too. Existing lane_id values
+    // are left untouched — the next lane drag's auto-tag pass will reconcile.
     function resizeLaneTo(lane, newHeight) {
-        const delta = newHeight - lane.height;
+        const newClamped = Math.max(80, newHeight);
+        const delta = newClamped - lane.height;
         if (delta === 0) return;
 
-        // Snapshot which groups visually sit in lanes below BEFORE we change the
-        // band heights (otherwise the lookup would be against the new layout).
         recomputeLaneBandTops();
-        const ord = lanesOrdered();
-        const myIdx = ord.findIndex(l => laneRef(l) == laneRef(lane));
-        const idsBelow = new Set(ord.slice(myIdx + 1).map(l => laneRef(l)));
-        const groupsToShift = groups.filter(g => {
-            const lAt = laneAtY(g.y + g.height / 2);
-            return lAt && idsBelow.has(laneRef(lAt));
-        });
+        const laneBottom = lane._bandTop + lane.height;
+        const stepsToShift = steps.filter(s => (s.y + s.height / 2) >= laneBottom);
+        const groupsToShift = groups.filter(g => (g.y + g.height / 2) >= laneBottom);
 
-        lane.height = Math.max(80, newHeight);
-        steps.forEach(s => {
-            if (s.lane_id != null && idsBelow.has(s.lane_id)) {
-                s.y = snap(s.y + delta);
-            }
+        lane.height = newClamped;
+        stepsToShift.forEach(s => {
+            s.y = snap(s.y + delta);
         });
         groupsToShift.forEach(g => {
             g.y = snap(g.y + delta);
