@@ -396,13 +396,20 @@ if (!file_exists($importPath)) {
     // Severity map deliberately excludes E_STRICT — the constant is deprecated
     // in PHP 8.4+, and referencing it inside the handler would itself emit a
     // DEPRECATED notice that re-entrantly falls through to the default handler.
+    //
+    // We DO NOT filter known-benign warnings — instead, we keep them visible
+    // and annotate each with a plain-English explainer so the reader can tell
+    // whether it indicates a real problem or expected noise from running the
+    // import inside D001's own request.
+    $explainers = [
+        'Ignoring session_start'           => "Expected — D001 already started a session, so PHP skipped the import's redundant session_start() call. Not a problem.",
+        'session has already been started' => "Expected — same as above, older PHP wording. Not a problem.",
+        'headers already sent'             => "Expected — D001 buffers output before sending response headers, so any header() call inside the import is a no-op. Not a problem.",
+        'Cannot change session'            => "Expected — the session was already configured by D001, so the import's session call was ignored. Not a problem.",
+    ];
+
     $captured = [];
-    set_error_handler(function($severity, $message, $file, $line) use (&$captured) {
-        // Expected noise when re-including a script that calls session_start /
-        // sets headers in the same request — filter it so the report stays clean.
-        if (stripos($message, 'headers already sent') !== false) return true;
-        if (stripos($message, 'session has already been started') !== false) return true;
-        if (stripos($message, 'Cannot change session') !== false) return true;
+    set_error_handler(function($severity, $message, $file, $line) use (&$captured, $explainers) {
         $sevMap = [
             E_ERROR             => 'ERROR',
             E_WARNING           => 'WARNING',
@@ -420,7 +427,14 @@ if (!file_exists($importPath)) {
             E_USER_DEPRECATED   => 'USER_DEPRECATED',
         ];
         $sevName = $sevMap[$severity] ?? "SEV{$severity}";
-        $captured[] = "[{$sevName}] {$message} in " . basename($file) . ":{$line}";
+        $entry = "[{$sevName}] {$message} in " . basename($file) . ":{$line}";
+        foreach ($explainers as $needle => $expl) {
+            if (stripos($message, $needle) !== false) {
+                $entry .= "\n      -> {$expl}";
+                break;
+            }
+        }
+        $captured[] = $entry;
         return true;
     });
 
