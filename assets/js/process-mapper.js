@@ -1426,7 +1426,11 @@ const PM = (() => {
         if (Math.abs(dy) > 2) laneDragging.moved = true;
 
         if (laneDragging.mode === 'resize') {
-            const targetH = Math.max(80, laneDragging.startHeight + dy);
+            // Snap the divider to the grid so the lane height changes in the
+            // same 20px increments as the contents below. Without this, per-pixel
+            // mousemoves produce per-pixel deltas that snap() rounds back to 0,
+            // and the contents never move while the divider drifts away.
+            const targetH = Math.max(80, snap(laneDragging.startHeight + dy));
             if (targetH !== lane.height) {
                 resizeLaneTo(lane, targetH);
                 renderLanes();
