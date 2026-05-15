@@ -1973,6 +1973,123 @@ const PM = (() => {
         setTimeout(() => { el.className = 'toast'; }, 2500);
     }
 
+    // =========================================================
+    //  Export — Mermaid
+    // =========================================================
+    // Generates Mermaid flowchart markup from the current process state.
+    // Lanes become `subgraph` blocks (LR direction so lanes stack vertically
+    // like horizontal swimlanes). Step types map to classic Mermaid shapes
+    // for maximum renderer compatibility. Groups are *not* exported — Mermaid
+    // only has subgraphs and we're already using those for lanes; nesting
+    // would look messy. Hand-placed positions, colours, and gradients don't
+    // survive — Mermaid auto-layouts.
+    function exportToMermaid() {
+        // Escape a label for use inside a Mermaid quoted string.
+        const escLabel = (text) => String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\r?\n/g, '<br/>');
+
+        const nodeId = (step) => 's' + (step.id != null ? step.id : ('t' + Math.abs(step.tempId)));
+
+        const nodeDef = (step) => {
+            const label = escLabel(step.label || '(unnamed)');
+            const id = nodeId(step);
+            switch (step.type) {
+                case 'decision': return `${id}{"${label}"}`;
+                case 'start':    return `${id}(["${label}"])`;
+                case 'document': return `${id}[/"${label}"/]`;
+                default:         return `${id}["${label}"]`;
+            }
+        };
+
+        const lines = ['flowchart LR'];
+
+        // Group steps by lane_id (null bucket for unlaned steps).
+        const stepsByLane = new Map();
+        const unlanedSteps = [];
+        steps.forEach(s => {
+            if (s.lane_id != null) {
+                if (!stepsByLane.has(s.lane_id)) stepsByLane.set(s.lane_id, []);
+                stepsByLane.get(s.lane_id).push(s);
+            } else {
+                unlanedSteps.push(s);
+            }
+        });
+
+        // Emit one subgraph per lane in display order.
+        const sortedLanes = [...lanes].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        for (const l of sortedLanes) {
+            const ref = laneRef(l);
+            const laneSteps = stepsByLane.get(ref) || [];
+            lines.push(`    subgraph lane${Math.abs(ref)}["${escLabel(l.label || '(unnamed lane)')}"]`);
+            for (const s of laneSteps) {
+                lines.push(`        ${nodeDef(s)}`);
+            }
+            lines.push('    end');
+        }
+
+        // Top-level steps (no lane).
+        for (const s of unlanedSteps) {
+            lines.push(`    ${nodeDef(s)}`);
+        }
+
+        // Connectors — Mermaid resolves IDs across subgraph boundaries.
+        for (const c of connectors) {
+            const from = getStep(c.fromId);
+            const to   = getStep(c.toId);
+            if (!from || !to) continue;
+            const lbl = c.label ? escLabel(c.label) : '';
+            if (lbl) {
+                lines.push(`    ${nodeId(from)} -->|"${lbl}"| ${nodeId(to)}`);
+            } else {
+                lines.push(`    ${nodeId(from)} --> ${nodeId(to)}`);
+            }
+        }
+
+        return lines.join('\n');
+    }
+
+    function openExportModal() {
+        if (!currentProcessId) { toast('Open a process first', 'error'); return; }
+        const markup = exportToMermaid();
+        document.getElementById('exportText').value = markup;
+        document.getElementById('exportModal').style.display = 'flex';
+        // Pre-select the text so the user can Ctrl-A → Ctrl-C if they prefer.
+        setTimeout(() => {
+            const ta = document.getElementById('exportText');
+            ta.focus();
+            ta.select();
+        }, 0);
+    }
+
+    function closeExportModal() {
+        document.getElementById('exportModal').style.display = 'none';
+        const btn = document.getElementById('exportCopyBtn');
+        btn.textContent = 'Copy';
+        btn.classList.remove('pm-modal-btn-copied');
+    }
+
+    async function copyExport() {
+        const text = document.getElementById('exportText').value;
+        const btn = document.getElementById('exportCopyBtn');
+        try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = 'Copied ✓';
+            btn.classList.add('pm-modal-btn-copied');
+            setTimeout(() => {
+                btn.textContent = 'Copy';
+                btn.classList.remove('pm-modal-btn-copied');
+            }, 2000);
+        } catch (e) {
+            // Fallback: select the textarea so the user can Ctrl-C.
+            document.getElementById('exportText').select();
+            toast('Copy failed — text selected, use Ctrl+C', 'error');
+        }
+    }
+
     function esc(str) {
         const div = document.createElement('div');
         div.textContent = str;
@@ -1992,6 +2109,7 @@ const PM = (() => {
         updateConnectorLabel, removeConnector,
         toggleAutosave,
         addGroup, updateGroupFromDetail,
-        addLane, updateLaneFromDetail
+        addLane, updateLaneFromDetail,
+        openExportModal, closeExportModal, copyExport
     };
 })();

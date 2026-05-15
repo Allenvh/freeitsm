@@ -68,6 +68,11 @@ $path_prefix = '../';
                         <svg width="18" height="18" viewBox="0 0 18 18"><rect x="1" y="3" width="16" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="11" width="16" height="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
                         <span>Lane</span>
                     </button>
+                    <div class="pm-tool-sep"></div>
+                    <button class="pm-tool-btn" onclick="PM.openExportModal()" title="Export this flow as Mermaid markup (paste into GitHub, Notion, Confluence, Obsidian, etc.)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        <span>Export</span>
+                    </button>
                 </div>
                 <div class="pm-toolbar-right">
                     <button class="pm-tool-btn" onclick="PM.deleteSelected()" title="Delete selected (Del)">
@@ -210,6 +215,24 @@ $path_prefix = '../';
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>
+
+    <!-- Export → Mermaid modal -->
+    <div class="pm-modal-overlay" id="exportModal" style="display: none;" onclick="if (event.target === this) PM.closeExportModal()">
+        <div class="pm-modal">
+            <div class="pm-modal-header">
+                <h3>Export — Mermaid flowchart</h3>
+                <button class="pm-modal-close" onclick="PM.closeExportModal()" title="Close">&times;</button>
+            </div>
+            <div class="pm-modal-body">
+                <p class="pm-modal-hint">Paste this markup into any Markdown editor that supports Mermaid (GitHub, GitLab, Notion, Confluence, Obsidian…). Lanes become <code>subgraph</code> blocks; auto-layout takes over from your hand-placed positions.</p>
+                <textarea readonly id="exportText" class="pm-modal-textarea" spellcheck="false"></textarea>
+                <div class="pm-modal-actions">
+                    <button class="pm-modal-btn pm-modal-btn-primary" id="exportCopyBtn" onclick="PM.copyExport()">Copy</button>
+                    <button class="pm-modal-btn" onclick="PM.closeExportModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>window.API_BASE = '../api/process-mapper/';</script>
     <script src="../assets/js/process-mapper.js"></script>
