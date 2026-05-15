@@ -331,6 +331,7 @@ const PM = (() => {
         if (e.target.classList.contains('pm-edge-handle')) return;
         e.stopPropagation();
         e.preventDefault();
+        canvas.focus({ preventScroll: true });
 
         const id = step.id || step.tempId;
 
@@ -424,6 +425,7 @@ const PM = (() => {
     function onCanvasMouseDown(e) {
         if (e.target !== canvas && !e.target.classList.contains('pm-canvas-empty')) return;
         if (!currentProcessId) return;
+        canvas.focus({ preventScroll: true });
 
         // Start rubber-band selection
         const rect = canvas.getBoundingClientRect();
@@ -737,6 +739,7 @@ const PM = (() => {
     function selectConnector(c) {
         selectedStepIds.clear();
         selectedConnectorId = c.id || c.tempId;
+        canvas.focus({ preventScroll: true });
         updateSelectionVisuals();
         closeDetail();
     }
