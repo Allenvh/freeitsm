@@ -32,6 +32,7 @@ class I18n {
         'nl'    => 'Nederlands',
         'it'    => 'Italiano',
         'pl'    => 'Polski',
+        'ru'    => 'Русский',
     ];
 
     const DEFAULT_LOCALE  = 'en';
