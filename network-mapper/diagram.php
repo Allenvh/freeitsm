@@ -450,6 +450,23 @@ $path_prefix = '../';
             user-select: none;
             cursor: pointer;
         }
+        .nm-connector-label-input {
+            position: absolute;
+            z-index: 10;
+            width: 160px;
+            height: 28px;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-family: inherit;
+            color: #1f2937;
+            background: white;
+            border: 1.5px solid #06b6d4;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(6,182,212,0.25);
+            outline: none;
+            box-sizing: border-box;
+        }
+        .nm-connector-label-input::placeholder { color: #9ca3af; font-style: italic; font-size: 11px; }
 
         /* ---- Edge handles (start a connector drag) ---- */
         .nm-edge-handle {

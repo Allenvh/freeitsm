@@ -772,14 +772,53 @@
 
     function promptConnectorLabel(c) {
         if (!diagram || !diagram.is_current) return;
-        const next = window.prompt('Connector label (leave blank to remove):', c.label || '');
-        if (next === null) return; // cancelled
-        const trimmed = next.trim();
-        const newLabel = trimmed === '' ? null : trimmed.slice(0, 255);
-        if (newLabel === c.label || (newLabel == null && !c.label)) return;
-        c.label = newLabel;
-        renderConnectors();
-        markDirty();
+        const from = findNodeByRef(c.from_node_id);
+        const to   = findNodeByRef(c.to_node_id);
+        if (!from || !to) return;
+        const pts = calcConnectorPoints(nodeIconBBox(from), nodeIconBBox(to));
+        const mx = (pts.x1 + pts.x2) / 2;
+        const my = (pts.y1 + pts.y2) / 2;
+
+        // Inline input positioned at the connector midpoint — same pattern as
+        // Process Mapper's editConnectorLabel. Feels in-place, doesn't yank
+        // the user out of the canvas with a modal, blur or Enter commits,
+        // Escape cancels.
+        // Tear down any leftover instance from a previous edit first
+        elCanvas.querySelectorAll('.nm-connector-label-input').forEach(el => el.remove());
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'nm-connector-label-input';
+        input.value = c.label || '';
+        input.maxLength = 255;
+        input.placeholder = 'Label (Enter to save, Esc to cancel)';
+        input.style.left = (mx - 80) + 'px';
+        input.style.top  = (my - 14) + 'px';
+
+        let cancelled = false;
+        const finish = () => {
+            input.removeEventListener('blur', finish);
+            const next = cancelled ? (c.label || '') : input.value.trim();
+            input.remove();
+            const newLabel = next === '' ? null : next.slice(0, 255);
+            if (newLabel === c.label || (newLabel == null && !c.label)) {
+                renderConnectors(); // redraw in case selection changed underneath
+                return;
+            }
+            c.label = newLabel;
+            renderConnectors();
+            markDirty();
+        };
+
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            else if (e.key === 'Escape') { cancelled = true; input.blur(); }
+        });
+
+        elCanvas.appendChild(input);
+        input.focus();
+        input.select();
     }
 
     // ---- Connect drag (edge handle → target node) ----
