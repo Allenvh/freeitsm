@@ -193,6 +193,31 @@ $path_prefix = '../';
         .nm-btn.secondary:hover { background: #f9fafb; }
         .nm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        /* ---- Zoom controls: 4 narrow buttons grouped as a single segmented unit ---- */
+        .nm-zoom-group {
+            display: inline-flex;
+            align-items: stretch;
+            gap: 0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .nm-zoom-group .nm-btn {
+            border-radius: 0;
+            border-right-width: 0;
+            padding: 7px 10px;
+            font-size: 13px;
+        }
+        .nm-zoom-group .nm-btn:first-child { border-radius: 4px 0 0 4px; }
+        .nm-zoom-group .nm-btn:last-child  { border-radius: 0 4px 4px 0; border-right-width: 1px; }
+        .nm-zoom-btn  { min-width: 30px; font-weight: 600; }
+        .nm-zoom-label {
+            min-width: 56px;
+            font-variant-numeric: tabular-nums;
+            color: #374151;
+            font-weight: 500;
+        }
+        .nm-zoom-fit { font-size: 12px; }
+
         /* ---- Meta row ---- */
         .nm-meta-row {
             font-size: 12px;
@@ -315,6 +340,30 @@ $path_prefix = '../';
                 radial-gradient(circle, #d1d5db 1px, transparent 1px) 0 0 / 20px 20px,
                 #fafbfc;
             overflow: auto;
+        }
+        /* Holds all the zoomable content. Transform applied here (not on
+           .nm-canvas) so the dot-grid background stays at 1× and scrolling
+           still works against .nm-canvas's overflow:auto. transform-origin
+           top-left so node coordinates (which are always stored in 1×
+           pixels) map cleanly into the scaled visual at the same x/y. */
+        .nm-canvas-inner {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+            transform: scale(1);
+        }
+        /* Hidden footprint that grows with zoom — see comment on the spacer
+           element. width/height managed by JS in applyZoom(). */
+        .nm-canvas-spacer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3000px;
+            height: 3000px;
+            pointer-events: none;
         }
         .nm-canvas-empty {
             position: absolute;
@@ -1232,6 +1281,39 @@ $path_prefix = '../';
             box-shadow: 0 0 0 3px rgba(6,182,212,0.12);
         }
         .nm-form-group small { color: #6b7280; font-size: 12px; display: block; margin-top: 4px; }
+
+        /* ---- Present mode: hide all chrome and show only the diagram.
+           Toggled by adding .is-presenting to .nm-editor. The canvas itself
+           stays visible and takes the full editor area. F11 is left to the
+           browser/user for a true fullscreen escalation. ---- */
+        .nm-present-exit {
+            position: fixed;
+            top: 14px;
+            right: 14px;
+            z-index: 2000;
+            display: none;             /* shown only in present mode */
+            padding: 8px 14px;
+            background: rgba(15, 23, 42, 0.85);
+            color: white;
+            border: none;
+            border-radius: 999px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        }
+        .nm-present-exit:hover { background: rgba(15, 23, 42, 1); }
+        .nm-editor.is-presenting .nm-editor-bar,
+        .nm-editor.is-presenting .nm-meta-row,
+        .nm-editor.is-presenting .nm-readonly-banner,
+        .nm-editor.is-presenting .nm-palette,
+        .nm-editor.is-presenting .nm-detail-panel { display: none !important; }
+        .nm-editor.is-presenting .nm-present-exit { display: block; }
+        /* In present mode the canvas-wrap fills the editor and the canvas
+           keeps its dot-grid + scroll behaviour — we're only hiding chrome
+           around it, not changing the canvas itself. */
+        .nm-editor.is-presenting .nm-canvas-wrap { padding: 0; }
     </style>
 </head>
 <body>
@@ -1260,7 +1342,14 @@ $path_prefix = '../';
                     </button>
                     <div class="nm-versions-dropdown" id="pageDropdown" style="display:none;"></div>
                 </div>
+                <div class="nm-zoom-group" role="group" aria-label="Zoom">
+                    <button class="nm-btn secondary nm-zoom-btn" id="zoomOutBtn" onclick="NM.zoomOut()" title="Zoom out">&minus;</button>
+                    <button class="nm-btn secondary nm-zoom-label" id="zoomLabel" onclick="NM.zoomReset()" title="Click to reset to 100%">100%</button>
+                    <button class="nm-btn secondary nm-zoom-btn" id="zoomInBtn" onclick="NM.zoomIn()" title="Zoom in">+</button>
+                    <button class="nm-btn secondary nm-zoom-fit" id="zoomFitBtn" onclick="NM.zoomFit()" title="Fit page (or all nodes) to the visible canvas">Fit</button>
+                </div>
                 <button class="nm-btn secondary" id="brandingBtn" onclick="NM.openBrandingModal()" title="Override the org-wide header/footer for this diagram (set a page size first)">Branding</button>
+                <button class="nm-btn secondary" id="presentBtn" onclick="NM.enterPresent()" title="Hide the toolbar and panels to show just the diagram (Esc to exit, then F11 for full-screen)">Present</button>
                 <div class="nm-versions-wrap">
                     <button class="nm-btn secondary" id="versionsBtn" onclick="NM.toggleVersionsDropdown(event)" title="Browse the version history of this diagram">
                         Versions
@@ -1295,11 +1384,25 @@ $path_prefix = '../';
                 </div>
             </aside>
             <div class="nm-canvas" id="canvas">
-                <div class="nm-canvas-empty" id="canvasEmpty">
-                    <h3>Empty diagram</h3>
-                    <p>Drag a class from the palette onto the canvas to start placing nodes. You'll be asked which CMDB object to bind it to.</p>
+                <!-- Invisible spacer that drives the scrollable area when zoomed:
+                     CSS `transform` doesn't affect layout, so without this the
+                     canvas would only scroll over the unscaled content extent and
+                     clip whatever zoom-in pushed off-screen. JS sets its size to
+                     (BASE * zoom) on every zoom change. -->
+                <div class="nm-canvas-spacer" id="canvasSpacer"></div>
+                <!-- All zoomable content (nodes, SVG layer, brand strips, inline
+                     label editor) is appended to .nm-canvas-inner so the
+                     transform: scale() on it doesn't also scale the dot-grid
+                     background painted by .nm-canvas itself. -->
+                <div class="nm-canvas-inner" id="canvasInner">
+                    <div class="nm-canvas-empty" id="canvasEmpty">
+                        <h3>Empty diagram</h3>
+                        <p>Drag a class from the palette onto the canvas to start placing nodes. You'll be asked which CMDB object to bind it to.</p>
+                    </div>
                 </div>
             </div>
+            <!-- Floating Exit pill in Present mode (hidden until .nm-editor.is-presenting) -->
+            <button class="nm-present-exit" id="presentExitBtn" onclick="NM.exitPresent()" title="Exit Present mode (Esc)">Exit&nbsp;Present</button>
             <!-- Detail panel (slides in when a node is selected). Sits beside
                  the canvas inside the same wrap so it shrinks the canvas
                  rather than overlaying it — a chunk-D-only addition. -->

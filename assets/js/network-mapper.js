@@ -105,7 +105,19 @@
     // ---- DOM refs (filled in init) ----
     let elTitle, elVersionPill, elMetaRow, elMetaAuthor, elMetaCreated, elMetaUpdated;
     let elStatus, elSaveBtn, elSaveVersionBtn, elAutosaveToggle, elAutosaveWrap;
-    let elPaletteBody, elCanvas, elReadonlyBanner, elCanvasEmpty;
+    let elPaletteBody, elCanvas, elCanvasInner, elCanvasSpacer, elReadonlyBanner, elCanvasEmpty;
+    let elZoomLabel, elEditor;
+    // Zoom state — visual scale only. Node coordinates (n.x/n.y) stay in
+    // 1× model space; the transform on elCanvasInner does the visual work,
+    // and hit-area math in event handlers divides client deltas by `zoom`
+    // to translate back into model space.
+    const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+    // Base footprint for the canvas-spacer — gives the scroll viewport a
+    // sensible default extent so zooming in still has scrollable area
+    // beyond the visible canvas. Real content beyond this (absolutely-
+    // positioned nodes at x>3000) extends the scroll area naturally.
+    const ZOOM_BASE_PX = 3000;
+    let zoom = 1;
     let elPickerModal, elPickerClassLabel, elPickerSearch, elPickerResults;
     let elDetailPanel, elNdIcon, elNdName, elNdClass, elNdClassValue, elNdPlannedRow, elNdCmdbLink, elNdAddRelatedBtn;
     let elNdIconPreview, elNdIconChangeBtn, elNdIconResetBtn;
@@ -138,8 +150,12 @@
         elAutosaveWrap    = document.getElementById('autosaveWrap');
         elPaletteBody     = document.getElementById('paletteBody');
         elCanvas          = document.getElementById('canvas');
+        elCanvasInner     = document.getElementById('canvasInner');
+        elCanvasSpacer    = document.getElementById('canvasSpacer');
         elReadonlyBanner  = document.getElementById('readonlyBanner');
         elCanvasEmpty     = document.getElementById('canvasEmpty');
+        elZoomLabel       = document.getElementById('zoomLabel');
+        elEditor          = document.querySelector('.nm-editor');
         elPickerModal     = document.getElementById('objectPickerModal');
         elPickerClassLabel = document.getElementById('pickerClassLabel');
         elPickerSearch    = document.getElementById('pickerSearch');
@@ -189,6 +205,7 @@
 
         ensureSvgLayer();
         bindCanvasEvents();
+        applyZoom();  // sync the spacer + label with the initial zoom (1)
 
         // Load diagram + palette + autosave preference + org branding in
         // parallel. Branding feeds into renderBrandHeaderFooter (header/footer
@@ -247,6 +264,15 @@
         // connector is selected, when the canvas (or one of its node children)
         // has focus / nothing else does
         document.addEventListener('keydown', e => {
+            // Escape exits Present mode regardless of focus — F11 is left to
+            // the browser for true fullscreen escalation. Checked first so a
+            // user in Present mode can always escape without us blocking on
+            // input/modal heuristics.
+            if (e.key === 'Escape' && isPresenting()) {
+                e.preventDefault();
+                exitPresent();
+                return;
+            }
             if (e.key !== 'Delete' && e.key !== 'Backspace') return;
             const tag = (document.activeElement && document.activeElement.tagName) || '';
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -282,7 +308,9 @@
         svg.appendChild(defs);
         // Insert before .nm-canvas-empty so the empty-state overlays the (empty)
         // SVG, and so future nodes (appended later by renderNodes) sit on top.
-        elCanvas.insertBefore(svg, elCanvas.firstChild);
+        // Lives inside elCanvasInner so the zoom transform scales it with the
+        // rest of the diagram (nodes, brand strips).
+        elCanvasInner.insertBefore(svg, elCanvasInner.firstChild);
         elSvgLayer = svg;
         return svg;
     }
@@ -397,6 +425,20 @@
     // =========================================================
     function snap(v) { return Math.round(v / GRID) * GRID; }
 
+    // Translate a mouse/drag event's client coordinates into model (1×, pre-zoom)
+    // coordinates inside the canvas. elCanvas itself is NOT transformed (it
+    // provides the scroll viewport + dot-grid background); elCanvasInner is
+    // the scaled wrapper containing nodes/SVG/brand strips. We measure relative
+    // to elCanvas (scroll-aware) and divide by zoom to undo the visual scale,
+    // landing in the coordinate space that node.x/node.y are stored in.
+    function canvasModelCoords(e) {
+        const rect = elCanvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left + elCanvas.scrollLeft) / zoom,
+            y: (e.clientY - rect.top  + elCanvas.scrollTop)  / zoom,
+        };
+    }
+
     function onCanvasDrop(e) {
         if (!diagram || !diagram.is_current) return;
         e.preventDefault();
@@ -406,15 +448,13 @@
         const cls = classById[payload.class_id];
         if (!cls) return;
 
-        const rect = elCanvas.getBoundingClientRect();
-        // Drop point in canvas-local coordinates (account for scroll). We snap
-        // the *top-left* of the node bounding box, computed by offsetting the
-        // drop point by half the icon size so the drop visually centres.
+        // Drop point in model (pre-zoom) coordinates. We snap the *top-left*
+        // of the node bounding box, computed by offsetting the drop point by
+        // half the icon size so the drop visually centres on the cursor.
         const iconPx = NODE_SIZES.medium;
-        const dropX = e.clientX - rect.left + elCanvas.scrollLeft;
-        const dropY = e.clientY - rect.top + elCanvas.scrollTop;
-        const x = Math.max(0, snap(dropX - iconPx / 2));
-        const y = Math.max(0, snap(dropY - iconPx / 2));
+        const drop = canvasModelCoords(e);
+        const x = Math.max(0, snap(drop.x - iconPx / 2));
+        const y = Math.max(0, snap(drop.y - iconPx / 2));
 
         openObjectPicker(cls, x, y);
     }
@@ -556,7 +596,9 @@
     function renderNodes() {
         // Clear existing node DOM; keep the empty-state element + the SVG
         // layer (connectors render into it separately via renderConnectors).
-        Array.from(elCanvas.querySelectorAll('.nm-node')).forEach(el => el.remove());
+        // Nodes live inside elCanvasInner (the zoom-transformed wrapper),
+        // not elCanvas itself.
+        Array.from(elCanvasInner.querySelectorAll('.nm-node')).forEach(el => el.remove());
 
         if (!nodes.length) {
             if (elCanvasEmpty) elCanvasEmpty.style.display = '';
@@ -565,7 +607,7 @@
         }
         if (elCanvasEmpty) elCanvasEmpty.style.display = 'none';
 
-        nodes.forEach(n => elCanvas.appendChild(buildNodeEl(n)));
+        nodes.forEach(n => elCanvasInner.appendChild(buildNodeEl(n)));
         renderConnectors();
     }
 
@@ -658,7 +700,7 @@
             renderConnectors();
         }
         // Cheap DOM swap rather than full re-render
-        Array.from(elCanvas.querySelectorAll('.nm-node')).forEach(el => {
+        Array.from(elCanvasInner.querySelectorAll('.nm-node')).forEach(el => {
             el.classList.toggle('selected', el.dataset.key === key);
         });
         // Drive the detail panel off the selection: open it when a node is
@@ -677,13 +719,11 @@
         selectNode(key);
         if (!diagram || !diagram.is_current) return; // read-only: select but no drag
 
-        const rect = elCanvas.getBoundingClientRect();
-        const cursorX = e.clientX - rect.left + elCanvas.scrollLeft;
-        const cursorY = e.clientY - rect.top + elCanvas.scrollTop;
+        const cursor = canvasModelCoords(e);
         nodeDrag = {
             key,
-            offsetX: cursorX - n.x,
-            offsetY: cursorY - n.y,
+            offsetX: cursor.x - n.x,
+            offsetY: cursor.y - n.y,
             startX: n.x,
             startY: n.y,
             moved: false
@@ -697,16 +737,14 @@
         if (!nodeDrag) return;
         const n = findNodeByKey(nodeDrag.key);
         if (!n) return;
-        const rect = elCanvas.getBoundingClientRect();
-        const cursorX = e.clientX - rect.left + elCanvas.scrollLeft;
-        const cursorY = e.clientY - rect.top + elCanvas.scrollTop;
-        const newX = Math.max(0, snap(cursorX - nodeDrag.offsetX));
-        const newY = Math.max(0, snap(cursorY - nodeDrag.offsetY));
+        const cursor = canvasModelCoords(e);
+        const newX = Math.max(0, snap(cursor.x - nodeDrag.offsetX));
+        const newY = Math.max(0, snap(cursor.y - nodeDrag.offsetY));
         if (newX === n.x && newY === n.y) return;
         n.x = newX;
         n.y = newY;
         nodeDrag.moved = true;
-        const el = elCanvas.querySelector('.nm-node[data-key="' + cssEscape(nodeDrag.key) + '"]');
+        const el = elCanvasInner.querySelector('.nm-node[data-key="' + cssEscape(nodeDrag.key) + '"]');
         if (el) {
             el.style.left = newX + 'px';
             el.style.top  = newY + 'px';
@@ -903,7 +941,7 @@
         // the user out of the canvas with a modal, blur or Enter commits,
         // Escape cancels.
         // Tear down any leftover instance from a previous edit first
-        elCanvas.querySelectorAll('.nm-connector-label-input').forEach(el => el.remove());
+        elCanvasInner.querySelectorAll('.nm-connector-label-input').forEach(el => el.remove());
 
         const input = document.createElement('input');
         input.type = 'text';
@@ -935,7 +973,7 @@
             else if (e.key === 'Escape') { cancelled = true; input.blur(); }
         });
 
-        elCanvas.appendChild(input);
+        elCanvasInner.appendChild(input);
         input.focus();
         input.select();
     }
@@ -962,9 +1000,8 @@
 
     function onConnectDragMove(e) {
         if (!connectDrag || !elSvgLayer) return;
-        const rect = elCanvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left + elCanvas.scrollLeft;
-        const my = e.clientY - rect.top  + elCanvas.scrollTop;
+        const cursor = canvasModelCoords(e);
+        const mx = cursor.x, my = cursor.y;
         let line = elSvgLayer.querySelector('.nm-temp-connector');
         if (!line) {
             line = document.createElementNS(SVG_NS, 'line');
@@ -987,10 +1024,8 @@
         // Resolve drop target: look for the closest .nm-node element under the
         // cursor. Using elementFromPoint with a temporary hide of the SVG layer
         // would also work, but the bbox hit-test is cheaper and avoids reflow.
-        const rect = elCanvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left + elCanvas.scrollLeft;
-        const my = e.clientY - rect.top  + elCanvas.scrollTop;
-        const target = findNodeAt(mx, my);
+        const cursor = canvasModelCoords(e);
+        const target = findNodeAt(cursor.x, cursor.y);
         const fromRef = connectDrag.fromRef;
         connectDrag = null;
         if (!target) return;
@@ -1931,10 +1966,10 @@
     }
 
     function renderBrandHeaderFooter() {
-        if (!elCanvas) return;
+        if (!elCanvasInner) return;
         // Tear down previous overlays — re-renders are full rebuilds since
         // the slot count is tiny and computing per-slot diffs isn't worth it.
-        Array.from(elCanvas.querySelectorAll('.nm-brand-header, .nm-brand-footer')).forEach(el => el.remove());
+        Array.from(elCanvasInner.querySelectorAll('.nm-brand-header, .nm-brand-footer')).forEach(el => el.remove());
 
         if (!diagram) return;
         // Gated on page outline being on. Without bounds, "header" and
@@ -1962,7 +1997,7 @@
                 '<div class="nm-brand-slot left">'   + renderSlotHtml(hL, ctx) + '</div>' +
                 '<div class="nm-brand-slot center">' + renderSlotHtml(hC, ctx) + '</div>' +
                 '<div class="nm-brand-slot right">'  + renderSlotHtml(hR, ctx) + '</div>';
-            elCanvas.appendChild(header);
+            elCanvasInner.appendChild(header);
         }
         if (fL || fC || fR) {
             const footer = document.createElement('div');
@@ -1973,7 +2008,7 @@
                 '<div class="nm-brand-slot left">'   + renderSlotHtml(fL, ctx) + '</div>' +
                 '<div class="nm-brand-slot center">' + renderSlotHtml(fC, ctx) + '</div>' +
                 '<div class="nm-brand-slot right">'  + renderSlotHtml(fR, ctx) + '</div>';
-            elCanvas.appendChild(footer);
+            elCanvasInner.appendChild(footer);
         }
     }
 
@@ -2228,6 +2263,119 @@
     }
 
     // =========================================================
+    //  Zoom + Present mode
+    //  Zoom is purely visual: transform: scale(zoom) on elCanvasInner. Node
+    //  coordinates stay in 1× model space; canvasModelCoords() divides client
+    //  deltas by zoom so drag/drop math keeps working at any level. Present
+    //  mode adds an .is-presenting class to .nm-editor which CSS uses to hide
+    //  the toolbar/palette/detail-panel and reveal the floating Exit pill.
+    // =========================================================
+    function applyZoom() {
+        if (elCanvasInner) {
+            elCanvasInner.style.transform = 'scale(' + zoom + ')';
+        }
+        if (elCanvasSpacer) {
+            // Grow the layout footprint so .nm-canvas's overflow:auto scrolls
+            // over the full visual extent of the transformed content. Without
+            // this, zoom-in would clip everything past the unscaled bounds.
+            elCanvasSpacer.style.width  = (ZOOM_BASE_PX * zoom) + 'px';
+            elCanvasSpacer.style.height = (ZOOM_BASE_PX * zoom) + 'px';
+        }
+        if (elZoomLabel) {
+            elZoomLabel.textContent = Math.round(zoom * 100) + '%';
+        }
+        // Connectors anchor to node coords in model space, which haven't
+        // changed — the transform handles the visual update for them too.
+    }
+
+    function setZoom(z) {
+        // Snap to the nearest level so the label always reads 25/50/75/...
+        // and Fit picks a clean integer percentage even when computed from
+        // a ratio.
+        let nearest = ZOOM_LEVELS[0];
+        let bestDelta = Math.abs(z - nearest);
+        for (let i = 1; i < ZOOM_LEVELS.length; i++) {
+            const d = Math.abs(z - ZOOM_LEVELS[i]);
+            if (d < bestDelta) { bestDelta = d; nearest = ZOOM_LEVELS[i]; }
+        }
+        zoom = nearest;
+        applyZoom();
+    }
+
+    function zoomIn()    { setZoom(zoomNext(+1)); }
+    function zoomOut()   { setZoom(zoomNext(-1)); }
+    function zoomReset() { setZoom(1); }
+
+    function zoomNext(dir) {
+        // Find the current level's index then step. Falls back gracefully if
+        // zoom drifted off-step somehow (rounds to nearest first).
+        let i = ZOOM_LEVELS.indexOf(zoom);
+        if (i === -1) {
+            // Drift recovery — find the closest existing level
+            i = 0;
+            let best = Math.abs(zoom - ZOOM_LEVELS[0]);
+            for (let k = 1; k < ZOOM_LEVELS.length; k++) {
+                const d = Math.abs(zoom - ZOOM_LEVELS[k]);
+                if (d < best) { best = d; i = k; }
+            }
+        }
+        const next = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i + dir));
+        return ZOOM_LEVELS[next];
+    }
+
+    function zoomFit() {
+        // Fit-to-page if a paper size is chosen (most common case once the
+        // user has set up an export-ready diagram), otherwise fit to the
+        // bounding box of all placed nodes with some padding. Leaves zoom
+        // unchanged with a toast if there's nothing meaningful to fit to.
+        if (!elCanvas) return;
+        const PAD = 40;
+        const viewW = elCanvas.clientWidth  - PAD * 2;
+        const viewH = elCanvas.clientHeight - PAD * 2;
+        if (viewW <= 0 || viewH <= 0) return;
+
+        let contentW = 0, contentH = 0;
+        if (diagram && diagram.paper_size) {
+            const dims = pageDimensionsPx(diagram.paper_size, diagram.paper_orientation);
+            if (dims) { contentW = dims.w; contentH = dims.h; }
+        }
+        if ((!contentW || !contentH) && nodes.length) {
+            // Bounding box of placed nodes (approximate — uses medium icon size).
+            const sz = NODE_SIZES.medium;
+            let maxX = 0, maxY = 0;
+            nodes.forEach(n => {
+                if (n.x + sz > maxX) maxX = n.x + sz;
+                if (n.y + sz > maxY) maxY = n.y + sz;
+            });
+            contentW = maxX;
+            contentH = maxY;
+        }
+        if (contentW <= 0 || contentH <= 0) {
+            if (window.showToast) showToast('Nothing to fit — set a page size or place some nodes', 'info');
+            return;
+        }
+        const target = Math.min(viewW / contentW, viewH / contentH);
+        setZoom(target);
+        // Scroll back to the origin so the fitted content shows from top-left
+        elCanvas.scrollLeft = 0;
+        elCanvas.scrollTop  = 0;
+    }
+
+    function enterPresent() {
+        if (!elEditor) return;
+        elEditor.classList.add('is-presenting');
+    }
+
+    function exitPresent() {
+        if (!elEditor) return;
+        elEditor.classList.remove('is-presenting');
+    }
+
+    function isPresenting() {
+        return elEditor && elEditor.classList.contains('is-presenting');
+    }
+
+    // =========================================================
     //  Helpers
     // =========================================================
     function formatDate(s) {
@@ -2277,6 +2425,13 @@
         openBrandingModal,
         closeBrandingModal,
         commitBrandingOverrides,
-        resetBrandingOverrides
+        resetBrandingOverrides,
+        // zoom + present mode
+        zoomIn,
+        zoomOut,
+        zoomReset,
+        zoomFit,
+        enterPresent,
+        exitPresent
     };
 })();
