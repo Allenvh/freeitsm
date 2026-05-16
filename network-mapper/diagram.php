@@ -666,6 +666,87 @@ $path_prefix = '../';
             margin: 8px 0 0 0;
         }
 
+        /* ---- Properties sub-section (CMDB property values for the bound object) ---- */
+        .nm-detail-section-header {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 0 0 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+        .nm-detail-section-sub {
+            font-size: 10px;
+            color: #9ca3af;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .nm-prop-loading,
+        .nm-prop-empty {
+            padding: 8px 0;
+            color: #9ca3af;
+            font-size: 12px;
+            font-style: italic;
+        }
+        .nm-prop-row {
+            padding: 7px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .nm-prop-row:last-child { border-bottom: 0; }
+        .nm-prop-label {
+            display: block;
+            font-size: 11px;
+            color: #6b7280;
+            margin-bottom: 3px;
+        }
+        .nm-prop-value {
+            display: block;
+            font-size: 13px;
+            color: #111827;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+        .nm-prop-value.bool-yes { color: #166534; font-weight: 500; }
+        .nm-prop-value.bool-no  { color: #6b7280; }
+        .nm-prop-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+            max-width: 100%;
+            word-break: break-word;
+        }
+        .nm-prop-ref {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 500;
+            background: #fce7f3;
+            color: #9d174d;
+            border: 1px solid #fbcfe8;
+            text-decoration: none;
+            max-width: 100%;
+        }
+        .nm-prop-ref:hover { background: #fbcfe8; }
+        .nm-prop-ref-class {
+            font-size: 10px;
+            color: #be185d;
+            opacity: 0.8;
+        }
+
         /* ---- Detail panel: icon row + icon picker triggers ---- */
         .nm-detail-icon-row {
             display: flex;
@@ -1117,6 +1198,10 @@ $path_prefix = '../';
                                 <button class="nm-detail-icon-btn nm-detail-icon-reset" id="ndIconResetBtn" onclick="NM.resetIconOverride()" title="Use the class default icon" style="display:none;">Reset</button>
                             </span>
                         </div>
+                    </div>
+                    <div class="nm-detail-section" id="ndPropertiesSection" style="display:none;">
+                        <div class="nm-detail-section-header">Properties <span class="nm-detail-section-sub">from CMDB</span></div>
+                        <div id="ndProperties"></div>
                     </div>
                     <div class="nm-detail-actions">
                         <button class="nm-btn" id="ndAddRelatedBtn" onclick="NM.openRelatedModal()">Add related objects</button>

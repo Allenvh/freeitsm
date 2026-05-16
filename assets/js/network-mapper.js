@@ -88,6 +88,11 @@
     let elPickerModal, elPickerClassLabel, elPickerSearch, elPickerResults;
     let elDetailPanel, elNdIcon, elNdName, elNdClass, elNdClassValue, elNdPlannedRow, elNdCmdbLink, elNdAddRelatedBtn;
     let elNdIconPreview, elNdIconChangeBtn, elNdIconResetBtn;
+    let elNdPropertiesSection, elNdProperties;
+    // Track the currently-pending properties fetch so a fast-click swap
+    // (open node A → click node B before A's fetch resolves) ignores the
+    // stale response and renders B's properties instead of A's.
+    let currentPropertiesObjectId = null;
     let elRelatedModal, elRmSourceName, elRmResults, elRmAddBtn;
     let elVersionsBtn, elVersionsDropdown;
     let elIconPickerModal, elIpNodeName, elIpSearch, elIpGrid;
@@ -128,6 +133,8 @@
         elNdIconPreview   = document.getElementById('ndIconPreview');
         elNdIconChangeBtn = document.getElementById('ndIconChangeBtn');
         elNdIconResetBtn  = document.getElementById('ndIconResetBtn');
+        elNdPropertiesSection = document.getElementById('ndPropertiesSection');
+        elNdProperties        = document.getElementById('ndProperties');
         elIconPickerModal = document.getElementById('iconPickerModal');
         elIpNodeName      = document.getElementById('ipNodeName');
         elIpSearch        = document.getElementById('ipSearch');
@@ -1001,12 +1008,150 @@
         elNdAddRelatedBtn.title = !editable
             ? 'Historical versions are read-only'
             : 'Pull in CMDB neighbours of this object';
+
+        // Kick off the CMDB properties fetch. Selection swaps mid-flight are
+        // handled by stamping currentPropertiesObjectId — the resolver checks
+        // it's still the latest before rendering.
+        loadNodeProperties(n.cmdb_object_id);
+    }
+
+    // ---- CMDB properties (lazy-loaded per selection) ----
+    async function loadNodeProperties(cmdbObjectId) {
+        if (!elNdProperties) return;
+        currentPropertiesObjectId = cmdbObjectId;
+        elNdPropertiesSection.style.display = '';
+        elNdProperties.innerHTML = '<div class="nm-prop-loading">Loading properties&hellip;</div>';
+        try {
+            const resp = await fetch(CMDB_API + 'get_object.php?id=' + cmdbObjectId, { credentials: 'same-origin' });
+            const data = await resp.json();
+            // Stale-response guard: user might have clicked another node by now
+            if (currentPropertiesObjectId !== cmdbObjectId) return;
+            if (!data.success) throw new Error(data.error || 'Failed to load');
+            renderNodeProperties(data.object.properties || []);
+        } catch (e) {
+            if (currentPropertiesObjectId !== cmdbObjectId) return;
+            elNdProperties.innerHTML = '<div class="nm-prop-empty">Could not load properties: ' + escapeHtml(e.message) + '</div>';
+        }
+    }
+
+    function renderNodeProperties(props) {
+        // Filter out empty values — Ed's explicit ask is "don't show empty
+        // properties". Per-type emptiness rules:
+        //   text/dropdown: null or empty string
+        //   number:        null (zero IS a value, show it)
+        //   date:          null or empty string
+        //   boolean:       null (explicit yes/no should both show)
+        //   object_ref:    value (the int id) is null/0
+        const withValues = props.filter(p => {
+            switch (p.property_type) {
+                case 'text':
+                case 'dropdown': return p.value !== null && p.value !== undefined && String(p.value).trim() !== '';
+                case 'number':   return p.value !== null && p.value !== undefined;
+                case 'date':     return p.value !== null && p.value !== undefined && String(p.value).trim() !== '';
+                case 'boolean':  return p.value !== null && p.value !== undefined;
+                case 'object_ref': return p.value !== null && p.value !== undefined && p.value !== 0;
+                default: return p.value !== null && p.value !== undefined && String(p.value).trim() !== '';
+            }
+        });
+
+        if (!withValues.length) {
+            elNdProperties.innerHTML = '<div class="nm-prop-empty">No property values set on this object.</div>';
+            return;
+        }
+
+        const html = withValues.map(p => {
+            const label = '<span class="nm-prop-label">' + escapeHtml(p.label || p.property_key || '') + '</span>';
+            return '<div class="nm-prop-row">' + label + renderPropertyValue(p) + '</div>';
+        }).join('');
+        elNdProperties.innerHTML = html;
+    }
+
+    function renderPropertyValue(p) {
+        switch (p.property_type) {
+            case 'boolean': {
+                const yes = p.value === true;
+                const cls = yes ? 'bool-yes' : 'bool-no';
+                return '<span class="nm-prop-value ' + cls + '">' + (yes ? 'Yes' : 'No') + '</span>';
+            }
+            case 'date': {
+                // Dates come back as ISO strings (YYYY-MM-DD). Localised
+                // formatting matches the rest of the app's date rendering.
+                let display = p.value;
+                try {
+                    const d = new Date(String(p.value).replace(' ', 'T'));
+                    if (!isNaN(d.getTime())) display = d.toLocaleDateString();
+                } catch (_) { /* fall through to raw */ }
+                return '<span class="nm-prop-value">' + escapeHtml(display) + '</span>';
+            }
+            case 'number': {
+                // Use locale-aware formatting so big numbers get thousand separators
+                let n = p.value;
+                if (typeof n === 'number' && isFinite(n)) n = n.toLocaleString();
+                return '<span class="nm-prop-value">' + escapeHtml(String(n)) + '</span>';
+            }
+            case 'dropdown': {
+                // Coloured pill matching the dropdown option's colour if any.
+                // p.options is an array of { value, colour }; find the matching one.
+                let bg = null, fg = null, border = null;
+                if (Array.isArray(p.options)) {
+                    const match = p.options.find(o => o.value === p.value);
+                    if (match && match.colour) {
+                        bg = match.colour;
+                        // Pick legible text colour off the swatch — simple
+                        // luminance check, matches the heuristic CMDB uses
+                        fg = pillTextColour(match.colour);
+                        border = match.colour;
+                    }
+                }
+                const style = bg
+                    ? ' style="background:' + escapeAttr(bg) + ';color:' + escapeAttr(fg) + ';border-color:' + escapeAttr(border) + ';"'
+                    : '';
+                return '<span class="nm-prop-pill"' + style + '>' + escapeHtml(p.value) + '</span>';
+            }
+            case 'object_ref': {
+                // Linked CMDB object — render as a pink pill matching the CMDB
+                // detail page's reference styling. Click opens in a new tab.
+                if (!p.value_object) return '<span class="nm-prop-value">&mdash;</span>';
+                const ref = p.value_object;
+                const href = '../cmdb/object.php?id=' + ref.id;
+                return '<a class="nm-prop-ref" href="' + escapeAttr(href) + '" target="_blank" title="Open in CMDB">' +
+                    escapeHtml(ref.name) +
+                    (ref.class_name ? '<span class="nm-prop-ref-class">' + escapeHtml(ref.class_name) + '</span>' : '') +
+                '</a>';
+            }
+            case 'text':
+            default: {
+                // Linkify URLs in plain text — common case for properties like
+                // "Documentation" or "Repo". Anything else renders as-is.
+                const s = String(p.value);
+                if (/^https?:\/\/\S+$/i.test(s.trim())) {
+                    return '<a class="nm-prop-value" href="' + escapeAttr(s.trim()) + '" target="_blank" rel="noopener" style="color:#0e7490;text-decoration:underline;word-break:break-all;">' +
+                        escapeHtml(s.trim()) + '</a>';
+                }
+                return '<span class="nm-prop-value">' + escapeHtml(s) + '</span>';
+            }
+        }
+    }
+
+    function pillTextColour(hex) {
+        // Best-effort luminance test to pick black or white text for a coloured
+        // pill background. Mirrors what CMDB browse table does for dropdown pills.
+        const m = String(hex || '').replace('#', '').match(/^([0-9a-f]{6})$/i);
+        if (!m) return '#1f2937';
+        const r = parseInt(m[1].slice(0,2), 16);
+        const g = parseInt(m[1].slice(2,4), 16);
+        const b = parseInt(m[1].slice(4,6), 16);
+        const lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+        return lum > 0.6 ? '#1f2937' : '#ffffff';
     }
 
     function closeDetail() {
         if (!elDetailPanel) return;
         elDetailPanel.classList.remove('open');
         elDetailPanel.setAttribute('aria-hidden', 'true');
+        // Cancel any pending properties render so a slow fetch can't paint
+        // into a closed panel and re-expose stale content next open.
+        currentPropertiesObjectId = null;
     }
 
     // =========================================================

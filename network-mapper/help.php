@@ -427,6 +427,7 @@ $path_prefix = '../';
 
                     <p style="margin-top: 14px;">Tick the rows you want, hit <strong>Add</strong>, and the selected objects get placed in a ring around the source node with a connector each. The relationship verb becomes the connector label, and the connector is provenance-linked back to the real CMDB relationship row when applicable.</p>
                     <p class="nh-tip"><strong>Why this matters:</strong> CMDB usually has way more information than fits on one diagram. Add related objects gives you <em>guided exploration</em> &mdash; start from one object you care about, and pull in only the neighbours you actually want to show.</p>
+                    <p class="nh-tip"><strong>Properties are visible too:</strong> the detail panel shows every CMDB property that has a value on the selected object &mdash; type-aware rendering for dates, numbers, dropdowns (with their colour), booleans (Yes/No), object references (pink pill links straight into CMDB), and URL detection in text fields. Empty properties are hidden so the panel stays tight.</p>
                 </div>
 
                 <!-- 6. Planned objects -->
