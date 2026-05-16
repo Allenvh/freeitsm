@@ -2416,32 +2416,93 @@ try {
         }
     }
 
-    // Seed the curated CMDB icon library so the class form has a picker source
+    // Seed / top-up the curated CMDB icon library so the class form has a
+    // picker source. Used to fire only when the table was empty; now uses
+    // INSERT IGNORE per row so existing installs pick up library expansions
+    // (e.g. the Network Mapper per-node icon override set) on next verify.
+    // The uq_cmdb_icons_key unique index (asserted further down) makes the
+    // IGNORE safe — duplicates are skipped, existing rows untouched.
     if ($tableExists('cmdb_icons')) {
-        $cnt = (int) $conn->query("SELECT COUNT(*) FROM cmdb_icons")->fetchColumn();
-        if ($cnt === 0) {
-            $conn->exec("INSERT INTO cmdb_icons (icon_key, label, display_order) VALUES
-                ('server',      'Server',           10),
-                ('database',    'Database',         20),
-                ('application', 'Application',      30),
-                ('service',     'Service',          40),
-                ('website',     'Website',          50),
-                ('api',         'API',              60),
-                ('vm',          'Virtual Machine',  70),
-                ('container',   'Container',        80),
-                ('cloud',       'Cloud Resource',   90),
-                ('network',     'Network Device',  100),
-                ('firewall',    'Firewall',        110),
-                ('router',      'Router',          120),
-                ('switch',      'Switch',          130),
-                ('storage',     'Storage',         140),
-                ('workstation', 'Workstation',     150),
-                ('printer',     'Printer',         160),
-                ('person',      'Person',          170),
-                ('team',        'Team',            180),
-                ('document',    'Document',        190),
-                ('box',         'Generic',         200)");
-            $results[] = ['table' => 'cmdb_icons', 'status' => 'seeded', 'details' => ['Inserted 20 default CMDB icons']];
+        $icons = [
+            // Original 20 (chunk A foundation)
+            ['server',         'Server',            10],
+            ['database',       'Database',          20],
+            ['application',    'Application',       30],
+            ['service',        'Service',           40],
+            ['website',        'Website',           50],
+            ['api',            'API',               60],
+            ['vm',             'Virtual Machine',   70],
+            ['container',      'Container',         80],
+            ['cloud',          'Cloud Resource',    90],
+            ['network',        'Network Device',   100],
+            ['firewall',       'Firewall',         110],
+            ['router',         'Router',           120],
+            ['switch',         'Switch',           130],
+            ['storage',        'Storage',          140],
+            ['workstation',    'Workstation',      150],
+            ['printer',        'Printer',          160],
+            ['person',         'Person',           170],
+            ['team',           'Team',             180],
+            ['document',       'Document',         190],
+            ['box',            'Generic',          200],
+            // Extended set (Network Mapper per-node icon override). Display
+            // orders interleaved so related variants group together.
+            ['server-rack',    'Server (rack)',     11],
+            ['server-blade',   'Server (blade)',    12],
+            ['server-tower',   'Server (tower)',    13],
+            ['mainframe',      'Mainframe',         14],
+            ['function',       'Function',          71],
+            ['database-cluster', 'Database cluster', 21],
+            ['database-cache', 'Database (cache)',  22],
+            ['storage-san',    'SAN',              141],
+            ['storage-tape',   'Tape backup',      142],
+            ['backup',         'Backup',           143],
+            ['load-balancer',  'Load balancer',    111],
+            ['proxy',          'Proxy',            112],
+            ['vpn',            'VPN',              113],
+            ['gateway',        'Gateway',          114],
+            ['wireless-ap',    'Wireless AP',      131],
+            ['modem',          'Modem',            132],
+            ['cdn',            'CDN',              115],
+            ['dns',            'DNS',              116],
+            ['shield',         'Shield',           117],
+            ['lock',           'Lock',             118],
+            ['key',            'Key',              119],
+            ['ids',            'IDS / IPS',        121],
+            ['siem',           'SIEM',             122],
+            ['cloud-private',  'Private cloud',     91],
+            ['cloud-public',   'Public cloud',      92],
+            ['cloud-hybrid',   'Hybrid cloud',      93],
+            ['region',         'Region',            94],
+            ['container-pod',  'Pod',               81],
+            ['kubernetes',     'Kubernetes',        82],
+            ['registry',       'Registry',          83],
+            ['microservice',   'Microservice',      31],
+            ['queue',          'Message queue',     32],
+            ['cache',          'Cache',             33],
+            ['dashboard',      'Dashboard',         34],
+            ['laptop',         'Laptop',           151],
+            ['mobile',         'Mobile',           152],
+            ['tablet',         'Tablet',           153],
+            ['iot',            'IoT device',       154],
+            ['monitor',        'Monitor / gauge',  161],
+            ['alert',          'Alert',            162],
+            ['log',            'Log',              163],
+            ['org',            'Org',              181],
+            ['folder',         'Folder',           191],
+            ['globe',          'Globe',            192],
+            ['mail',           'Mail',             193],
+            ['calendar',       'Calendar',         194],
+        ];
+        $before = (int) $conn->query("SELECT COUNT(*) FROM cmdb_icons")->fetchColumn();
+        $ins = $conn->prepare("INSERT IGNORE INTO cmdb_icons (icon_key, label, display_order) VALUES (?, ?, ?)");
+        foreach ($icons as $row) { $ins->execute($row); }
+        $after = (int) $conn->query("SELECT COUNT(*) FROM cmdb_icons")->fetchColumn();
+        $added = $after - $before;
+        if ($before === 0) {
+            $results[] = ['table' => 'cmdb_icons', 'status' => 'seeded', 'details' => ["Inserted $after default CMDB icons"]];
+        } elseif ($added > 0) {
+            $results[] = ['table' => 'cmdb_icons', 'status' => 'updated', 'details' => ["Topped up icon library — added $added new icons"]];
         }
     }
 

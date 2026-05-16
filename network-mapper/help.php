@@ -374,6 +374,7 @@ $path_prefix = '../';
                     </div>
 
                     <p class="nh-tip"><strong>Already on the canvas?</strong> Objects you've already placed are filtered out of the picker so you can't accidentally place the same object twice on one diagram.</p>
+                    <p class="nh-tip"><strong>Per-node icon override:</strong> by default every node uses its CMDB class's icon. If you want to distinguish two objects of the same class visually (e.g. "Production MS SQL" vs "Reporting Oracle", both Database Server), select the node, open the detail panel, and click <strong>Change</strong> next to the Icon row &mdash; pick from ~65 icons grouped into 12 categories. Reset clears the override and goes back to the class default.</p>
                 </div>
 
                 <!-- 4. Connectors -->

@@ -666,6 +666,122 @@ $path_prefix = '../';
             margin: 8px 0 0 0;
         }
 
+        /* ---- Detail panel: icon row + icon picker triggers ---- */
+        .nm-detail-icon-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nm-detail-icon-preview {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px; height: 28px;
+            color: #0e7490;
+            background: #ecfeff;
+            border-radius: 6px;
+            border: 1px solid #a5f3fc;
+            flex-shrink: 0;
+        }
+        .nm-detail-icon-btn {
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #0e7490;
+            background: white;
+            border: 1px solid #a5f3fc;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .nm-detail-icon-btn:hover { background: #ecfeff; }
+        .nm-detail-icon-reset {
+            color: #6b7280;
+            border-color: #e5e7eb;
+        }
+        .nm-detail-icon-reset:hover { background: #f9fafb; color: #111827; }
+
+        /* ---- Icon picker modal ---- */
+        .nm-ip-search-wrap { margin-bottom: 12px; }
+        .nm-ip-search {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .nm-ip-search:focus {
+            outline: none;
+            border-color: #06b6d4;
+            box-shadow: 0 0 0 3px rgba(6,182,212,0.12);
+        }
+        .nm-ip-grid {
+            max-height: 440px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            background: #fafbfc;
+            padding: 4px;
+        }
+        .nm-ip-category {
+            padding: 8px 8px 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .nm-ip-category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+            gap: 6px;
+            padding: 0 4px 12px 4px;
+        }
+        .nm-ip-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 4px 6px 4px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+        }
+        .nm-ip-tile:hover {
+            border-color: #06b6d4;
+            background: #ecfeff;
+            box-shadow: 0 2px 6px rgba(6,182,212,0.12);
+        }
+        .nm-ip-tile.selected {
+            border-color: #06b6d4;
+            background: #ecfeff;
+            box-shadow: 0 0 0 2px rgba(6,182,212,0.25);
+        }
+        .nm-ip-tile-icon {
+            color: #0e7490;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 28px;
+        }
+        .nm-ip-tile-name {
+            font-size: 10.5px;
+            font-weight: 500;
+            color: #1f2937;
+            text-align: center;
+            line-height: 1.2;
+            word-break: break-word;
+        }
+        .nm-ip-empty {
+            padding: 28px 16px;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 13px;
+        }
+
         /* ---- Related-objects modal ---- */
         .nm-modal.nm-modal-wide { width: 560px; }
         .nm-rm-intro {
@@ -993,6 +1109,14 @@ $path_prefix = '../';
                         <div class="nm-detail-field"><span class="nm-detail-label">Class</span><span class="nm-detail-value" id="ndClassValue">&mdash;</span></div>
                         <div class="nm-detail-field" id="ndPlannedRow" style="display:none;"><span class="nm-detail-label">Status</span><span class="nm-detail-value"><span class="nm-detail-planned-pill">PLANNED</span> Future state</span></div>
                         <div class="nm-detail-field"><span class="nm-detail-label">CMDB</span><span class="nm-detail-value"><a id="ndCmdbLink" href="#" target="_blank">Open in CMDB &rarr;</a></span></div>
+                        <div class="nm-detail-field">
+                            <span class="nm-detail-label">Icon</span>
+                            <span class="nm-detail-value nm-detail-icon-row">
+                                <span class="nm-detail-icon-preview" id="ndIconPreview"></span>
+                                <button class="nm-detail-icon-btn" id="ndIconChangeBtn" onclick="NM.openIconPicker()" title="Pick a different icon for this node">Change</button>
+                                <button class="nm-detail-icon-btn nm-detail-icon-reset" id="ndIconResetBtn" onclick="NM.resetIconOverride()" title="Use the class default icon" style="display:none;">Reset</button>
+                            </span>
+                        </div>
                     </div>
                     <div class="nm-detail-actions">
                         <button class="nm-btn" id="ndAddRelatedBtn" onclick="NM.openRelatedModal()">Add related objects</button>
@@ -1019,6 +1143,24 @@ $path_prefix = '../';
             </div>
             <div class="nm-modal-actions">
                 <button class="nm-btn secondary" onclick="NM.closeObjectPicker()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-node icon picker modal (opened from the detail panel) -->
+    <div class="nm-modal-overlay" id="iconPickerModal">
+        <div class="nm-modal nm-modal-wide">
+            <div class="nm-modal-header">
+                Pick an icon for <span id="ipNodeName">&hellip;</span>
+            </div>
+            <div class="nm-modal-body">
+                <div class="nm-ip-search-wrap">
+                    <input type="text" class="nm-ip-search" id="ipSearch" placeholder="Filter by name (e.g. &lsquo;database&rsquo;, &lsquo;firewall&rsquo;)&hellip;" oninput="NM.onIconSearchInput(this.value)">
+                </div>
+                <div class="nm-ip-grid" id="ipGrid"></div>
+            </div>
+            <div class="nm-modal-actions">
+                <button class="nm-btn secondary" onclick="NM.closeIconPicker()">Cancel</button>
             </div>
         </div>
     </div>
@@ -1089,6 +1231,7 @@ $path_prefix = '../';
                 NM.closeObjectPicker();
                 NM.closeRelatedModal();
                 NM.closeVersionsDropdown();
+                NM.closeIconPicker();
             }
         });
 
@@ -1101,6 +1244,9 @@ $path_prefix = '../';
         });
         document.getElementById('relatedObjectsModal').addEventListener('click', function (e) {
             if (e.target === e.currentTarget) NM.closeRelatedModal();
+        });
+        document.getElementById('iconPickerModal').addEventListener('click', function (e) {
+            if (e.target === e.currentTarget) NM.closeIconPicker();
         });
 
         // Warn on unload if there are unsaved changes — guard against the user

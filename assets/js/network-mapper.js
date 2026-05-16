@@ -77,14 +77,20 @@
     let relatedRows = [];         // [{ row index → fetched row object }]
     let relatedSelected = new Set(); // indices of ticked rows
 
+    // ---- icon picker state ----
+    let iconPickerNode = null;    // node whose icon we're editing
+    let iconPickerFilter = '';    // current search filter
+
     // ---- DOM refs (filled in init) ----
     let elTitle, elVersionPill, elMetaRow, elMetaAuthor, elMetaCreated, elMetaUpdated;
     let elStatus, elSaveBtn, elSaveVersionBtn, elAutosaveToggle, elAutosaveWrap;
     let elPaletteBody, elCanvas, elReadonlyBanner, elCanvasEmpty;
     let elPickerModal, elPickerClassLabel, elPickerSearch, elPickerResults;
     let elDetailPanel, elNdIcon, elNdName, elNdClass, elNdClassValue, elNdPlannedRow, elNdCmdbLink, elNdAddRelatedBtn;
+    let elNdIconPreview, elNdIconChangeBtn, elNdIconResetBtn;
     let elRelatedModal, elRmSourceName, elRmResults, elRmAddBtn;
     let elVersionsBtn, elVersionsDropdown;
+    let elIconPickerModal, elIpNodeName, elIpSearch, elIpGrid;
 
     // =========================================================
     //  Initialisation
@@ -119,6 +125,13 @@
         elNdPlannedRow    = document.getElementById('ndPlannedRow');
         elNdCmdbLink      = document.getElementById('ndCmdbLink');
         elNdAddRelatedBtn = document.getElementById('ndAddRelatedBtn');
+        elNdIconPreview   = document.getElementById('ndIconPreview');
+        elNdIconChangeBtn = document.getElementById('ndIconChangeBtn');
+        elNdIconResetBtn  = document.getElementById('ndIconResetBtn');
+        elIconPickerModal = document.getElementById('iconPickerModal');
+        elIpNodeName      = document.getElementById('ipNodeName');
+        elIpSearch        = document.getElementById('ipSearch');
+        elIpGrid          = document.getElementById('ipGrid');
         elRelatedModal    = document.getElementById('relatedObjectsModal');
         elRmSourceName    = document.getElementById('rmSourceName');
         elRmResults       = document.getElementById('rmResults');
@@ -967,9 +980,25 @@
         // CMDB deep-link — opens the object detail page in a new tab
         elNdCmdbLink.href = '../cmdb/object.php?id=' + n.cmdb_object_id;
 
+        // Icon preview + change/reset state. The Reset button only matters
+        // when an override is active (clears it back to the class default).
+        if (elNdIconPreview) {
+            elNdIconPreview.innerHTML = window.nmRenderIcon ? window.nmRenderIcon(iconKey, 20) : '';
+        }
+        const editable = diagram && diagram.is_current;
+        if (elNdIconChangeBtn) {
+            elNdIconChangeBtn.disabled = !editable;
+            elNdIconChangeBtn.title = editable
+                ? 'Pick a different icon for this node'
+                : 'Historical versions are read-only';
+        }
+        if (elNdIconResetBtn) {
+            elNdIconResetBtn.style.display = (editable && n.icon_override) ? '' : 'none';
+        }
+
         // "Add related objects" is a mutation; gate on the editable version
-        elNdAddRelatedBtn.disabled = !diagram || !diagram.is_current;
-        elNdAddRelatedBtn.title = elNdAddRelatedBtn.disabled
+        elNdAddRelatedBtn.disabled = !editable;
+        elNdAddRelatedBtn.title = !editable
             ? 'Historical versions are read-only'
             : 'Pull in CMDB neighbours of this object';
     }
@@ -1301,6 +1330,108 @@
     }
 
     // =========================================================
+    //  Per-node icon picker
+    //  Opens from the detail panel's Change button; lets the user override
+    //  the class's default icon for this specific node. icon_override is a
+    //  free-text VARCHAR on network_diagram_nodes so any key from
+    //  NM_ICONS works (not constrained to the cmdb_icons table).
+    // =========================================================
+    function openIconPicker() {
+        if (!diagram || !diagram.is_current) return;
+        if (selectedNodeKey == null) return;
+        const n = findNodeByKey(selectedNodeKey);
+        if (!n) return;
+        iconPickerNode = n;
+        iconPickerFilter = '';
+        elIpNodeName.textContent = n.name;
+        elIpSearch.value = '';
+        renderIconPicker();
+        elIconPickerModal.classList.add('active');
+        setTimeout(() => elIpSearch.focus(), 50);
+    }
+
+    function closeIconPicker() {
+        elIconPickerModal.classList.remove('active');
+        iconPickerNode = null;
+        iconPickerFilter = '';
+    }
+
+    function onIconSearchInput(value) {
+        iconPickerFilter = (value || '').toLowerCase().trim();
+        renderIconPicker();
+    }
+
+    function renderIconPicker() {
+        if (!elIpGrid) return;
+        const cats = window.NM_ICON_CATEGORIES || [];
+        const meta = window.NM_ICON_META || {};
+        const icons = window.NM_ICONS || {};
+        const currentKey = iconPickerNode
+            ? (iconPickerNode.icon_override || iconPickerNode.class_icon || 'box')
+            : null;
+
+        let html = '';
+        let anyMatches = false;
+        cats.forEach(cat => {
+            // Filter keys for this category
+            const inCat = Object.keys(meta).filter(k => meta[k].category === cat.key);
+            const matches = inCat.filter(k => {
+                if (!iconPickerFilter) return true;
+                const label = (meta[k].label || k).toLowerCase();
+                return k.includes(iconPickerFilter) || label.includes(iconPickerFilter);
+            });
+            if (!matches.length) return;
+            anyMatches = true;
+            html += '<div class="nm-ip-category">' + escapeHtml(cat.label) + '</div>';
+            html += '<div class="nm-ip-category-grid">';
+            matches.forEach(k => {
+                const selected = k === currentKey ? ' selected' : '';
+                const svg = icons[k] ? window.nmRenderIcon(k, 24) : '';
+                html +=
+                    '<div class="nm-ip-tile' + selected + '" data-key="' + escapeAttr(k) + '" title="' + escapeAttr(meta[k].label || k) + '">' +
+                        '<span class="nm-ip-tile-icon">' + svg + '</span>' +
+                        '<span class="nm-ip-tile-name">' + escapeHtml(meta[k].label || k) + '</span>' +
+                    '</div>';
+            });
+            html += '</div>';
+        });
+
+        if (!anyMatches) {
+            html = '<div class="nm-ip-empty">No icons match &ldquo;' + escapeHtml(iconPickerFilter) + '&rdquo;.</div>';
+        }
+        elIpGrid.innerHTML = html;
+        elIpGrid.querySelectorAll('.nm-ip-tile').forEach(tile => {
+            tile.addEventListener('click', () => commitIconPick(tile.dataset.key));
+        });
+    }
+
+    function commitIconPick(key) {
+        if (!iconPickerNode) return;
+        if (!key) return;
+        // If they pick the same icon as the class default, store NULL (reset)
+        // rather than a redundant override — keeps the data clean.
+        const isClassDefault = key === iconPickerNode.class_icon;
+        iconPickerNode.icon_override = isClassDefault ? null : key;
+        const target = iconPickerNode;
+        closeIconPicker();
+        // Refresh the on-canvas node + the detail panel preview
+        renderNodes();
+        openDetailForNode(target);
+        markDirty();
+    }
+
+    function resetIconOverride() {
+        if (!diagram || !diagram.is_current) return;
+        if (selectedNodeKey == null) return;
+        const n = findNodeByKey(selectedNodeKey);
+        if (!n || !n.icon_override) return;
+        n.icon_override = null;
+        renderNodes();
+        openDetailForNode(n);
+        markDirty();
+    }
+
+    // =========================================================
     //  Versions dropdown — anchored to the toolbar Versions button.
     //  Lazy-fetches the chain each open so save-as-new-version mutations
     //  show up next time. Click a version to navigate.
@@ -1555,6 +1686,11 @@
         commitRelatedSelections,
         // versions dropdown
         toggleVersionsDropdown,
-        closeVersionsDropdown
+        closeVersionsDropdown,
+        // icon picker
+        openIconPicker,
+        closeIconPicker,
+        onIconSearchInput,
+        resetIconOverride
     };
 })();
