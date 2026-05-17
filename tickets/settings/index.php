@@ -211,6 +211,7 @@ $translationNamespaces = ['common', 'tickets'];
             <button class="tab" data-tab="ticket-origins" onclick="switchTab('ticket-origins')"><?php echo htmlspecialchars(t('tickets.settings.tabs.ticket_origins')); ?></button>
             <button class="tab" data-tab="statuses" onclick="switchTab('statuses')"><?php echo htmlspecialchars(t('tickets.settings.tabs.statuses')); ?></button>
             <button class="tab" data-tab="priorities" onclick="switchTab('priorities')"><?php echo htmlspecialchars(t('tickets.settings.tabs.priorities')); ?></button>
+            <button class="tab" data-tab="sla" onclick="switchTab('sla')"><?php echo htmlspecialchars(t('tickets.settings.tabs.sla')); ?></button>
             <button class="tab" data-tab="rota-locations" onclick="switchTab('rota-locations')"><?php echo htmlspecialchars(t('tickets.settings.tabs.rota_locations')); ?></button>
             <button class="tab" data-tab="mailboxes" onclick="switchTab('mailboxes')"><?php echo htmlspecialchars(t('tickets.settings.tabs.mailboxes')); ?></button>
             <button class="tab" data-tab="email-templates" onclick="switchTab('email-templates')"><?php echo htmlspecialchars(t('tickets.settings.tabs.email_templates')); ?></button>
@@ -359,6 +360,132 @@ $translationNamespaces = ['common', 'tickets'];
                     <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- SLA Tab — see docs/sla.md -->
+        <div class="tab-content" id="sla-tab">
+            <h2>Service Level Agreements</h2>
+            <p style="margin-bottom: 20px; color: #666;">
+                Business-hours-aware SLAs with per-priority response and resolution targets. The clock pauses on statuses
+                flagged "Pauses SLA" on the <a href="#" onclick="event.preventDefault();switchTab('statuses');">Statuses tab</a>.
+                See <a href="https://github.com/edmozley/freeitsm/blob/main/docs/sla.md" target="_blank">design notes</a>.
+            </p>
+
+            <!-- ===== Global SLA settings ===== -->
+            <div class="settings-group" style="background:#fafafa;border:1px solid #e0e0e0;border-radius:6px;padding:20px;margin-bottom:30px;">
+                <h3 style="margin-top:0;">Global settings</h3>
+                <form id="slaGlobalForm" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+                    <div class="form-group" style="grid-column:span 2;">
+                        <label for="slaEnforceFrom">Enforce SLAs from</label>
+                        <input type="datetime-local" id="slaEnforceFrom" style="max-width:260px;">
+                        <small style="display:block;color:#666;margin-top:4px;">
+                            Leave blank to <strong>disable SLA enforcement entirely</strong>. Set to a datetime and only tickets created
+                            at or after that point get evaluated &mdash; useful for grandfathering in existing tickets when first activating SLAs.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>When a ticket's priority changes mid-flight</label>
+                        <label style="display:block;margin-top:6px;font-weight:400;">
+                            <input type="radio" name="slaPriorityChange" value="forward"> Apply new SLA from the change point forward
+                        </label>
+                        <label style="display:block;font-weight:400;">
+                            <input type="radio" name="slaPriorityChange" value="recompute"> Recompute retroactively against the new target
+                        </label>
+                        <label style="display:block;font-weight:400;">
+                            <input type="radio" name="slaPriorityChange" value="reset"> Reset the SLA clock entirely
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>When a closed ticket is reopened</label>
+                        <label style="display:block;margin-top:6px;font-weight:400;">
+                            <input type="radio" name="slaReopen" value="reset"> Start the SLA fresh
+                        </label>
+                        <label style="display:block;font-weight:400;">
+                            <input type="radio" name="slaReopen" value="continue"> Continue from where the clock paused
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>First-response counts as</label>
+                        <label style="display:block;margin-top:6px;font-weight:400;">
+                            <input type="radio" name="slaFirstResponse" value="outbound_email"> Outbound email only (Reply / Forward)
+                        </label>
+                        <label style="display:block;font-weight:400;">
+                            <input type="radio" name="slaFirstResponse" value="status_change"> Status change away from the default
+                        </label>
+                        <label style="display:block;font-weight:400;">
+                            <input type="radio" name="slaFirstResponse" value="either"> Either, whichever happens first
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="slaWarningThreshold">Warning threshold (%)</label>
+                        <input type="number" id="slaWarningThreshold" min="1" max="100" style="max-width:120px;">
+                        <small style="display:block;color:#666;margin-top:4px;">Tickets flag visually in the inbox at this % of their SLA elapsed.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Notifications</label>
+                        <label style="display:block;margin-top:6px;font-weight:400;">
+                            <input type="checkbox" id="slaNotifyAssignee"> Email the assignee at warning threshold
+                        </label>
+                        <label style="display:block;font-weight:400;">
+                            <input type="checkbox" id="slaNotifyLead"> Email the team lead at breach
+                        </label>
+                    </div>
+
+                    <div style="grid-column:span 2;margin-top:8px;">
+                        <button type="button" class="btn btn-primary" onclick="saveSlaGlobalSettings()">Save global settings</button>
+                        <span id="slaGlobalSaveStatus" style="margin-left:10px;font-size:13px;color:#16a34a;"></span>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ===== SLA Targets per priority ===== -->
+            <div class="settings-group" style="margin-bottom:30px;">
+                <h3>SLA Targets per priority</h3>
+                <p style="color:#666;margin-bottom:14px;">Response and resolution times for each ticket priority. Times are in minutes (60 = 1 hour, 240 = 4 hours, 1440 = 1 day). The calendar determines which business hours the clock ticks against. Leave blank to skip that target.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Priority</th>
+                            <th>Response (mins)</th>
+                            <th>Resolution (mins)</th>
+                            <th>Calendar</th>
+                            <th style="width:90px;">Save</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slaTargetsList">
+                        <tr><td colspan="5" style="text-align:center;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ===== Business Calendars ===== -->
+            <div class="settings-group">
+                <div class="section-header">
+                    <h3 style="margin:0;">Business Calendars</h3>
+                    <button class="add-btn" onclick="openSlaCalendarModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+                </div>
+                <p style="color:#666;margin-bottom:14px;">Define working hours, timezones, and holiday lists. Calendars are referenced by SLA targets (above) and by individual priorities. One calendar is the default for new priorities.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Timezone</th>
+                            <th>Hours</th>
+                            <th>Holidays</th>
+                            <th>Default</th>
+                            <th style="width:120px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slaCalendarsList">
+                        <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Rota Locations Tab -->
@@ -1038,6 +1165,55 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
     </div>
 
+    <!-- SLA Calendar Modal -->
+    <div class="modal" id="slaCalendarModal">
+        <div class="modal-content" style="max-width:680px;">
+            <div class="modal-header" id="slaCalendarModalTitle">Add Business Calendar</div>
+            <form id="slaCalendarForm" style="padding:20px 24px;overflow-y:auto;flex:1;">
+                <input type="hidden" id="slaCalendarId">
+
+                <div style="display:grid;grid-template-columns:2fr 2fr 1fr;gap:15px;">
+                    <div class="form-group">
+                        <label for="slaCalendarName">Name *</label>
+                        <input type="text" id="slaCalendarName" required placeholder="e.g., London Business Hours">
+                    </div>
+                    <div class="form-group">
+                        <label for="slaCalendarTimezone">Timezone *</label>
+                        <select id="slaCalendarTimezone" required></select>
+                        <small style="color:#666;">IANA zone (e.g. Europe/London, America/New_York)</small>
+                    </div>
+                    <div class="form-group" style="display:flex;align-items:end;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" id="slaCalendarIsDefault"> Default
+                        </label>
+                    </div>
+                </div>
+
+                <h4 style="margin:18px 0 8px;">Weekly working hours</h4>
+                <p style="color:#666;font-size:13px;margin:0 0 10px;">Uncheck a day to mark it as closed. Most desks use Mon-Fri 09:00-17:00.</p>
+                <div id="slaCalendarHoursGrid" style="display:grid;grid-template-columns:90px 80px 1fr 1fr;gap:8px 12px;align-items:center;">
+                    <!-- rows injected by JS: 7 weekdays -->
+                </div>
+
+                <h4 style="margin:24px 0 8px;">Holidays</h4>
+                <p style="color:#666;font-size:13px;margin:0 0 10px;">Dates that override the weekly pattern (the clock won't tick on these days).</p>
+                <div id="slaCalendarHolidaysList" style="margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;">
+                    <input type="date" id="slaCalendarHolidayDate" style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;">
+                    <input type="text" id="slaCalendarHolidayName" placeholder="Name (optional, e.g. Christmas Day)" style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:4px;">
+                    <button type="button" class="btn btn-secondary" onclick="addSlaHoliday()">Add holiday</button>
+                </div>
+                <small style="color:#666;display:block;margin-top:4px;">Note: holidays are saved with the rest of the calendar — they only persist when you hit Save.</small>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-danger" id="slaCalendarDeleteBtn" onclick="deleteSlaCalendar()" style="display:none;margin-right:auto;"><?php echo htmlspecialchars(t('common.delete')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeSlaCalendarModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '../../api/tickets/';
         const API_SETTINGS = '../../api/settings/';
@@ -1064,6 +1240,7 @@ $translationNamespaces = ['common', 'tickets'];
             loadEmailTemplates();
             loadRotaShifts();
             loadRotaWeekendSetting();
+            loadSlaTab();
 
             // Auto-switch to mailboxes tab if OAuth success
             <?php if ($oauthSuccess && $oauthMailboxId): ?>
@@ -3162,6 +3339,365 @@ $translationNamespaces = ['common', 'tickets'];
                 }
             } catch (error) {
                 showToast('Failed to save setting', 'error');
+            }
+        }
+
+        // ==================== SLA Tab ====================
+        // Single in-memory state object; populated by loadSlaTab(), used by
+        // the per-section render functions + the calendar edit modal.
+        let slaData = { settings: {}, priorities: [], calendars: [] };
+        let slaTimezones = null; // lazy-loaded on first calendar modal open
+        const SLA_WEEKDAYS = [
+            { num: 1, label: 'Monday' },
+            { num: 2, label: 'Tuesday' },
+            { num: 3, label: 'Wednesday' },
+            { num: 4, label: 'Thursday' },
+            { num: 5, label: 'Friday' },
+            { num: 6, label: 'Saturday' },
+            { num: 7, label: 'Sunday' },
+        ];
+
+        async function loadSlaTab() {
+            try {
+                const res = await fetch(API_BASE + 'get_sla_settings.php');
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'load failed');
+                slaData = { settings: data.settings || {}, priorities: data.priorities || [], calendars: data.calendars || [] };
+                renderSlaGlobalSettings();
+                renderSlaTargets();
+                renderSlaCalendars();
+            } catch (e) {
+                console.error('SLA load failed:', e);
+            }
+        }
+
+        function renderSlaGlobalSettings() {
+            const s = slaData.settings;
+            // Datetime-local input format: YYYY-MM-DDTHH:MM
+            const ef = s.sla_enforce_from;
+            document.getElementById('slaEnforceFrom').value = ef ? ef.replace(' ', 'T').substring(0, 16) : '';
+            document.getElementById('slaWarningThreshold').value = s.sla_warning_threshold_percent || '80';
+            document.getElementById('slaNotifyAssignee').checked = s.sla_notify_assignee_at_warning === '1';
+            document.getElementById('slaNotifyLead').checked = s.sla_notify_lead_at_breach === '1';
+
+            const setRadio = (name, val) => {
+                document.querySelectorAll(`input[name="${name}"]`).forEach(r => r.checked = (r.value === val));
+            };
+            setRadio('slaPriorityChange', s.sla_priority_change_behaviour || 'forward');
+            setRadio('slaReopen', s.sla_reopen_behaviour || 'reset');
+            setRadio('slaFirstResponse', s.sla_first_response_definition || 'either');
+        }
+
+        async function saveSlaGlobalSettings() {
+            const getRadio = name => {
+                const r = document.querySelector(`input[name="${name}"]:checked`);
+                return r ? r.value : null;
+            };
+            const payload = {
+                sla_enforce_from:               document.getElementById('slaEnforceFrom').value || null,
+                sla_priority_change_behaviour:  getRadio('slaPriorityChange'),
+                sla_reopen_behaviour:           getRadio('slaReopen'),
+                sla_warning_threshold_percent:  document.getElementById('slaWarningThreshold').value || null,
+                sla_notify_assignee_at_warning: document.getElementById('slaNotifyAssignee').checked,
+                sla_notify_lead_at_breach:      document.getElementById('slaNotifyLead').checked,
+                sla_first_response_definition:  getRadio('slaFirstResponse'),
+            };
+            try {
+                const res = await fetch(API_BASE + 'save_sla_global_settings.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'save failed');
+                const status = document.getElementById('slaGlobalSaveStatus');
+                status.textContent = '✓ Saved';
+                setTimeout(() => { status.textContent = ''; }, 2500);
+                // Refresh local copy from server (normalised values)
+                loadSlaTab();
+            } catch (e) {
+                showToast('Failed to save SLA settings: ' + e.message, 'error');
+            }
+        }
+
+        function renderSlaTargets() {
+            const tbody = document.getElementById('slaTargetsList');
+            if (slaData.priorities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">No active priorities — add some on the Priorities tab.</td></tr>';
+                return;
+            }
+            const calOptions = slaData.calendars.map(c =>
+                `<option value="${c.id}">${escapeHtml(c.name)}</option>`
+            ).join('');
+            tbody.innerHTML = slaData.priorities.map(p => `
+                <tr>
+                    <td><strong style="color:${escapeHtml(p.colour || '#333')};">${escapeHtml(p.name)}</strong></td>
+                    <td><input type="number" min="0" value="${p.sla_response_minutes || ''}" data-pid="${p.id}" data-field="response" style="width:90px;padding:4px 8px;"></td>
+                    <td><input type="number" min="0" value="${p.sla_resolution_minutes || ''}" data-pid="${p.id}" data-field="resolution" style="width:90px;padding:4px 8px;"></td>
+                    <td>
+                        <select data-pid="${p.id}" data-field="calendar" style="padding:4px 8px;">
+                            <option value="">— None —</option>
+                            ${calOptions.replace(`value="${p.sla_calendar_id}"`, `value="${p.sla_calendar_id}" selected`)}
+                        </select>
+                    </td>
+                    <td><button type="button" class="btn btn-secondary" style="padding:4px 12px;" onclick="savePrioritySla(${p.id})">Save</button></td>
+                </tr>
+            `).join('');
+        }
+
+        async function savePrioritySla(priorityId) {
+            const row = document.querySelector(`#slaTargetsList tr [data-pid="${priorityId}"]`).closest('tr');
+            const payload = {
+                id: priorityId,
+                sla_response_minutes:   row.querySelector('input[data-field="response"]').value,
+                sla_resolution_minutes: row.querySelector('input[data-field="resolution"]').value,
+                sla_calendar_id:        row.querySelector('select[data-field="calendar"]').value,
+            };
+            try {
+                const res = await fetch(API_BASE + 'save_priority_sla.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'save failed');
+                showToast('Priority SLA saved', 'success');
+                loadSlaTab();
+            } catch (e) {
+                showToast('Failed to save: ' + e.message, 'error');
+            }
+        }
+
+        function renderSlaCalendars() {
+            const tbody = document.getElementById('slaCalendarsList');
+            if (slaData.calendars.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No calendars defined yet. Add one above.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = slaData.calendars.map(c => {
+                const openDays = (c.hours || []).length;
+                const hoursLabel = openDays > 0
+                    ? `${openDays} open day${openDays === 1 ? '' : 's'}`
+                    : '<span style="color:#c62828;">No hours set</span>';
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(c.name)}</strong></td>
+                        <td><code style="font-size:12px;">${escapeHtml(c.timezone)}</code></td>
+                        <td>${hoursLabel}</td>
+                        <td>${c.holiday_count || 0}</td>
+                        <td>${c.is_default ? '<span class="status-badge status-active">Default</span>' : ''}</td>
+                        <td>
+                            <button class="action-btn" onclick="openSlaCalendarModal(${c.id})" title="${escapeHtml(t('common.edit'))}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ---------- Calendar modal ----------
+        let slaModalHolidays = []; // in-flight list for the open modal
+
+        async function openSlaCalendarModal(calendarId) {
+            // Lazy-load timezones once
+            if (!slaTimezones) {
+                try {
+                    const res = await fetch(API_BASE + 'list_timezones.php');
+                    const data = await res.json();
+                    if (data.success) slaTimezones = data.groups;
+                } catch (e) { slaTimezones = {}; }
+            }
+            // Populate the timezone select (only the first time, or if it's empty)
+            const tzSelect = document.getElementById('slaCalendarTimezone');
+            if (tzSelect.options.length === 0 && slaTimezones) {
+                Object.keys(slaTimezones).sort().forEach(region => {
+                    const og = document.createElement('optgroup');
+                    og.label = region;
+                    slaTimezones[region].forEach(tz => {
+                        const opt = document.createElement('option');
+                        opt.value = tz;
+                        opt.textContent = tz;
+                        og.appendChild(opt);
+                    });
+                    tzSelect.appendChild(og);
+                });
+            }
+
+            // Build the 7-day hours grid
+            const grid = document.getElementById('slaCalendarHoursGrid');
+            grid.innerHTML = SLA_WEEKDAYS.map(w => `
+                <label style="font-weight:500;">${w.label}</label>
+                <label style="display:flex;align-items:center;gap:6px;font-weight:400;">
+                    <input type="checkbox" class="sla-hours-open" data-wd="${w.num}"> Open
+                </label>
+                <input type="time" class="sla-hours-start" data-wd="${w.num}" style="padding:4px 8px;" disabled>
+                <input type="time" class="sla-hours-end" data-wd="${w.num}" style="padding:4px 8px;" disabled>
+            `).join('');
+            // Wire the open-checkbox to enable/disable the time inputs
+            grid.querySelectorAll('.sla-hours-open').forEach(cb => {
+                cb.addEventListener('change', e => {
+                    const wd = e.target.dataset.wd;
+                    grid.querySelector(`.sla-hours-start[data-wd="${wd}"]`).disabled = !e.target.checked;
+                    grid.querySelector(`.sla-hours-end[data-wd="${wd}"]`).disabled = !e.target.checked;
+                });
+            });
+
+            // Default values for a fresh calendar OR load existing
+            const reset = () => {
+                document.getElementById('slaCalendarId').value = '';
+                document.getElementById('slaCalendarName').value = '';
+                tzSelect.value = 'Europe/London';
+                document.getElementById('slaCalendarIsDefault').checked = false;
+                slaModalHolidays = [];
+                // Default: Mon-Fri 09:00-17:00 open, Sat/Sun closed
+                SLA_WEEKDAYS.forEach(w => {
+                    const open = w.num <= 5;
+                    grid.querySelector(`.sla-hours-open[data-wd="${w.num}"]`).checked = open;
+                    grid.querySelector(`.sla-hours-start[data-wd="${w.num}"]`).value = open ? '09:00' : '';
+                    grid.querySelector(`.sla-hours-end[data-wd="${w.num}"]`).value = open ? '17:00' : '';
+                    grid.querySelector(`.sla-hours-start[data-wd="${w.num}"]`).disabled = !open;
+                    grid.querySelector(`.sla-hours-end[data-wd="${w.num}"]`).disabled = !open;
+                });
+                document.getElementById('slaCalendarModalTitle').textContent = 'Add Business Calendar';
+                document.getElementById('slaCalendarDeleteBtn').style.display = 'none';
+            };
+            reset();
+
+            if (calendarId) {
+                try {
+                    const res = await fetch(API_BASE + 'get_sla_calendar.php?id=' + calendarId);
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.error || 'load failed');
+                    const c = data.calendar;
+                    document.getElementById('slaCalendarId').value = c.id;
+                    document.getElementById('slaCalendarName').value = c.name;
+                    tzSelect.value = c.timezone;
+                    document.getElementById('slaCalendarIsDefault').checked = c.is_default;
+                    document.getElementById('slaCalendarModalTitle').textContent = 'Edit Business Calendar';
+                    document.getElementById('slaCalendarDeleteBtn').style.display = '';
+                    // Reset all days closed first, then apply
+                    SLA_WEEKDAYS.forEach(w => {
+                        grid.querySelector(`.sla-hours-open[data-wd="${w.num}"]`).checked = false;
+                        grid.querySelector(`.sla-hours-start[data-wd="${w.num}"]`).value = '';
+                        grid.querySelector(`.sla-hours-end[data-wd="${w.num}"]`).value = '';
+                        grid.querySelector(`.sla-hours-start[data-wd="${w.num}"]`).disabled = true;
+                        grid.querySelector(`.sla-hours-end[data-wd="${w.num}"]`).disabled = true;
+                    });
+                    (c.hours || []).forEach(h => {
+                        grid.querySelector(`.sla-hours-open[data-wd="${h.weekday}"]`).checked = true;
+                        grid.querySelector(`.sla-hours-start[data-wd="${h.weekday}"]`).value = h.start_time;
+                        grid.querySelector(`.sla-hours-end[data-wd="${h.weekday}"]`).value = h.end_time;
+                        grid.querySelector(`.sla-hours-start[data-wd="${h.weekday}"]`).disabled = false;
+                        grid.querySelector(`.sla-hours-end[data-wd="${h.weekday}"]`).disabled = false;
+                    });
+                    slaModalHolidays = (c.holidays || []).map(h => ({ holiday_date: h.holiday_date, name: h.name || '' }));
+                } catch (e) {
+                    showToast('Failed to load calendar: ' + e.message, 'error');
+                    return;
+                }
+            }
+
+            renderSlaModalHolidays();
+            document.getElementById('slaCalendarModal').classList.add('active');
+        }
+
+        function closeSlaCalendarModal() {
+            document.getElementById('slaCalendarModal').classList.remove('active');
+        }
+
+        function renderSlaModalHolidays() {
+            const container = document.getElementById('slaCalendarHolidaysList');
+            if (slaModalHolidays.length === 0) {
+                container.innerHTML = '<div style="color:#999;font-size:13px;font-style:italic;">No holidays added yet.</div>';
+                return;
+            }
+            container.innerHTML = slaModalHolidays.map((h, i) => `
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;padding:6px 10px;background:#f5f5f5;border-radius:4px;">
+                    <code style="font-size:12px;">${escapeHtml(h.holiday_date)}</code>
+                    ${h.name ? `<span style="color:#555;flex:1;">${escapeHtml(h.name)}</span>` : '<span style="flex:1;color:#999;font-style:italic;">(no name)</span>'}
+                    <button type="button" class="action-btn delete" onclick="removeSlaHoliday(${i})" title="${escapeHtml(t('common.delete'))}" style="padding:2px 8px;">&times;</button>
+                </div>
+            `).join('');
+        }
+
+        function addSlaHoliday() {
+            const date = document.getElementById('slaCalendarHolidayDate').value;
+            const name = document.getElementById('slaCalendarHolidayName').value.trim();
+            if (!date) { showToast('Pick a date first', 'error'); return; }
+            if (slaModalHolidays.some(h => h.holiday_date === date)) {
+                showToast('That date is already in the list', 'error');
+                return;
+            }
+            slaModalHolidays.push({ holiday_date: date, name });
+            slaModalHolidays.sort((a, b) => a.holiday_date.localeCompare(b.holiday_date));
+            renderSlaModalHolidays();
+            document.getElementById('slaCalendarHolidayDate').value = '';
+            document.getElementById('slaCalendarHolidayName').value = '';
+        }
+
+        function removeSlaHoliday(idx) {
+            slaModalHolidays.splice(idx, 1);
+            renderSlaModalHolidays();
+        }
+
+        // Wire the calendar form submit
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('slaCalendarForm');
+            if (!form) return;
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const grid = document.getElementById('slaCalendarHoursGrid');
+                const hours = [];
+                SLA_WEEKDAYS.forEach(w => {
+                    const open = grid.querySelector(`.sla-hours-open[data-wd="${w.num}"]`).checked;
+                    if (!open) return;
+                    const start = grid.querySelector(`.sla-hours-start[data-wd="${w.num}"]`).value;
+                    const end   = grid.querySelector(`.sla-hours-end[data-wd="${w.num}"]`).value;
+                    if (!start || !end) return;
+                    hours.push({ weekday: w.num, start_time: start, end_time: end });
+                });
+
+                const idRaw = document.getElementById('slaCalendarId').value;
+                const payload = {
+                    name:       document.getElementById('slaCalendarName').value.trim(),
+                    timezone:   document.getElementById('slaCalendarTimezone').value,
+                    is_default: document.getElementById('slaCalendarIsDefault').checked,
+                    hours,
+                    holidays:   slaModalHolidays,
+                };
+                if (idRaw) payload.id = parseInt(idRaw, 10);
+
+                try {
+                    const res = await fetch(API_BASE + 'save_sla_calendar.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.error || 'save failed');
+                    showToast('Calendar saved', 'success');
+                    closeSlaCalendarModal();
+                    loadSlaTab();
+                } catch (e) {
+                    showToast('Failed to save calendar: ' + e.message, 'error');
+                }
+            });
+        });
+
+        async function deleteSlaCalendar() {
+            const id = parseInt(document.getElementById('slaCalendarId').value, 10);
+            if (!id) return;
+            if (!confirm('Delete this calendar? This cannot be undone.')) return;
+            try {
+                const res = await fetch(API_BASE + 'delete_sla_calendar.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'delete failed');
+                showToast('Calendar deleted', 'success');
+                closeSlaCalendarModal();
+                loadSlaTab();
+            } catch (e) {
+                showToast(e.message, 'error');
             }
         }
 

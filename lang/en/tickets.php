@@ -169,6 +169,7 @@ return [
             'ticket_origins'  => 'Ticket Origins',
             'statuses'        => 'Statuses',
             'priorities'      => 'Priorities',
+            'sla'             => 'SLA',
             'rota_locations'  => 'Rota Locations',
             'mailboxes'       => 'Mailboxes',
             'email_templates' => 'Templates',
