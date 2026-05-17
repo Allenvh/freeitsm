@@ -18,11 +18,11 @@ $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 $allowed_modules = $_SESSION['allowed_modules'] ?? null;
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - ITSM</title>
+    <title><?php echo htmlspecialchars(t('common.home.browser_title')); ?></title>
     <link rel="stylesheet" href="assets/css/inbox.css">
     <style>
         body {
@@ -154,7 +154,7 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
 </head>
 <body>
     <div class="landing-header">
-        <h1>Service Desk</h1>
+        <h1><?php echo htmlspecialchars(t('common.home.header_title')); ?></h1>
         <?php renderHeaderRight($analyst_name, ''); ?>
     </div>
     <script>function closeWaffleMenu() {}</script>
@@ -162,13 +162,13 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
     <div class="landing-container">
         <img src="assets/images/CompanyLogo.png" alt="Company Logo" class="company-logo">
         <div class="welcome-text">
-            <h2>What would you like to do?</h2>
-            <p>Select a module to get started</p>
+            <h2><?php echo htmlspecialchars(t('common.home.welcome_heading')); ?></h2>
+            <p><?php echo htmlspecialchars(t('common.home.welcome_subtitle')); ?></p>
         </div>
 
         <div class="modules-grid">
             <?php if ($allowed_modules === null || in_array('watchtower', $allowed_modules)): ?>
-            <a href="watchtower/" class="module-card watchtower" title="Unified attention dashboard across all modules">
+            <a href="watchtower/" class="module-card watchtower" title="<?php echo htmlspecialchars(t('common.modules.watchtower.description')); ?>">
                 <div class="module-icon watchtower">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
@@ -176,24 +176,24 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                     </svg>
                 </div>
-                <div class="module-name">Watchtower</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.watchtower.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('tickets', $allowed_modules)): ?>
-            <a href="tickets/" class="module-card tickets" title="Manage support requests, emails, and user issues">
+            <a href="tickets/" class="module-card tickets" title="<?php echo htmlspecialchars(t('common.modules.tickets.description')); ?>">
                 <div class="module-icon tickets">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
                         <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
                     </svg>
                 </div>
-                <div class="module-name">Tickets</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.tickets.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('assets', $allowed_modules)): ?>
-            <a href="asset-management/" class="module-card assets" title="Track IT assets and user assignments">
+            <a href="asset-management/" class="module-card assets" title="<?php echo htmlspecialchars(t('common.modules.assets.description')); ?>">
                 <div class="module-icon assets">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -201,24 +201,24 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="12" y1="17" x2="12" y2="21"></line>
                     </svg>
                 </div>
-                <div class="module-name">Assets</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.assets.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('knowledge', $allowed_modules)): ?>
-            <a href="knowledge/" class="module-card knowledge" title="Create and browse knowledge base articles">
+            <a href="knowledge/" class="module-card knowledge" title="<?php echo htmlspecialchars(t('common.modules.knowledge.description')); ?>">
                 <div class="module-icon knowledge">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
                         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
                     </svg>
                 </div>
-                <div class="module-name">Knowledge</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.knowledge.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('changes', $allowed_modules)): ?>
-            <a href="change-management/" class="module-card changes" title="Plan, track and manage IT changes">
+            <a href="change-management/" class="module-card changes" title="<?php echo htmlspecialchars(t('common.modules.changes.description')); ?>">
                 <div class="module-icon changes">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="16 3 21 3 21 8"></polyline>
@@ -228,12 +228,12 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="4" y1="4" x2="9" y2="9"></line>
                     </svg>
                 </div>
-                <div class="module-name">Changes</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.changes.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('calendar', $allowed_modules)): ?>
-            <a href="calendar/" class="module-card calendar" title="Track events, deadlines and schedules">
+            <a href="calendar/" class="module-card calendar" title="<?php echo htmlspecialchars(t('common.modules.calendar.description')); ?>">
                 <div class="module-icon calendar">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -242,24 +242,24 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="3" y1="10" x2="21" y2="10"></line>
                     </svg>
                 </div>
-                <div class="module-name">Calendar</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.calendar.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('morning-checks', $allowed_modules)): ?>
-            <a href="morning-checks/" class="module-card morning-checks" title="Record daily infrastructure checks">
+            <a href="morning-checks/" class="module-card morning-checks" title="<?php echo htmlspecialchars(t('common.modules.morning-checks.description')); ?>">
                 <div class="module-icon morning-checks">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
                 </div>
-                <div class="module-name">Checks</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.morning-checks.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('reporting', $allowed_modules)): ?>
-            <a href="reporting/" class="module-card reporting" title="View system logs and analytics">
+            <a href="reporting/" class="module-card reporting" title="<?php echo htmlspecialchars(t('common.modules.reporting.description')); ?>">
                 <div class="module-icon reporting">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -267,12 +267,12 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="6" y1="20" x2="6" y2="14"></line>
                     </svg>
                 </div>
-                <div class="module-name">Reporting</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.reporting.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('software', $allowed_modules)): ?>
-            <a href="software/" class="module-card software" title="Browse software inventory and licensing">
+            <a href="software/" class="module-card software" title="<?php echo htmlspecialchars(t('common.modules.software.description')); ?>">
                 <div class="module-icon software">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
@@ -287,12 +287,12 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="1" y1="14" x2="4" y2="14"></line>
                     </svg>
                 </div>
-                <div class="module-name">Software</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.software.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('forms', $allowed_modules)): ?>
-            <a href="forms/" class="module-card forms" title="Design custom forms and view submissions">
+            <a href="forms/" class="module-card forms" title="<?php echo htmlspecialchars(t('common.modules.forms.description')); ?>">
                 <div class="module-icon forms">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -302,12 +302,12 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <polyline points="10 9 9 9 8 9"></polyline>
                     </svg>
                 </div>
-                <div class="module-name">Forms</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.forms.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('contracts', $allowed_modules)): ?>
-            <a href="contracts/" class="module-card contracts" title="Manage suppliers, contacts and contracts">
+            <a href="contracts/" class="module-card contracts" title="<?php echo htmlspecialchars(t('common.modules.contracts.description')); ?>">
                 <div class="module-icon contracts">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -317,23 +317,23 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="12" y1="9" x2="8" y2="9"></line>
                     </svg>
                 </div>
-                <div class="module-name">Contracts</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.contracts.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('service-status', $allowed_modules)): ?>
-            <a href="service-status/" class="module-card service-status" title="Monitor service health and track incidents">
+            <a href="service-status/" class="module-card service-status" title="<?php echo htmlspecialchars(t('common.modules.service-status.description')); ?>">
                 <div class="module-icon service-status">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                     </svg>
                 </div>
-                <div class="module-name">Status</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.service-status.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('wiki', $allowed_modules)): ?>
-            <a href="system-wiki/" class="module-card wiki" title="Browse auto-generated codebase documentation">
+            <a href="system-wiki/" class="module-card wiki" title="<?php echo htmlspecialchars(t('common.modules.wiki.description')); ?>">
                 <div class="module-icon wiki">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
@@ -341,48 +341,48 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
                     </svg>
                 </div>
-                <div class="module-name">Wiki</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.wiki.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('lms', $allowed_modules)): ?>
-            <a href="lms/" class="module-card lms" title="Learning Management System with SCORM course player">
+            <a href="lms/" class="module-card lms" title="<?php echo htmlspecialchars(t('common.modules.lms.description')); ?>">
                 <div class="module-icon lms">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
                         <path d="M6 12v5c0 1.66 2.69 3 6 3s6-1.34 6-3v-5"></path>
                     </svg>
                 </div>
-                <div class="module-name">LMS</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.lms.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('process-mapper', $allowed_modules)): ?>
-            <a href="process-mapper/" class="module-card process-mapper" title="Visual flowchart and process mapping tool">
+            <a href="process-mapper/" class="module-card process-mapper" title="<?php echo htmlspecialchars(t('common.modules.process-mapper.description')); ?>">
                 <div class="module-icon process-mapper">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
                         <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
                     </svg>
                 </div>
-                <div class="module-name">Processes</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.process-mapper.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('tasks', $allowed_modules)): ?>
-            <a href="tasks/" class="module-card tasks" title="Kanban board and list view for tracking tasks">
+            <a href="tasks/" class="module-card tasks" title="<?php echo htmlspecialchars(t('common.modules.tasks.description')); ?>">
                 <div class="module-icon tasks">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 11l3 3L22 4"></path>
                         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                     </svg>
                 </div>
-                <div class="module-name">Tasks</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.tasks.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('network-mapper', $allowed_modules)): ?>
-            <a href="network-mapper/" class="module-card network-mapper" title="Design and document network diagrams">
+            <a href="network-mapper/" class="module-card network-mapper" title="<?php echo htmlspecialchars(t('common.modules.network-mapper.description')); ?>">
                 <div class="module-icon network-mapper">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="6" cy="6" r="2.5"></circle>
@@ -393,12 +393,12 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="8.5" y1="6" x2="15.5" y2="6"></line>
                     </svg>
                 </div>
-                <div class="module-name">Network</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.network-mapper.name')); ?></div>
             </a>
             <?php endif; ?>
 
             <?php if ($allowed_modules === null || in_array('system', $allowed_modules)): ?>
-            <a href="system/" class="module-card system" title="System administration and configuration">
+            <a href="system/" class="module-card system" title="<?php echo htmlspecialchars(t('common.modules.system.description')); ?>">
                 <div class="module-icon system">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -412,14 +412,14 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
                         <line x1="17" y1="16" x2="23" y2="16"></line>
                     </svg>
                 </div>
-                <div class="module-name">System</div>
+                <div class="module-name"><?php echo htmlspecialchars(t('common.modules.system.name')); ?></div>
             </a>
             <?php endif; ?>
         </div>
     </div>
 
     <div class="footer">
-        Service Desk ITSM
+        <?php echo htmlspecialchars(t('common.home.footer')); ?>
     </div>
 </body>
 </html>

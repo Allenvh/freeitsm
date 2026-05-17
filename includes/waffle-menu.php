@@ -17,6 +17,11 @@ $analyst_name = $analyst_name ?? ($_SESSION['analyst_name'] ?? 'Analyst');
 
 require_once __DIR__ . '/module-colors.php';
 
+// Bootstrap i18n so every module that includes this header gets t() for free.
+// Idempotent — pages that already initialised it (tickets, process-mapper) are fine.
+require_once __DIR__ . '/i18n.php';
+I18n::initFromSession();
+
 // Password expiry guard — force redirect if password is expired
 if (!empty($_SESSION['password_expired'])) {
     $currentUrl = $_SERVER['REQUEST_URI'] ?? '';
@@ -26,100 +31,102 @@ if (!empty($_SESSION['password_expired'])) {
     }
 }
 
-// Module definitions - add new modules here
+// Module definitions - add new modules here.
+// Display names resolve via t('common.modules.<key>.name') so adding a module means
+// one entry here + one entry in lang/<locale>/common.php's 'modules' array per language.
 $modules = [
     'watchtower' => [
-        'name' => 'Watchtower',
+        'name' => t('common.modules.watchtower.name'),
         'path' => 'watchtower/',
         'icon' => '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>'
     ],
     'tickets' => [
-        'name' => 'Tickets',
+        'name' => t('common.modules.tickets.name'),
         'path' => 'tickets/',
         'icon' => '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>'
     ],
     'assets' => [
-        'name' => 'Assets',
+        'name' => t('common.modules.assets.name'),
         'path' => 'asset-management/',
         'icon' => '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>'
     ],
     'knowledge' => [
-        'name' => 'Knowledge',
+        'name' => t('common.modules.knowledge.name'),
         'path' => 'knowledge/',
         'icon' => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>'
     ],
     'changes' => [
-        'name' => 'Changes',
+        'name' => t('common.modules.changes.name'),
         'path' => 'change-management/',
         'icon' => '<polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line>'
     ],
     'calendar' => [
-        'name' => 'Calendar',
+        'name' => t('common.modules.calendar.name'),
         'path' => 'calendar/',
         'icon' => '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>'
     ],
     'morning-checks' => [
-        'name' => 'Checks',
+        'name' => t('common.modules.morning-checks.name'),
         'path' => 'morning-checks/',
         'icon' => '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>'
     ],
     'reporting' => [
-        'name' => 'Reporting',
+        'name' => t('common.modules.reporting.name'),
         'path' => 'reporting/',
         'icon' => '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
     ],
     'software' => [
-        'name' => 'Software',
+        'name' => t('common.modules.software.name'),
         'path' => 'software/',
         'icon' => '<rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line>'
     ],
     'forms' => [
-        'name' => 'Forms',
+        'name' => t('common.modules.forms.name'),
         'path' => 'forms/',
         'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline>'
     ],
     'contracts' => [
-        'name' => 'Contracts',
+        'name' => t('common.modules.contracts.name'),
         'path' => 'contracts/',
         'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="12" y1="9" x2="8" y2="9"></line>'
     ],
     'service-status' => [
-        'name' => 'Status',
+        'name' => t('common.modules.service-status.name'),
         'path' => 'service-status/',
         'icon' => '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>'
     ],
     'wiki' => [
-        'name' => 'Wiki',
+        'name' => t('common.modules.wiki.name'),
         'path' => 'system-wiki/',
         'icon' => '<circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>'
     ],
     'lms' => [
-        'name' => 'LMS',
+        'name' => t('common.modules.lms.name'),
         'path' => 'lms/',
         'icon' => '<path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c0 1.66 2.69 3 6 3s6-1.34 6-3v-5"></path>'
     ],
     'process-mapper' => [
-        'name' => 'Processes',
+        'name' => t('common.modules.process-mapper.name'),
         'path' => 'process-mapper/',
         'icon' => '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>'
     ],
     'tasks' => [
-        'name' => 'Tasks',
+        'name' => t('common.modules.tasks.name'),
         'path' => 'tasks/',
         'icon' => '<path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>'
     ],
     'cmdb' => [
-        'name' => 'CMDB',
+        'name' => t('common.modules.cmdb.name'),
         'path' => 'cmdb/',
         'icon' => '<path d="M2 22V8l10-6 10 6v14"></path><path d="M2 12h20"></path><path d="M2 17h20"></path><line x1="12" y1="2" x2="12" y2="22"></line>'
     ],
     'network-mapper' => [
-        'name' => 'Network',
+        'name' => t('common.modules.network-mapper.name'),
         'path' => 'network-mapper/',
         'icon' => '<circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><line x1="7.5" y1="7.5" x2="11" y2="16"></line><line x1="16.5" y1="7.5" x2="13" y2="16"></line><line x1="8.5" y1="6" x2="15.5" y2="6"></line>'
     ],
     'system' => [
-        'name' => 'System',
+        'name' => t('common.modules.system.name'),
         'path' => 'system/',
         'icon' => '<line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line>'
     ]
@@ -284,7 +291,7 @@ $modules = [
  */
 function renderWaffleMenuButton() {
     ?>
-    <button class="waffle-btn" onclick="toggleWaffleMenu()" title="ITSM Modules">
+    <button class="waffle-btn" onclick="toggleWaffleMenu()" title="<?php echo htmlspecialchars(t('common.waffle.title')); ?>">
         <div class="waffle-icon">
             <span></span><span></span><span></span>
             <span></span><span></span><span></span>
@@ -298,7 +305,7 @@ function renderWaffleMenuPanel($modules, $current_module, $path_prefix) {
     $allowed = $_SESSION['allowed_modules'] ?? null;
     ?>
     <div class="waffle-panel" id="wafflePanel">
-        <div class="waffle-panel-header">ITSM Modules</div>
+        <div class="waffle-panel-header"><?php echo htmlspecialchars(t('common.waffle.title')); ?></div>
         <div class="waffle-modules">
             <?php foreach ($modules as $key => $module):
                 if ($allowed !== null && !in_array($key, $allowed)) continue;
@@ -688,7 +695,7 @@ function renderHeaderRight($analyst_name, $path_prefix) {
     </style>
 
     <div class="header-right">
-        <button class="mail-check-btn" id="mailCheckBtn" onclick="triggerMailCheck()" title="Check for new emails" style="display:none;">
+        <button class="mail-check-btn" id="mailCheckBtn" onclick="triggerMailCheck()" title="<?php echo htmlspecialchars(t('common.account.mail_check')); ?>" style="display:none;">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
         </button>
         <div class="user-menu-overlay" id="userMenuOverlay" onclick="closeUserMenu()"></div>
@@ -702,22 +709,22 @@ function renderHeaderRight($analyst_name, $path_prefix) {
             </div>
             <button class="user-menu-item" onclick="openPasswordModal()">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                <span>Change Password</span>
+                <span><?php echo htmlspecialchars(t('common.account.change_password')); ?></span>
             </button>
             <button class="user-menu-item" onclick="openMfaModal()">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                <span>Multi-Factor Auth</span>
-                <span class="mfa-badge disabled" id="mfaBadgeMenu">Off</span>
+                <span><?php echo htmlspecialchars(t('common.account.mfa')); ?></span>
+                <span class="mfa-badge disabled" id="mfaBadgeMenu"><?php echo htmlspecialchars(t('common.account.badge_off')); ?></span>
             </button>
             <button class="user-menu-item" id="trustDeviceItem" onclick="toggleTrustDevice()" style="display:none;">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                <span>Trusted Device</span>
-                <span class="mfa-badge disabled" id="trustBadgeMenu">Off</span>
+                <span><?php echo htmlspecialchars(t('common.account.trusted_device')); ?></span>
+                <span class="mfa-badge disabled" id="trustBadgeMenu"><?php echo htmlspecialchars(t('common.account.badge_off')); ?></span>
             </button>
             <div class="user-menu-divider"></div>
-            <button class="user-menu-item logout-item" onclick="if(confirm('Are you sure you want to logout?')) window.location.href='<?php echo $path_prefix; ?>analyst_logout.php';">
+            <button class="user-menu-item logout-item" onclick="if(confirm(<?php echo htmlspecialchars(json_encode(t('common.account.logout_confirm')), ENT_QUOTES); ?>)) window.location.href='<?php echo $path_prefix; ?>analyst_logout.php';">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                <span>Logout</span>
+                <span><?php echo htmlspecialchars(t('common.account.logout')); ?></span>
             </button>
         </div>
     </div>
@@ -726,27 +733,27 @@ function renderHeaderRight($analyst_name, $path_prefix) {
     <div class="account-modal" id="passwordModal">
         <div class="account-modal-box">
             <div class="account-modal-header">
-                Change Password
+                <?php echo htmlspecialchars(t('common.password_modal.title')); ?>
                 <button class="account-modal-close" onclick="closePasswordModal()">&times;</button>
             </div>
             <div class="account-modal-body">
                 <div id="pwMsg" class="acct-msg"></div>
                 <div class="acct-form-group">
-                    <label class="acct-form-label">Current Password</label>
+                    <label class="acct-form-label"><?php echo htmlspecialchars(t('common.password_modal.current_password')); ?></label>
                     <input type="password" class="acct-form-input" id="pwCurrent" autocomplete="current-password">
                 </div>
                 <div class="acct-form-group">
-                    <label class="acct-form-label">New Password</label>
+                    <label class="acct-form-label"><?php echo htmlspecialchars(t('common.password_modal.new_password')); ?></label>
                     <input type="password" class="acct-form-input" id="pwNew" autocomplete="new-password">
                 </div>
                 <div class="acct-form-group">
-                    <label class="acct-form-label">Confirm New Password</label>
+                    <label class="acct-form-label"><?php echo htmlspecialchars(t('common.password_modal.confirm_password')); ?></label>
                     <input type="password" class="acct-form-input" id="pwConfirm" autocomplete="new-password">
                 </div>
             </div>
             <div class="account-modal-footer">
-                <button class="acct-btn acct-btn-secondary" onclick="closePasswordModal()">Cancel</button>
-                <button class="acct-btn acct-btn-primary" id="pwSaveBtn" onclick="savePassword()">Change Password</button>
+                <button class="acct-btn acct-btn-secondary" onclick="closePasswordModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="acct-btn acct-btn-primary" id="pwSaveBtn" onclick="savePassword()"><?php echo htmlspecialchars(t('common.password_modal.submit')); ?></button>
             </div>
         </div>
     </div>
@@ -755,12 +762,12 @@ function renderHeaderRight($analyst_name, $path_prefix) {
     <div class="account-modal" id="mfaModal">
         <div class="account-modal-box">
             <div class="account-modal-header">
-                Multi-Factor Authentication
+                <?php echo htmlspecialchars(t('common.mfa_modal.title')); ?>
                 <button class="account-modal-close" onclick="closeMfaModal()">&times;</button>
             </div>
             <div class="account-modal-body">
                 <div id="mfaMsg" class="acct-msg"></div>
-                <div id="mfaContent">Loading...</div>
+                <div id="mfaContent"><?php echo htmlspecialchars(t('common.loading')); ?></div>
             </div>
         </div>
     </div>
