@@ -21,7 +21,7 @@ $translationNamespaces = ['common', 'tickets'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('tickets.title')); ?> - <?php echo htmlspecialchars(t('tickets.nav.inbox')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css?v=15">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=16">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../assets/js/i18n.js"></script>
     <script src="../assets/js/tinymce/tinymce.min.js"></script>
@@ -249,12 +249,73 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
     </div>
 
+    <!-- Right-click context menu for email rows. Positioned in JS at cursor. -->
+    <div class="ticket-context-menu" id="ticketContextMenu" role="menu">
+        <div class="ticket-context-menu-header" id="ticketContextMenuHeader"></div>
+        <button class="ticket-context-menu-item" type="button" onclick="openContextLinkCmdb()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <span>Link CMDB object…</span>
+        </button>
+        <button class="ticket-context-menu-item" type="button" onclick="openContextRecordTime()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Record time…</span>
+        </button>
+    </div>
+
+    <!-- Context menu — Link CMDB Object modal (standalone, no ticket needs to be loaded) -->
+    <div class="modal" id="ctxCmdbModal">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header">Link CMDB object to <span id="ctxCmdbTicketRef"></span></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-input" id="ctxCmdbSearchInput" placeholder="Type to search any CMDB object…" autocomplete="off">
+                </div>
+                <div class="ctx-cmdb-results" id="ctxCmdbResults"></div>
+                <div class="form-group" style="margin-top: 12px;">
+                    <label class="form-label" style="font-size: 12px; color: #666;">Recently linked (this session)</label>
+                    <div id="ctxCmdbSessionLog" style="font-size: 12px; color: #555;">None yet — pick from the search results above.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeContextCmdbModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context menu — Record Time modal -->
+    <div class="modal" id="ctxTimeModal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">Record time on <span id="ctxTimeTicketRef"></span></div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group" style="flex: 0 0 140px;">
+                        <label class="form-label">Minutes</label>
+                        <input type="number" class="form-input" id="ctxTimeMinutes" min="1" step="1" placeholder="e.g. 30">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label">When</label>
+                        <input type="datetime-local" class="form-input" id="ctxTimeWhen">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">What did you do? (optional)</label>
+                    <textarea class="form-textarea" id="ctxTimeNotes" rows="3" placeholder="Brief description…"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeContextTimeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveContextTimeEntry()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div class="toast" id="toast"></div>
     <script>
         window.API_BASE = '../api/tickets/';
         window.CURRENT_ANALYST_ID = <?php echo (int)($_SESSION['analyst_id'] ?? 0); ?>;
     </script>
-    <script src="../assets/js/inbox.js?v=17"></script>
+    <script src="../assets/js/inbox.js?v=18"></script>
     <script>
     // Auto-check mailboxes every 60 seconds
     (function() {

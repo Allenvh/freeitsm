@@ -806,7 +806,8 @@ function renderEmailList() {
         return `
             <div class="email-item ${email.id === selectedEmailId ? 'selected' : ''} ${!email.is_read ? 'unread' : ''}"
                  draggable="true" data-ticket-id="${ticketId}" data-ticket-number="${escapeHtml(email.ticket_number || '')}"
-                 onclick="selectEmail(${email.id})" ondblclick="selectEmailFullScreen(${email.id})">
+                 onclick="selectEmail(${email.id})" ondblclick="selectEmailFullScreen(${email.id})"
+                 oncontextmenu="openTicketContextMenu(event, ${ticketId}, '${escapeHtml(email.ticket_number || '')}')">
                 <div class="email-from">${escapeHtml(email.ticket_number || '')} - ${escapeHtml(email.from_name || email.from_address)} ${countBadge}</div>
                 <div class="email-subject">${escapeHtml(email.subject)}</div>
                 <div class="email-preview">${escapeHtml(email.body_preview || '')}</div>
@@ -2948,4 +2949,198 @@ function syncPopoutToTicketState(hasTicket) {
     let prefersPopout = false;
     try { prefersPopout = localStorage.getItem('tickets_popout') === '1'; } catch (e) {}
     if (prefersPopout) document.body.classList.add('ticket-popout');
+}
+
+/* --- Right-click context menu for email rows -------------------------------
+ * Two actions to start: link CMDB object(s), and record time. Both operate
+ * on the right-clicked ticket without changing the current reading-pane
+ * selection — handy when you're reading ticket A but need to log time
+ * against ticket B without losing your place.
+ */
+let ctxTargetTicketId = null;
+let ctxTargetTicketRef = '';
+let ctxCmdbAcTimer = null;
+let ctxCmdbSessionCount = 0;
+
+function openTicketContextMenu(event, ticketId, ticketRef) {
+    event.preventDefault();
+    ctxTargetTicketId = ticketId;
+    ctxTargetTicketRef = ticketRef || ('Ticket ' + ticketId);
+    const menu = document.getElementById('ticketContextMenu');
+    if (!menu) return;
+
+    document.getElementById('ticketContextMenuHeader').textContent = ctxTargetTicketRef;
+
+    // Position at cursor — flip if it would overflow the viewport
+    menu.classList.add('active');
+    const rect = menu.getBoundingClientRect();
+    let x = event.clientX;
+    let y = event.clientY;
+    if (x + rect.width  > window.innerWidth)  x = window.innerWidth  - rect.width  - 4;
+    if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 4;
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+}
+
+function closeTicketContextMenu() {
+    const menu = document.getElementById('ticketContextMenu');
+    if (menu) menu.classList.remove('active');
+}
+
+// Outside click + Escape close the menu
+document.addEventListener('mousedown', function (e) {
+    const menu = document.getElementById('ticketContextMenu');
+    if (!menu || !menu.classList.contains('active')) return;
+    if (!menu.contains(e.target)) closeTicketContextMenu();
+});
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeTicketContextMenu();
+});
+// Right-clicking a different row should reopen, not stack
+window.addEventListener('blur', closeTicketContextMenu);
+window.addEventListener('scroll', closeTicketContextMenu, true);
+
+/* --- Context menu action: Link CMDB object --- */
+function openContextLinkCmdb() {
+    closeTicketContextMenu();
+    if (!ctxTargetTicketId) return;
+    document.getElementById('ctxCmdbTicketRef').textContent = ctxTargetTicketRef;
+    document.getElementById('ctxCmdbSearchInput').value = '';
+    document.getElementById('ctxCmdbResults').innerHTML = '';
+    ctxCmdbSessionCount = 0;
+    document.getElementById('ctxCmdbSessionLog').textContent = 'None yet — pick from the search results above.';
+    document.getElementById('ctxCmdbModal').classList.add('active');
+    setTimeout(() => document.getElementById('ctxCmdbSearchInput').focus(), 50);
+}
+
+function closeContextCmdbModal() {
+    document.getElementById('ctxCmdbModal').classList.remove('active');
+    // If we linked anything and the affected ticket is the one currently open
+    // in the reading pane, refresh its CMDB-objects list so the UI matches.
+    if (ctxCmdbSessionCount > 0 && currentEmail && parseInt(currentEmail.ticket_id, 10) === parseInt(ctxTargetTicketId, 10)) {
+        loadCmdbObjects(currentEmail.ticket_id);
+    }
+}
+
+// Wire search-as-you-type once
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('ctxCmdbSearchInput');
+    if (!input) return;
+    input.addEventListener('input', function () {
+        const q = input.value.trim();
+        const results = document.getElementById('ctxCmdbResults');
+        if (ctxCmdbAcTimer) clearTimeout(ctxCmdbAcTimer);
+        if (q === '') { results.innerHTML = ''; return; }
+        ctxCmdbAcTimer = setTimeout(async () => {
+            try {
+                const res = await fetch('../api/cmdb/search_objects.php?q=' + encodeURIComponent(q));
+                const data = await res.json();
+                const rows = data.success ? (data.results || []) : [];
+                if (rows.length === 0) {
+                    results.innerHTML = '<div class="ctx-cmdb-result" style="cursor:default;color:#999;font-style:italic;">No matches.</div>';
+                    return;
+                }
+                results.innerHTML = rows.map(r => `
+                    <div class="ctx-cmdb-result" data-id="${r.id}" data-name="${escapeHtml(r.name)}">
+                        <span class="ctx-cmdb-result-name">${escapeHtml(r.name)}</span>
+                        <span class="ctx-cmdb-result-class">${escapeHtml(r.class_name)}</span>
+                    </div>
+                `).join('');
+                results.querySelectorAll('.ctx-cmdb-result[data-id]').forEach(el => {
+                    el.addEventListener('click', () => linkContextCmdbObject(parseInt(el.dataset.id, 10), el.dataset.name));
+                });
+            } catch (e) {
+                results.innerHTML = '<div class="ctx-cmdb-result" style="cursor:default;color:#c62828;">Search failed.</div>';
+            }
+        }, 200);
+    });
+});
+
+async function linkContextCmdbObject(objectId, objectName) {
+    if (!ctxTargetTicketId) return;
+    try {
+        const res = await fetch('../api/tickets/save_ticket_cmdb_object.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticket_id: ctxTargetTicketId, cmdb_object_id: objectId })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Link failed');
+
+        ctxCmdbSessionCount++;
+        const logEl = document.getElementById('ctxCmdbSessionLog');
+        if (data.already_linked) {
+            showToast(objectName + ' is already linked', true);
+        } else {
+            showToast('Linked ' + objectName);
+            const line = document.createElement('div');
+            line.textContent = '✓ ' + objectName;
+            line.style.color = '#16a34a';
+            if (ctxCmdbSessionCount === 1) logEl.innerHTML = '';
+            logEl.appendChild(line);
+        }
+        // Clear input for the next pick — keeps the modal open for multi-link
+        const input = document.getElementById('ctxCmdbSearchInput');
+        input.value = '';
+        input.focus();
+        document.getElementById('ctxCmdbResults').innerHTML = '';
+    } catch (err) {
+        showToast('Error: ' + err.message, true);
+    }
+}
+
+/* --- Context menu action: Record time --- */
+function openContextRecordTime() {
+    closeTicketContextMenu();
+    if (!ctxTargetTicketId) return;
+    document.getElementById('ctxTimeTicketRef').textContent = ctxTargetTicketRef;
+    document.getElementById('ctxTimeMinutes').value = '';
+    document.getElementById('ctxTimeNotes').value = '';
+    // Default the datetime-local field to "now" (local time, no seconds)
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const localNow = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    document.getElementById('ctxTimeWhen').value = localNow;
+    document.getElementById('ctxTimeModal').classList.add('active');
+    setTimeout(() => document.getElementById('ctxTimeMinutes').focus(), 50);
+}
+
+function closeContextTimeModal() {
+    document.getElementById('ctxTimeModal').classList.remove('active');
+}
+
+async function saveContextTimeEntry() {
+    if (!ctxTargetTicketId) return;
+    const minutes = parseInt(document.getElementById('ctxTimeMinutes').value, 10);
+    const notes   = document.getElementById('ctxTimeNotes').value.trim();
+    const when    = document.getElementById('ctxTimeWhen').value;
+
+    if (!minutes || minutes <= 0) {
+        showToast('Enter the number of minutes spent', true);
+        return;
+    }
+
+    try {
+        const res = await fetch('../api/tickets/save_time_entry.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_id: ctxTargetTicketId,
+                time_spent_minutes: minutes,
+                notes: notes,
+                entry_datetime: when || null
+            })
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Save failed');
+        showToast('Logged ' + minutes + 'm on ' + ctxTargetTicketRef);
+        closeContextTimeModal();
+        // If the affected ticket is currently open in the reading pane,
+        // refresh its time-entries list so the new row appears.
+        if (currentEmail && parseInt(currentEmail.ticket_id, 10) === parseInt(ctxTargetTicketId, 10)) {
+            loadTimeEntries(currentEmail.ticket_id);
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, true);
+    }
 }

@@ -971,6 +971,84 @@ body.ticket-popout .ticket-toolbar {
     white-space: pre-wrap;
 }
 
+/* --- Right-click context menu for email rows --- */
+.ticket-context-menu {
+    position: fixed;
+    z-index: 2000;
+    min-width: 220px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 4px 0;
+    display: none;
+    user-select: none;
+}
+
+.ticket-context-menu.active { display: block; }
+
+.ticket-context-menu-header {
+    padding: 8px 14px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 4px;
+}
+
+.ticket-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 14px;
+    background: none;
+    border: none;
+    text-align: left;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+}
+
+.ticket-context-menu-item:hover { background: #f3f4f6; }
+.ticket-context-menu-item svg { flex-shrink: 0; color: #666; }
+.ticket-context-menu-item:hover svg { color: #0078d4; }
+
+/* --- Context-menu CMDB picker results (modal-scoped) --- */
+.ctx-cmdb-results {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    background: #fafafa;
+}
+
+.ctx-cmdb-results:empty::before {
+    content: 'Type at least one character to search';
+    display: block;
+    padding: 16px;
+    font-size: 13px;
+    color: #999;
+    font-style: italic;
+}
+
+.ctx-cmdb-result {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+}
+
+.ctx-cmdb-result:hover { background: white; }
+.ctx-cmdb-result:last-child { border-bottom: none; }
+.ctx-cmdb-result-name { color: #333; }
+.ctx-cmdb-result-class { color: #888; font-size: 11px; }
+
 /* Modal */
 .modal {
     position: fixed;
