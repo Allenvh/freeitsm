@@ -835,10 +835,12 @@ async function selectEmail(emailId) {
             displayEmail(data.email);
         } else {
             readingPane.innerHTML = '<div class="reading-pane-empty">Error loading email</div>';
+            syncPopoutToTicketState(false);
         }
     } catch (error) {
         console.error('Error:', error);
         readingPane.innerHTML = '<div class="reading-pane-empty">Failed to load email</div>';
+        syncPopoutToTicketState(false);
     }
 }
 
@@ -857,10 +859,12 @@ async function loadTicketById(ticketId) {
             displayEmail(data.email);
         } else {
             readingPane.innerHTML = '<div class="reading-pane-empty">Ticket not found</div>';
+            syncPopoutToTicketState(false);
         }
     } catch (error) {
         console.error('Error:', error);
         readingPane.innerHTML = '<div class="reading-pane-empty">Failed to load ticket</div>';
+        syncPopoutToTicketState(false);
     }
 }
 
@@ -1063,6 +1067,9 @@ function displayEmail(email) {
     loadNotes(email.ticket_id);
     loadTicketAttachments(email.ticket_id);
     loadCmdbObjects(email.ticket_id);
+
+    // A ticket is now displayed — apply popout class if the saved pref says so.
+    syncPopoutToTicketState(true);
 }
 
 // Load and display all correspondence for a ticket
@@ -2787,20 +2794,28 @@ function toggleTicketPopout() {
     try { localStorage.setItem('tickets_popout', on ? '1' : '0'); } catch (e) {}
 }
 
-/* Double-click on an email row: open it AND pop out for this session only.
- * Deliberately doesn't write to localStorage — single-click should remain the
- * default behaviour, so popout from a double-click is ephemeral. The "Exit
- * full-screen" pill brings the user back to normal mode without touching the
- * saved preference either. */
+/* Double-click on an email row: open it AND pop out. Sets the popout pref
+ * so the syncPopoutToTicketState call inside displayEmail applies the class
+ * once the ticket renders. Goes through the same storage path as the toggle
+ * button so the state is consistent (an F5 mid-popout will land you in 3-col
+ * view, but as soon as you pick a ticket again you're back in popout). */
 function selectEmailFullScreen(emailId) {
+    try { localStorage.setItem('tickets_popout', '1'); } catch (e) {}
     selectEmail(emailId);
-    document.body.classList.add('ticket-popout');
 }
 
-(function restoreTicketPopout() {
-    try {
-        if (localStorage.getItem('tickets_popout') === '1') {
-            document.body.classList.add('ticket-popout');
-        }
-    } catch (e) {}
-})();
+// Sync body.ticket-popout to the actual reading-pane state. Called by the
+// ticket-render path (hasTicket=true: apply class if pref says so) and by
+// every empty / loading / error state in the reading pane (hasTicket=false:
+// always strip the class). Tying popout to a rendered ticket avoids the
+// trap where an F5 with the pref saved leaves the user with folder + list
+// hidden and the empty "select a ticket" message in the reading pane.
+function syncPopoutToTicketState(hasTicket) {
+    if (!hasTicket) {
+        document.body.classList.remove('ticket-popout');
+        return;
+    }
+    let prefersPopout = false;
+    try { prefersPopout = localStorage.getItem('tickets_popout') === '1'; } catch (e) {}
+    if (prefersPopout) document.body.classList.add('ticket-popout');
+}
