@@ -196,6 +196,46 @@ return [
             'general_settings' => 'General Settings',
             'reply_cleanup_ai' => 'Reply Cleanup AI',
         ],
+        // Shared table column headers across the settings tabs. Most tabs
+        // share Name / Description / Order / Status / Actions; the rest are
+        // tab-specific.
+        'columns' => [
+            'name'         => 'Name',
+            'description'  => 'Description',
+            'teams'        => 'Teams',
+            'departments'  => 'Departments',
+            'analysts'     => 'Analysts',
+            'order'        => 'Order',
+            'status'       => 'Status',
+            'actions'      => 'Actions',
+            'colour'       => 'Colour',
+            'closed'       => 'Closed',
+            'default'      => 'Default',
+            'mailbox'      => 'Mailbox',
+            'last_checked' => 'Last Checked',
+            'event'        => 'Event',
+            'subject'      => 'Subject',
+            'start'        => 'Start',
+            'end'          => 'End',
+            'username'     => 'Username',
+            'full_name'    => 'Full Name',
+            'email'        => 'Email',
+            'last_login'   => 'Last Login',
+            'date_time'    => 'Date/Time',
+            'from'         => 'From',
+            'action'       => 'Action',
+            'reason'       => 'Reason',
+        ],
+        // Tooltips on the icon buttons in the Actions column. Edit/Delete
+        // reuse the existing common.edit / common.delete keys.
+        'tooltips' => [
+            'assign_teams'   => 'Assign Teams',
+            'activity'       => 'Activity',
+            'check_emails'   => 'Check Emails',
+            'logout'         => 'Logout',
+            'authenticate'   => 'Authenticate',
+            'reset_password' => 'Reset Password',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid

@@ -22,6 +22,9 @@ $oauthMailboxId = $_GET['mailbox_id'] ?? null;
 
 $current_page = 'settings';
 $path_prefix = '../../';  // Two levels up from tickets/settings/
+
+// Namespaces the inline JS needs (action-button tooltips, etc.)
+$translationNamespaces = ['common', 'tickets'];
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -30,6 +33,8 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('tickets.settings.page_title')); ?></title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+    <script src="../../assets/js/i18n.js"></script>
     <script src="../../assets/js/toast.js"></script>
     <style>
         /* Page-specific overrides for settings page */
@@ -220,12 +225,12 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Teams</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.description')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.teams')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="departments-list">
@@ -244,13 +249,13 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Departments</th>
-                        <th>Analysts</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.description')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.departments')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.analysts')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="teams-list">
@@ -268,11 +273,11 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.description')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="ticket-types-list">
@@ -290,11 +295,11 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.description')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="ticket-origins-list">
@@ -313,13 +318,13 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Colour</th>
-                        <th>Closed</th>
-                        <th>Default</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.colour')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.closed')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.default')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="statuses-list">
@@ -338,12 +343,12 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Colour</th>
-                        <th>Default</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.colour')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.default')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="priorities-list">
@@ -362,12 +367,12 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Colour</th>
-                        <th>Default</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.colour')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.default')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="rota-locations-list">
@@ -402,11 +407,11 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Mailbox</th>
-                        <th>Status</th>
-                        <th>Last Checked</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.mailbox')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.last_checked')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="mailboxes-list">
@@ -425,12 +430,12 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Event</th>
-                        <th>Subject</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.event')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.subject')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="email-templates-list">
@@ -448,12 +453,12 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>Order</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.start')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.end')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="rota-shifts-list">
@@ -478,13 +483,13 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
             <table>
                 <thead>
                     <tr>
-                        <th>Username</th>
-                        <th>Full Name</th>
-                        <th>Email</th>
-                        <th>Teams</th>
-                        <th>Status</th>
-                        <th>Last Login</th>
-                        <th>Actions</th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.username')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.full_name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.email')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.teams')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.last_login')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="analysts-list">
@@ -805,11 +810,11 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                 <table>
                     <thead>
                         <tr>
-                            <th>Date/Time</th>
-                            <th>From</th>
-                            <th>Subject</th>
-                            <th>Action</th>
-                            <th>Reason</th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.date_time')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.from')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.subject')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.action')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.reason')); ?></th>
                         </tr>
                     </thead>
                     <tbody id="activityList">
@@ -1165,10 +1170,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${s.display_order}</td>
                     <td><span class="status-badge status-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('status', ${s.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('status', ${s.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('status', ${s.id}, '${safeName}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('status', ${s.id}, '${safeName}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1213,10 +1218,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${p.display_order}</td>
                     <td><span class="status-badge status-${p.is_active ? 'active' : 'inactive'}">${p.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('priority', ${p.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('priority', ${p.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('priority', ${p.id}, '${safeName}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('priority', ${p.id}, '${safeName}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1261,10 +1266,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${l.display_order}</td>
                     <td><span class="status-badge status-${l.is_active ? 'active' : 'inactive'}">${l.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('rota-location', ${l.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('rota-location', ${l.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('rota-location', ${l.id}, '${safeName}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('rota-location', ${l.id}, '${safeName}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1344,13 +1349,13 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${dept.display_order}</td>
                     <td><span class="status-badge status-${dept.is_active ? 'active' : 'inactive'}">${dept.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('department', ${dept.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('department', ${dept.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn" onclick="openTeamAssignment('department', ${dept.id}, '${escapeHtml(dept.name).replace(/'/g, "\\'")}')" title="Assign Teams">
+                        <button class="action-btn" onclick="openTeamAssignment('department', ${dept.id}, '${escapeHtml(dept.name).replace(/'/g, "\\'")}')" title="${t('tickets.settings.tooltips.assign_teams')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('department', ${dept.id}, '${escapeHtml(dept.name)}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('department', ${dept.id}, '${escapeHtml(dept.name)}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1374,10 +1379,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${type.display_order}</td>
                     <td><span class="status-badge status-${type.is_active ? 'active' : 'inactive'}">${type.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('ticket-type', ${type.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('ticket-type', ${type.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('ticket-type', ${type.id}, '${escapeHtml(type.name)}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('ticket-type', ${type.id}, '${escapeHtml(type.name)}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1401,10 +1406,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${origin.display_order}</td>
                     <td><span class="status-badge status-${origin.is_active ? 'active' : 'inactive'}">${origin.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('ticket-origin', ${origin.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('ticket-origin', ${origin.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('ticket-origin', ${origin.id}, '${escapeHtml(origin.name)}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('ticket-origin', ${origin.id}, '${escapeHtml(origin.name)}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1455,10 +1460,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${team.display_order}</td>
                     <td><span class="status-badge status-${team.is_active ? 'active' : 'inactive'}">${team.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editItem('team', ${team.id})" title="Edit">
+                        <button class="action-btn" onclick="editItem('team', ${team.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteItem('team', ${team.id}, '${safeName}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteItem('team', ${team.id}, '${safeName}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
@@ -1847,29 +1852,29 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     ? new Date(mb.last_checked_datetime).toLocaleString()
                     : 'Never';
 
-                let actions = `<button class="action-btn" onclick="editMailbox(${mb.id})" title="Edit">
+                let actions = `<button class="action-btn" onclick="editMailbox(${mb.id})" title="${t('common.edit')}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>`;
 
-                actions += `<button class="action-btn" onclick="openActivityModal(${mb.id})" title="Activity">
+                actions += `<button class="action-btn" onclick="openActivityModal(${mb.id})" title="${t('tickets.settings.tooltips.activity')}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                 </button>`;
 
                 if (mb.is_authenticated) {
-                    actions += `<button class="action-btn" onclick="checkMailboxEmails(${mb.id})" title="Check Emails">
+                    actions += `<button class="action-btn" onclick="checkMailboxEmails(${mb.id})" title="${t('tickets.settings.tooltips.check_emails')}">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                     </button>`;
-                    actions += `<button class="action-btn" onclick="logoutMailbox(${mb.id})" title="Logout">
+                    actions += `<button class="action-btn" onclick="logoutMailbox(${mb.id})" title="${t('tickets.settings.tooltips.logout')}">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                     </button>`;
                 } else {
-                    actions += `<button class="action-btn" onclick="authenticateMailbox(${mb.id})" title="Authenticate">
+                    actions += `<button class="action-btn" onclick="authenticateMailbox(${mb.id})" title="${t('tickets.settings.tooltips.authenticate')}">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
                     </button>`;
                 }
 
                 const safeName = escapeHtml(mb.name).replace(/'/g, "\\'");
-                actions += `<button class="action-btn delete" onclick="deleteMailbox(${mb.id}, '${safeName}')" title="Delete">
+                actions += `<button class="action-btn delete" onclick="deleteMailbox(${mb.id}, '${safeName}')" title="${t('common.delete')}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>`;
 
@@ -2500,16 +2505,16 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                         <td>${statusBadge}</td>
                         <td>${lastLogin}</td>
                         <td>
-                            <button class="action-btn" onclick="editAnalyst(${a.id})" title="Edit">
+                            <button class="action-btn" onclick="editAnalyst(${a.id})" title="${t('common.edit')}">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                             </button>
-                            <button class="action-btn" onclick="openTeamAssignment('analyst', ${a.id}, '${safeName}')" title="Assign Teams">
+                            <button class="action-btn" onclick="openTeamAssignment('analyst', ${a.id}, '${safeName}')" title="${t('tickets.settings.tooltips.assign_teams')}">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                             </button>
-                            <button class="action-btn" onclick="openPasswordResetModal(${a.id}, '${safeName}')" title="Reset Password">
+                            <button class="action-btn" onclick="openPasswordResetModal(${a.id}, '${safeName}')" title="${t('tickets.settings.tooltips.reset_password')}">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
                             </button>
-                            <button class="action-btn delete" onclick="deleteAnalyst(${a.id}, '${safeUsername}')" title="Delete">
+                            <button class="action-btn delete" onclick="deleteAnalyst(${a.id}, '${safeUsername}')" title="${t('common.delete')}">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                             </button>
                         </td>
@@ -2905,10 +2910,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${t.display_order}</td>
                     <td><span class="status-badge ${t.is_active == 1 ? 'active' : 'inactive'}">${t.is_active == 1 ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editTemplate(${t.id})" title="Edit">
+                        <button class="action-btn" onclick="editTemplate(${t.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteTemplate(${t.id}, '${escapeHtml(t.name)}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteTemplate(${t.id}, '${escapeHtml(t.name)}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
                     </td>
@@ -3019,10 +3024,10 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
                     <td>${s.display_order}</td>
                     <td><span class="status-badge ${s.is_active == 1 ? 'active' : 'inactive'}">${s.is_active == 1 ? 'Active' : 'Inactive'}</span></td>
                     <td>
-                        <button class="action-btn" onclick="editRotaShift(${s.id})" title="Edit">
+                        <button class="action-btn" onclick="editRotaShift(${s.id})" title="${t('common.edit')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
-                        <button class="action-btn delete" onclick="deleteRotaShift(${s.id}, '${escapeHtml(s.name)}')" title="Delete">
+                        <button class="action-btn delete" onclick="deleteRotaShift(${s.id}, '${escapeHtml(s.name)}')" title="${t('common.delete')}">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </td>
