@@ -280,6 +280,27 @@ CREATE TABLE IF NOT EXISTS `sla_notifications_sent` (
     CONSTRAINT `fk_sla_notif_sent_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- SLA breach-check cron audit log. One row per invocation (CLI or HTTP),
+-- including rejected ones (rate-limited / auth-failed) so the rate-limit
+-- check and the security audit both have the same source of truth.
+-- Pruned by the cron worker itself based on sla_cron_log_retention_days.
+CREATE TABLE IF NOT EXISTS `sla_cron_runs` (
+    `id`              INT NOT NULL AUTO_INCREMENT,
+    `started_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `ended_at`        DATETIME NULL,
+    `duration_ms`     INT NULL,
+    `invocation`      ENUM('cli','http') NOT NULL,
+    `client_ip`       VARCHAR(45) NULL,
+    `outcome`         ENUM('ok','auth_failed','rate_limited','error','config_missing') NOT NULL,
+    `sent_count`      INT NULL DEFAULT 0,
+    `skipped_count`   INT NULL DEFAULT 0,
+    `error_count`     INT NULL DEFAULT 0,
+    `notes`           TEXT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_sla_cron_started` (`started_at`),
+    KEY `idx_sla_cron_ip_started` (`client_ip`, `started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `tickets` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `ticket_number`         VARCHAR(50) NOT NULL,

@@ -541,6 +541,37 @@ $translationNamespaces = ['common', 'tickets'];
                     See <code>docs/sla-cron-setup.md</code> for Windows Task Scheduler + Linux cron setup.
                 </p>
             </div>
+
+            <!-- ===== Cron Activity ===== -->
+            <div class="settings-group">
+                <div class="section-header">
+                    <h3 style="margin:0;">Cron Activity</h3>
+                    <button class="add-btn" onclick="loadSlaCronRuns()" title="Refresh">&#x21bb;</button>
+                </div>
+                <p style="color:#666;margin-bottom:14px;font-size:13px;">
+                    Last <span id="slaCronRunsLimit">20</span> invocations of the breach-check cron (CLI and HTTP).
+                    Includes rejected requests (rate-limited, auth-failed) so the same source-of-truth supports the rate-limit
+                    checks and security audits. Pruned automatically after
+                    <strong><span id="slaCronRetentionDays">30</span> days</strong>; min interval between successful runs is
+                    <strong><span id="slaCronMinInterval">30</span>s</strong> (both configurable in <code>system_settings</code>).
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>When</th>
+                            <th>Source</th>
+                            <th>Duration</th>
+                            <th>Sent</th>
+                            <th>Skipped</th>
+                            <th>Errors</th>
+                            <th>Outcome</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slaCronRunsList">
+                        <tr><td colspan="7" style="text-align:center;color:#888;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- ===== Breach Notification rule modal ===== -->
@@ -3503,6 +3534,7 @@ $translationNamespaces = ['common', 'tickets'];
                 renderSlaTargets();
                 renderSlaCalendars();
                 loadSlaNotifRules();
+                loadSlaCronRuns();
             } catch (e) {
                 console.error('SLA load failed:', e);
             }
@@ -3984,6 +4016,70 @@ $translationNamespaces = ['common', 'tickets'];
             } catch (e) {
                 showToast(e.message, 'error');
             }
+        }
+
+        // ===== Cron Activity =====
+
+        async function loadSlaCronRuns() {
+            try {
+                const res = await fetch(API_BASE + 'get_sla_cron_runs.php?limit=20');
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'load failed');
+                renderSlaCronRuns(data.runs || [], data.settings || {});
+            } catch (e) {
+                console.error('SLA cron runs load failed:', e);
+            }
+        }
+
+        function renderSlaCronRuns(runs, settings) {
+            // Update the settings echo line
+            if (typeof settings.min_interval_seconds === 'number') {
+                document.getElementById('slaCronMinInterval').textContent = settings.min_interval_seconds;
+            }
+            if (typeof settings.retention_days === 'number') {
+                document.getElementById('slaCronRetentionDays').textContent = settings.retention_days;
+            }
+
+            const tbody = document.getElementById('slaCronRunsList');
+            if (!runs.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;">No runs yet &mdash; once you set up the scheduled task they\'ll appear here.</td></tr>';
+                return;
+            }
+            const outcomeColour = {
+                ok:             { bg: '#dcfce7', fg: '#166534' },
+                rate_limited:   { bg: '#fef3c7', fg: '#92400e' },
+                auth_failed:    { bg: '#fee2e2', fg: '#991b1b' },
+                config_missing: { bg: '#fee2e2', fg: '#991b1b' },
+                error:          { bg: '#fee2e2', fg: '#991b1b' },
+            };
+            const outcomeLabel = {
+                ok: 'OK',
+                rate_limited: 'Rate limited',
+                auth_failed: 'Auth failed',
+                config_missing: 'Config missing',
+                error: 'Error',
+            };
+
+            tbody.innerHTML = runs.map(r => {
+                const c = outcomeColour[r.outcome] || { bg: '#f3f4f6', fg: '#555' };
+                const label = outcomeLabel[r.outcome] || r.outcome;
+                const duration = r.duration_ms != null ? r.duration_ms + ' ms' : '&mdash;';
+                const source = r.invocation === 'http'
+                    ? `HTTP <span style="color:#888;">${escapeHtml(r.client_ip || 'unknown')}</span>`
+                    : 'CLI';
+                const notesAttr = r.notes ? ` title="${escapeHtml(r.notes)}"` : '';
+                return `
+                    <tr${notesAttr}>
+                        <td>${escapeHtml(r.started_at || '')}</td>
+                        <td>${source}</td>
+                        <td>${duration}</td>
+                        <td>${r.sent_count ?? 0}</td>
+                        <td>${r.skipped_count ?? 0}</td>
+                        <td>${r.error_count ?? 0}</td>
+                        <td><span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${c.bg};color:${c.fg};font-size:11px;font-weight:600;">${label}</span></td>
+                    </tr>
+                `;
+            }).join('');
         }
 
     </script>

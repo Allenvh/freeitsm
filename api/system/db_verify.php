@@ -197,6 +197,20 @@ $schema = [
         'recipients'     => 'TEXT NULL',
     ],
 
+    'sla_cron_runs' => [
+        'id'             => 'INT NOT NULL AUTO_INCREMENT',
+        'started_at'     => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+        'ended_at'       => 'DATETIME NULL',
+        'duration_ms'    => 'INT NULL',
+        'invocation'     => "ENUM('cli','http') NOT NULL",
+        'client_ip'      => 'VARCHAR(45) NULL',
+        'outcome'        => "ENUM('ok','auth_failed','rate_limited','error','config_missing') NOT NULL",
+        'sent_count'     => 'INT NULL DEFAULT 0',
+        'skipped_count'  => 'INT NULL DEFAULT 0',
+        'error_count'    => 'INT NULL DEFAULT 0',
+        'notes'          => 'TEXT NULL',
+    ],
+
     'tickets' => [
         'id'                    => 'INT NOT NULL AUTO_INCREMENT',
         'ticket_number'         => 'VARCHAR(50) NOT NULL',
@@ -2017,6 +2031,14 @@ try {
             try { $conn->exec("ALTER TABLE sla_notifications_sent ADD CONSTRAINT fk_sla_notif_sent_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
         }
     }
+    if ($tableExists('sla_cron_runs')) {
+        if (!$idxExists('sla_cron_runs', 'idx_sla_cron_started')) {
+            try { $conn->exec("ALTER TABLE sla_cron_runs ADD INDEX idx_sla_cron_started (started_at)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('sla_cron_runs', 'idx_sla_cron_ip_started')) {
+            try { $conn->exec("ALTER TABLE sla_cron_runs ADD INDEX idx_sla_cron_ip_started (client_ip, started_at)"); } catch (Exception $e) {}
+        }
+    }
 
     // Seed a default Mon-Fri 09:00-17:00 calendar in Europe/London if no
     // calendars exist yet. Detected installs that pre-date the SLA module
@@ -2047,6 +2069,11 @@ try {
             'sla_first_response_definition'   => 'either',
             // Shared secret for HTTP-triggered cron worker; random per install
             'sla_cron_token'                  => bin2hex(random_bytes(16)),
+            // Min seconds between successful cron runs — protects against
+            // accidental double-scheduling, runaway loops, or token-leak abuse
+            'sla_cron_min_interval_seconds'   => '30',
+            // How many days to keep rows in sla_cron_runs before pruning
+            'sla_cron_log_retention_days'     => '30',
         ];
         $stmt = $conn->prepare("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, ?)");
         foreach ($defaults as $k => $v) { $stmt->execute([$k, $v]); }

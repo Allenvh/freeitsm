@@ -51,6 +51,29 @@ Rotate it anytime by `UPDATE`-ing that row.
 Use the HTTP form when you can't easily run PHP from the shell (some shared
 hosting, or remote cron services like cron-job.org / EasyCron).
 
+**Security layers on the HTTP form** (all enforced automatically):
+
+1. **Shared-secret token** — 128 bits of entropy, compared with `hash_equals()`
+   for constant-time matching.
+2. **Per-IP failed-auth lockout** — >10 wrong-token attempts from the same IP
+   in the past hour triggers a 1-hour 429 lockout. Defeats brute-force probing
+   without needing fail2ban or similar.
+3. **Min interval between successful runs** — `sla_cron_min_interval_seconds`
+   in `system_settings` (default 30s). Even with a valid token, requests
+   arriving sooner than this after the last successful run return 429. Defeats
+   accidental double-scheduling, runaway loops, and post-token-leak abuse
+   without affecting any reasonable schedule.
+
+Every invocation (accepted or rejected) is logged to `sla_cron_runs`. Inspect
+recent activity from the SLA settings tab ("Cron Activity" panel) or directly:
+
+```sql
+SELECT started_at, invocation, client_ip, outcome, sent_count, error_count, notes
+  FROM sla_cron_runs
+ ORDER BY started_at DESC
+ LIMIT 20;
+```
+
 ---
 
 ## Windows — Task Scheduler
@@ -158,4 +181,19 @@ This means:
 | Cron runs, output says "rule matched but no resolvable recipients" | The rule's checkboxes don't yield any email addresses for these tickets — add explicit emails or a named analyst |
 | HTTP invocation returns 503 with "Cron token not set" | Run `api/system/db_verify.php` to seed the token, or insert manually |
 | HTTP invocation returns 403 | Token in URL doesn't match `sla_cron_token` in `system_settings` |
+| HTTP invocation returns 429 "Rate limited" | A successful run completed less than `sla_cron_min_interval_seconds` ago (default 30s). Wait, or lower the setting |
+| HTTP invocation returns 429 "Too many failed attempts" | This IP has hit >10 wrong-token attempts in the past hour. Wait 1 hour, or `DELETE FROM sla_cron_runs WHERE client_ip = '<ip>' AND outcome = 'auth_failed'` to clear |
 | Emails not arriving | Check the originating mailbox is still authenticated (Tickets → Settings → Mailboxes); the cron uses the same OAuth tokens as inbound mail polling |
+
+## Tuning settings
+
+| Setting | Default | Effect |
+|---------|---------|--------|
+| `sla_cron_min_interval_seconds` | 30 | Minimum seconds between successful runs. Even a valid-token request gets a 429 if it arrives sooner |
+| `sla_cron_log_retention_days` | 30 | How long to keep `sla_cron_runs` rows. Pruned automatically at end of every cron run |
+| `sla_cron_token` | random per install | Shared secret for HTTP invocation. Rotate by `UPDATE`-ing this row |
+
+Edit via SQL:
+```sql
+UPDATE system_settings SET setting_value = '60' WHERE setting_key = 'sla_cron_min_interval_seconds';
+```
