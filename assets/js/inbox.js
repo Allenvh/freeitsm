@@ -806,7 +806,7 @@ function renderEmailList() {
         return `
             <div class="email-item ${email.id === selectedEmailId ? 'selected' : ''} ${!email.is_read ? 'unread' : ''}"
                  draggable="true" data-ticket-id="${ticketId}" data-ticket-number="${escapeHtml(email.ticket_number || '')}"
-                 onclick="selectEmail(${email.id})">
+                 onclick="selectEmail(${email.id})" ondblclick="selectEmailFullScreen(${email.id})">
                 <div class="email-from">${escapeHtml(email.ticket_number || '')} - ${escapeHtml(email.from_name || email.from_address)} ${countBadge}</div>
                 <div class="email-subject">${escapeHtml(email.subject)}</div>
                 <div class="email-preview">${escapeHtml(email.body_preview || '')}</div>
@@ -2785,6 +2785,16 @@ document.addEventListener('keydown', function(e) {
 function toggleTicketPopout() {
     const on = document.body.classList.toggle('ticket-popout');
     try { localStorage.setItem('tickets_popout', on ? '1' : '0'); } catch (e) {}
+}
+
+/* Double-click on an email row: open it AND pop out for this session only.
+ * Deliberately doesn't write to localStorage — single-click should remain the
+ * default behaviour, so popout from a double-click is ephemeral. The "Exit
+ * full-screen" pill brings the user back to normal mode without touching the
+ * saved preference either. */
+function selectEmailFullScreen(emailId) {
+    selectEmail(emailId);
+    document.body.classList.add('ticket-popout');
 }
 
 (function restoreTicketPopout() {
