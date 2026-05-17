@@ -77,22 +77,31 @@ function getWatchtowerData($conn) {
     ];
 
     // -- Changes --
+    // changes.status (legacy VARCHAR) was migrated to status_id → change_statuses.
+    // Join the lookup and compare by name to preserve the original semantics.
 
     $chUpcoming = (int)$conn->query(
-        "SELECT COUNT(*) FROM changes
-         WHERE work_start_datetime BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)
-           AND status NOT IN ('Closed','Cancelled')"
+        "SELECT COUNT(*)
+         FROM changes c
+         JOIN change_statuses cs ON cs.id = c.status_id
+         WHERE c.work_start_datetime BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)
+           AND cs.name NOT IN ('Closed','Cancelled')"
     )->fetchColumn();
 
     $chUnapproved = (int)$conn->query(
-        "SELECT COUNT(*) FROM changes WHERE status IN ('Submitted','Pending Approval')"
+        "SELECT COUNT(*)
+         FROM changes c
+         JOIN change_statuses cs ON cs.id = c.status_id
+         WHERE cs.name IN ('Submitted','Pending Approval')"
     )->fetchColumn();
 
     $chInProgress = (int)$conn->query(
-        "SELECT COUNT(*) FROM changes
-         WHERE status = 'In Progress'
-           AND work_start_datetime <= NOW()
-           AND (work_end_datetime >= NOW() OR work_end_datetime IS NULL)"
+        "SELECT COUNT(*)
+         FROM changes c
+         JOIN change_statuses cs ON cs.id = c.status_id
+         WHERE cs.name = 'In Progress'
+           AND c.work_start_datetime <= NOW()
+           AND (c.work_end_datetime >= NOW() OR c.work_end_datetime IS NULL)"
     )->fetchColumn();
 
     $changes = [
