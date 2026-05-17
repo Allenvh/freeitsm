@@ -224,7 +224,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content active" id="departments-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.departments')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('department')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('department')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <table>
                 <thead>
@@ -247,7 +247,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="teams-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.teams')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('team')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('team')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <p style="margin-bottom: 20px; color: #666;">Teams determine which departments analysts can access. Assign departments to teams, then assign analysts to teams to control their access.</p>
             <table>
@@ -272,7 +272,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="ticket-types-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.ticket_types')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('ticket-type')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('ticket-type')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <table>
                 <thead>
@@ -294,7 +294,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="ticket-origins-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.ticket_origins')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('ticket-origin')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('ticket-origin')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <table>
                 <thead>
@@ -316,7 +316,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="statuses-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.statuses')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('status')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('status')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <p style="margin-bottom: 20px; color: #666;">Workflow states a ticket can be in. Statuses flagged as <em>Closed</em> count as terminal — used by reports, watchtower counters and the closed-datetime auto-set on assign. Exactly one status is the default for new tickets.</p>
             <table>
@@ -341,7 +341,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="priorities-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.priorities')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('priority')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('priority')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <p style="margin-bottom: 20px; color: #666;">Priority bands shown on tickets. Exactly one priority is the default for new tickets.</p>
             <table>
@@ -365,7 +365,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="rota-locations-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.rota_locations')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('rota-location')"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAddModal('rota-location')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <p style="margin-bottom: 20px; color: #666;">Where each analyst is working on a given day — used by the staff rota and shown as a coloured badge on every entry. Exactly one location is the default for new rota entries.</p>
             <table>
@@ -390,9 +390,9 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.mailboxes')); ?></h2>
                 <div>
-                    <button class="btn btn-secondary" onclick="window.location.href='../activity.php'" style="margin-right: 10px;"<?php echo htmlspecialchars(t('tickets.settings.buttons.logs')); ?></button>
-                    <button class="btn btn-primary" onclick="checkAllMailboxes()" style="margin-right: 10px;"<?php echo htmlspecialchars(t('tickets.settings.buttons.check_all')); ?></button>
-                    <button class="add-btn" onclick="openMailboxModal()"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                    <button class="btn btn-secondary" onclick="window.location.href='../activity.php'" style="margin-right: 10px;"><?php echo htmlspecialchars(t('tickets.settings.buttons.logs')); ?></button>
+                    <button class="btn btn-primary" onclick="checkAllMailboxes()" style="margin-right: 10px;"><?php echo htmlspecialchars(t('tickets.settings.buttons.check_all')); ?></button>
+                    <button class="add-btn" onclick="openMailboxModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
                 </div>
             </div>
 
@@ -428,7 +428,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="email-templates-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.email_templates')); ?></h2>
-                <button class="add-btn" onclick="openTemplateModal()"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openTemplateModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <p style="margin-bottom: 15px; color: #666;">Automated email responses triggered by ticket events. Only the first active template per event is used.</p>
             <table>
@@ -452,7 +452,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="rota-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.rota_shifts')); ?></h2>
-                <button class="add-btn" onclick="openRotaShiftModal()"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openRotaShiftModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <table>
                 <thead>
@@ -482,7 +482,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="tab-content" id="analysts-tab">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.analysts')); ?></h2>
-                <button class="add-btn" onclick="openAnalystModal()"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                <button class="add-btn" onclick="openAnalystModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <table>
                 <thead>
@@ -523,7 +523,7 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions" style="justify-content: flex-start; margin-top: 30px;">
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
 
@@ -602,8 +602,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </details>
 
                 <div class="modal-actions" style="justify-content: flex-start; margin-top: 30px; gap: 12px;">
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
-                    <button type="button" id="rcTestBtn" class="btn" style="background: #6c757d; color: white;"<?php echo htmlspecialchars(t('tickets.settings.buttons.test_connection')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" id="rcTestBtn" class="btn" style="background: #6c757d; color: white;"><?php echo htmlspecialchars(t('tickets.settings.buttons.test_connection')); ?></button>
                 </div>
 
                 <div id="rcTestResult" style="margin-top: 16px; padding: 10px 14px; border-radius: 4px; display: none; font-size: 13px;"></div>
@@ -661,8 +661,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
         </div>
@@ -761,7 +761,7 @@ $translationNamespaces = ['common', 'tickets'];
                         <label for="mailboxImportedFolder">Move to Folder</label>
                         <div style="display: flex; gap: 8px; align-items: start;">
                             <input type="text" id="mailboxImportedFolder" placeholder="e.g., Processed" style="flex: 1;">
-                            <button type="button" class="btn btn-secondary" id="verifyFolderBtn" onclick="verifyFolder()" style="padding: 8px 12px; white-space: nowrap;"<?php echo htmlspecialchars(t('tickets.settings.buttons.verify')); ?></button>
+                            <button type="button" class="btn btn-secondary" id="verifyFolderBtn" onclick="verifyFolder()" style="padding: 8px 12px; white-space: nowrap;"><?php echo htmlspecialchars(t('tickets.settings.buttons.verify')); ?></button>
                         </div>
                         <small id="verifyFolderResult" style="display: none; margin-top: 5px;"></small>
                     </div>
@@ -787,15 +787,15 @@ $translationNamespaces = ['common', 'tickets'];
                             <option value="email">Email</option>
                         </select>
                         <input type="text" id="whitelistValue" placeholder="e.g. company.com or user@example.com" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" onkeydown="if(event.key==='Enter'){event.preventDefault();addWhitelistEntry();}">
-                        <button type="button" class="btn btn-primary" onclick="addWhitelistEntry()" style="padding: 8px 12px;"<?php echo htmlspecialchars(t('common.add')); ?></button>
+                        <button type="button" class="btn btn-primary" onclick="addWhitelistEntry()" style="padding: 8px 12px;"><?php echo htmlspecialchars(t('common.add')); ?></button>
                     </div>
 
                     <div id="whitelistEntries" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeMailboxModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeMailboxModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
         </div>
@@ -832,13 +832,13 @@ $translationNamespaces = ['common', 'tickets'];
             <div id="processingLogPanel" style="display: none; margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 15px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <strong style="font-size: 14px;">Processing Log</strong>
-                    <button type="button" class="btn btn-secondary" style="padding: 3px 10px; font-size: 12px;" onclick="closeProcessingLog()"<?php echo htmlspecialchars(t('common.close')); ?></button>
+                    <button type="button" class="btn btn-secondary" style="padding: 3px 10px; font-size: 12px;" onclick="closeProcessingLog()"><?php echo htmlspecialchars(t('common.close')); ?></button>
                 </div>
                 <pre id="processingLogContent" style="background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 12px; font-size: 12px; max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
             </div>
 
             <div class="modal-actions">
-                <button type="button" class="btn btn-secondary" onclick="closeActivityModal()"<?php echo htmlspecialchars(t('common.close')); ?></button>
+                <button type="button" class="btn btn-secondary" onclick="closeActivityModal()"><?php echo htmlspecialchars(t('common.close')); ?></button>
             </div>
         </div>
     </div>
@@ -878,8 +878,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeAnalystModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeAnalystModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
         </div>
@@ -905,8 +905,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closePasswordResetModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('tickets.settings.tooltips.reset_password')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closePasswordResetModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('tickets.settings.tooltips.reset_password')); ?></button>
                 </div>
             </form>
         </div>
@@ -927,8 +927,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions" style="margin-top: 20px;">
-                    <button type="button" class="btn btn-secondary" onclick="closeTeamAssignmentModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeTeamAssignmentModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
         </div>
@@ -990,8 +990,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeTemplateModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeTemplateModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
         </div>
@@ -1033,8 +1033,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeRotaShiftModal()"<?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"<?php echo htmlspecialchars(t('common.save')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="closeRotaShiftModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
         </div>
