@@ -486,6 +486,105 @@ $translationNamespaces = ['common', 'tickets'];
                     </tbody>
                 </table>
             </div>
+
+            <!-- ===== Breach Notifications ===== -->
+            <div class="settings-group">
+                <div class="section-header">
+                    <h3 style="margin:0;">Breach Notifications</h3>
+                    <button class="add-btn" onclick="openSlaNotifModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+                </div>
+                <p style="color:#666;margin-bottom:14px;">
+                    Email rules fired by the SLA cron worker when a ticket approaches breach (<strong>warning</strong> at the threshold % above)
+                    or has breached (<strong>breach</strong>). Create one default rule that fires for every department, then add per-department rules
+                    that <em>replace</em> the default for that department. Each ticket fires at most one email per target per trigger &mdash; no spam loops.
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Scope</th>
+                            <th>Trigger</th>
+                            <th>Target</th>
+                            <th>Recipients</th>
+                            <th>Active</th>
+                            <th style="width:120px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slaNotifRulesList">
+                        <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
+                    </tbody>
+                </table>
+                <p style="color:#888;margin-top:14px;font-size:12px;">
+                    The cron worker that fires these emails lives at <code>cron/sla_breach_check.php</code>.
+                    See <code>docs/sla-cron-setup.md</code> for Windows Task Scheduler + Linux cron setup.
+                </p>
+            </div>
+        </div>
+
+        <!-- ===== Breach Notification rule modal ===== -->
+        <div id="slaNotifModal" class="modal">
+            <div class="modal-content" style="max-width:640px;">
+                <div class="modal-header">
+                    <h3 id="slaNotifModalTitle">Add Notification Rule</h3>
+                    <span class="close" onclick="closeSlaNotifModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="slaNotifId" value="">
+
+                    <div class="form-group">
+                        <label for="slaNotifDept">Scope</label>
+                        <select id="slaNotifDept" class="form-control">
+                            <option value="">Default (applies to every department without a specific rule)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" style="display:flex;gap:12px;">
+                        <div style="flex:1;">
+                            <label for="slaNotifTrigger">Trigger</label>
+                            <select id="slaNotifTrigger" class="form-control">
+                                <option value="warning">Warning &mdash; approaching breach (potential)</option>
+                                <option value="breach">Breach &mdash; target exceeded (actual)</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <label for="slaNotifTarget">Target</label>
+                            <select id="slaNotifTarget" class="form-control">
+                                <option value="both">Both response and resolution</option>
+                                <option value="response">Response only</option>
+                                <option value="resolution">Resolution only</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <fieldset style="border:1px solid #ddd;padding:12px 16px;border-radius:4px;margin-bottom:14px;">
+                        <legend style="padding:0 6px;font-weight:600;font-size:13px;">Recipients</legend>
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label><input type="checkbox" id="slaNotifAssignee"> The ticket's assignee</label>
+                        </div>
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label><input type="checkbox" id="slaNotifTeams"> Members of the ticket's department teams</label>
+                        </div>
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label for="slaNotifAnalyst">A specific analyst</label>
+                            <select id="slaNotifAnalyst" class="form-control">
+                                <option value="">&mdash; none &mdash;</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="slaNotifEmails">Additional email addresses</label>
+                            <textarea id="slaNotifEmails" class="form-control" rows="2" placeholder="alerts@company.com, slm@company.com"></textarea>
+                            <small style="color:#888;">Comma, semicolon, or newline separated. Useful for distribution lists or Slack/Teams email bridges.</small>
+                        </div>
+                    </fieldset>
+
+                    <div class="form-group">
+                        <label><input type="checkbox" id="slaNotifActive" checked> Active</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeSlaNotifModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button class="btn btn-primary" onclick="saveSlaNotifRule()"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </div>
         </div>
 
         <!-- Rota Locations Tab -->
@@ -3380,6 +3479,7 @@ $translationNamespaces = ['common', 'tickets'];
                 renderSlaGlobalSettings();
                 renderSlaTargets();
                 renderSlaCalendars();
+                loadSlaNotifRules();
             } catch (e) {
                 console.error('SLA load failed:', e);
             }
@@ -3710,6 +3810,154 @@ $translationNamespaces = ['common', 'tickets'];
                 showToast('Calendar deleted', 'success');
                 closeSlaCalendarModal();
                 loadSlaTab();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        }
+
+        // ===== Breach Notification rules =====
+
+        // Cache the auxiliary lists alongside the rules so the modal can populate
+        // dept + analyst dropdowns without a second round-trip on every open.
+        let slaNotifData = { rules: [], departments: [], analysts: [] };
+
+        async function loadSlaNotifRules() {
+            try {
+                const res = await fetch(API_BASE + 'get_sla_notification_rules.php');
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'load failed');
+                slaNotifData = {
+                    rules: data.rules || [],
+                    departments: data.departments || [],
+                    analysts: data.analysts || [],
+                };
+                renderSlaNotifRules();
+            } catch (e) {
+                console.error('SLA notif load failed:', e);
+            }
+        }
+
+        function renderSlaNotifRules() {
+            const tbody = document.getElementById('slaNotifRulesList');
+            if (!slaNotifData.rules.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">No rules configured &mdash; SLA breach emails are disabled until you add at least one.</td></tr>';
+                return;
+            }
+            const targetLabel = { response: 'Response', resolution: 'Resolution', both: 'Both' };
+            const triggerLabel = { warning: 'Warning', breach: 'Breach' };
+            const triggerColour = { warning: '#f59e0b', breach: '#dc2626' };
+
+            tbody.innerHTML = slaNotifData.rules.map(r => {
+                const scope = r.department_id
+                    ? escapeHtml(r.department_name || ('Department #' + r.department_id))
+                    : '<em>Default (all departments)</em>';
+                const recipients = [];
+                if (r.notify_assignee)         recipients.push('Assignee');
+                if (r.notify_department_teams) recipients.push('Dept teams');
+                if (r.notify_analyst_name)     recipients.push(escapeHtml(r.notify_analyst_name));
+                if (r.notify_emails) {
+                    const list = r.notify_emails.split(',').map(s => s.trim()).filter(Boolean);
+                    if (list.length === 1) recipients.push(escapeHtml(list[0]));
+                    else if (list.length > 1) recipients.push(escapeHtml(list[0]) + ' <span style="color:#888;">+' + (list.length - 1) + ' more</span>');
+                }
+                return `
+                    <tr>
+                        <td>${scope}</td>
+                        <td><span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${triggerColour[r.trigger_type]}1A;color:${triggerColour[r.trigger_type]};font-size:11px;font-weight:600;">${triggerLabel[r.trigger_type]}</span></td>
+                        <td>${targetLabel[r.target_type] || r.target_type}</td>
+                        <td>${recipients.join(', ') || '<span style="color:#c00;">none</span>'}</td>
+                        <td>${r.is_active ? 'Yes' : '<span style="color:#888;">No</span>'}</td>
+                        <td>
+                            <button class="action-btn" onclick="openSlaNotifModal(${r.id})" title="Edit">&#9998;</button>
+                            <button class="action-btn" onclick="deleteSlaNotifRule(${r.id})" title="Delete">&times;</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function openSlaNotifModal(id) {
+            // Populate the department dropdown (default option is hardcoded in markup)
+            const dept = document.getElementById('slaNotifDept');
+            dept.innerHTML = '<option value="">Default (applies to every department without a specific rule)</option>'
+                + slaNotifData.departments.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+
+            // Populate the analyst dropdown
+            const an = document.getElementById('slaNotifAnalyst');
+            an.innerHTML = '<option value="">&mdash; none &mdash;</option>'
+                + slaNotifData.analysts.map(a => `<option value="${a.id}">${escapeHtml(a.full_name)}</option>`).join('');
+
+            if (id) {
+                const r = slaNotifData.rules.find(x => x.id === id);
+                if (!r) return;
+                document.getElementById('slaNotifModalTitle').textContent = 'Edit Notification Rule';
+                document.getElementById('slaNotifId').value = r.id;
+                dept.value = r.department_id || '';
+                document.getElementById('slaNotifTrigger').value = r.trigger_type;
+                document.getElementById('slaNotifTarget').value = r.target_type;
+                document.getElementById('slaNotifAssignee').checked = !!r.notify_assignee;
+                document.getElementById('slaNotifTeams').checked = !!r.notify_department_teams;
+                an.value = r.notify_analyst_id || '';
+                document.getElementById('slaNotifEmails').value = r.notify_emails || '';
+                document.getElementById('slaNotifActive').checked = !!r.is_active;
+            } else {
+                document.getElementById('slaNotifModalTitle').textContent = 'Add Notification Rule';
+                document.getElementById('slaNotifId').value = '';
+                dept.value = '';
+                document.getElementById('slaNotifTrigger').value = 'warning';
+                document.getElementById('slaNotifTarget').value = 'both';
+                document.getElementById('slaNotifAssignee').checked = true;
+                document.getElementById('slaNotifTeams').checked = false;
+                an.value = '';
+                document.getElementById('slaNotifEmails').value = '';
+                document.getElementById('slaNotifActive').checked = true;
+            }
+            document.getElementById('slaNotifModal').style.display = 'block';
+        }
+
+        function closeSlaNotifModal() {
+            document.getElementById('slaNotifModal').style.display = 'none';
+        }
+
+        async function saveSlaNotifRule() {
+            const idVal = document.getElementById('slaNotifId').value;
+            const payload = {
+                id: idVal ? parseInt(idVal, 10) : null,
+                department_id: document.getElementById('slaNotifDept').value || null,
+                trigger_type: document.getElementById('slaNotifTrigger').value,
+                target_type: document.getElementById('slaNotifTarget').value,
+                notify_assignee: document.getElementById('slaNotifAssignee').checked,
+                notify_department_teams: document.getElementById('slaNotifTeams').checked,
+                notify_analyst_id: document.getElementById('slaNotifAnalyst').value || null,
+                notify_emails: document.getElementById('slaNotifEmails').value,
+                is_active: document.getElementById('slaNotifActive').checked,
+            };
+            try {
+                const res = await fetch(API_BASE + 'save_sla_notification_rule.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'save failed');
+                showToast('Rule saved', 'success');
+                closeSlaNotifModal();
+                loadSlaNotifRules();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        }
+
+        async function deleteSlaNotifRule(id) {
+            if (!confirm('Delete this notification rule? This cannot be undone.')) return;
+            try {
+                const res = await fetch(API_BASE + 'delete_sla_notification_rule.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'delete failed');
+                showToast('Rule deleted', 'success');
+                loadSlaNotifRules();
             } catch (e) {
                 showToast(e.message, 'error');
             }

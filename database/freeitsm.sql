@@ -244,6 +244,42 @@ INSERT IGNORE INTO `sla_calendar_hours` (`calendar_id`, `weekday`, `start_time`,
     (1, 4, '09:00:00', '17:00:00'),
     (1, 5, '09:00:00', '17:00:00');
 
+-- SLA breach notification rules. department_id NULL = default rule applied when
+-- no per-department rule matches for the same (trigger_type, target_type).
+-- trigger_type 'warning' = approaching breach (>= sla_warning_threshold_percent),
+-- 'breach' = target exceeded. target_type 'both' applies to response and resolution.
+CREATE TABLE IF NOT EXISTS `sla_notification_rules` (
+    `id`                       INT NOT NULL AUTO_INCREMENT,
+    `department_id`            INT NULL,
+    `trigger_type`             ENUM('warning','breach') NOT NULL,
+    `target_type`              ENUM('response','resolution','both') NOT NULL DEFAULT 'both',
+    `notify_assignee`          TINYINT(1) NOT NULL DEFAULT 0,
+    `notify_department_teams`  TINYINT(1) NOT NULL DEFAULT 0,
+    `notify_analyst_id`        INT NULL,
+    `notify_emails`            TEXT NULL,
+    `is_active`                TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime`         DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`         DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_sla_notif_rule_dept` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_sla_notif_rule_analyst` FOREIGN KEY (`notify_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Dedup log so the cron worker doesn't re-send the same notification on every tick.
+-- One row per (ticket, target, trigger) — once a warning fires for a ticket's
+-- response SLA, the next warning for that ticket+target won't fire.
+CREATE TABLE IF NOT EXISTS `sla_notifications_sent` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`      INT NOT NULL,
+    `target_type`    ENUM('response','resolution') NOT NULL,
+    `trigger_type`   ENUM('warning','breach') NOT NULL,
+    `sent_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `recipients`     TEXT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_sla_notif_sent` (`ticket_id`, `target_type`, `trigger_type`),
+    CONSTRAINT `fk_sla_notif_sent_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `tickets` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `ticket_number`         VARCHAR(50) NOT NULL,

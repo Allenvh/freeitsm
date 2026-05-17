@@ -174,6 +174,29 @@ $schema = [
         'name'          => 'VARCHAR(100) NULL',
     ],
 
+    'sla_notification_rules' => [
+        'id'                       => 'INT NOT NULL AUTO_INCREMENT',
+        'department_id'            => 'INT NULL',
+        'trigger_type'             => "ENUM('warning','breach') NOT NULL",
+        'target_type'              => "ENUM('response','resolution','both') NOT NULL DEFAULT 'both'",
+        'notify_assignee'          => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'notify_department_teams'  => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'notify_analyst_id'        => 'INT NULL',
+        'notify_emails'            => 'TEXT NULL',
+        'is_active'                => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'created_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+        'updated_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+    ],
+
+    'sla_notifications_sent' => [
+        'id'             => 'INT NOT NULL AUTO_INCREMENT',
+        'ticket_id'      => 'INT NOT NULL',
+        'target_type'    => "ENUM('response','resolution') NOT NULL",
+        'trigger_type'   => "ENUM('warning','breach') NOT NULL",
+        'sent_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+        'recipients'     => 'TEXT NULL',
+    ],
+
     'tickets' => [
         'id'                    => 'INT NOT NULL AUTO_INCREMENT',
         'ticket_number'         => 'VARCHAR(50) NOT NULL',
@@ -1977,6 +2000,23 @@ try {
             try { $conn->exec("ALTER TABLE ticket_priorities ADD CONSTRAINT fk_ticket_priorities_sla_calendar FOREIGN KEY (sla_calendar_id) REFERENCES sla_calendars (id) ON DELETE SET NULL"); } catch (Exception $e) {}
         }
     }
+    // FK + UNIQUE constraints for SLA breach notification rules + dedup log
+    if ($tableExists('sla_notification_rules')) {
+        if ($tableExists('departments') && !$fkExists('sla_notification_rules', 'fk_sla_notif_rule_dept')) {
+            try { $conn->exec("ALTER TABLE sla_notification_rules ADD CONSTRAINT fk_sla_notif_rule_dept FOREIGN KEY (department_id) REFERENCES departments (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('sla_notification_rules', 'fk_sla_notif_rule_analyst')) {
+            try { $conn->exec("ALTER TABLE sla_notification_rules ADD CONSTRAINT fk_sla_notif_rule_analyst FOREIGN KEY (notify_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('sla_notifications_sent')) {
+        if (!$idxExists('sla_notifications_sent', 'uq_sla_notif_sent')) {
+            try { $conn->exec("ALTER TABLE sla_notifications_sent ADD UNIQUE KEY uq_sla_notif_sent (ticket_id, target_type, trigger_type)"); } catch (Exception $e) {}
+        }
+        if ($tableExists('tickets') && !$fkExists('sla_notifications_sent', 'fk_sla_notif_sent_ticket')) {
+            try { $conn->exec("ALTER TABLE sla_notifications_sent ADD CONSTRAINT fk_sla_notif_sent_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
 
     // Seed a default Mon-Fri 09:00-17:00 calendar in Europe/London if no
     // calendars exist yet. Detected installs that pre-date the SLA module
@@ -2005,6 +2045,8 @@ try {
             'sla_notify_assignee_at_warning'  => '1',
             'sla_notify_lead_at_breach'       => '1',
             'sla_first_response_definition'   => 'either',
+            // Shared secret for HTTP-triggered cron worker; random per install
+            'sla_cron_token'                  => bin2hex(random_bytes(16)),
         ];
         $stmt = $conn->prepare("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, ?)");
         foreach ($defaults as $k => $v) { $stmt->execute([$k, $v]); }
