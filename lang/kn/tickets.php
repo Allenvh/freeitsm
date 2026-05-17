@@ -201,6 +201,12 @@ return [
             'authenticate'   => 'ದೃಢೀಕರಿಸಿ',
             'reset_password' => 'ಪಾಸ್‌ವರ್ಡ್ ಮರುಹೊಂದಿಸಿ',
         ],
+        'buttons' => [
+            'logs'            => 'ಲಾಗ್‌ಗಳು',
+            'check_all'       => 'ಎಲ್ಲವನ್ನೂ ಪರಿಶೀಲಿಸಿ',
+            'test_connection' => 'ಸಂಪರ್ಕ ಪರೀಕ್ಷಿಸಿ',
+            'verify'          => 'ಪರಿಶೀಲಿಸಿ',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid

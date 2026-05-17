@@ -201,6 +201,12 @@ return [
             'authenticate'   => 'Verifiëren',
             'reset_password' => 'Wachtwoord opnieuw instellen',
         ],
+        'buttons' => [
+            'logs'            => 'Logboeken',
+            'check_all'       => 'Alles controleren',
+            'test_connection' => 'Verbinding testen',
+            'verify'          => 'Verifiëren',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid

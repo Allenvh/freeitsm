@@ -201,6 +201,12 @@ return [
             'authenticate'   => 'அங்கீகரி',
             'reset_password' => 'கடவுச்சொல்லை மீட்டமை',
         ],
+        'buttons' => [
+            'logs'            => 'பதிவுகள்',
+            'check_all'       => 'அனைத்தையும் சரிபார்',
+            'test_connection' => 'இணைப்பை சோதி',
+            'verify'          => 'சரிபார்',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid

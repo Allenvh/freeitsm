@@ -201,6 +201,12 @@ return [
             'authenticate'   => 'প্রমাণীকরণ',
             'reset_password' => 'পাসওয়ার্ড রিসেট',
         ],
+        'buttons' => [
+            'logs'            => 'লগ',
+            'check_all'       => 'সব যাচাই',
+            'test_connection' => 'সংযোগ পরীক্ষা',
+            'verify'          => 'যাচাই',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid

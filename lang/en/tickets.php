@@ -236,6 +236,15 @@ return [
             'authenticate'   => 'Authenticate',
             'reset_password' => 'Reset Password',
         ],
+        // Buttons specific to this settings page. Generic Save / Cancel /
+        // Add / Close / Delete reuse the existing common.* keys. Pagination
+        // Prev/Next reuse common.calendar.previous / common.calendar.next.
+        'buttons' => [
+            'logs'            => 'Logs',
+            'check_all'       => 'Check All',
+            'test_connection' => 'Test connection',
+            'verify'          => 'Verify',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid

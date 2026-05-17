@@ -201,6 +201,12 @@ return [
             'authenticate'   => 'Autentica',
             'reset_password' => 'Reimposta password',
         ],
+        'buttons' => [
+            'logs'            => 'Log',
+            'check_all'       => 'Controlla tutte',
+            'test_connection' => 'Testa connessione',
+            'verify'          => 'Verifica',
+        ],
     ],
 
     // tickets/rota.php — weekly staff rota grid
