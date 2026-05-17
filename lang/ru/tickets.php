@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Задайте вопрос…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Добавить заметку',
+        'reply'                => 'Ответить',
+        'forward'              => 'Переслать',
+        'schedule'             => 'Запланировать',
+        'ask_ai'               => 'Спросить ИИ',
+        'audit'                => 'История',
+        'delete'               => 'Удалить',
+        'loading_attachments'  => 'Загрузка вложений…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Связанные объекты CMDB',
+        'link_btn'           => '+ Связать объект',
+        'empty'              => 'Объекты CMDB пока не связаны.',
+        'search_placeholder' => 'Введите для поиска любого объекта CMDB…',
+        'no_matches'         => 'Совпадений нет.',
+        'unlink_title'       => 'Отвязать',
+        'unlink_confirm'     => 'Отвязать этот объект CMDB от заявки?',
+        'unlinked_toast'     => 'Отвязано',
+        'linked_toast'       => '{name} связан',
+        'already_linked'     => '{name} уже связан',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Записи времени',
+        'total_prefix'         => 'Всего {amount}',
+        'minutes_placeholder'  => 'Минуты',
+        'notes_placeholder'    => 'Что вы сделали? (необязательно)',
+        'add_btn'              => 'Добавить',
+        'empty'                => 'Время пока не учтено.',
+        'delete_title'         => 'Удалить запись',
+        'delete_confirm'       => 'Удалить эту запись времени?',
+        'minutes_required'     => 'Укажите количество затраченных минут.',
+        'save_failed'          => 'Не удалось сохранить запись времени: {error}',
+        'delete_failed'        => 'Не удалось удалить запись времени: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Служба поддержки - Календарь',

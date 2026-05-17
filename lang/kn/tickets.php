@@ -91,6 +91,47 @@ return [
         'placeholder' => 'ಪ್ರಶ್ನೆ ಕೇಳಿ…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'ಟಿಪ್ಪಣಿ ಸೇರಿಸಿ',
+        'reply'                => 'ಉತ್ತರಿಸಿ',
+        'forward'              => 'ಫಾರ್ವರ್ಡ್',
+        'schedule'             => 'ನಿಗದಿಪಡಿಸಿ',
+        'ask_ai'               => 'AI ಅನ್ನು ಕೇಳಿ',
+        'audit'                => 'ಆಡಿಟ್',
+        'delete'               => 'ಅಳಿಸಿ',
+        'loading_attachments'  => 'ಲಗತ್ತುಗಳನ್ನು ಲೋಡ್ ಮಾಡಲಾಗುತ್ತಿದೆ…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'ಪ್ರಭಾವಿತ CMDB ಆಬ್ಜೆಕ್ಟ್‌ಗಳು',
+        'link_btn'           => '+ ಆಬ್ಜೆಕ್ಟ್ ಲಿಂಕ್ ಮಾಡಿ',
+        'empty'              => 'ಇನ್ನೂ ಯಾವುದೇ CMDB ಆಬ್ಜೆಕ್ಟ್ ಲಿಂಕ್ ಆಗಿಲ್ಲ.',
+        'search_placeholder' => 'ಯಾವುದೇ CMDB ಆಬ್ಜೆಕ್ಟ್ ಹುಡುಕಲು ಟೈಪ್ ಮಾಡಿ…',
+        'no_matches'         => 'ಯಾವುದೇ ಹೊಂದಾಣಿಕೆಗಳಿಲ್ಲ.',
+        'unlink_title'       => 'ಅನ್‌ಲಿಂಕ್',
+        'unlink_confirm'     => 'ಈ CMDB ಆಬ್ಜೆಕ್ಟ್ ಅನ್ನು ಟಿಕೆಟ್‌ನಿಂದ ಅನ್‌ಲಿಂಕ್ ಮಾಡಬೇಕೇ?',
+        'unlinked_toast'     => 'ಅನ್‌ಲಿಂಕ್ ಮಾಡಲಾಗಿದೆ',
+        'linked_toast'       => '{name} ಲಿಂಕ್ ಮಾಡಲಾಗಿದೆ',
+        'already_linked'     => '{name} ಈಗಾಗಲೇ ಲಿಂಕ್ ಆಗಿದೆ',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'ಸಮಯ ನಮೂದುಗಳು',
+        'total_prefix'         => 'ಒಟ್ಟು {amount}',
+        'minutes_placeholder'  => 'ನಿಮಿಷಗಳು',
+        'notes_placeholder'    => 'ನೀವು ಏನು ಮಾಡಿದಿರಿ? (ಐಚ್ಛಿಕ)',
+        'add_btn'              => 'ಸೇರಿಸಿ',
+        'empty'                => 'ಇನ್ನೂ ಯಾವುದೇ ಸಮಯ ದಾಖಲಾಗಿಲ್ಲ.',
+        'delete_title'         => 'ನಮೂದನ್ನು ಅಳಿಸಿ',
+        'delete_confirm'       => 'ಈ ಸಮಯ ನಮೂದನ್ನು ಅಳಿಸಬೇಕೇ?',
+        'minutes_required'     => 'ಕಳೆದ ನಿಮಿಷಗಳ ಸಂಖ್ಯೆಯನ್ನು ನಮೂದಿಸಿ.',
+        'save_failed'          => 'ಸಮಯ ನಮೂದನ್ನು ಉಳಿಸಲು ವಿಫಲವಾಗಿದೆ: {error}',
+        'delete_failed'        => 'ಸಮಯ ನಮೂದನ್ನು ಅಳಿಸಲು ವಿಫಲವಾಗಿದೆ: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'ಸೇವಾ ಕೇಂದ್ರ - ಕ್ಯಾಲೆಂಡರ್',

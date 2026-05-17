@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Eine Frage stellen…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Notiz hinzufügen',
+        'reply'                => 'Antworten',
+        'forward'              => 'Weiterleiten',
+        'schedule'             => 'Planen',
+        'ask_ai'               => 'KI fragen',
+        'audit'                => 'Verlauf',
+        'delete'               => 'Löschen',
+        'loading_attachments'  => 'Anhänge werden geladen…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Betroffene CMDB-Objekte',
+        'link_btn'           => '+ Objekt verknüpfen',
+        'empty'              => 'Noch keine CMDB-Objekte verknüpft.',
+        'search_placeholder' => 'Tippen, um ein beliebiges CMDB-Objekt zu suchen…',
+        'no_matches'         => 'Keine Treffer.',
+        'unlink_title'       => 'Verknüpfung aufheben',
+        'unlink_confirm'     => 'Verknüpfung dieses CMDB-Objekts mit dem Ticket aufheben?',
+        'unlinked_toast'     => 'Verknüpfung aufgehoben',
+        'linked_toast'       => '{name} verknüpft',
+        'already_linked'     => '{name} ist bereits verknüpft',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Zeiteinträge',
+        'total_prefix'         => 'Gesamt {amount}',
+        'minutes_placeholder'  => 'Minuten',
+        'notes_placeholder'    => 'Was haben Sie getan? (optional)',
+        'add_btn'              => 'Hinzufügen',
+        'empty'                => 'Noch keine Zeit erfasst.',
+        'delete_title'         => 'Eintrag löschen',
+        'delete_confirm'       => 'Diesen Zeiteintrag löschen?',
+        'minutes_required'     => 'Geben Sie die Anzahl der aufgewendeten Minuten ein.',
+        'save_failed'          => 'Zeiteintrag konnte nicht gespeichert werden: {error}',
+        'delete_failed'        => 'Zeiteintrag konnte nicht gelöscht werden: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Service Desk - Kalender',

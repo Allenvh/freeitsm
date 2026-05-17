@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Posez une question…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Ajouter une note',
+        'reply'                => 'Répondre',
+        'forward'              => 'Transférer',
+        'schedule'             => 'Planifier',
+        'ask_ai'               => 'Demander à l\'IA',
+        'audit'                => 'Journal',
+        'delete'               => 'Supprimer',
+        'loading_attachments'  => 'Chargement des pièces jointes…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Objets CMDB concernés',
+        'link_btn'           => '+ Lier un objet',
+        'empty'              => 'Aucun objet CMDB lié pour le moment.',
+        'search_placeholder' => 'Saisissez pour rechercher un objet CMDB…',
+        'no_matches'         => 'Aucun résultat.',
+        'unlink_title'       => 'Délier',
+        'unlink_confirm'     => 'Délier cet objet CMDB du ticket ?',
+        'unlinked_toast'     => 'Délié',
+        'linked_toast'       => '{name} lié',
+        'already_linked'     => '{name} est déjà lié',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Saisies de temps',
+        'total_prefix'         => 'Total {amount}',
+        'minutes_placeholder'  => 'Minutes',
+        'notes_placeholder'    => 'Qu\'avez-vous fait ? (facultatif)',
+        'add_btn'              => 'Ajouter',
+        'empty'                => 'Aucun temps enregistré pour le moment.',
+        'delete_title'         => 'Supprimer la saisie',
+        'delete_confirm'       => 'Supprimer cette saisie de temps ?',
+        'minutes_required'     => 'Indiquez le nombre de minutes passées.',
+        'save_failed'          => 'Échec de l\'enregistrement de la saisie de temps : {error}',
+        'delete_failed'        => 'Échec de la suppression de la saisie de temps : {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Centre de services - Calendrier',

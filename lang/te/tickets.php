@@ -91,6 +91,47 @@ return [
         'placeholder' => 'ప్రశ్న అడగండి…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'గమనిక జోడించండి',
+        'reply'                => 'ప్రత్యుత్తరం',
+        'forward'              => 'ఫార్వర్డ్',
+        'schedule'             => 'షెడ్యూల్',
+        'ask_ai'               => 'AI ని అడగండి',
+        'audit'                => 'ఆడిట్',
+        'delete'               => 'తొలగించు',
+        'loading_attachments'  => 'జతలు లోడ్ అవుతున్నాయి…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'ప్రభావిత CMDB ఆబ్జెక్ట్‌లు',
+        'link_btn'           => '+ ఆబ్జెక్ట్‌ను లింక్ చేయండి',
+        'empty'              => 'ఇంకా ఏ CMDB ఆబ్జెక్ట్ లింక్ చేయబడలేదు.',
+        'search_placeholder' => 'ఏదైనా CMDB ఆబ్జెక్ట్‌ను శోధించడానికి టైప్ చేయండి…',
+        'no_matches'         => 'సరిపోలికలు లేవు.',
+        'unlink_title'       => 'అన్‌లింక్',
+        'unlink_confirm'     => 'ఈ CMDB ఆబ్జెక్ట్‌ను టికెట్ నుండి అన్‌లింక్ చేయాలా?',
+        'unlinked_toast'     => 'అన్‌లింక్ చేయబడింది',
+        'linked_toast'       => '{name} లింక్ చేయబడింది',
+        'already_linked'     => '{name} ఇప్పటికే లింక్ చేయబడింది',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'సమయ ఎంట్రీలు',
+        'total_prefix'         => 'మొత్తం {amount}',
+        'minutes_placeholder'  => 'నిమిషాలు',
+        'notes_placeholder'    => 'మీరు ఏమి చేశారు? (ఐచ్ఛికం)',
+        'add_btn'              => 'జోడించండి',
+        'empty'                => 'ఇంకా ఏ సమయం నమోదు చేయబడలేదు.',
+        'delete_title'         => 'ఎంట్రీని తొలగించండి',
+        'delete_confirm'       => 'ఈ సమయ ఎంట్రీని తొలగించాలా?',
+        'minutes_required'     => 'వెచ్చించిన నిమిషాల సంఖ్యను నమోదు చేయండి.',
+        'save_failed'          => 'సమయ ఎంట్రీని సేవ్ చేయడంలో విఫలమైంది: {error}',
+        'delete_failed'        => 'సమయ ఎంట్రీని తొలగించడంలో విఫలమైంది: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'సేవా కేంద్రం - క్యాలెండర్',

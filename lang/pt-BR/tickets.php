@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Fazer uma pergunta…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Adicionar nota',
+        'reply'                => 'Responder',
+        'forward'              => 'Encaminhar',
+        'schedule'             => 'Agendar',
+        'ask_ai'               => 'Perguntar à IA',
+        'audit'                => 'Auditoria',
+        'delete'               => 'Excluir',
+        'loading_attachments'  => 'Carregando anexos…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Objetos CMDB afetados',
+        'link_btn'           => '+ Vincular objeto',
+        'empty'              => 'Nenhum objeto CMDB vinculado ainda.',
+        'search_placeholder' => 'Digite para pesquisar qualquer objeto CMDB…',
+        'no_matches'         => 'Sem correspondências.',
+        'unlink_title'       => 'Desvincular',
+        'unlink_confirm'     => 'Desvincular este objeto CMDB do ticket?',
+        'unlinked_toast'     => 'Desvinculado',
+        'linked_toast'       => '{name} vinculado',
+        'already_linked'     => '{name} já está vinculado',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Registros de tempo',
+        'total_prefix'         => 'Total {amount}',
+        'minutes_placeholder'  => 'Minutos',
+        'notes_placeholder'    => 'O que você fez? (opcional)',
+        'add_btn'              => 'Adicionar',
+        'empty'                => 'Nenhum tempo registrado ainda.',
+        'delete_title'         => 'Excluir registro',
+        'delete_confirm'       => 'Excluir este registro de tempo?',
+        'minutes_required'     => 'Informe o número de minutos gastos.',
+        'save_failed'          => 'Falha ao salvar o registro de tempo: {error}',
+        'delete_failed'        => 'Falha ao excluir o registro de tempo: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Central de Serviços - Calendário',

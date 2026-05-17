@@ -91,6 +91,47 @@ return [
         'placeholder' => 'ஒரு கேள்வியைக் கேள்…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'குறிப்பு சேர்',
+        'reply'                => 'பதிலளி',
+        'forward'              => 'முன்னனுப்பு',
+        'schedule'             => 'திட்டமிடு',
+        'ask_ai'               => 'AI இடம் கேள்',
+        'audit'                => 'தணிக்கை',
+        'delete'               => 'நீக்கு',
+        'loading_attachments'  => 'இணைப்புகள் ஏற்றப்படுகின்றன…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'பாதிக்கப்பட்ட CMDB ஆப்ஜெக்ட்டுகள்',
+        'link_btn'           => '+ ஆப்ஜெக்ட்டை இணை',
+        'empty'              => 'இதுவரை எந்த CMDB ஆப்ஜெக்ட்டும் இணைக்கப்படவில்லை.',
+        'search_placeholder' => 'எந்த CMDB ஆப்ஜெக்ட்டையும் தேட தட்டச்சு செய்க…',
+        'no_matches'         => 'பொருத்தங்கள் இல்லை.',
+        'unlink_title'       => 'இணைப்பை நீக்கு',
+        'unlink_confirm'     => 'இந்த CMDB ஆப்ஜெக்ட்டை டிக்கெட்டிலிருந்து நீக்கவா?',
+        'unlinked_toast'     => 'இணைப்பு நீக்கப்பட்டது',
+        'linked_toast'       => '{name} இணைக்கப்பட்டது',
+        'already_linked'     => '{name} ஏற்கனவே இணைக்கப்பட்டுள்ளது',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'நேரப் பதிவுகள்',
+        'total_prefix'         => 'மொத்தம் {amount}',
+        'minutes_placeholder'  => 'நிமிடங்கள்',
+        'notes_placeholder'    => 'நீங்கள் என்ன செய்தீர்கள்? (விருப்பத்திற்கு)',
+        'add_btn'              => 'சேர்',
+        'empty'                => 'இதுவரை எந்த நேரமும் பதிவு செய்யப்படவில்லை.',
+        'delete_title'         => 'பதிவை நீக்கு',
+        'delete_confirm'       => 'இந்த நேரப் பதிவை நீக்கவா?',
+        'minutes_required'     => 'செலவிட்ட நிமிடங்களின் எண்ணிக்கையை உள்ளிடவும்.',
+        'save_failed'          => 'நேரப் பதிவை சேமிக்க முடியவில்லை: {error}',
+        'delete_failed'        => 'நேரப் பதிவை நீக்க முடியவில்லை: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'சேவை மையம் - நாட்காட்டி',

@@ -91,6 +91,47 @@ return [
         'placeholder' => 'प्रश्न विचारा…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'नोंद जोडा',
+        'reply'                => 'उत्तर द्या',
+        'forward'              => 'अग्रेषित करा',
+        'schedule'             => 'वेळापत्रक',
+        'ask_ai'               => 'AI ला विचारा',
+        'audit'                => 'ऑडिट',
+        'delete'               => 'हटवा',
+        'loading_attachments'  => 'संलग्नक लोड होत आहेत…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'प्रभावित CMDB ऑब्जेक्ट',
+        'link_btn'           => '+ ऑब्जेक्ट लिंक करा',
+        'empty'              => 'अद्याप कोणताही CMDB ऑब्जेक्ट लिंक केलेला नाही.',
+        'search_placeholder' => 'कोणताही CMDB ऑब्जेक्ट शोधण्यासाठी टाइप करा…',
+        'no_matches'         => 'जुळवण्या नाहीत.',
+        'unlink_title'       => 'अनलिंक करा',
+        'unlink_confirm'     => 'हा CMDB ऑब्जेक्ट तिकिटातून अनलिंक करायचा?',
+        'unlinked_toast'     => 'अनलिंक केले',
+        'linked_toast'       => '{name} लिंक केले',
+        'already_linked'     => '{name} आधीच लिंक केलेले आहे',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'वेळ नोंदी',
+        'total_prefix'         => 'एकूण {amount}',
+        'minutes_placeholder'  => 'मिनिटे',
+        'notes_placeholder'    => 'आपण काय केले? (वैकल्पिक)',
+        'add_btn'              => 'जोडा',
+        'empty'                => 'अद्याप कोणतीही वेळ नोंदवलेली नाही.',
+        'delete_title'         => 'नोंद हटवा',
+        'delete_confirm'       => 'ही वेळ नोंद हटवायची?',
+        'minutes_required'     => 'खर्च केलेल्या मिनिटांची संख्या प्रविष्ट करा.',
+        'save_failed'          => 'वेळ नोंद जतन करण्यात अयशस्वी: {error}',
+        'delete_failed'        => 'वेळ नोंद हटवण्यात अयशस्वी: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'सेवा डेस्क - कॅलेंडर',

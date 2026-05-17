@@ -1061,36 +1061,36 @@ function displayEmail(email) {
         </div>
         <div class="attachment-info-bar" id="attachmentInfoBar" onclick="showAttachmentList()" style="display: none;">
             <span class="attachment-info-icon">📎</span>
-            <span>Loading attachments...</span>
+            <span>${escapeHtml(t('tickets.actions.loading_attachments'))}</span>
         </div>
         <div class="action-toolbar">
             <button class="action-btn" onclick="openNoteModal()">
                 <span class="action-btn-icon">📝</span>
-                <span>Add Note</span>
+                <span>${escapeHtml(t('tickets.actions.add_note'))}</span>
             </button>
             <button class="action-btn" onclick="openReplyModal()">
                 <span class="action-btn-icon">↩️</span>
-                <span>Reply</span>
+                <span>${escapeHtml(t('tickets.actions.reply'))}</span>
             </button>
             <button class="action-btn" onclick="openForwardModal()">
                 <span class="action-btn-icon">➡️</span>
-                <span>Forward</span>
+                <span>${escapeHtml(t('tickets.actions.forward'))}</span>
             </button>
             <button class="action-btn" onclick="openScheduleModal()">
                 <span class="action-btn-icon">📅</span>
-                <span>Schedule</span>
+                <span>${escapeHtml(t('tickets.actions.schedule'))}</span>
             </button>
             <button class="action-btn" onclick="openTicketAiChat()">
                 <span class="action-btn-icon">🤖</span>
-                <span>Ask AI</span>
+                <span>${escapeHtml(t('tickets.actions.ask_ai'))}</span>
             </button>
             <button class="action-btn" onclick="showAuditHistory()">
                 <span class="action-btn-icon">📋</span>
-                <span>Audit</span>
+                <span>${escapeHtml(t('tickets.actions.audit'))}</span>
             </button>
             <button class="action-btn action-btn-danger" onclick="deleteTicket()">
                 <span class="action-btn-icon">🗑️</span>
-                <span>Delete</span>
+                <span>${escapeHtml(t('tickets.actions.delete'))}</span>
             </button>
         </div>
         <div class="email-body">
@@ -1592,21 +1592,21 @@ function renderCmdbObjects(ticketId) {
                     ${link.parent_name ? `<span class="cmdb-parent">in <strong>${escapeHtml(link.parent_name)}</strong> (${escapeHtml(link.parent_class_name || '')})</span>` : ''}
                 </div>
             </div>
-            <button class="cmdb-link-x" title="Unlink" onclick="removeCmdbObject(event, ${link.link_id}, ${ticketId})">×</button>
+            <button class="cmdb-link-x" title="${escapeHtml(t('tickets.cmdb.unlink_title'))}" onclick="removeCmdbObject(event, ${link.link_id}, ${ticketId})">×</button>
         </a>
     `).join('');
 
     container.innerHTML = `
         <div class="cmdb-section">
             <div class="cmdb-section-head">
-                <h3>Affected CMDB Objects</h3>
-                <button class="btn-link" onclick="openLinkCmdbPicker(${ticketId})">+ Link object</button>
+                <h3>${escapeHtml(t('tickets.cmdb.section_title'))}</h3>
+                <button class="btn-link" onclick="openLinkCmdbPicker(${ticketId})">${escapeHtml(t('tickets.cmdb.link_btn'))}</button>
             </div>
             ${cmdbObjectsForTicket.length === 0
-                ? '<div class="cmdb-empty">No CMDB objects linked yet.</div>'
+                ? `<div class="cmdb-empty">${escapeHtml(t('tickets.cmdb.empty'))}</div>`
                 : `<div class="cmdb-link-list">${cards}</div>`}
             <div class="cmdb-picker" id="cmdbPicker_${ticketId}" style="display:none;">
-                <input type="text" id="cmdbPickerInput_${ticketId}" placeholder="Type to search any CMDB object…" autocomplete="off">
+                <input type="text" id="cmdbPickerInput_${ticketId}" placeholder="${escapeHtml(t('tickets.cmdb.search_placeholder'))}" autocomplete="off">
                 <div class="cmdb-picker-results" id="cmdbPickerResults_${ticketId}"></div>
             </div>
         </div>
@@ -1628,7 +1628,7 @@ function openLinkCmdbPicker(ticketId) {
 
     const renderResults = () => {
         if (current.length === 0) {
-            results.innerHTML = '<div class="cmdb-picker-empty">No matches.</div>';
+            results.innerHTML = `<div class="cmdb-picker-empty">${escapeHtml(t('tickets.cmdb.no_matches'))}</div>`;
             results.classList.add('active');
             return;
         }
@@ -1656,9 +1656,9 @@ function openLinkCmdbPicker(ticketId) {
             const data = await res.json();
             if (!data.success) throw new Error(data.error || 'Link failed');
             if (data.already_linked) {
-                showToast(r.name + ' is already linked', true);
+                showToast(t('tickets.cmdb.already_linked', { name: r.name }), true);
             } else {
-                showToast('Linked ' + r.name);
+                showToast(t('tickets.cmdb.linked_toast', { name: r.name }));
             }
             picker.style.display = 'none';
             await loadCmdbObjects(ticketId);
@@ -1695,7 +1695,7 @@ function openLinkCmdbPicker(ticketId) {
 async function removeCmdbObject(ev, linkId, ticketId) {
     ev.preventDefault();
     ev.stopPropagation();
-    if (!confirm('Unlink this CMDB object from the ticket?')) return;
+    if (!confirm(t('tickets.cmdb.unlink_confirm'))) return;
     try {
         const res = await fetch('../api/tickets/delete_ticket_cmdb_object.php', {
             method: 'POST',
@@ -1704,7 +1704,7 @@ async function removeCmdbObject(ev, linkId, ticketId) {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Unlink failed');
-        showToast('Unlinked');
+        showToast(t('tickets.cmdb.unlinked_toast'));
         await loadCmdbObjects(ticketId);
     } catch (err) {
         showToast('Error: ' + err.message, true);
@@ -2879,16 +2879,19 @@ function renderTimeEntries(totalMinutes) {
     if (!container) return;
 
     const myAnalystId = window.CURRENT_ANALYST_ID || 0;
-    const totalLabel = totalMinutes > 0 ? ' &middot; Total ' + formatMinutes(totalMinutes) : '';
+    const deleteTitle = t('tickets.time_entries.delete_title');
+    const totalLabel = totalMinutes > 0
+        ? ' &middot; ' + escapeHtml(t('tickets.time_entries.total_prefix', { amount: formatMinutes(totalMinutes) }))
+        : '';
 
     let rowsHtml = '';
     if (currentTimeEntries.length === 0) {
-        rowsHtml = '<div class="time-entry-empty">No time logged yet.</div>';
+        rowsHtml = `<div class="time-entry-empty">${escapeHtml(t('tickets.time_entries.empty'))}</div>`;
     } else {
         rowsHtml = currentTimeEntries.map(e => {
             const canDelete = parseInt(e.analyst_id, 10) === parseInt(myAnalystId, 10);
             const deleteBtn = canDelete
-                ? `<button class="time-entry-delete" onclick="deleteTimeEntry(${e.id})" title="Delete entry" aria-label="Delete entry">&times;</button>`
+                ? `<button class="time-entry-delete" onclick="deleteTimeEntry(${e.id})" title="${escapeHtml(deleteTitle)}" aria-label="${escapeHtml(deleteTitle)}">&times;</button>`
                 : '';
             const notesHtml = e.notes
                 ? `<div class="time-entry-notes">${escapeHtml(e.notes)}</div>`
@@ -2909,13 +2912,13 @@ function renderTimeEntries(totalMinutes) {
 
     container.innerHTML = `
         <div class="time-entries-section">
-            <div class="time-entries-header">Time Entries${totalLabel}</div>
+            <div class="time-entries-header">${escapeHtml(t('tickets.time_entries.section_title'))}${totalLabel}</div>
             <form class="time-entry-form" onsubmit="event.preventDefault(); saveTimeEntry();">
                 <input type="number" id="timeEntryMinutes" class="time-entry-input-minutes"
-                       min="1" step="1" placeholder="Minutes" required>
+                       min="1" step="1" placeholder="${escapeHtml(t('tickets.time_entries.minutes_placeholder'))}" required>
                 <input type="text" id="timeEntryNotes" class="time-entry-input-notes"
-                       placeholder="What did you do? (optional)">
-                <button type="submit" class="time-entry-add-btn">Add</button>
+                       placeholder="${escapeHtml(t('tickets.time_entries.notes_placeholder'))}">
+                <button type="submit" class="time-entry-add-btn">${escapeHtml(t('tickets.time_entries.add_btn'))}</button>
             </form>
             <div class="time-entry-list">${rowsHtml}</div>
         </div>
@@ -2928,7 +2931,7 @@ async function saveTimeEntry() {
     const notes   = document.getElementById('timeEntryNotes').value.trim();
 
     if (!minutes || minutes <= 0) {
-        alert('Enter the number of minutes spent.');
+        alert(t('tickets.time_entries.minutes_required'));
         return;
     }
 
@@ -2946,16 +2949,16 @@ async function saveTimeEntry() {
         if (data.success) {
             loadTimeEntries(currentEmail.ticket_id);
         } else {
-            alert('Failed to save time entry: ' + (data.error || 'unknown error'));
+            alert(t('tickets.time_entries.save_failed', { error: data.error || 'unknown error' }));
         }
     } catch (e) {
         console.error('Save time entry failed:', e);
-        alert('Failed to save time entry');
+        alert(t('tickets.time_entries.save_failed', { error: 'network error' }));
     }
 }
 
 async function deleteTimeEntry(id) {
-    if (!confirm('Delete this time entry?')) return;
+    if (!confirm(t('tickets.time_entries.delete_confirm'))) return;
     try {
         const response = await fetch(API_BASE + 'delete_time_entry.php', {
             method: 'POST',
@@ -2966,11 +2969,11 @@ async function deleteTimeEntry(id) {
         if (data.success) {
             if (currentEmail) loadTimeEntries(currentEmail.ticket_id);
         } else {
-            alert('Failed to delete time entry: ' + (data.error || 'unknown error'));
+            alert(t('tickets.time_entries.delete_failed', { error: data.error || 'unknown error' }));
         }
     } catch (e) {
         console.error('Delete time entry failed:', e);
-        alert('Failed to delete time entry');
+        alert(t('tickets.time_entries.delete_failed', { error: 'network error' }));
     }
 }
 

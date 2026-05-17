@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Poni una domanda…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Aggiungi nota',
+        'reply'                => 'Rispondi',
+        'forward'              => 'Inoltra',
+        'schedule'             => 'Pianifica',
+        'ask_ai'               => 'Chiedi all\'IA',
+        'audit'                => 'Audit',
+        'delete'               => 'Elimina',
+        'loading_attachments'  => 'Caricamento allegati…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Oggetti CMDB interessati',
+        'link_btn'           => '+ Collega oggetto',
+        'empty'              => 'Nessun oggetto CMDB ancora collegato.',
+        'search_placeholder' => 'Digita per cercare un oggetto CMDB…',
+        'no_matches'         => 'Nessun risultato.',
+        'unlink_title'       => 'Scollega',
+        'unlink_confirm'     => 'Scollegare questo oggetto CMDB dal ticket?',
+        'unlinked_toast'     => 'Scollegato',
+        'linked_toast'       => '{name} collegato',
+        'already_linked'     => '{name} è già collegato',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Registrazioni tempo',
+        'total_prefix'         => 'Totale {amount}',
+        'minutes_placeholder'  => 'Minuti',
+        'notes_placeholder'    => 'Cosa hai fatto? (facoltativo)',
+        'add_btn'              => 'Aggiungi',
+        'empty'                => 'Nessun tempo ancora registrato.',
+        'delete_title'         => 'Elimina registrazione',
+        'delete_confirm'       => 'Eliminare questa registrazione tempo?',
+        'minutes_required'     => 'Inserisci il numero di minuti impiegati.',
+        'save_failed'          => 'Impossibile salvare la registrazione tempo: {error}',
+        'delete_failed'        => 'Impossibile eliminare la registrazione tempo: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Service Desk - Calendario',

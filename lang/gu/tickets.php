@@ -91,6 +91,47 @@ return [
         'placeholder' => 'એક પ્રશ્ન પૂછો…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'નોંધ ઉમેરો',
+        'reply'                => 'જવાબ આપો',
+        'forward'              => 'ફોરવર્ડ',
+        'schedule'             => 'શેડ્યૂલ',
+        'ask_ai'               => 'AI ને પૂછો',
+        'audit'                => 'ઓડિટ',
+        'delete'               => 'કાઢી નાખો',
+        'loading_attachments'  => 'જોડાણો લોડ થઈ રહ્યાં છે…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'અસરગ્રસ્ત CMDB ઑબ્જેક્ટ',
+        'link_btn'           => '+ ઑબ્જેક્ટ લિંક કરો',
+        'empty'              => 'હજુ સુધી કોઈ CMDB ઑબ્જેક્ટ લિંક થયેલ નથી.',
+        'search_placeholder' => 'કોઈપણ CMDB ઑબ્જેક્ટ શોધવા માટે ટાઈપ કરો…',
+        'no_matches'         => 'કોઈ મેળ નથી.',
+        'unlink_title'       => 'અનલિંક કરો',
+        'unlink_confirm'     => 'આ CMDB ઑબ્જેક્ટને ટિકિટમાંથી અનલિંક કરવો?',
+        'unlinked_toast'     => 'અનલિંક કર્યું',
+        'linked_toast'       => '{name} લિંક કર્યું',
+        'already_linked'     => '{name} પહેલેથી જ લિંક થયેલ છે',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'સમય નોંધણીઓ',
+        'total_prefix'         => 'કુલ {amount}',
+        'minutes_placeholder'  => 'મિનિટ',
+        'notes_placeholder'    => 'તમે શું કર્યું? (વૈકલ્પિક)',
+        'add_btn'              => 'ઉમેરો',
+        'empty'                => 'હજુ સુધી કોઈ સમય નોંધાયો નથી.',
+        'delete_title'         => 'નોંધણી કાઢી નાખો',
+        'delete_confirm'       => 'આ સમય નોંધણી કાઢી નાખવી?',
+        'minutes_required'     => 'ખર્ચાયેલી મિનિટોની સંખ્યા દાખલ કરો.',
+        'save_failed'          => 'સમય નોંધણી સાચવવામાં નિષ્ફળ: {error}',
+        'delete_failed'        => 'સમય નોંધણી કાઢી નાખવામાં નિષ્ફળ: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'સેવા ડેસ્ક - કેલેન્ડર',

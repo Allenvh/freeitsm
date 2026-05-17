@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Zadaj pytanie…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Dodaj notatkę',
+        'reply'                => 'Odpowiedz',
+        'forward'              => 'Prześlij dalej',
+        'schedule'             => 'Zaplanuj',
+        'ask_ai'               => 'Zapytaj AI',
+        'audit'                => 'Historia',
+        'delete'               => 'Usuń',
+        'loading_attachments'  => 'Ładowanie załączników…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Powiązane obiekty CMDB',
+        'link_btn'           => '+ Powiąż obiekt',
+        'empty'              => 'Brak powiązanych obiektów CMDB.',
+        'search_placeholder' => 'Wpisz, aby wyszukać obiekt CMDB…',
+        'no_matches'         => 'Brak wyników.',
+        'unlink_title'       => 'Odłącz',
+        'unlink_confirm'     => 'Odłączyć ten obiekt CMDB od zgłoszenia?',
+        'unlinked_toast'     => 'Odłączono',
+        'linked_toast'       => 'Powiązano {name}',
+        'already_linked'     => '{name} jest już powiązany',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Wpisy czasu',
+        'total_prefix'         => 'Łącznie {amount}',
+        'minutes_placeholder'  => 'Minuty',
+        'notes_placeholder'    => 'Co zostało zrobione? (opcjonalnie)',
+        'add_btn'              => 'Dodaj',
+        'empty'                => 'Nie zarejestrowano jeszcze czasu.',
+        'delete_title'         => 'Usuń wpis',
+        'delete_confirm'       => 'Usunąć ten wpis czasu?',
+        'minutes_required'     => 'Podaj liczbę spędzonych minut.',
+        'save_failed'          => 'Nie udało się zapisać wpisu czasu: {error}',
+        'delete_failed'        => 'Nie udało się usunąć wpisu czasu: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Centrum obsługi - Kalendarz',

@@ -91,6 +91,47 @@ return [
         'placeholder' => 'ഒരു ചോദ്യം ചോദിക്കുക…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'കുറിപ്പ് ചേർക്കുക',
+        'reply'                => 'മറുപടി',
+        'forward'              => 'കൈമാറുക',
+        'schedule'             => 'ഷെഡ്യൂൾ',
+        'ask_ai'               => 'AI യോട് ചോദിക്കുക',
+        'audit'                => 'ഓഡിറ്റ്',
+        'delete'               => 'ഇല്ലാതാക്കുക',
+        'loading_attachments'  => 'അറ്റാച്ച്മെന്റുകൾ ലോഡ് ചെയ്യുന്നു…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'ബാധിച്ച CMDB ഒബ്ജക്റ്റുകൾ',
+        'link_btn'           => '+ ഒബ്ജക്റ്റ് ലിങ്ക് ചെയ്യുക',
+        'empty'              => 'ഇതുവരെ ഒരു CMDB ഒബ്ജക്റ്റും ലിങ്ക് ചെയ്തിട്ടില്ല.',
+        'search_placeholder' => 'ഏതെങ്കിലും CMDB ഒബ്ജക്റ്റ് തിരയാൻ ടൈപ്പ് ചെയ്യുക…',
+        'no_matches'         => 'പൊരുത്തങ്ങളില്ല.',
+        'unlink_title'       => 'അൺലിങ്ക്',
+        'unlink_confirm'     => 'ഈ CMDB ഒബ്ജക്റ്റിനെ ടിക്കറ്റിൽ നിന്ന് അൺലിങ്ക് ചെയ്യണോ?',
+        'unlinked_toast'     => 'അൺലിങ്ക് ചെയ്തു',
+        'linked_toast'       => '{name} ലിങ്ക് ചെയ്തു',
+        'already_linked'     => '{name} ഇതിനകം ലിങ്ക് ചെയ്തിട്ടുണ്ട്',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'സമയ എൻട്രികൾ',
+        'total_prefix'         => 'ആകെ {amount}',
+        'minutes_placeholder'  => 'മിനിറ്റുകൾ',
+        'notes_placeholder'    => 'നിങ്ങൾ എന്തു ചെയ്തു? (ഓപ്ഷണൽ)',
+        'add_btn'              => 'ചേർക്കുക',
+        'empty'                => 'ഇതുവരെ സമയം രേഖപ്പെടുത്തിയിട്ടില്ല.',
+        'delete_title'         => 'എൻട്രി ഇല്ലാതാക്കുക',
+        'delete_confirm'       => 'ഈ സമയ എൻട്രി ഇല്ലാതാക്കണോ?',
+        'minutes_required'     => 'ചെലവഴിച്ച മിനിറ്റുകളുടെ എണ്ണം നൽകുക.',
+        'save_failed'          => 'സമയ എൻട്രി സംരക്ഷിക്കാൻ പരാജയപ്പെട്ടു: {error}',
+        'delete_failed'        => 'സമയ എൻട്രി ഇല്ലാതാക്കാൻ പരാജയപ്പെട്ടു: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'സേവന കേന്ദ്രം - കലണ്ടർ',

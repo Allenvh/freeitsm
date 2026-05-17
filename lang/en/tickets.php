@@ -117,6 +117,47 @@ return [
         'placeholder' => 'Ask a question...',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Add Note',
+        'reply'                => 'Reply',
+        'forward'              => 'Forward',
+        'schedule'             => 'Schedule',
+        'ask_ai'               => 'Ask AI',
+        'audit'                => 'Audit',
+        'delete'               => 'Delete',
+        'loading_attachments'  => 'Loading attachments...',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Affected CMDB Objects',
+        'link_btn'           => '+ Link object',
+        'empty'              => 'No CMDB objects linked yet.',
+        'search_placeholder' => 'Type to search any CMDB object…',
+        'no_matches'         => 'No matches.',
+        'unlink_title'       => 'Unlink',
+        'unlink_confirm'     => 'Unlink this CMDB object from the ticket?',
+        'unlinked_toast'     => 'Unlinked',
+        'linked_toast'       => 'Linked {name}',
+        'already_linked'     => '{name} is already linked',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Time Entries',
+        'total_prefix'         => 'Total {amount}',
+        'minutes_placeholder'  => 'Minutes',
+        'notes_placeholder'    => 'What did you do? (optional)',
+        'add_btn'              => 'Add',
+        'empty'                => 'No time logged yet.',
+        'delete_title'         => 'Delete entry',
+        'delete_confirm'       => 'Delete this time entry?',
+        'minutes_required'     => 'Enter the number of minutes spent.',
+        'save_failed'          => 'Failed to save time entry: {error}',
+        'delete_failed'        => 'Failed to delete time entry: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Service Desk - Calendar',

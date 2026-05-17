@@ -91,6 +91,47 @@ return [
         'placeholder' => 'प्रश्न पूछें…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'नोट जोड़ें',
+        'reply'                => 'जवाब दें',
+        'forward'              => 'अग्रेषित करें',
+        'schedule'             => 'निर्धारित करें',
+        'ask_ai'               => 'AI से पूछें',
+        'audit'                => 'ऑडिट',
+        'delete'               => 'हटाएँ',
+        'loading_attachments'  => 'अनुलग्नक लोड हो रहे हैं…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'प्रभावित CMDB ऑब्जेक्ट',
+        'link_btn'           => '+ ऑब्जेक्ट लिंक करें',
+        'empty'              => 'अभी तक कोई CMDB ऑब्जेक्ट लिंक नहीं है।',
+        'search_placeholder' => 'किसी भी CMDB ऑब्जेक्ट को खोजने के लिए टाइप करें…',
+        'no_matches'         => 'कोई मिलान नहीं।',
+        'unlink_title'       => 'अनलिंक करें',
+        'unlink_confirm'     => 'इस CMDB ऑब्जेक्ट को टिकट से अनलिंक करें?',
+        'unlinked_toast'     => 'अनलिंक किया गया',
+        'linked_toast'       => '{name} लिंक किया गया',
+        'already_linked'     => '{name} पहले से लिंक है',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'समय प्रविष्टियाँ',
+        'total_prefix'         => 'कुल {amount}',
+        'minutes_placeholder'  => 'मिनट',
+        'notes_placeholder'    => 'आपने क्या किया? (वैकल्पिक)',
+        'add_btn'              => 'जोड़ें',
+        'empty'                => 'अभी तक कोई समय दर्ज नहीं किया गया।',
+        'delete_title'         => 'प्रविष्टि हटाएँ',
+        'delete_confirm'       => 'यह समय प्रविष्टि हटाएँ?',
+        'minutes_required'     => 'बिताए गए मिनटों की संख्या दर्ज करें।',
+        'save_failed'          => 'समय प्रविष्टि सहेजने में विफल: {error}',
+        'delete_failed'        => 'समय प्रविष्टि हटाने में विफल: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'सेवा डेस्क - कैलेंडर',

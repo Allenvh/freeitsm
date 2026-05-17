@@ -91,6 +91,47 @@ return [
         'placeholder' => 'ਇੱਕ ਸਵਾਲ ਪੁੱਛੋ…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'ਨੋਟ ਜੋੜੋ',
+        'reply'                => 'ਜਵਾਬ ਦਿਓ',
+        'forward'              => 'ਅੱਗੇ ਭੇਜੋ',
+        'schedule'             => 'ਨਿਯਤ ਕਰੋ',
+        'ask_ai'               => 'AI ਨੂੰ ਪੁੱਛੋ',
+        'audit'                => 'ਆਡਿਟ',
+        'delete'               => 'ਮਿਟਾਓ',
+        'loading_attachments'  => 'ਅਟੈਚਮੈਂਟ ਲੋਡ ਹੋ ਰਹੇ ਹਨ…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'ਪ੍ਰਭਾਵਿਤ CMDB ਆਬਜੈਕਟ',
+        'link_btn'           => '+ ਆਬਜੈਕਟ ਲਿੰਕ ਕਰੋ',
+        'empty'              => 'ਹਾਲੇ ਕੋਈ CMDB ਆਬਜੈਕਟ ਲਿੰਕ ਨਹੀਂ ਹੈ।',
+        'search_placeholder' => 'ਕਿਸੇ ਵੀ CMDB ਆਬਜੈਕਟ ਨੂੰ ਖੋਜਣ ਲਈ ਟਾਈਪ ਕਰੋ…',
+        'no_matches'         => 'ਕੋਈ ਮੇਲ ਨਹੀਂ।',
+        'unlink_title'       => 'ਅਨਲਿੰਕ ਕਰੋ',
+        'unlink_confirm'     => 'ਇਸ CMDB ਆਬਜੈਕਟ ਨੂੰ ਟਿਕਟ ਤੋਂ ਅਨਲਿੰਕ ਕਰੀਏ?',
+        'unlinked_toast'     => 'ਅਨਲਿੰਕ ਕੀਤਾ ਗਿਆ',
+        'linked_toast'       => '{name} ਲਿੰਕ ਕੀਤਾ ਗਿਆ',
+        'already_linked'     => '{name} ਪਹਿਲਾਂ ਹੀ ਲਿੰਕ ਹੈ',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'ਸਮਾਂ ਐਂਟਰੀਆਂ',
+        'total_prefix'         => 'ਕੁੱਲ {amount}',
+        'minutes_placeholder'  => 'ਮਿੰਟ',
+        'notes_placeholder'    => 'ਤੁਸੀਂ ਕੀ ਕੀਤਾ? (ਚੋਣਵਾਂ)',
+        'add_btn'              => 'ਜੋੜੋ',
+        'empty'                => 'ਹਾਲੇ ਕੋਈ ਸਮਾਂ ਦਰਜ ਨਹੀਂ ਕੀਤਾ ਗਿਆ।',
+        'delete_title'         => 'ਐਂਟਰੀ ਮਿਟਾਓ',
+        'delete_confirm'       => 'ਇਹ ਸਮਾਂ ਐਂਟਰੀ ਮਿਟਾਉਣੀ ਹੈ?',
+        'minutes_required'     => 'ਖਰਚ ਕੀਤੇ ਮਿੰਟਾਂ ਦੀ ਗਿਣਤੀ ਦਾਖਲ ਕਰੋ।',
+        'save_failed'          => 'ਸਮਾਂ ਐਂਟਰੀ ਸੰਭਾਲਣ ਵਿੱਚ ਅਸਫਲ: {error}',
+        'delete_failed'        => 'ਸਮਾਂ ਐਂਟਰੀ ਮਿਟਾਉਣ ਵਿੱਚ ਅਸਫਲ: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'ਸੇਵਾ ਡੈਸਕ - ਕੈਲੰਡਰ',

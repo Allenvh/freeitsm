@@ -315,7 +315,7 @@ $translationNamespaces = ['common', 'tickets'];
         window.API_BASE = '../api/tickets/';
         window.CURRENT_ANALYST_ID = <?php echo (int)($_SESSION['analyst_id'] ?? 0); ?>;
     </script>
-    <script src="../assets/js/inbox.js?v=20"></script>
+    <script src="../assets/js/inbox.js?v=21"></script>
     <script>
     // Auto-check mailboxes every 60 seconds
     (function() {

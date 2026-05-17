@@ -91,6 +91,47 @@ return [
         'placeholder' => 'একটি প্রশ্ন করুন…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'নোট যোগ করুন',
+        'reply'                => 'উত্তর দিন',
+        'forward'              => 'ফরোয়ার্ড',
+        'schedule'             => 'নির্ধারণ',
+        'ask_ai'               => 'AI কে জিজ্ঞাসা',
+        'audit'                => 'অডিট',
+        'delete'               => 'মুছুন',
+        'loading_attachments'  => 'সংযুক্তি লোড হচ্ছে…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'প্রভাবিত CMDB অবজেক্ট',
+        'link_btn'           => '+ অবজেক্ট লিঙ্ক করুন',
+        'empty'              => 'এখনও কোনো CMDB অবজেক্ট লিঙ্ক করা হয়নি।',
+        'search_placeholder' => 'যেকোনো CMDB অবজেক্ট খুঁজতে টাইপ করুন…',
+        'no_matches'         => 'কোনো মিল নেই।',
+        'unlink_title'       => 'লিঙ্ক সরান',
+        'unlink_confirm'     => 'এই CMDB অবজেক্টটি টিকিট থেকে আনলিঙ্ক করবেন?',
+        'unlinked_toast'     => 'আনলিঙ্ক করা হয়েছে',
+        'linked_toast'       => '{name} লিঙ্ক করা হয়েছে',
+        'already_linked'     => '{name} ইতিমধ্যেই লিঙ্ক করা আছে',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'সময়ের এন্ট্রি',
+        'total_prefix'         => 'মোট {amount}',
+        'minutes_placeholder'  => 'মিনিট',
+        'notes_placeholder'    => 'আপনি কী করেছেন? (ঐচ্ছিক)',
+        'add_btn'              => 'যোগ করুন',
+        'empty'                => 'এখনও কোনো সময় রেকর্ড করা হয়নি।',
+        'delete_title'         => 'এন্ট্রি মুছুন',
+        'delete_confirm'       => 'এই সময়ের এন্ট্রি মুছে ফেলবেন?',
+        'minutes_required'     => 'ব্যয়িত মিনিটের সংখ্যা লিখুন।',
+        'save_failed'          => 'সময়ের এন্ট্রি সংরক্ষণ করতে ব্যর্থ: {error}',
+        'delete_failed'        => 'সময়ের এন্ট্রি মুছতে ব্যর্থ: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'সার্ভিস ডেস্ক - ক্যালেন্ডার',

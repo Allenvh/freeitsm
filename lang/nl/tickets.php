@@ -91,6 +91,47 @@ return [
         'placeholder' => 'Een vraag stellen…',
     ],
 
+    // Action buttons in the reading-pane action toolbar (above the email body).
+    'actions' => [
+        'add_note'             => 'Notitie toevoegen',
+        'reply'                => 'Beantwoorden',
+        'forward'              => 'Doorsturen',
+        'schedule'             => 'Inplannen',
+        'ask_ai'               => 'AI vragen',
+        'audit'                => 'Audit',
+        'delete'               => 'Verwijderen',
+        'loading_attachments'  => 'Bijlagen laden…',
+    ],
+
+    // CMDB-linked-objects section in the reading pane (below the email body).
+    'cmdb' => [
+        'section_title'      => 'Getroffen CMDB-objecten',
+        'link_btn'           => '+ Object koppelen',
+        'empty'              => 'Nog geen CMDB-objecten gekoppeld.',
+        'search_placeholder' => 'Typ om een CMDB-object te zoeken…',
+        'no_matches'         => 'Geen overeenkomsten.',
+        'unlink_title'       => 'Ontkoppelen',
+        'unlink_confirm'     => 'Dit CMDB-object loskoppelen van het ticket?',
+        'unlinked_toast'     => 'Ontkoppeld',
+        'linked_toast'       => '{name} gekoppeld',
+        'already_linked'     => '{name} is al gekoppeld',
+    ],
+
+    // Time-tracking section in the reading pane.
+    'time_entries' => [
+        'section_title'        => 'Tijdregistraties',
+        'total_prefix'         => 'Totaal {amount}',
+        'minutes_placeholder'  => 'Minuten',
+        'notes_placeholder'    => 'Wat hebt u gedaan? (optioneel)',
+        'add_btn'              => 'Toevoegen',
+        'empty'                => 'Nog geen tijd geregistreerd.',
+        'delete_title'         => 'Registratie verwijderen',
+        'delete_confirm'       => 'Deze tijdregistratie verwijderen?',
+        'minutes_required'     => 'Voer het aantal bestede minuten in.',
+        'save_failed'          => 'Tijdregistratie opslaan mislukt: {error}',
+        'delete_failed'        => 'Tijdregistratie verwijderen mislukt: {error}',
+    ],
+
     // tickets/calendar.php — scheduled-tickets calendar view
     'calendar' => [
         'page_title'    => 'Servicedesk - Kalender',
