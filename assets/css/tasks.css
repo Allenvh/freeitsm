@@ -200,6 +200,7 @@ body {
     cursor: grab;
     transition: box-shadow 0.15s, opacity 0.15s;
     user-select: none;
+    flex-shrink: 0;
 }
 
 .task-card:hover { box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); }
@@ -321,6 +322,7 @@ body {
 /* Drop indicator */
 .drop-indicator {
     height: 3px;
+    flex-shrink: 0;
     background: #7c3aed;
     border-radius: 2px;
     margin: 2px 0;
