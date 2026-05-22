@@ -8,8 +8,9 @@
  * as [data-shape="<key>"] rules. The "cloud" shape additionally needs the
  * <clipPath id="pmShapeCloud"> SVG defs block present on the page.
  *
- * This is the single source of truth shared by the Settings page (shape
- * picker) and — from Stage 2 — the editor (default step sizing).
+ * Single source of truth shared by the Settings page (shape picker) and the
+ * editor — index.php exports this array to JS as window.SHAPE_SIZES so
+ * stepDims() can size new canvas steps based on the chosen type's shape.
  */
 return [
     'rectangle'     => ['w' => 160, 'h' => 80],

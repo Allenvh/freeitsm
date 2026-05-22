@@ -534,8 +534,8 @@ $path_prefix = '../';
                             <div class="pm-help-feature-icon blue">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="6" height="12" rx="1"/><polygon points="12,4 18,12 12,20 6,12" transform="translate(2 0)"/><ellipse cx="20" cy="12" rx="3" ry="2"/></svg>
                             </div>
-                            <h4>Four step types</h4>
-                            <p>Process boxes, decision diamonds, terminal ovals for start/end, and document shapes for outputs &mdash; everything a standard flowchart needs.</p>
+                            <h4>Customisable step types</h4>
+                            <p>Four built-in types &mdash; Process, Decision, Terminal, Document &mdash; plus your own. Settings lets you add types with a name, a shape (twelve to choose from) and a colour; they then show up in the toolbar.</p>
                         </div>
                         <div class="pm-help-feature-card">
                             <div class="pm-help-feature-icon green">
@@ -604,26 +604,29 @@ $path_prefix = '../';
                         <span class="pm-help-section-num">3</span>
                         <h3>Step types</h3>
                     </div>
-                    <p>The toolbar exposes four shape types, each with its own conventional meaning in flowchart notation. Pick the one that matches what the step actually does &mdash; readers will pick up the structure of the diagram much faster when shapes are used consistently.</p>
+                    <p>The toolbar is built from the step types defined in <strong>Settings</strong>. Four built-in types ship out of the box &mdash; each with its own conventional meaning in flowchart notation. Pick the one that matches what the step actually does; readers will pick up the structure of the diagram much faster when shapes are used consistently.</p>
 
                     <div class="pm-help-data-grid">
                         <div class="pm-help-data-card">
                             <strong><svg class="pm-help-shape" viewBox="0 0 18 18"><rect x="1" y="3" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Process</strong>
-                            <span>A standard action or task &mdash; "Create AD account", "Send notification", "Run backup". The default shape for most steps. Rectangle, 160&times;80.</span>
+                            <span>A standard action or task &mdash; "Create AD account", "Send notification", "Run backup". The default shape for most steps. Rounded rectangle.</span>
                         </div>
                         <div class="pm-help-data-card">
                             <strong><svg class="pm-help-shape" viewBox="0 0 18 18"><polygon points="9,1 17,9 9,17 1,9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Decision</strong>
-                            <span>A branching point with two or more outcomes &mdash; "Approved?", "Priority?", "MFA enrolled?". Use connector labels (Yes/No, P1/P2/P3) to mark each branch. Diamond, 140&times;140.</span>
+                            <span>A branching point with two or more outcomes &mdash; "Approved?", "Priority?", "MFA enrolled?". Use connector labels (Yes/No, P1/P2/P3) to mark each branch. Diamond.</span>
                         </div>
                         <div class="pm-help-data-card">
                             <strong><svg class="pm-help-shape" viewBox="0 0 18 18"><ellipse cx="9" cy="9" rx="8" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Terminal</strong>
-                            <span>The start or end of a flow &mdash; "Ticket received", "Onboarding complete", "End". Every diagram should have at least one terminal at the start. Oval, 160&times;50.</span>
+                            <span>The start or end of a flow &mdash; "Ticket received", "Onboarding complete", "End". Every diagram should have at least one terminal at the start. Pill.</span>
                         </div>
                         <div class="pm-help-data-card">
                             <strong><svg class="pm-help-shape" viewBox="0 0 18 18"><path d="M2 2h14v12c-2.3 1.3-4.7 1.3-7 0s-4.7-1.3-7 0V2z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>Document</strong>
-                            <span>An artefact produced or consumed by the flow &mdash; "Post-incident review", "Destruction certificate", "Approval form". Wavy-bottomed rectangle, 160&times;80.</span>
+                            <span>An artefact produced or consumed by the flow &mdash; "Post-incident review", "Destruction certificate", "Approval form". Wavy-bottomed rectangle.</span>
                         </div>
                     </div>
+
+                    <h4 style="margin: 22px 0 8px; font-size: 15px; color: #333;">Adding your own types</h4>
+                    <p>Open <strong>Process Mapper &rarr; Settings</strong> to define additional types. Each type has a name (whatever you want to call it &mdash; "Database", "Manual step", "Wait"), a shape (twelve to choose from &mdash; rectangle, rounded, pill, circle, diamond, parallelogram, trapezoid, hexagon, document, cylinder, cloud, subroutine) and a default colour. Save it and the type shows up immediately as a button in the toolbar and as an option in the detail-panel Type dropdown. Drag the order arrows to control where it sits in the toolbar; untick <em>Active</em> to hide a type without deleting it. The four built-in types can be renamed and recoloured but not deleted.</p>
 
                     <p class="pm-help-tip">The detail panel lets you change a step's type after it is placed, so you can re-shape an existing step (for example, promoting a Process box to a Decision diamond) without having to delete and recreate it.</p>
                 </div>

@@ -2,9 +2,13 @@
 /**
  * Process Mapper — Settings
  *
- * Stage 1 of custom block types: manages the `process_step_types` palette
- * (name + shape + colour). The editor still uses the hardcoded shapes until
- * Stage 2 wires it to this table.
+ * Manages the `process_step_types` palette (name + shape + colour). The
+ * editor pulls this same list at page-load time so the toolbar, the detail-
+ * panel Type dropdown and the right-click "Create new" submenu all reflect
+ * whatever the user has configured here. Built-in types are protected from
+ * deletion; deactivating a type hides it from the toolbar/context menu but
+ * keeps it in the detail-panel dropdown (marked with a `*`) so existing
+ * steps with that stored type are still selectable.
  */
 session_start();
 require_once '../../config.php';
@@ -25,7 +29,7 @@ $shapes = include '../includes/shapes.php';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('process-mapper.title') . ' — ' . t('process-mapper.nav.settings')); ?></title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/process-mapper.css?v=2">
+    <link rel="stylesheet" href="../../assets/css/process-mapper.css?v=3">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
     <style>

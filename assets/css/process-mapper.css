@@ -596,32 +596,20 @@
     z-index: 3;
 }
 
-/* Shape: process (rounded rect) */
-.pm-step[data-type="process"] {
-    border-radius: 6px;
-}
-
-/* Shape: decision (diamond via clip-path) */
-.pm-step[data-type="decision"] {
-    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-    min-width: 140px;
-    min-height: 140px;
-    padding: 30px 20px;
-}
-
-/* Shape: terminal (pill / start-end) */
-.pm-step[data-type="start"] {
-    border-radius: 999px;
-    min-height: 50px;
-    padding: 8px 24px;
-}
-
-/* Shape: document (wavy bottom) */
-.pm-step[data-type="document"] {
-    border-radius: 4px 4px 0 0;
-    clip-path: polygon(0 0, 100% 0, 100% 85%, 75% 100%, 50% 85%, 25% 100%, 0 85%);
-    padding-bottom: 20px;
-}
+/* Canvas-step label padding per shape. Geometry (border-radius / clip-path)
+   comes from the shared [data-shape="..."] block further down; here we tune
+   *just the inner padding* so the step's label sits clear of clipped corners,
+   slanted edges and wavy bottoms. */
+.pm-step[data-shape="diamond"]       { padding: 28px 24px; }
+.pm-step[data-shape="circle"]        { padding: 24px; }
+.pm-step[data-shape="pill"]          { padding: 8px 28px; }
+.pm-step[data-shape="hexagon"]       { padding: 8px 30px; }
+.pm-step[data-shape="parallelogram"] { padding: 8px 32px; }
+.pm-step[data-shape="trapezoid"]     { padding: 8px 32px; }
+.pm-step[data-shape="document"]      { padding: 8px 12px 18px; }
+.pm-step[data-shape="cloud"]         { padding: 18px 28px; }
+.pm-step[data-shape="cylinder"]      { padding: 22px 14px; }
+.pm-step[data-shape="subroutine"]    { padding: 8px 22px; }
 
 /* --- Edge handles (connector anchors) ---------------------- */
 .pm-edge-handle {
@@ -647,12 +635,6 @@
 .pm-edge-handle.bottom { bottom: -6px; left: 50%;  transform: translateX(-50%); }
 .pm-edge-handle.left   { left: -6px;   top: 50%;   transform: translateY(-50%); }
 .pm-edge-handle.right  { right: -6px;  top: 50%;   transform: translateY(-50%); }
-
-/* Decision edge handles need adjusting */
-.pm-step[data-type="decision"] .pm-edge-handle.top    { top: -6px; }
-.pm-step[data-type="decision"] .pm-edge-handle.bottom { bottom: -6px; }
-.pm-step[data-type="decision"] .pm-edge-handle.left   { left: -6px; }
-.pm-step[data-type="decision"] .pm-edge-handle.right  { right: -6px; }
 
 /* --- Rubber-band selection --------------------------------- */
 .pm-selection-box {
@@ -895,9 +877,10 @@
    -------------------------------------------------------------
    Geometry (clip-path / border-radius) for the configurable
    block-type palette. Size-independent, so the same rules drive
-   both the canvas steps (.pm-step[data-shape]) and the small
-   previews on the Settings page (.pm-shape-preview[data-shape]).
-   Per-shape label padding for canvas steps is added in Stage 2.
+   the canvas steps (.pm-step[data-shape]), the Settings page
+   shape picker, the toolbar buttons and the right-click "Create
+   new" submenu (each via .pm-shape-preview[data-shape]).
+   Per-shape label padding for canvas steps is set above.
    The "cloud" shape needs the <clipPath id="pmShapeCloud"> SVG
    defs block present on the page.
    ============================================================= */
@@ -937,4 +920,19 @@
     height: 34px;
     background: #94a3b8;
     vertical-align: middle;
+}
+
+/* Toolbar-button shape preview — smaller than the Settings swatch, sized to
+   sit next to the type name on a 36px-ish toolbar button. */
+.pm-tool-btn .pm-tool-shape {
+    width: 22px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+/* Right-click "Create new" submenu shape preview. */
+.pm-ctx-item .pm-ctx-shape {
+    width: 20px;
+    height: 14px;
+    flex-shrink: 0;
 }

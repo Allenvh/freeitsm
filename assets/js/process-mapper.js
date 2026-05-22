@@ -3,7 +3,8 @@
  *
  * Features:
  *   - Dot-grid canvas with snap-to-grid (20px)
- *   - Shape types: process, decision, terminal (start/end), document
+ *   - User-definable step types (from process_step_types) — each carries a
+ *     name, shape and default colour; managed in Process Mapper → Settings
  *   - Drag to move steps; snap on drop
  *   - Ctrl+click or rubber-band to multi-select; arrow keys to nudge
  *   - Edge handles for drawing connectors; connectors have optional text
@@ -13,6 +14,20 @@
 const PM = (() => {
     const GRID = 20;
     const snap = v => Math.round(v / GRID) * GRID;
+
+    // Type registry helpers. Lookup by slug — the step.type string IS the slug
+    // the user configured in Settings. Falls back to 'rounded' geometry / a
+    // neutral blue if a step's type slug no longer matches any configured
+    // type (e.g. a custom type was deleted while a diagram still referenced it).
+    const FALLBACK_SHAPE = 'rounded';
+    const FALLBACK_COLOR = '#0078d4';
+    function getType(slug) {
+        return (window.STEP_TYPES_BY_SLUG || {})[slug] || null;
+    }
+    function shapeForSlug(slug) {
+        const t = getType(slug);
+        return t ? t.shape : FALLBACK_SHAPE;
+    }
 
     // ---- state ----
     let processes = [];
@@ -339,7 +354,11 @@ const PM = (() => {
     function createStepEl(step) {
         const el = document.createElement('div');
         el.className = 'pm-step';
+        // data-shape drives the visual geometry via [data-shape="..."] CSS
+        // rules shared with the Settings page previews. data-type is kept as
+        // an informational hook (the slug) — no CSS reads it any more.
         el.dataset.type = step.type;
+        el.dataset.shape = shapeForSlug(step.type);
         el.dataset.stepId = step.id || step.tempId;
         el.style.left = step.x + 'px';
         el.style.top = step.y + 'px';
@@ -835,7 +854,7 @@ const PM = (() => {
         const step = {
             tempId,
             type,
-            label: type === 'start' ? 'Start' : '',
+            label: '',
             description: '',
             x: snap(cx),
             y: snap(cy),
@@ -870,14 +889,20 @@ const PM = (() => {
     //  Right-click context menu — "Create new" connected step
     // =========================================================
 
-    // Box dimensions + default colour for each step type. Single source of
-    // truth shared by addStep() and createConnectedStep().
-    function stepDims(type) {
-        const colors = { process: '#0078d4', decision: '#f59e0b', start: '#10b981', document: '#8764b8' };
+    // Box dimensions + default colour for each step type. Data-driven from
+    // window.STEP_TYPES_BY_SLUG (configured in Process Mapper → Settings):
+    // the type's shape decides the default size via window.SHAPE_SIZES, and
+    // the type's colour seeds the new step's colour (the per-step colour
+    // picker can still override it). Single source of truth shared by
+    // addStep() and createConnectedStep().
+    function stepDims(slug) {
+        const t = getType(slug);
+        const shape = t ? t.shape : FALLBACK_SHAPE;
+        const sz = (window.SHAPE_SIZES || {})[shape] || { w: 160, h: 80 };
         return {
-            w: type === 'decision' ? 140 : 160,
-            h: type === 'decision' ? 140 : (type === 'start' ? 50 : 80),
-            color: colors[type] || '#0078d4'
+            w: sz.w,
+            h: sz.h,
+            color: t && t.color ? t.color : FALLBACK_COLOR
         };
     }
 
@@ -967,7 +992,7 @@ const PM = (() => {
         const step = {
             tempId,
             type,
-            label: type === 'start' ? 'Start' : '',
+            label: '',
             description: '',
             x: nx,
             y: ny,
@@ -2155,14 +2180,26 @@ const PM = (() => {
 
         const nodeId = (step) => 's' + (step.id != null ? step.id : ('t' + Math.abs(step.tempId)));
 
+        // Map each Process Mapper shape to its closest Mermaid v10 flowchart
+        // syntax. Mermaid doesn't have a 1:1 for every shape — cloud and
+        // document collapse onto nearby classic shapes (circle, parallelogram).
         const nodeDef = (step) => {
             const label = escLabel(step.label || '(unnamed)');
             const id = nodeId(step);
-            switch (step.type) {
-                case 'decision': return `${id}{"${label}"}`;
-                case 'start':    return `${id}(["${label}"])`;
-                case 'document': return `${id}[/"${label}"/]`;
-                default:         return `${id}["${label}"]`;
+            switch (shapeForSlug(step.type)) {
+                case 'rectangle':     return `${id}["${label}"]`;
+                case 'rounded':       return `${id}("${label}")`;
+                case 'pill':          return `${id}(["${label}"])`;
+                case 'circle':        return `${id}(("${label}"))`;
+                case 'cylinder':      return `${id}[("${label}")]`;
+                case 'subroutine':    return `${id}[["${label}"]]`;
+                case 'diamond':       return `${id}{"${label}"}`;
+                case 'hexagon':       return `${id}{{"${label}"}}`;
+                case 'parallelogram': return `${id}[/"${label}"/]`;
+                case 'trapezoid':     return `${id}[/"${label}"\\]`;
+                case 'document':      return `${id}[/"${label}"/]`; // parallelogram is closest classic Mermaid shape
+                case 'cloud':         return `${id}(("${label}"))`; // circle is closest classic Mermaid shape
+                default:              return `${id}["${label}"]`;
             }
         };
 

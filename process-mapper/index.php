@@ -13,6 +13,33 @@ $path_prefix = '../';
 
 // Namespaces the JS layer needs translated for this page
 $translationNamespaces = ['common', 'process-mapper'];
+
+// Stage 2: pull the step-type palette from process_step_types so the toolbar,
+// the detail-panel <select> and the right-click "Create new" submenu are all
+// driven by what the user configured in Settings. Active types feed the
+// toolbar + context menu; the <select> also includes inactive types so an
+// existing step's stored type never disappears from its dropdown.
+$pm_types_active = [];
+$pm_types_all    = [];
+$pm_shape_dims   = include __DIR__ . '/includes/shapes.php';
+try {
+    $pm_conn = connectToDatabase();
+    $pm_stmt = $pm_conn->query("SELECT id, name, slug, shape, color, display_order, is_active, is_builtin
+                                FROM process_step_types
+                                ORDER BY display_order, name");
+    $pm_types_all = $pm_stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($pm_types_all as &$t) {
+        $t['id']            = (int)$t['id'];
+        $t['display_order'] = (int)$t['display_order'];
+        $t['is_active']     = (int)$t['is_active'];
+        $t['is_builtin']    = (int)$t['is_builtin'];
+    }
+    unset($t);
+    $pm_types_active = array_values(array_filter($pm_types_all, fn($t) => $t['is_active']));
+} catch (Exception $e) {
+    // Soft-fail: empty palette is recoverable — the editor still loads existing
+    // diagrams (each step renders with its stored slug -> 'rounded' fallback).
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -21,7 +48,7 @@ $translationNamespaces = ['common', 'process-mapper'];
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('process-mapper.title')); ?></title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/process-mapper.css?v=2">
+    <link rel="stylesheet" href="../assets/css/process-mapper.css?v=3">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../assets/js/i18n.js"></script>
 </head>
@@ -47,22 +74,12 @@ $translationNamespaces = ['common', 'process-mapper'];
             <!-- Toolbar -->
             <div class="pm-toolbar" id="pmToolbar">
                 <div class="pm-toolbar-left">
-                    <button class="pm-tool-btn" data-type="process" title="<?php echo htmlspecialchars(t('process-mapper.toolbar.process')); ?>">
-                        <svg width="18" height="18" viewBox="0 0 18 18"><rect x="1" y="3" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                        <span><?php echo htmlspecialchars(t('process-mapper.toolbar.process')); ?></span>
+                    <?php foreach ($pm_types_active as $pm_t): ?>
+                    <button class="pm-tool-btn" data-type="<?php echo htmlspecialchars($pm_t['slug']); ?>" title="<?php echo htmlspecialchars($pm_t['name']); ?>">
+                        <span class="pm-shape-preview pm-tool-shape" data-shape="<?php echo htmlspecialchars($pm_t['shape']); ?>" style="background: <?php echo htmlspecialchars($pm_t['color']); ?>;"></span>
+                        <span><?php echo htmlspecialchars($pm_t['name']); ?></span>
                     </button>
-                    <button class="pm-tool-btn" data-type="decision" title="<?php echo htmlspecialchars(t('process-mapper.toolbar.decision')); ?>">
-                        <svg width="18" height="18" viewBox="0 0 18 18"><polygon points="9,1 17,9 9,17 1,9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                        <span><?php echo htmlspecialchars(t('process-mapper.toolbar.decision')); ?></span>
-                    </button>
-                    <button class="pm-tool-btn" data-type="start" title="<?php echo htmlspecialchars(t('process-mapper.toolbar.terminal')); ?>">
-                        <svg width="18" height="18" viewBox="0 0 18 18"><ellipse cx="9" cy="9" rx="8" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                        <span><?php echo htmlspecialchars(t('process-mapper.toolbar.terminal')); ?></span>
-                    </button>
-                    <button class="pm-tool-btn" data-type="document" title="<?php echo htmlspecialchars(t('process-mapper.toolbar.document')); ?>">
-                        <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 2h14v12c-2.3 1.3-4.7 1.3-7 0s-4.7-1.3-7 0V2z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                        <span><?php echo htmlspecialchars(t('process-mapper.toolbar.document')); ?></span>
-                    </button>
+                    <?php endforeach; ?>
                     <div class="pm-tool-sep"></div>
                     <button class="pm-tool-btn" id="connectBtn" title="<?php echo htmlspecialchars(t('process-mapper.toolbar.connect')); ?>">
                         <svg width="18" height="18" viewBox="0 0 18 18"><line x1="3" y1="15" x2="15" y2="3" stroke="currentColor" stroke-width="1.5"/><polyline points="10,3 15,3 15,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -125,10 +142,9 @@ $translationNamespaces = ['common', 'process-mapper'];
                 <div class="form-group">
                     <label class="form-label"><?php echo htmlspecialchars(t('process-mapper.detail.type')); ?></label>
                     <select class="form-input" id="detailType" onchange="PM.updateStepFromDetail()">
-                        <option value="process"><?php echo htmlspecialchars(t('process-mapper.detail.step_type.process')); ?></option>
-                        <option value="decision"><?php echo htmlspecialchars(t('process-mapper.detail.step_type.decision')); ?></option>
-                        <option value="start"><?php echo htmlspecialchars(t('process-mapper.detail.step_type.terminal')); ?></option>
-                        <option value="document"><?php echo htmlspecialchars(t('process-mapper.detail.step_type.document')); ?></option>
+                        <?php foreach ($pm_types_all as $pm_t): ?>
+                        <option value="<?php echo htmlspecialchars($pm_t['slug']); ?>"<?php echo $pm_t['is_active'] ? '' : ' data-inactive="1"'; ?>><?php echo htmlspecialchars($pm_t['name']) . ($pm_t['is_active'] ? '' : ' *'); ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="form-group">
@@ -227,22 +243,12 @@ $translationNamespaces = ['common', 'process-mapper'];
             <span class="pm-ctx-text"><?php echo htmlspecialchars(t('process-mapper.context.create_new')); ?></span>
             <svg class="pm-ctx-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M4 2.5L8 6l-4 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <div class="pm-ctx-submenu">
-                <div class="pm-ctx-item" data-create-type="process">
-                    <svg width="16" height="16" viewBox="0 0 18 18"><rect x="1" y="3" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                    <span><?php echo htmlspecialchars(t('process-mapper.toolbar.process')); ?></span>
+                <?php foreach ($pm_types_active as $pm_t): ?>
+                <div class="pm-ctx-item" data-create-type="<?php echo htmlspecialchars($pm_t['slug']); ?>">
+                    <span class="pm-shape-preview pm-ctx-shape" data-shape="<?php echo htmlspecialchars($pm_t['shape']); ?>" style="background: <?php echo htmlspecialchars($pm_t['color']); ?>;"></span>
+                    <span><?php echo htmlspecialchars($pm_t['name']); ?></span>
                 </div>
-                <div class="pm-ctx-item" data-create-type="decision">
-                    <svg width="16" height="16" viewBox="0 0 18 18"><polygon points="9,1 17,9 9,17 1,9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                    <span><?php echo htmlspecialchars(t('process-mapper.toolbar.decision')); ?></span>
-                </div>
-                <div class="pm-ctx-item" data-create-type="start">
-                    <svg width="16" height="16" viewBox="0 0 18 18"><ellipse cx="9" cy="9" rx="8" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                    <span><?php echo htmlspecialchars(t('process-mapper.toolbar.terminal')); ?></span>
-                </div>
-                <div class="pm-ctx-item" data-create-type="document">
-                    <svg width="16" height="16" viewBox="0 0 18 18"><path d="M2 2h14v12c-2.3 1.3-4.7 1.3-7 0s-4.7-1.3-7 0V2z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-                    <span><?php echo htmlspecialchars(t('process-mapper.toolbar.document')); ?></span>
-                </div>
+                <?php endforeach; ?>
             </div>
         </div>
     </div>
@@ -268,7 +274,33 @@ $translationNamespaces = ['common', 'process-mapper'];
         </div>
     </div>
 
-    <script>window.API_BASE = '../api/process-mapper/';</script>
-    <script src="../assets/js/process-mapper.js?v=1"></script>
+    <!-- Cloud shape clip-path (objectBoundingBox so it scales with the element).
+         Required by [data-shape="cloud"] CSS rule for any step or preview using
+         the cloud shape. -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <clipPath id="pmShapeCloud" clipPathUnits="objectBoundingBox">
+                <ellipse cx="0.30" cy="0.62" rx="0.27" ry="0.33"/>
+                <ellipse cx="0.50" cy="0.42" rx="0.30" ry="0.40"/>
+                <ellipse cx="0.70" cy="0.60" rx="0.28" ry="0.34"/>
+                <ellipse cx="0.50" cy="0.73" rx="0.40" ry="0.26"/>
+            </clipPath>
+        </defs>
+    </svg>
+
+    <script>
+        window.API_BASE = '../api/process-mapper/';
+        // Shape registry — drives default canvas sizes when adding a new step.
+        // Mirrors process-mapper/includes/shapes.php so the JS layer doesn't
+        // need a round-trip just to know how big a "diamond" should be.
+        window.SHAPE_SIZES = <?php echo json_encode($pm_shape_dims); ?>;
+        // Full type list (active + inactive) so the detail-panel <select> can
+        // still resolve an existing step's stored type when it has been
+        // deactivated. Keyed by slug for O(1) lookup in the editor.
+        window.STEP_TYPES = <?php echo json_encode($pm_types_all); ?>;
+        window.STEP_TYPES_BY_SLUG = {};
+        for (const t of window.STEP_TYPES) window.STEP_TYPES_BY_SLUG[t.slug] = t;
+    </script>
+    <script src="../assets/js/process-mapper.js?v=2"></script>
 </body>
 </html>
