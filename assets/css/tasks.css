@@ -1,11 +1,23 @@
 /* Tasks Module Styles */
 
-body { overflow: auto; height: auto; padding-top: 0; }
+/* Board / calendar / timeline are fixed-height app shells — the body
+   never scrolls, only the inner panels do. Flex layout means the header
+   can be any height without the content overflowing the viewport.
+   (The settings page re-enables body scrolling in its own <style>.) */
+body {
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.tasks-header { flex-shrink: 0; }
 
 /* Layout */
 .tasks-container {
     display: flex;
-    height: calc(100vh - 50px);
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
