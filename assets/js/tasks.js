@@ -250,8 +250,72 @@ function buildBoardColumns() {
         col.querySelector('.column-add-btn').addEventListener('click', () => showQuickAdd(col));
         col.querySelector('.quick-add-input')
            .addEventListener('keydown', e => handleQuickAdd(e, s.name, col));
+        col.querySelector('.board-column-header')
+           .addEventListener('mousedown', e => startColumnDrag(e, col));
         board.appendChild(col);
     });
+}
+
+// ── Column drag-to-reorder ─────────────────────────────────────────
+
+function startColumnDrag(e, column) {
+    // Left-button only; the + button is not a drag handle
+    if (e.button !== 0 || e.target.closest('.column-add-btn')) return;
+    const board = document.getElementById('boardView');
+    const startX = e.clientX;
+    let dragging = false;
+
+    const onMove = (e2) => {
+        if (!dragging) {
+            if (Math.abs(e2.clientX - startX) < 5) return;
+            dragging = true;
+            column.classList.add('col-dragging');
+        }
+        // Slot the dragged column before the first column the cursor is left of
+        const others = [...board.querySelectorAll('.board-column:not(.col-dragging)')];
+        let placed = false;
+        for (const other of others) {
+            const r = other.getBoundingClientRect();
+            if (e2.clientX < r.left + r.width / 2) {
+                board.insertBefore(column, other);
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) board.appendChild(column);
+    };
+
+    const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (dragging) {
+            column.classList.remove('col-dragging');
+            persistColumnOrder();
+        }
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+}
+
+function persistColumnOrder() {
+    const order = [...document.querySelectorAll('#boardView .board-column')]
+        .map(col => {
+            const s = statusList.find(x => x.name === col.dataset.status);
+            return s ? s.id : null;
+        })
+        .filter(id => id !== null);
+    if (!order.length) return;
+    // Keep the local status list in step so menus / dropdowns follow suit
+    statusList.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    fetch(API_BASE + 'reorder_task_statuses.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order })
+    }).then(r => r.json()).then(d => {
+        showToast(d.success ? 'Column order saved' : ('Error: ' + (d.error || 'Could not save')));
+    }).catch(() => showToast('Could not save column order'));
 }
 
 function renderBoard() {

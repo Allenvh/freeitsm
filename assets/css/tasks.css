@@ -182,6 +182,15 @@ body {
     color: #555;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    cursor: grab;
+    user-select: none;
+}
+
+.board-column-header:active { cursor: grabbing; }
+
+.board-column.col-dragging {
+    opacity: 0.65;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
 }
 
 .column-status-dot {
