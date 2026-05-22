@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Procesos',
+        'settings'  => 'Configuración',
         'help'      => 'Ayuda',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Crear nuevo…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Rectángulo',
+        'rounded'       => 'Redondeado',
+        'pill'          => 'Píldora',
+        'circle'        => 'Círculo',
+        'diamond'       => 'Rombo',
+        'parallelogram' => 'Paralelogramo',
+        'trapezoid'     => 'Trapecio',
+        'hexagon'       => 'Hexágono',
+        'document'      => 'Documento',
+        'cylinder'      => 'Cilindro',
+        'cloud'         => 'Nube',
+        'subroutine'    => 'Subrutina',
+    ],
+
+    'settings' => [
+        'title'            => 'Tipos de paso',
+        'intro'            => 'Defina los tipos de bloque disponibles en la barra de herramientas del Mapeador de procesos. Cada tipo es un nombre, una forma y un color.',
+        'add_type'         => 'Añadir tipo',
+        'col_order'        => 'Orden',
+        'col_shape'        => 'Forma',
+        'col_name'         => 'Nombre',
+        'col_colour'       => 'Color',
+        'col_active'       => 'Activo',
+        'col_actions'      => 'Acciones',
+        'none'             => 'Aún no hay tipos de paso',
+        'builtin'          => 'Integrado',
+        'yes'              => 'Sí',
+        'no'               => 'No',
+        'add_title'        => 'Añadir tipo de paso',
+        'edit_title'       => 'Editar tipo de paso',
+        'field_name'       => 'Nombre',
+        'field_shape'      => 'Forma',
+        'field_colour'     => 'Color',
+        'field_active'     => 'Activo',
+        'name_placeholder' => 'p. ej. Base de datos, Paso manual',
+        'name_required'    => 'El nombre es obligatorio',
+        'saved'            => 'Guardado',
+        'deleted'          => 'Eliminado',
+        'delete_confirm'   => '¿Eliminar este tipo de paso?',
     ],
 
     'autosave' => [

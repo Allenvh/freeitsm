@@ -9,6 +9,7 @@ return [
 
     'nav' => [
         'processes' => 'Proses',
+        'settings'  => 'Pengaturan',
         'help'      => 'Bantuan',
     ],
 
@@ -32,6 +33,48 @@ return [
 
     'context' => [
         'create_new' => 'Buat baru…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Persegi panjang',
+        'rounded'       => 'Membulat',
+        'pill'          => 'Pil',
+        'circle'        => 'Lingkaran',
+        'diamond'       => 'Belah ketupat',
+        'parallelogram' => 'Jajaran genjang',
+        'trapezoid'     => 'Trapesium',
+        'hexagon'       => 'Segi enam',
+        'document'      => 'Dokumen',
+        'cylinder'      => 'Silinder',
+        'cloud'         => 'Awan',
+        'subroutine'    => 'Subrutin',
+    ],
+
+    'settings' => [
+        'title'            => 'Tipe Langkah',
+        'intro'            => 'Tentukan tipe blok yang tersedia di bilah alat Process Mapper. Setiap tipe adalah nama, bentuk, dan warna.',
+        'add_type'         => 'Tambah tipe',
+        'col_order'        => 'Urutan',
+        'col_shape'        => 'Bentuk',
+        'col_name'         => 'Nama',
+        'col_colour'       => 'Warna',
+        'col_active'       => 'Aktif',
+        'col_actions'      => 'Tindakan',
+        'none'             => 'Belum ada tipe langkah',
+        'builtin'          => 'Bawaan',
+        'yes'              => 'Ya',
+        'no'               => 'Tidak',
+        'add_title'        => 'Tambah Tipe Langkah',
+        'edit_title'       => 'Edit Tipe Langkah',
+        'field_name'       => 'Nama',
+        'field_shape'      => 'Bentuk',
+        'field_colour'     => 'Warna',
+        'field_active'     => 'Aktif',
+        'name_placeholder' => 'mis. Basis data, Langkah manual',
+        'name_required'    => 'Nama wajib diisi',
+        'saved'            => 'Tersimpan',
+        'deleted'          => 'Dihapus',
+        'delete_confirm'   => 'Hapus tipe langkah ini?',
     ],
 
     'autosave' => [

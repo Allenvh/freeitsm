@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Processos',
+        'settings'  => 'Configurações',
         'help'      => 'Ajuda',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Criar novo…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Retângulo',
+        'rounded'       => 'Arredondado',
+        'pill'          => 'Pílula',
+        'circle'        => 'Círculo',
+        'diamond'       => 'Losango',
+        'parallelogram' => 'Paralelogramo',
+        'trapezoid'     => 'Trapézio',
+        'hexagon'       => 'Hexágono',
+        'document'      => 'Documento',
+        'cylinder'      => 'Cilindro',
+        'cloud'         => 'Nuvem',
+        'subroutine'    => 'Sub-rotina',
+    ],
+
+    'settings' => [
+        'title'            => 'Tipos de etapa',
+        'intro'            => 'Defina os tipos de bloco disponíveis na barra de ferramentas do Mapeador de processos. Cada tipo é um nome, uma forma e uma cor.',
+        'add_type'         => 'Adicionar tipo',
+        'col_order'        => 'Ordem',
+        'col_shape'        => 'Forma',
+        'col_name'         => 'Nome',
+        'col_colour'       => 'Cor',
+        'col_active'       => 'Ativo',
+        'col_actions'      => 'Ações',
+        'none'             => 'Ainda não há tipos de etapa',
+        'builtin'          => 'Integrado',
+        'yes'              => 'Sim',
+        'no'               => 'Não',
+        'add_title'        => 'Adicionar tipo de etapa',
+        'edit_title'       => 'Editar tipo de etapa',
+        'field_name'       => 'Nome',
+        'field_shape'      => 'Forma',
+        'field_colour'     => 'Cor',
+        'field_active'     => 'Ativo',
+        'name_placeholder' => 'ex. Banco de dados, Etapa manual',
+        'name_required'    => 'O nome é obrigatório',
+        'saved'            => 'Salvo',
+        'deleted'          => 'Excluído',
+        'delete_confirm'   => 'Excluir este tipo de etapa?',
     ],
 
     'autosave' => [

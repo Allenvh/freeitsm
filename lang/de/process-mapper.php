@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Prozesse',
+        'settings'  => 'Einstellungen',
         'help'      => 'Hilfe',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Neu erstellen…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Rechteck',
+        'rounded'       => 'Abgerundet',
+        'pill'          => 'Pille',
+        'circle'        => 'Kreis',
+        'diamond'       => 'Raute',
+        'parallelogram' => 'Parallelogramm',
+        'trapezoid'     => 'Trapez',
+        'hexagon'       => 'Sechseck',
+        'document'      => 'Dokument',
+        'cylinder'      => 'Zylinder',
+        'cloud'         => 'Wolke',
+        'subroutine'    => 'Unterprogramm',
+    ],
+
+    'settings' => [
+        'title'            => 'Schritttypen',
+        'intro'            => 'Legen Sie die Blocktypen fest, die in der Werkzeugleiste des Prozess-Mappers verfügbar sind. Jeder Typ besteht aus einem Namen, einer Form und einer Farbe.',
+        'add_type'         => 'Typ hinzufügen',
+        'col_order'        => 'Reihenfolge',
+        'col_shape'        => 'Form',
+        'col_name'         => 'Name',
+        'col_colour'       => 'Farbe',
+        'col_active'       => 'Aktiv',
+        'col_actions'      => 'Aktionen',
+        'none'             => 'Noch keine Schritttypen',
+        'builtin'          => 'Integriert',
+        'yes'              => 'Ja',
+        'no'               => 'Nein',
+        'add_title'        => 'Schritttyp hinzufügen',
+        'edit_title'       => 'Schritttyp bearbeiten',
+        'field_name'       => 'Name',
+        'field_shape'      => 'Form',
+        'field_colour'     => 'Farbe',
+        'field_active'     => 'Aktiv',
+        'name_placeholder' => 'z. B. Datenbank, Manueller Schritt',
+        'name_required'    => 'Name ist erforderlich',
+        'saved'            => 'Gespeichert',
+        'deleted'          => 'Gelöscht',
+        'delete_confirm'   => 'Diesen Schritttyp löschen?',
     ],
 
     'autosave' => [

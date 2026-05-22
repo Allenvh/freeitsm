@@ -12,6 +12,7 @@ return [
 
     'nav' => [
         'processes' => 'Processes',
+        'settings'  => 'Settings',
         'help'      => 'Help',
     ],
 
@@ -35,6 +36,48 @@ return [
 
     'context' => [
         'create_new' => 'Create new…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Rectangle',
+        'rounded'       => 'Rounded',
+        'pill'          => 'Pill',
+        'circle'        => 'Circle',
+        'diamond'       => 'Diamond',
+        'parallelogram' => 'Parallelogram',
+        'trapezoid'     => 'Trapezoid',
+        'hexagon'       => 'Hexagon',
+        'document'      => 'Document',
+        'cylinder'      => 'Cylinder',
+        'cloud'         => 'Cloud',
+        'subroutine'    => 'Subroutine',
+    ],
+
+    'settings' => [
+        'title'            => 'Step Types',
+        'intro'            => 'Define the block types available in the Process Mapper toolbar. Each type is a name, a shape and a colour.',
+        'add_type'         => 'Add type',
+        'col_order'        => 'Order',
+        'col_shape'        => 'Shape',
+        'col_name'         => 'Name',
+        'col_colour'       => 'Colour',
+        'col_active'       => 'Active',
+        'col_actions'      => 'Actions',
+        'none'             => 'No step types yet',
+        'builtin'          => 'Built-in',
+        'yes'              => 'Yes',
+        'no'               => 'No',
+        'add_title'        => 'Add Step Type',
+        'edit_title'       => 'Edit Step Type',
+        'field_name'       => 'Name',
+        'field_shape'      => 'Shape',
+        'field_colour'     => 'Colour',
+        'field_active'     => 'Active',
+        'name_placeholder' => 'e.g. Database, Manual step',
+        'name_required'    => 'Name is required',
+        'saved'            => 'Saved',
+        'deleted'          => 'Deleted',
+        'delete_confirm'   => 'Delete this step type?',
     ],
 
     'autosave' => [

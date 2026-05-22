@@ -2115,6 +2115,25 @@ CREATE TABLE IF NOT EXISTS `process_lanes` (
     KEY `idx_pl_process` (`process_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `process_step_types` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `name`           VARCHAR(100) NOT NULL,
+    `slug`           VARCHAR(50) NOT NULL,
+    `shape`          VARCHAR(30) NOT NULL DEFAULT 'rounded',
+    `color`          VARCHAR(20) NOT NULL DEFAULT '#0078d4',
+    `display_order`  INT NOT NULL DEFAULT 0,
+    `is_active`      TINYINT(1) NOT NULL DEFAULT 1,
+    `is_builtin`     TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_process_step_types_slug` (`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `process_step_types` (`name`, `slug`, `shape`, `color`, `display_order`, `is_active`, `is_builtin`) VALUES
+    ('Process',  'process',  'rounded',  '#0078d4', 10, 1, 1),
+    ('Decision', 'decision', 'diamond',  '#f59e0b', 20, 1, 1),
+    ('Terminal', 'start',    'pill',     '#10b981', 30, 1, 1),
+    ('Document', 'document', 'document', '#8764b8', 40, 1, 1);
+
 -- ----------------------------------------------------------
 -- System
 -- ----------------------------------------------------------

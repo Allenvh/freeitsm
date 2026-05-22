@@ -1034,6 +1034,17 @@ $schema = [
         'height'            => 'INT NOT NULL DEFAULT 180',
     ],
 
+    'process_step_types' => [
+        'id'             => 'INT NOT NULL AUTO_INCREMENT',
+        'name'           => 'VARCHAR(100) NOT NULL',
+        'slug'           => 'VARCHAR(50) NOT NULL',
+        'shape'          => "VARCHAR(30) NOT NULL DEFAULT 'rounded'",
+        'color'          => "VARCHAR(20) NOT NULL DEFAULT '#0078d4'",
+        'display_order'  => 'INT NOT NULL DEFAULT 0',
+        'is_active'      => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'is_builtin'     => 'TINYINT(1) NOT NULL DEFAULT 0',
+    ],
+
     'knowledge_articles' => [
         'id'                    => 'INT NOT NULL AUTO_INCREMENT',
         'title'                 => 'VARCHAR(255) NOT NULL',
@@ -2478,6 +2489,18 @@ try {
         }
     }
 
+    if ($tableExists('process_step_types')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM process_step_types")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO process_step_types (name, slug, shape, color, display_order, is_active, is_builtin) VALUES
+                ('Process',  'process',  'rounded',  '#0078d4', 10, 1, 1),
+                ('Decision', 'decision', 'diamond',  '#f59e0b', 20, 1, 1),
+                ('Terminal', 'start',    'pill',     '#10b981', 30, 1, 1),
+                ('Document', 'document', 'document', '#8764b8', 40, 1, 1)");
+            $results[] = ['table' => 'process_step_types', 'status' => 'seeded', 'details' => ['Inserted 4 default step types']];
+        }
+    }
+
     foreach ([['tasks', 'status',   'status_id',   'task_statuses'],
               ['tasks', 'priority', 'priority_id', 'task_priorities']] as [$tbl, $oldCol, $newCol, $lkTbl]) {
         if (!$tableExists($tbl) || !$colExists($tbl, $oldCol) || !$colExists($tbl, $newCol) || !$tableExists($lkTbl)) continue;
@@ -2757,6 +2780,7 @@ try {
         ['cmdb_relationship_types', 'uq_cmdb_rel_type_verb', '(`verb`)'],
         ['cmdb_object_relationships', 'uq_cmdb_or_triple', '(`from_object_id`, `to_object_id`, `relationship_type_id`)'],
         ['ticket_cmdb_objects', 'uq_ticket_cmdb_obj', '(`ticket_id`, `cmdb_object_id`)'],
+        ['process_step_types', 'uq_process_step_types_slug', '(`slug`)'],
     ];
 
     foreach ($uniqueIndexes as [$tbl, $idxName, $cols]) {
@@ -2776,6 +2800,12 @@ try {
                 $conn->exec("DELETE d1 FROM lms_cmi_data d1
                              INNER JOIN lms_cmi_data d2
                              ON d1.progress_id = d2.progress_id AND d1.element = d2.element AND d1.id < d2.id");
+            }
+            // For process_step_types: drop duplicate slugs (keep lowest id) before the unique key
+            if ($tbl === 'process_step_types') {
+                $conn->exec("DELETE t1 FROM process_step_types t1
+                             INNER JOIN process_step_types t2
+                             ON t1.slug = t2.slug AND t1.id > t2.id");
             }
 
             $conn->exec("ALTER TABLE `$tbl` ADD UNIQUE KEY `$idxName` $cols");

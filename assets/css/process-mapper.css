@@ -889,3 +889,52 @@
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
+
+/* =============================================================
+   Step-type shape primitives
+   -------------------------------------------------------------
+   Geometry (clip-path / border-radius) for the configurable
+   block-type palette. Size-independent, so the same rules drive
+   both the canvas steps (.pm-step[data-shape]) and the small
+   previews on the Settings page (.pm-shape-preview[data-shape]).
+   Per-shape label padding for canvas steps is added in Stage 2.
+   The "cloud" shape needs the <clipPath id="pmShapeCloud"> SVG
+   defs block present on the page.
+   ============================================================= */
+[data-shape="rectangle"]     { border-radius: 2px; }
+[data-shape="rounded"]       { border-radius: 8px; }
+[data-shape="pill"]          { border-radius: 999px; }
+[data-shape="circle"]        { border-radius: 50%; }
+[data-shape="cylinder"]      { border-radius: 50% / 16px; }
+[data-shape="subroutine"]    { border-radius: 4px; }
+[data-shape="diamond"]       { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+[data-shape="parallelogram"] { clip-path: polygon(22% 0%, 100% 0%, 78% 100%, 0% 100%); }
+[data-shape="trapezoid"]     { clip-path: polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%); }
+[data-shape="hexagon"]       { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+[data-shape="document"]      { clip-path: polygon(0 0, 100% 0, 100% 86%, 75% 100%, 50% 86%, 25% 100%, 0 86%); }
+[data-shape="cloud"]         { clip-path: url(#pmShapeCloud); }
+
+/* Subroutine: the two inset vertical bars of a "predefined process" box.
+   The host (.pm-step is position:absolute, .pm-shape-preview is
+   position:relative) is the containing block for these pseudo-elements. */
+[data-shape="subroutine"]::before,
+[data-shape="subroutine"]::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 2px solid rgba(255, 255, 255, 0.6);
+}
+[data-shape="subroutine"]::before { left: 7px; }
+[data-shape="subroutine"]::after  { right: 7px; }
+
+/* Settings-page shape preview swatch */
+.pm-shape-preview {
+    display: inline-block;
+    position: relative;
+    width: 54px;
+    height: 34px;
+    background: #94a3b8;
+    vertical-align: middle;
+}

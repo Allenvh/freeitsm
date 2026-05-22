@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'प्रक्रियाएँ',
+        'settings'  => 'सेटिंग्स',
         'help'      => 'सहायता',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'नया बनाएँ…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'आयत',
+        'rounded'       => 'गोलाकार',
+        'pill'          => 'पिल',
+        'circle'        => 'वृत्त',
+        'diamond'       => 'समचतुर्भुज',
+        'parallelogram' => 'समांतर चतुर्भुज',
+        'trapezoid'     => 'समलंब',
+        'hexagon'       => 'षट्भुज',
+        'document'      => 'दस्तावेज़',
+        'cylinder'      => 'बेलन',
+        'cloud'         => 'क्लाउड',
+        'subroutine'    => 'सबरूटीन',
+    ],
+
+    'settings' => [
+        'title'            => 'चरण प्रकार',
+        'intro'            => 'प्रक्रिया मैपर टूलबार में उपलब्ध ब्लॉक प्रकार परिभाषित करें। प्रत्येक प्रकार एक नाम, एक आकृति और एक रंग है।',
+        'add_type'         => 'प्रकार जोड़ें',
+        'col_order'        => 'क्रम',
+        'col_shape'        => 'आकृति',
+        'col_name'         => 'नाम',
+        'col_colour'       => 'रंग',
+        'col_active'       => 'सक्रिय',
+        'col_actions'      => 'क्रियाएँ',
+        'none'             => 'अभी कोई चरण प्रकार नहीं',
+        'builtin'          => 'अंतर्निहित',
+        'yes'              => 'हाँ',
+        'no'               => 'नहीं',
+        'add_title'        => 'चरण प्रकार जोड़ें',
+        'edit_title'       => 'चरण प्रकार संपादित करें',
+        'field_name'       => 'नाम',
+        'field_shape'      => 'आकृति',
+        'field_colour'     => 'रंग',
+        'field_active'     => 'सक्रिय',
+        'name_placeholder' => 'जैसे डेटाबेस, मैनुअल चरण',
+        'name_required'    => 'नाम आवश्यक है',
+        'saved'            => 'सहेजा गया',
+        'deleted'          => 'हटाया गया',
+        'delete_confirm'   => 'इस चरण प्रकार को हटाएँ?',
     ],
 
     'autosave' => [

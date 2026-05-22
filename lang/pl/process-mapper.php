@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Procesy',
+        'settings'  => 'Ustawienia',
         'help'      => 'Pomoc',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Utwórz nowy…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Prostokąt',
+        'rounded'       => 'Zaokrąglony',
+        'pill'          => 'Pigułka',
+        'circle'        => 'Koło',
+        'diamond'       => 'Romb',
+        'parallelogram' => 'Równoległobok',
+        'trapezoid'     => 'Trapez',
+        'hexagon'       => 'Sześciokąt',
+        'document'      => 'Dokument',
+        'cylinder'      => 'Walec',
+        'cloud'         => 'Chmura',
+        'subroutine'    => 'Podprogram',
+    ],
+
+    'settings' => [
+        'title'            => 'Typy kroków',
+        'intro'            => 'Zdefiniuj typy bloków dostępne na pasku narzędzi Mapowania procesów. Każdy typ to nazwa, kształt i kolor.',
+        'add_type'         => 'Dodaj typ',
+        'col_order'        => 'Kolejność',
+        'col_shape'        => 'Kształt',
+        'col_name'         => 'Nazwa',
+        'col_colour'       => 'Kolor',
+        'col_active'       => 'Aktywny',
+        'col_actions'      => 'Akcje',
+        'none'             => 'Brak typów kroków',
+        'builtin'          => 'Wbudowany',
+        'yes'              => 'Tak',
+        'no'               => 'Nie',
+        'add_title'        => 'Dodaj typ kroku',
+        'edit_title'       => 'Edytuj typ kroku',
+        'field_name'       => 'Nazwa',
+        'field_shape'      => 'Kształt',
+        'field_colour'     => 'Kolor',
+        'field_active'     => 'Aktywny',
+        'name_placeholder' => 'np. Baza danych, Krok ręczny',
+        'name_required'    => 'Nazwa jest wymagana',
+        'saved'            => 'Zapisano',
+        'deleted'          => 'Usunięto',
+        'delete_confirm'   => 'Usunąć ten typ kroku?',
     ],
 
     'autosave' => [

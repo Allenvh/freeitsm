@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Processen',
+        'settings'  => 'Instellingen',
         'help'      => 'Help',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Nieuw maken…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Rechthoek',
+        'rounded'       => 'Afgerond',
+        'pill'          => 'Pil',
+        'circle'        => 'Cirkel',
+        'diamond'       => 'Ruit',
+        'parallelogram' => 'Parallellogram',
+        'trapezoid'     => 'Trapezium',
+        'hexagon'       => 'Zeshoek',
+        'document'      => 'Document',
+        'cylinder'      => 'Cilinder',
+        'cloud'         => 'Wolk',
+        'subroutine'    => 'Subroutine',
+    ],
+
+    'settings' => [
+        'title'            => 'Staptypen',
+        'intro'            => 'Definieer de bloktypen die beschikbaar zijn in de werkbalk van het Processchema. Elk type bestaat uit een naam, een vorm en een kleur.',
+        'add_type'         => 'Type toevoegen',
+        'col_order'        => 'Volgorde',
+        'col_shape'        => 'Vorm',
+        'col_name'         => 'Naam',
+        'col_colour'       => 'Kleur',
+        'col_active'       => 'Actief',
+        'col_actions'      => 'Acties',
+        'none'             => 'Nog geen staptypen',
+        'builtin'          => 'Ingebouwd',
+        'yes'              => 'Ja',
+        'no'               => 'Nee',
+        'add_title'        => 'Staptype toevoegen',
+        'edit_title'       => 'Staptype bewerken',
+        'field_name'       => 'Naam',
+        'field_shape'      => 'Vorm',
+        'field_colour'     => 'Kleur',
+        'field_active'     => 'Actief',
+        'name_placeholder' => 'bijv. Database, Handmatige stap',
+        'name_required'    => 'Naam is verplicht',
+        'saved'            => 'Opgeslagen',
+        'deleted'          => 'Verwijderd',
+        'delete_confirm'   => 'Dit staptype verwijderen?',
     ],
 
     'autosave' => [

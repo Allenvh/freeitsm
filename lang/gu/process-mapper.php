@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'પ્રક્રિયાઓ',
+        'settings'  => 'સેટિંગ્સ',
         'help'      => 'મદદ',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'નવું બનાવો…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'લંબચોરસ',
+        'rounded'       => 'ગોળાકાર',
+        'pill'          => 'પિલ',
+        'circle'        => 'વર્તુળ',
+        'diamond'       => 'સમચતુષ્કોણ',
+        'parallelogram' => 'સમાંતરબાજુ ચતુષ્કોણ',
+        'trapezoid'     => 'સમલંબ ચતુષ્કોણ',
+        'hexagon'       => 'ષટ્કોણ',
+        'document'      => 'દસ્તાવેજ',
+        'cylinder'      => 'નળાકાર',
+        'cloud'         => 'ક્લાઉડ',
+        'subroutine'    => 'સબરૂટિન',
+    ],
+
+    'settings' => [
+        'title'            => 'પગલાં પ્રકારો',
+        'intro'            => 'પ્રક્રિયા મેપર ટૂલબારમાં ઉપલબ્ધ બ્લોક પ્રકારો વ્યાખ્યાયિત કરો. દરેક પ્રકાર એક નામ, એક આકાર અને એક રંગ છે.',
+        'add_type'         => 'પ્રકાર ઉમેરો',
+        'col_order'        => 'ક્રમ',
+        'col_shape'        => 'આકાર',
+        'col_name'         => 'નામ',
+        'col_colour'       => 'રંગ',
+        'col_active'       => 'સક્રિય',
+        'col_actions'      => 'ક્રિયાઓ',
+        'none'             => 'હજુ સુધી કોઈ પગલાં પ્રકાર નથી',
+        'builtin'          => 'બિલ્ટ-ઇન',
+        'yes'              => 'હા',
+        'no'               => 'ના',
+        'add_title'        => 'પગલાં પ્રકાર ઉમેરો',
+        'edit_title'       => 'પગલાં પ્રકાર સંપાદિત કરો',
+        'field_name'       => 'નામ',
+        'field_shape'      => 'આકાર',
+        'field_colour'     => 'રંગ',
+        'field_active'     => 'સક્રિય',
+        'name_placeholder' => 'દા.ત. ડેટાબેઝ, મેન્યુઅલ પગલું',
+        'name_required'    => 'નામ આવશ્યક છે',
+        'saved'            => 'સાચવ્યું',
+        'deleted'          => 'કાઢી નાખ્યું',
+        'delete_confirm'   => 'આ પગલાં પ્રકાર કાઢી નાખવો?',
     ],
 
     'autosave' => [

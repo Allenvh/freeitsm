@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'प्रक्रिया',
+        'settings'  => 'सेटिंग्ज',
         'help'      => 'मदत',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'नवीन तयार करा…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'आयत',
+        'rounded'       => 'गोलाकार',
+        'pill'          => 'पिल',
+        'circle'        => 'वर्तुळ',
+        'diamond'       => 'समभुज चौकोन',
+        'parallelogram' => 'समांतरभुज चौकोन',
+        'trapezoid'     => 'समलंब चौकोन',
+        'hexagon'       => 'षटकोन',
+        'document'      => 'दस्तऐवज',
+        'cylinder'      => 'दंडगोल',
+        'cloud'         => 'क्लाउड',
+        'subroutine'    => 'सबरूटीन',
+    ],
+
+    'settings' => [
+        'title'            => 'पायरी प्रकार',
+        'intro'            => 'प्रक्रिया मॅपर टूलबारमध्ये उपलब्ध ब्लॉक प्रकार परिभाषित करा. प्रत्येक प्रकार एक नाव, एक आकार आणि एक रंग आहे.',
+        'add_type'         => 'प्रकार जोडा',
+        'col_order'        => 'क्रम',
+        'col_shape'        => 'आकार',
+        'col_name'         => 'नाव',
+        'col_colour'       => 'रंग',
+        'col_active'       => 'सक्रिय',
+        'col_actions'      => 'क्रिया',
+        'none'             => 'अद्याप कोणतेही पायरी प्रकार नाहीत',
+        'builtin'          => 'अंगभूत',
+        'yes'              => 'होय',
+        'no'               => 'नाही',
+        'add_title'        => 'पायरी प्रकार जोडा',
+        'edit_title'       => 'पायरी प्रकार संपादित करा',
+        'field_name'       => 'नाव',
+        'field_shape'      => 'आकार',
+        'field_colour'     => 'रंग',
+        'field_active'     => 'सक्रिय',
+        'name_placeholder' => 'उदा. डेटाबेस, मॅन्युअल पायरी',
+        'name_required'    => 'नाव आवश्यक आहे',
+        'saved'            => 'जतन केले',
+        'deleted'          => 'हटवले',
+        'delete_confirm'   => 'हा पायरी प्रकार हटवायचा?',
     ],
 
     'autosave' => [

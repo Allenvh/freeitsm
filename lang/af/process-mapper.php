@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Prosesse',
+        'settings'  => 'Instellings',
         'help'      => 'Hulp',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Skep nuwe…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Reghoek',
+        'rounded'       => 'Afgerond',
+        'pill'          => 'Pil',
+        'circle'        => 'Sirkel',
+        'diamond'       => 'Diamant',
+        'parallelogram' => 'Parallelogram',
+        'trapezoid'     => 'Trapesium',
+        'hexagon'       => 'Seshoek',
+        'document'      => 'Dokument',
+        'cylinder'      => 'Silinder',
+        'cloud'         => 'Wolk',
+        'subroutine'    => 'Subroetine',
+    ],
+
+    'settings' => [
+        'title'            => 'Staptipes',
+        'intro'            => 'Definieer die bloktipes wat in die Process Mapper-werkbalk beskikbaar is. Elke tipe is \'n naam, \'n vorm en \'n kleur.',
+        'add_type'         => 'Voeg tipe by',
+        'col_order'        => 'Volgorde',
+        'col_shape'        => 'Vorm',
+        'col_name'         => 'Naam',
+        'col_colour'       => 'Kleur',
+        'col_active'       => 'Aktief',
+        'col_actions'      => 'Aksies',
+        'none'             => 'Nog geen staptipes nie',
+        'builtin'          => 'Ingebou',
+        'yes'              => 'Ja',
+        'no'               => 'Nee',
+        'add_title'        => 'Voeg staptipe by',
+        'edit_title'       => 'Wysig staptipe',
+        'field_name'       => 'Naam',
+        'field_shape'      => 'Vorm',
+        'field_colour'     => 'Kleur',
+        'field_active'     => 'Aktief',
+        'name_placeholder' => 'bv. Databasis, Handmatige stap',
+        'name_required'    => 'Naam word vereis',
+        'saved'            => 'Gestoor',
+        'deleted'          => 'Geskrap',
+        'delete_confirm'   => 'Skrap hierdie staptipe?',
     ],
 
     'autosave' => [

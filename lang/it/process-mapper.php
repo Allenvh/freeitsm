@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'Processi',
+        'settings'  => 'Impostazioni',
         'help'      => 'Aiuto',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'Crea nuovo…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'Rettangolo',
+        'rounded'       => 'Arrotondato',
+        'pill'          => 'Pillola',
+        'circle'        => 'Cerchio',
+        'diamond'       => 'Rombo',
+        'parallelogram' => 'Parallelogramma',
+        'trapezoid'     => 'Trapezio',
+        'hexagon'       => 'Esagono',
+        'document'      => 'Documento',
+        'cylinder'      => 'Cilindro',
+        'cloud'         => 'Nuvola',
+        'subroutine'    => 'Subroutine',
+    ],
+
+    'settings' => [
+        'title'            => 'Tipi di passo',
+        'intro'            => 'Definisci i tipi di blocco disponibili nella barra degli strumenti del Mappatore di processi. Ogni tipo è un nome, una forma e un colore.',
+        'add_type'         => 'Aggiungi tipo',
+        'col_order'        => 'Ordine',
+        'col_shape'        => 'Forma',
+        'col_name'         => 'Nome',
+        'col_colour'       => 'Colore',
+        'col_active'       => 'Attivo',
+        'col_actions'      => 'Azioni',
+        'none'             => 'Nessun tipo di passo',
+        'builtin'          => 'Integrato',
+        'yes'              => 'Sì',
+        'no'               => 'No',
+        'add_title'        => 'Aggiungi tipo di passo',
+        'edit_title'       => 'Modifica tipo di passo',
+        'field_name'       => 'Nome',
+        'field_shape'      => 'Forma',
+        'field_colour'     => 'Colore',
+        'field_active'     => 'Attivo',
+        'name_placeholder' => 'es. Database, Passo manuale',
+        'name_required'    => 'Il nome è obbligatorio',
+        'saved'            => 'Salvato',
+        'deleted'          => 'Eliminato',
+        'delete_confirm'   => 'Eliminare questo tipo di passo?',
     ],
 
     'autosave' => [

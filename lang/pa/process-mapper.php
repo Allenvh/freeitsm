@@ -8,6 +8,7 @@ return [
 
     'nav' => [
         'processes' => 'ਪ੍ਰਕਿਰਿਆਵਾਂ',
+        'settings'  => 'ਸੈਟਿੰਗਾਂ',
         'help'      => 'ਮਦਦ',
     ],
 
@@ -31,6 +32,48 @@ return [
 
     'context' => [
         'create_new' => 'ਨਵਾਂ ਬਣਾਓ…',
+    ],
+
+    'shapes' => [
+        'rectangle'     => 'ਆਇਤ',
+        'rounded'       => 'ਗੋਲਾਕਾਰ',
+        'pill'          => 'ਪਿਲ',
+        'circle'        => 'ਚੱਕਰ',
+        'diamond'       => 'ਸਮਚਤੁਰਭੁਜ',
+        'parallelogram' => 'ਸਮਾਂਤਰ ਚਤੁਰਭੁਜ',
+        'trapezoid'     => 'ਸਮਲੰਬ ਚਤੁਰਭੁਜ',
+        'hexagon'       => 'ਛੇਭੁਜ',
+        'document'      => 'ਦਸਤਾਵੇਜ਼',
+        'cylinder'      => 'ਸਿਲੰਡਰ',
+        'cloud'         => 'ਕਲਾਉਡ',
+        'subroutine'    => 'ਸਬਰੂਟੀਨ',
+    ],
+
+    'settings' => [
+        'title'            => 'ਕਦਮ ਕਿਸਮਾਂ',
+        'intro'            => 'ਪ੍ਰਕਿਰਿਆ ਮੈਪਰ ਟੂਲਬਾਰ ਵਿੱਚ ਉਪਲਬਧ ਬਲਾਕ ਕਿਸਮਾਂ ਪਰਿਭਾਸ਼ਿਤ ਕਰੋ। ਹਰੇਕ ਕਿਸਮ ਇੱਕ ਨਾਮ, ਇੱਕ ਆਕਾਰ ਅਤੇ ਇੱਕ ਰੰਗ ਹੈ।',
+        'add_type'         => 'ਕਿਸਮ ਜੋੜੋ',
+        'col_order'        => 'ਕ੍ਰਮ',
+        'col_shape'        => 'ਆਕਾਰ',
+        'col_name'         => 'ਨਾਮ',
+        'col_colour'       => 'ਰੰਗ',
+        'col_active'       => 'ਸਰਗਰਮ',
+        'col_actions'      => 'ਕਾਰਵਾਈਆਂ',
+        'none'             => 'ਅਜੇ ਤੱਕ ਕੋਈ ਕਦਮ ਕਿਸਮ ਨਹੀਂ',
+        'builtin'          => 'ਬਿਲਟ-ਇਨ',
+        'yes'              => 'ਹਾਂ',
+        'no'               => 'ਨਹੀਂ',
+        'add_title'        => 'ਕਦਮ ਕਿਸਮ ਜੋੜੋ',
+        'edit_title'       => 'ਕਦਮ ਕਿਸਮ ਸੰਪਾਦਿਤ ਕਰੋ',
+        'field_name'       => 'ਨਾਮ',
+        'field_shape'      => 'ਆਕਾਰ',
+        'field_colour'     => 'ਰੰਗ',
+        'field_active'     => 'ਸਰਗਰਮ',
+        'name_placeholder' => 'ਜਿਵੇਂ ਡਾਟਾਬੇਸ, ਮੈਨੂਅਲ ਕਦਮ',
+        'name_required'    => 'ਨਾਮ ਲੋੜੀਂਦਾ ਹੈ',
+        'saved'            => 'ਸੰਭਾਲਿਆ ਗਿਆ',
+        'deleted'          => 'ਮਿਟਾਇਆ ਗਿਆ',
+        'delete_confirm'   => 'ਇਹ ਕਦਮ ਕਿਸਮ ਮਿਟਾਉਣੀ ਹੈ?',
     ],
 
     'autosave' => [
