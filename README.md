@@ -785,6 +785,7 @@ Kanban-style task management with board, list, calendar, and timeline views for 
 - **Team assignment**: Assign tasks to analysts and teams, filter every view by team/analyst/personal
 - **Comments**: Threaded comments on each task
 - **Watchtower integration**: Overdue and due-today counts shown on attention dashboard
+- **Help guide** (`tasks/help.php`): A built-in scroll-spy guide covering the board, list, calendar, timeline, the task panel, tags and settings, reachable from the Help link in the module header
 - **Multilingual**: The whole module (PHP pages and JavaScript) runs through the shared i18n system — `lang/<locale>/tasks.php` for all 20 supported locales; the active language follows the analyst's interface-language preference, with per-key fallback to English
 
 ### CMDB (`cmdb/`)

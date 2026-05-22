@@ -16,6 +16,7 @@ return [
         'calendar' => 'Calendar',
         'timeline' => 'Timeline',
         'settings' => 'Settings',
+        'help'     => 'Help',
     ],
 
     'sidebar' => [
