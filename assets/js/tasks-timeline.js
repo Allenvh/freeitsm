@@ -21,12 +21,23 @@ let currentFilterAnalystId = null;
 let tasks = [];
 let groupBy = 'analyst';
 let zoomIndex = 2;
+let surfaceTags = false;
 
 // ── Init ───────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     await loadDropdowns();
+    await loadSettings();
     loadTasks();
 });
+
+async function loadSettings() {
+    try {
+        const d = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
+        if (d.success && d.settings.tag_settings) {
+            surfaceTags = !!d.settings.tag_settings.surface_calendar;
+        }
+    } catch (e) { console.error('Failed to load settings:', e); }
+}
 
 async function loadDropdowns() {
     try {
@@ -184,6 +195,10 @@ function render() {
             const dateText = it.start !== it.end
                 ? fmt(it.start) + ' → ' + fmt(it.end) : fmt(it.end);
             const tip = esc(t.title + ' · ' + (t.status || '') + ' · ' + dateText);
+            const tagDots = (surfaceTags && t.tags && t.tags.length)
+                ? t.tags.slice(0, 5).map(tg =>
+                    `<span class="mini-tag-dot" style="background:${esc(tg.colour || '#6b7280')}"></span>`).join('')
+                : '';
             body += `<div class="tl-row" style="width:${innerW}px">
                 <div class="tl-row-label" style="width:${LABEL_W}px" title="${esc(t.title)}"
                      onclick="openTask(${t.id})">
@@ -194,7 +209,7 @@ function render() {
                     <div class="tl-bar${done ? ' tl-bar-done' : ''}"
                          style="left:${left}px;width:${width}px;background:${colour}"
                          title="${tip}" onclick="openTask(${t.id})">
-                        <span class="tl-bar-label">${esc(t.title)}</span>
+                        <span class="tl-bar-label">${esc(t.title)}</span>${tagDots}
                     </div>
                 </div>
             </div>`;

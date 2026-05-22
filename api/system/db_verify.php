@@ -1174,6 +1174,19 @@ $schema = [
         'completed_datetime'  => 'DATETIME NULL',
     ],
 
+    'task_tags' => [
+        'id'                => 'INT NOT NULL AUTO_INCREMENT',
+        'name'              => 'VARCHAR(50) NOT NULL',
+        'colour'            => 'VARCHAR(20) NULL',
+        'display_order'     => 'INT NOT NULL DEFAULT 0',
+        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+    ],
+
+    'task_tag_map' => [
+        'task_id' => 'INT NOT NULL',
+        'tag_id'  => 'INT NOT NULL',
+    ],
+
     'task_comments' => [
         'id'                => 'INT NOT NULL AUTO_INCREMENT',
         'task_id'           => 'INT NOT NULL',
@@ -1766,6 +1779,7 @@ $primaryKeys = [
     'morningChecks_Checks'      => 'CheckID',
     'morningChecks_Results'     => 'ResultID',
     'knowledge_article_tags'    => null, // composite PK: article_id, tag_id
+    'task_tag_map'              => null, // composite PK: task_id, tag_id
 ];
 
 try {
@@ -1791,6 +1805,8 @@ try {
             // Determine primary key
             if ($tableName === 'knowledge_article_tags') {
                 $colDefs[] = "PRIMARY KEY (`article_id`, `tag_id`)";
+            } elseif ($tableName === 'task_tag_map') {
+                $colDefs[] = "PRIMARY KEY (`task_id`, `tag_id`)";
             } elseif (isset($primaryKeys[$tableName])) {
                 $pkCol = $primaryKeys[$tableName];
                 $colDefs[] = "PRIMARY KEY (`$pkCol`)";
@@ -2451,6 +2467,17 @@ try {
         }
     }
 
+    if ($tableExists('task_tags')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM task_tags")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO task_tags (name, colour, display_order) VALUES
+                ('Security',    '#dc2626', 10),
+                ('ISO',         '#2563eb', 20),
+                ('Environment', '#16a34a', 30)");
+            $results[] = ['table' => 'task_tags', 'status' => 'seeded', 'details' => ['Inserted 3 default task tags']];
+        }
+    }
+
     foreach ([['tasks', 'status',   'status_id',   'task_statuses'],
               ['tasks', 'priority', 'priority_id', 'task_priorities']] as [$tbl, $oldCol, $newCol, $lkTbl]) {
         if (!$tableExists($tbl) || !$colExists($tbl, $oldCol) || !$colExists($tbl, $newCol) || !$tableExists($lkTbl)) continue;
@@ -2476,6 +2503,8 @@ try {
     foreach ([
         ['tasks', 'fk_tasks_status',   "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_status FOREIGN KEY (status_id) REFERENCES task_statuses (id)"],
         ['tasks', 'fk_tasks_priority', "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_priority FOREIGN KEY (priority_id) REFERENCES task_priorities (id)"],
+        ['task_tag_map', 'fk_task_tag_map_task', "ALTER TABLE task_tag_map ADD CONSTRAINT fk_task_tag_map_task FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE"],
+        ['task_tag_map', 'fk_task_tag_map_tag',  "ALTER TABLE task_tag_map ADD CONSTRAINT fk_task_tag_map_tag FOREIGN KEY (tag_id) REFERENCES task_tags (id) ON DELETE CASCADE"],
     ] as [$tbl, $name, $sql]) {
         if ($tableExists($tbl) && !$fkExists($tbl, $name)) {
             try { $conn->exec($sql); } catch (Exception $e) {}

@@ -1435,6 +1435,29 @@ CREATE TABLE IF NOT EXISTS `task_comments` (
     CONSTRAINT `fk_task_comments_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `task_tags` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(50) NOT NULL,
+    `colour`            VARCHAR(20) NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_task_tags_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `task_tags` (`name`, `colour`, `display_order`) VALUES
+    ('Security',    '#dc2626', 10),
+    ('ISO',         '#2563eb', 20),
+    ('Environment', '#16a34a', 30);
+
+CREATE TABLE IF NOT EXISTS `task_tag_map` (
+    `task_id`  INT NOT NULL,
+    `tag_id`   INT NOT NULL,
+    PRIMARY KEY (`task_id`, `tag_id`),
+    CONSTRAINT `fk_task_tag_map_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_task_tag_map_tag`  FOREIGN KEY (`tag_id`)  REFERENCES `task_tags` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ----------------------------------------------------------
 -- Forms
 -- ----------------------------------------------------------

@@ -43,6 +43,17 @@ try {
         $s->execute([$name]);
         return (bool)$s->fetchColumn();
     };
+    // Replace a task's tag set with the given list of tag ids
+    $syncTags = function($taskId, $tagIds) use ($conn) {
+        $conn->prepare("DELETE FROM task_tag_map WHERE task_id = ?")->execute([$taskId]);
+        if (is_array($tagIds) && $tagIds) {
+            $ins = $conn->prepare("INSERT IGNORE INTO task_tag_map (task_id, tag_id) VALUES (?, ?)");
+            foreach ($tagIds as $tid) {
+                $tid = (int)$tid;
+                if ($tid > 0) $ins->execute([$taskId, $tid]);
+            }
+        }
+    };
 
     if (isset($input['id']) && $input['id']) {
         // Update existing task
@@ -90,6 +101,8 @@ try {
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
 
+        if (array_key_exists('tags', $input)) $syncTags($id, $input['tags']);
+
         echo json_encode(['success' => true, 'message' => 'Task updated', 'id' => $id]);
     } else {
         // Create new task
@@ -132,8 +145,9 @@ try {
             $analystId
         ]);
 
-        $newId = $conn->lastInsertId();
-        echo json_encode(['success' => true, 'message' => 'Task created', 'id' => (int)$newId]);
+        $newId = (int)$conn->lastInsertId();
+        if (isset($input['tags'])) $syncTags($newId, $input['tags']);
+        echo json_encode(['success' => true, 'message' => 'Task created', 'id' => $newId]);
     }
 
 } catch (Exception $e) {

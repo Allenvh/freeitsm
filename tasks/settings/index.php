@@ -21,7 +21,7 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Tasks Settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/tasks.css?v=8">
+    <link rel="stylesheet" href="../../assets/css/tasks.css?v=9">
     <style>
         body { overflow: auto; height: auto; display: block; }
 
@@ -98,6 +98,7 @@ $path_prefix = '../../';
             <button class="tab" data-tab="priorities" onclick="switchTab('priorities')">Priorities</button>
             <button class="tab" data-tab="calendar" onclick="switchTab('calendar')">Calendar</button>
             <button class="tab" data-tab="card" onclick="switchTab('card')">Card</button>
+            <button class="tab" data-tab="tags" onclick="switchTab('tags')">Tags</button>
         </div>
 
         <!-- Statuses Tab -->
@@ -222,6 +223,58 @@ $path_prefix = '../../';
                 </label>
             </div>
         </div>
+
+        <!-- Tags Tab -->
+        <div class="tab-content" id="tags-tab">
+            <div class="section-header">
+                <h2>Tags</h2>
+                <button class="add-btn" onclick="openLookupModal('tag')">Add</button>
+            </div>
+            <p style="color: #666; margin-bottom: 16px;">Labels for cross-cutting themes &mdash; e.g. Security, ISO, Environment. A task can carry any number of tags. Use the display options below to choose where they appear.</p>
+            <table class="lookup-table">
+                <thead><tr><th>Name</th><th>Colour</th><th>Order</th><th>Actions</th></tr></thead>
+                <tbody id="tags-list"><tr><td colspan="4" style="text-align:center;">Loading...</td></tr></tbody>
+            </table>
+
+            <h3 style="margin: 28px 0 4px; font-size: 15px; color: #333;">Display options</h3>
+            <div class="card-field-options">
+                <label class="card-field-row">
+                    <input type="checkbox" data-tagsetting="allow_create" onchange="saveTagSettings()">
+                    <div>
+                        <div class="card-field-name">Allow new tags from a task</div>
+                        <div class="card-field-desc">Let analysts create a new tag while editing a task. Off &mdash; tags can only be added here in Settings.</div>
+                    </div>
+                </label>
+                <label class="card-field-row">
+                    <input type="checkbox" data-tagsetting="surface_card" onchange="saveTagSettings()">
+                    <div>
+                        <div class="card-field-name">Card chips</div>
+                        <div class="card-field-desc">Show coloured tag chips on board and list cards.</div>
+                    </div>
+                </label>
+                <label class="card-field-row">
+                    <input type="checkbox" data-tagsetting="surface_filter" onchange="saveTagSettings()">
+                    <div>
+                        <div class="card-field-name">Sidebar filter</div>
+                        <div class="card-field-desc">Show a tag filter in the board/list sidebar.</div>
+                    </div>
+                </label>
+                <label class="card-field-row">
+                    <input type="checkbox" data-tagsetting="surface_search" onchange="saveTagSettings()">
+                    <div>
+                        <div class="card-field-name">Search matching</div>
+                        <div class="card-field-desc">Include tag names when searching tasks.</div>
+                    </div>
+                </label>
+                <label class="card-field-row">
+                    <input type="checkbox" data-tagsetting="surface_calendar" onchange="saveTagSettings()">
+                    <div>
+                        <div class="card-field-name">Calendar &amp; timeline</div>
+                        <div class="card-field-desc">Show tag chips on the calendar and timeline views too.</div>
+                    </div>
+                </label>
+            </div>
+        </div>
     </div>
 
     <!-- Lookup edit modal -->
@@ -248,7 +301,7 @@ $path_prefix = '../../';
                     <span class="help">Tasks in this status auto-stamp <code>completed_datetime</code> and are excluded from open-task watchtower counters.</span>
                 </div>
 
-                <div class="lk-form-group">
+                <div class="lk-form-group" id="lookupItemDefaultGroup">
                     <label><input type="checkbox" id="lookupItemDefault"> Default for new tasks</label>
                     <span class="help">Only one row can be the default — setting this clears the flag on the others.</span>
                 </div>
@@ -258,7 +311,7 @@ $path_prefix = '../../';
                     <input type="number" id="lookupItemOrder" value="0">
                 </div>
 
-                <div class="lk-form-group">
+                <div class="lk-form-group" id="lookupItemActiveGroup">
                     <label><input type="checkbox" id="lookupItemActive" checked> Active</label>
                 </div>
 
@@ -284,19 +337,53 @@ $path_prefix = '../../';
         }
 
         const LOOKUP_KINDS = {
-            'status':   { get: 'get_task_statuses.php',   save: 'save_task_status.php',   del: 'delete_task_status.php',   listKey: 'statuses',   tableId: 'statuses-list',   colspan: 7, hasClosed: true,  label: 'Status'   },
-            'priority': { get: 'get_task_priorities.php', save: 'save_task_priority.php', del: 'delete_task_priority.php', listKey: 'priorities', tableId: 'priorities-list', colspan: 6, hasClosed: false, label: 'Priority' }
+            'status':   { get: 'get_task_statuses.php',   save: 'save_task_status.php',   del: 'delete_task_status.php',   listKey: 'statuses',   tableId: 'statuses-list',   colspan: 7, hasClosed: true,  hasDefault: true,  hasActive: true,  label: 'Status'   },
+            'priority': { get: 'get_task_priorities.php', save: 'save_task_priority.php', del: 'delete_task_priority.php', listKey: 'priorities', tableId: 'priorities-list', colspan: 6, hasClosed: false, hasDefault: true,  hasActive: true,  label: 'Priority' },
+            'tag':      { get: 'get_task_tags.php',       save: 'save_task_tag.php',      del: 'delete_task_tag.php',      listKey: 'tags',       tableId: 'tags-list',      colspan: 4, hasClosed: false, hasDefault: false, hasActive: false, label: 'Tag'      }
         };
 
-        const lookupCache = { status: [], priority: [] };
+        const lookupCache = { status: [], priority: [], tag: [] };
 
         document.addEventListener('DOMContentLoaded', () => {
             for (const kind of Object.keys(LOOKUP_KINDS)) loadLookup(kind);
             loadSpanMode();
             loadCardFields();
+            loadTagSettings();
             const tabFromHash = location.hash.replace('#', '');
-            if (['calendar', 'card'].includes(tabFromHash)) switchTab(tabFromHash);
+            if (['calendar', 'card', 'tags'].includes(tabFromHash)) switchTab(tabFromHash);
         });
+
+        // ── Tag display settings ──
+        const TAG_SETTINGS = ['allow_create', 'surface_card', 'surface_filter',
+                              'surface_search', 'surface_calendar'];
+
+        async function loadTagSettings() {
+            try {
+                const data = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
+                const ts = (data.success && data.settings.tag_settings) || {};
+                TAG_SETTINGS.forEach(f => {
+                    const cb = document.querySelector(`input[data-tagsetting="${f}"]`);
+                    if (cb) cb.checked = !!ts[f];
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveTagSettings() {
+            const ts = {};
+            TAG_SETTINGS.forEach(f => {
+                const cb = document.querySelector(`input[data-tagsetting="${f}"]`);
+                ts[f] = (cb && cb.checked) ? 1 : 0;
+            });
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { tag_settings: ts } })
+                });
+                const data = await res.json();
+                if (data.success) showToast('Saved');
+                else showToast(data.error || 'Failed to save', true);
+            } catch (e) { showToast('Failed to save', true); }
+        }
 
         // ── Calendar span mode ──
         async function loadSpanMode() {
@@ -388,14 +475,20 @@ $path_prefix = '../../';
                 const closedCol = cfg.hasClosed
                     ? `<td>${r.is_closed ? '<span class="badge-yes">Yes</span>' : '<span class="badge-no">No</span>'}</td>`
                     : '';
+                const defaultCol = cfg.hasDefault
+                    ? `<td>${r.is_default ? '<span class="badge-yes">Yes</span>' : '<span class="badge-no">No</span>'}</td>`
+                    : '';
+                const activeCol = cfg.hasActive
+                    ? `<td><span class="${r.is_active ? 'badge-active' : 'badge-inactive'}">${r.is_active ? 'Active' : 'Inactive'}</span></td>`
+                    : '';
                 return `
                 <tr>
                     <td><strong>${escapeHtml(r.name)}</strong></td>
                     <td>${swatch}</td>
                     ${closedCol}
-                    <td>${r.is_default ? '<span class="badge-yes">Yes</span>' : '<span class="badge-no">No</span>'}</td>
+                    ${defaultCol}
                     <td>${r.display_order}</td>
-                    <td><span class="${r.is_active ? 'badge-active' : 'badge-inactive'}">${r.is_active ? 'Active' : 'Inactive'}</span></td>
+                    ${activeCol}
                     <td class="actions-cell">
                         <button class="action-btn" onclick="editLookup('${kind}', ${r.id})" title="Edit">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
@@ -427,6 +520,8 @@ $path_prefix = '../../';
             document.getElementById('lookupItemOrder').value = '0';
             document.getElementById('lookupItemActive').checked = true;
             document.getElementById('lookupItemClosedGroup').style.display = cfg.hasClosed ? '' : 'none';
+            document.getElementById('lookupItemDefaultGroup').style.display = cfg.hasDefault ? '' : 'none';
+            document.getElementById('lookupItemActiveGroup').style.display = cfg.hasActive ? '' : 'none';
             document.getElementById('lookupModal').classList.add('active');
         }
 
@@ -444,6 +539,8 @@ $path_prefix = '../../';
             document.getElementById('lookupItemOrder').value = item.display_order;
             document.getElementById('lookupItemActive').checked = !!item.is_active;
             document.getElementById('lookupItemClosedGroup').style.display = cfg.hasClosed ? '' : 'none';
+            document.getElementById('lookupItemDefaultGroup').style.display = cfg.hasDefault ? '' : 'none';
+            document.getElementById('lookupItemActiveGroup').style.display = cfg.hasActive ? '' : 'none';
             document.getElementById('lookupModal').classList.add('active');
         }
 

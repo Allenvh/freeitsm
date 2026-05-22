@@ -20,6 +20,7 @@ let currentFilterAnalystId = null;
 let tasks = [];
 let statuses = [];
 let spanMode = 'deadline';
+let surfaceTags = false;
 
 const MODE_LABEL = {
     deadline: 'shown on the due date only',
@@ -38,6 +39,7 @@ async function loadSettings() {
     try {
         const d = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
         if (d.success && d.settings.calendar_span_mode) spanMode = d.settings.calendar_span_mode;
+        if (d.success && d.settings.tag_settings) surfaceTags = !!d.settings.tag_settings.surface_calendar;
     } catch (e) { console.error('Failed to load settings:', e); }
 }
 
@@ -230,13 +232,18 @@ function renderBars(iv) {
     const tip = esc(t.title + (t.analyst_name ? ' · ' + t.analyst_name : '') +
         ' · ' + (iv.p.start !== iv.p.end ? fmt(iv.p.start) + ' → ' + fmt(iv.p.end) : fmt(iv.p.end)));
 
+    const tagDots = (surfaceTags && t.tags && t.tags.length)
+        ? t.tags.slice(0, 4).map(tg =>
+            `<span class="mini-tag-dot" style="background:${esc(tg.colour || '#6b7280')}"></span>`).join('')
+        : '';
+
     const make = (col, span, extraCls) => {
         const left = `calc(${col} / 7 * 100% + 3px)`;
         const width = `calc(${span} / 7 * 100% - 6px)`;
         return `<div class="cal-bar ${extraCls}${done ? ' cal-bar-done' : ''}"
             style="left:${left};width:${width};top:${top}px;background:${colour}"
             title="${tip}" onclick="openTask(${t.id})">
-            <span class="cal-bar-label">${title}</span></div>`;
+            <span class="cal-bar-label">${title}</span>${tagDots}</div>`;
     };
 
     if (spanMode === 'span') {

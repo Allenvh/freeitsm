@@ -15,7 +15,7 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Tasks Calendar</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/tasks.css?v=8">
+    <link rel="stylesheet" href="../../assets/css/tasks.css?v=9">
 </head>
 <body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
     <?php include '../includes/header.php'; ?>
@@ -86,6 +86,6 @@ $path_prefix = '../../';
     <div class="toast" id="toast"></div>
 
     <script>window.API_BASE = '../../api/tasks/';</script>
-    <script src="../../assets/js/tasks-calendar.js?v=2"></script>
+    <script src="../../assets/js/tasks-calendar.js?v=3"></script>
 </body>
 </html>

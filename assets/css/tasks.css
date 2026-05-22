@@ -375,6 +375,114 @@ body {
 .start-date-badge { color: #888; }
 .start-date-badge::before { content: "▸ "; }
 
+/* ── Tags ── */
+.task-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    line-height: 1.6;
+}
+
+.tag-chip-x {
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0;
+    opacity: 0.6;
+}
+
+.tag-chip-x:hover { opacity: 1; }
+
+/* Detail-panel tag editor */
+.tag-edit-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+}
+
+.tag-edit-empty { font-size: 12px; color: #aaa; }
+
+.tag-picker { position: relative; }
+
+.tag-picker-input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.tag-picker-input:focus { border-color: #7c3aed; }
+
+.tag-picker-results {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 20;
+}
+
+.tag-picker-results.open { display: block; }
+
+.tag-pick-opt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+}
+
+.tag-pick-opt:hover { background: #f3f0ff; }
+.tag-pick-create { color: #7c3aed; font-weight: 500; }
+.tag-pick-empty { padding: 8px 12px; font-size: 13px; color: #999; }
+
+.tag-swatch {
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* Tag dots on calendar / timeline bars */
+.mini-tag-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-left: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    vertical-align: middle;
+}
+
 /* Drop indicator */
 .drop-indicator {
     height: 3px;

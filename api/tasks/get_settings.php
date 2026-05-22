@@ -55,6 +55,26 @@ try {
     }
     $settings['card_fields'] = $cardFields;
 
+    // tag_settings — where tags appear, and whether they can be created inline.
+    // Always returned complete so callers needn't merge defaults.
+    $tagDefaults = [
+        'allow_create'     => 0,
+        'surface_card'     => 1,
+        'surface_filter'   => 1,
+        'surface_search'   => 1,
+        'surface_calendar' => 0,
+    ];
+    $tagSettings = $tagDefaults;
+    if (isset($settings['tag_settings'])) {
+        $decoded = json_decode($settings['tag_settings'], true);
+        if (is_array($decoded)) {
+            foreach ($tagDefaults as $k => $v) {
+                $tagSettings[$k] = empty($decoded[$k]) ? 0 : 1;
+            }
+        }
+    }
+    $settings['tag_settings'] = $tagSettings;
+
     echo json_encode(['success' => true, 'settings' => $settings]);
 
 } catch (Exception $e) {

@@ -15,7 +15,7 @@ $path_prefix = '../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Tasks</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/tasks.css?v=8">
+    <link rel="stylesheet" href="../assets/css/tasks.css?v=9">
     <script src="../assets/js/tinymce/tinymce.min.js"></script>
 </head>
 <body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
@@ -70,6 +70,13 @@ $path_prefix = '../';
                 <div class="sidebar-label">Analyst</div>
                 <select id="analystFilter" class="sidebar-select" onchange="setAnalystFilter(this.value)">
                     <option value="">All analysts</option>
+                </select>
+            </div>
+
+            <div class="sidebar-section" id="tagFilterSection" style="display:none;">
+                <div class="sidebar-label">Tag</div>
+                <select id="tagFilter" class="sidebar-select" onchange="setTagFilter(this.value)">
+                    <option value="">All tags</option>
                 </select>
             </div>
         </div>
@@ -152,6 +159,6 @@ $path_prefix = '../';
     <div class="toast" id="toast"></div>
 
     <script>window.API_BASE = '../api/tasks/';</script>
-    <script src="../assets/js/tasks.js?v=6"></script>
+    <script src="../assets/js/tasks.js?v=7"></script>
 </body>
 </html>

@@ -86,6 +86,20 @@ try {
     $stmt->execute([$id]);
     $task['comments'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Get tags
+    $stmt = $conn->prepare(
+        "SELECT tg.id, tg.name, tg.colour
+         FROM task_tag_map m
+         JOIN task_tags tg ON tg.id = m.tag_id
+         WHERE m.task_id = ?
+         ORDER BY tg.display_order, tg.name"
+    );
+    $stmt->execute([$id]);
+    $task['tags'] = array_map(function ($tg) {
+        $tg['id'] = (int)$tg['id'];
+        return $tg;
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
     echo json_encode(['success' => true, 'task' => $task]);
 
 } catch (Exception $e) {

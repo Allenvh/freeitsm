@@ -105,9 +105,31 @@ try {
         }
     }
 
-    // Attach subtask counts
+    // Get tags for all tasks
+    $tagsByTask = [];
+    if (!empty($taskIds)) {
+        $placeholders = implode(',', array_fill(0, count($taskIds), '?'));
+        $stmt = $conn->prepare(
+            "SELECT m.task_id, tg.id, tg.name, tg.colour
+             FROM task_tag_map m
+             JOIN task_tags tg ON tg.id = m.tag_id
+             WHERE m.task_id IN ({$placeholders})
+             ORDER BY tg.display_order, tg.name"
+        );
+        $stmt->execute($taskIds);
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $tagsByTask[$row['task_id']][] = [
+                'id'     => (int)$row['id'],
+                'name'   => $row['name'],
+                'colour' => $row['colour']
+            ];
+        }
+    }
+
+    // Attach subtask counts and tags
     foreach ($tasks as &$task) {
         $task['subtasks'] = $subtaskCounts[$task['id']] ?? ['total' => 0, 'done' => 0];
+        $task['tags']     = $tagsByTask[$task['id']] ?? [];
     }
 
     // Status counts for sidebar

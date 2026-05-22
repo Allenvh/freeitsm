@@ -25,6 +25,18 @@ let cardFields = {
     due_date: 1, description: 0, subtasks: 1, links: 1
 };
 
+// Tags — full list, display settings, the active sidebar filter, and the
+// working set while a task is open in the detail panel
+let tagList = [];
+let tagSettings = {
+    allow_create: 0, surface_card: 1, surface_filter: 1,
+    surface_search: 1, surface_calendar: 0
+};
+let currentTagFilter = '';
+let detailTags = [];
+const TAG_PALETTE = ['#dc2626', '#ea580c', '#d97706', '#16a34a',
+                     '#0891b2', '#2563eb', '#7c3aed', '#db2777'];
+
 const ANALYST_ID = document.body.dataset.analystId;
 
 // ── Init ───────────────────────────────────────────────────────────
@@ -33,6 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadCardSettings();
     await loadLookups();          // statuses drive the board columns
     buildBoardColumns();
+    applyTagSettings();
     // Open a task straight away if linked from the calendar/timeline (?task=N)
     loadDropdowns().then(() => {
         const taskParam = new URLSearchParams(location.search).get('task');
@@ -52,6 +65,9 @@ async function loadCardSettings() {
         const data = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
         if (data.success && data.settings.card_fields) {
             cardFields = data.settings.card_fields;
+        }
+        if (data.success && data.settings.tag_settings) {
+            tagSettings = data.settings.tag_settings;
         }
     } catch (e) { console.error('Failed to load card settings:', e); }
 }
@@ -137,6 +153,9 @@ function buildSearchText(t) {
         const doc = new DOMParser().parseFromString(t.description, 'text/html');
         text += ' ' + (doc.body.textContent || '');
     }
+    if (tagSettings.surface_search && t.tags) {
+        text += ' ' + t.tags.map(tg => tg.name).join(' ');
+    }
     return text.toLowerCase();
 }
 
@@ -158,6 +177,33 @@ function setSearch(value) {
 function clearSearch() {
     document.getElementById('taskSearch').value = '';
     setSearch('');
+}
+
+// ── Tag filter ─────────────────────────────────────────────────────
+
+function taskMatchesTag(t) {
+    if (!currentTagFilter) return true;
+    return (t.tags || []).some(tg => String(tg.id) === String(currentTagFilter));
+}
+
+function setTagFilter(tagId) {
+    currentTagFilter = tagId;
+    if (currentView === 'board') renderBoard();
+    else renderList();
+}
+
+// Populate the sidebar tag filter and show/hide it per the surface setting
+function applyTagSettings() {
+    const section = document.getElementById('tagFilterSection');
+    if (!section) return;
+    section.style.display = tagSettings.surface_filter ? '' : 'none';
+    const sel = document.getElementById('tagFilter');
+    if (sel) {
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">All tags</option>' +
+            tagList.map(tg => `<option value="${tg.id}">${esc(tg.name)}</option>`).join('');
+        sel.value = keep;
+    }
 }
 
 // ── View Toggle ────────────────────────────────────────────────────
@@ -213,7 +259,8 @@ function renderBoard() {
         const status = col.dataset.status;
         const cardsEl = col.querySelector('.board-cards');
         const countEl = col.querySelector('.column-count');
-        const filtered = tasks.filter(t => t.status === status && taskMatchesSearch(t));
+        const filtered = tasks.filter(t =>
+            t.status === status && taskMatchesSearch(t) && taskMatchesTag(t));
         if (countEl) countEl.textContent = filtered.length;
 
         if (filtered.length === 0) {
@@ -266,10 +313,16 @@ function renderCard(t) {
         if (excerpt) descHtml = `<div class="task-card-desc">${esc(excerpt)}</div>`;
     }
 
+    let tagsHtml = '';
+    if (tagSettings.surface_card && t.tags && t.tags.length) {
+        tagsHtml = `<div class="task-card-tags">${t.tags.map(tg => tagChipHtml(tg)).join('')}</div>`;
+    }
+
     return `<div class="task-card" data-id="${t.id}" onclick="openDetailPanel(${t.id})">
         <div class="task-card-title">${esc(t.title)}</div>
         ${descHtml}
         ${meta.length ? `<div class="task-card-meta">${meta.join('')}</div>` : ''}
+        ${tagsHtml}
     </div>`;
 }
 
@@ -578,7 +631,7 @@ async function endDrag(e) {
 // ── List Rendering ─────────────────────────────────────────────────
 
 function renderList() {
-    const sorted = tasks.filter(taskMatchesSearch).sort((a, b) => {
+    const sorted = tasks.filter(t => taskMatchesSearch(t) && taskMatchesTag(t)).sort((a, b) => {
         let va = a[sortField] || '';
         let vb = b[sortField] || '';
         if (typeof va === 'string') va = va.toLowerCase();
@@ -599,8 +652,10 @@ function renderList() {
         const subtaskText = t.subtasks.total > 0 ? `${t.subtasks.done}/${t.subtasks.total}` : '—';
         const dueBadge = formatDueBadge(t.due_date);
 
+        const tagsHtml = (tagSettings.surface_card && t.tags && t.tags.length)
+            ? `<div class="task-card-tags">${t.tags.map(tg => tagChipHtml(tg)).join('')}</div>` : '';
         return `<tr onclick="openDetailPanel(${t.id})">
-            <td><strong>${esc(t.title)}</strong></td>
+            <td><strong>${esc(t.title)}</strong>${tagsHtml}</td>
             <td><span class="status-pill" style="background:${sc}1f;color:${sc}">${esc(t.status)}</span></td>
             <td><span class="priority-pill"><span class="priority-dot ${t.priority.toLowerCase()}"></span> ${esc(t.priority)}</span></td>
             <td>${esc(t.analyst_name || '—')}</td>
@@ -665,6 +720,7 @@ function closeDetailPanel() {
 
 function renderDetailPanel(task) {
     const body = document.getElementById('detailPanelBody');
+    detailTags = (task.tags || []).map(t => ({ id: t.id, name: t.name, colour: t.colour }));
     const analystOptions = analysts.map(a =>
         `<option value="${a.id}" ${a.id == task.assigned_analyst_id ? 'selected' : ''}>${esc(a.name)}</option>`
     ).join('');
@@ -718,6 +774,11 @@ function renderDetailPanel(task) {
                 <label>Due Date</label>
                 <input type="date" class="detail-input" value="${task.due_date || ''}" onchange="saveField('due_date', this.value || null)">
             </div>
+        </div>
+
+        <div class="detail-field">
+            <label>Tags</label>
+            <div id="detailTagSection"></div>
         </div>
 
         <div class="detail-field detail-description">
@@ -807,6 +868,8 @@ function renderDetailPanel(task) {
         </div>
     `;
 
+    renderTagSection();
+
     // Init TinyMCE for description
     if (tinyEditor) { tinyEditor.destroy(); tinyEditor = null; }
     tinymce.init({
@@ -841,6 +904,116 @@ async function saveField(field, value) {
             body: JSON.stringify({ id: selectedTaskId, [field]: value })
         });
     } catch (e) { console.error(e); }
+}
+
+// ── Detail-panel tag picker ────────────────────────────────────────
+
+// One tag chip; pass removable=true for the editable chips in the panel
+function tagChipHtml(tag, removable) {
+    const colour = tag.colour || '#6b7280';
+    const x = removable
+        ? `<button type="button" class="tag-chip-x" title="Remove"
+             onclick="event.stopPropagation(); removeDetailTag(${tag.id})">&times;</button>`
+        : '';
+    return `<span class="tag-chip" style="background:${escAttr(colour)}1f;` +
+        `color:${escAttr(colour)};border-color:${escAttr(colour)}55">${esc(tag.name)}${x}</span>`;
+}
+
+function renderTagSection() {
+    const el = document.getElementById('detailTagSection');
+    if (!el) return;
+    const chips = detailTags.map(tg => tagChipHtml(tg, true)).join('');
+    el.innerHTML = `
+        <div class="tag-edit-chips">${chips || '<span class="tag-edit-empty">No tags</span>'}</div>
+        <div class="tag-picker">
+            <input type="text" id="tagPickerInput" class="tag-picker-input" placeholder="Add tag…"
+                   autocomplete="off" oninput="filterTagPicker()" onfocus="filterTagPicker()"
+                   onkeydown="tagPickerKey(event)" onblur="setTimeout(closeTagPicker, 150)">
+            <div class="tag-picker-results" id="tagPickerResults"></div>
+        </div>`;
+}
+
+function closeTagPicker() {
+    const r = document.getElementById('tagPickerResults');
+    if (r) r.classList.remove('open');
+}
+
+function filterTagPicker() {
+    const input = document.getElementById('tagPickerInput');
+    const results = document.getElementById('tagPickerResults');
+    if (!input || !results) return;
+    const q = input.value.trim().toLowerCase();
+    const chosen = new Set(detailTags.map(t => t.id));
+    const matches = tagList.filter(tg => !chosen.has(tg.id) && tg.name.toLowerCase().includes(q));
+
+    let html = matches.map(tg =>
+        `<div class="tag-pick-opt" onmousedown="event.preventDefault()" onclick="addDetailTag(${tg.id})">
+            <span class="tag-swatch" style="background:${escAttr(tg.colour || '#6b7280')}"></span>${esc(tg.name)}
+         </div>`).join('');
+
+    // Offer to create the typed tag when allowed and it is genuinely new
+    const exact = tagList.some(tg => tg.name.toLowerCase() === q);
+    if (tagSettings.allow_create && q && !exact) {
+        html += `<div class="tag-pick-opt tag-pick-create" onmousedown="event.preventDefault()"
+                   onclick="createAndAddTag()">+ Create &ldquo;${esc(input.value.trim())}&rdquo;</div>`;
+    }
+    results.innerHTML = html || '<div class="tag-pick-empty">No matching tags</div>';
+    results.classList.add('open');
+}
+
+// Enter picks the first option (an existing match, or the create row)
+function tagPickerKey(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = document.querySelector('#tagPickerResults .tag-pick-opt');
+    if (first) first.click();
+}
+
+function addDetailTag(tagId) {
+    const tag = tagList.find(t => t.id === tagId);
+    if (tag && !detailTags.some(t => t.id === tagId)) {
+        detailTags.push({ id: tag.id, name: tag.name, colour: tag.colour });
+        saveDetailTags();
+    }
+    renderTagSection();
+    const input = document.getElementById('tagPickerInput');
+    if (input) input.focus();
+}
+
+function removeDetailTag(tagId) {
+    detailTags = detailTags.filter(t => t.id !== tagId);
+    saveDetailTags();
+    renderTagSection();
+}
+
+async function createAndAddTag() {
+    const input = document.getElementById('tagPickerInput');
+    if (!input) return;
+    const name = input.value.trim();
+    if (!name) return;
+    const colour = TAG_PALETTE[tagList.length % TAG_PALETTE.length];
+    try {
+        const data = await fetch(API_BASE + 'save_task_tag.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, colour, display_order: (tagList.length + 1) * 10 })
+        }).then(r => r.json());
+        if (data.success && data.id) {
+            const tag = { id: data.id, name: name, colour: colour };
+            tagList.push(tag);
+            detailTags.push({ id: tag.id, name: tag.name, colour: tag.colour });
+            saveDetailTags();
+            applyTagSettings();        // refresh the sidebar filter list
+            renderTagSection();
+            const fresh = document.getElementById('tagPickerInput');
+            if (fresh) fresh.focus();
+        } else {
+            showToast(data.error || 'Could not create tag');
+        }
+    } catch (e) { showToast('Could not create tag'); }
+}
+
+function saveDetailTags() {
+    saveField('tags', detailTags.map(t => t.id));
 }
 
 // ── Subtasks ───────────────────────────────────────────────────────
@@ -973,12 +1146,14 @@ let priorityList = [];
 // right-click menu, and the detail-panel dropdowns
 async function loadLookups() {
     try {
-        const [sRes, pRes] = await Promise.all([
+        const [sRes, pRes, tRes] = await Promise.all([
             fetch(API_BASE + 'get_task_statuses.php').then(r => r.json()),
-            fetch(API_BASE + 'get_task_priorities.php').then(r => r.json())
+            fetch(API_BASE + 'get_task_priorities.php').then(r => r.json()),
+            fetch(API_BASE + 'get_task_tags.php').then(r => r.json())
         ]);
         if (sRes.success) statusList = (sRes.statuses || []).filter(s => s.is_active);
         if (pRes.success) priorityList = (pRes.priorities || []).filter(p => p.is_active);
+        if (tRes.success) tagList = tRes.tags || [];
     } catch (e) { console.error('Failed to load lookups:', e); }
 }
 

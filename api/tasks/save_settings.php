@@ -25,9 +25,11 @@ if (empty($settings)) {
 try {
     $conn = connectToDatabase();
 
-    $allowed = ['calendar_span_mode', 'card_fields'];
+    $allowed = ['calendar_span_mode', 'card_fields', 'tag_settings'];
     $cardFieldKeys = ['priority', 'assignee', 'team', 'start_date',
                       'due_date', 'description', 'subtasks', 'links'];
+    $tagSettingKeys = ['allow_create', 'surface_card', 'surface_filter',
+                       'surface_search', 'surface_calendar'];
 
     foreach ($settings as $key => $value) {
         if (!in_array($key, $allowed, true)) continue;
@@ -40,6 +42,12 @@ try {
             $clean = [];
             foreach ($cardFieldKeys as $fk) {
                 $clean[$fk] = (is_array($value) && !empty($value[$fk])) ? 1 : 0;
+            }
+            $value = json_encode($clean);
+        } elseif ($key === 'tag_settings') {
+            $clean = [];
+            foreach ($tagSettingKeys as $tk) {
+                $clean[$tk] = (is_array($value) && !empty($value[$tk])) ? 1 : 0;
             }
             $value = json_encode($clean);
         }
