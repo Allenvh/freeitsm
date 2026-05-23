@@ -5,6 +5,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once dirname(dirname(__DIR__)) . '/workflow/includes/engine.php';
 
 header('Content-Type: application/json');
 
@@ -42,7 +43,8 @@ try {
 
     // Fetch current ticket state for change detection
     $currentStmt = $conn->prepare(
-        "SELECT t.assigned_analyst_id, ts.name AS status, ts.is_closed AS old_is_closed
+        "SELECT t.assigned_analyst_id, t.status_id AS old_status_id, t.priority_id AS old_priority_id,
+                ts.name AS status, ts.is_closed AS old_is_closed
          FROM tickets t
          LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
          WHERE t.id = ?"
@@ -52,6 +54,8 @@ try {
     $oldAnalystId = $currentTicket ? $currentTicket['assigned_analyst_id'] : null;
     $oldStatus = $currentTicket ? $currentTicket['status'] : null;
     $oldIsClosed = $currentTicket ? (int)($currentTicket['old_is_closed'] ?? 0) : 0;
+    $oldStatusId = $currentTicket ? ($currentTicket['old_status_id'] !== null ? (int)$currentTicket['old_status_id'] : null) : null;
+    $oldPriorityId = $currentTicket ? ($currentTicket['old_priority_id'] !== null ? (int)$currentTicket['old_priority_id'] : null) : null;
 
     // Resolve incoming status name -> id (and the new status's is_closed flag)
     $newStatusId = null;
@@ -160,6 +164,54 @@ try {
         }
     } catch (Exception $tplEx) {
         error_log('Template email error in assign_ticket: ' . $tplEx->getMessage());
+    }
+
+    // Workflow engine dispatches — fire after the update is durable. The
+    // engine swallows its own errors, but wrap defensively so an engine
+    // outage can never break the ticket save response (already echoed).
+    try {
+        // Resolve the post-update priority_id so dispatch payloads carry
+        // the actual current value (the request may have changed it).
+        $newPriorityId = $priorityWasSent
+            ? (($priority_id === '' || $priority_id === null) ? null : (int)$priority_id)
+            : $oldPriorityId;
+
+        // ticket.status_changed
+        if ($newStatusId !== null && $newStatusId !== $oldStatusId) {
+            WorkflowEngine::dispatch('ticket.status_changed', [
+                'ticket' => [
+                    'id'                   => (int)$ticket_id,
+                    'priority_id'          => $newPriorityId,
+                    'assigned_analyst_id'  => $newAnalystId ?? $oldAnalystId,
+                ],
+                'old_status_id' => $oldStatusId,
+                'new_status_id' => $newStatusId,
+            ]);
+        }
+
+        // ticket.priority_changed
+        if ($priorityWasSent && (string)$newPriorityId !== (string)$oldPriorityId) {
+            WorkflowEngine::dispatch('ticket.priority_changed', [
+                'ticket' => [
+                    'id'                   => (int)$ticket_id,
+                    'status_id'            => $newStatusId ?? $oldStatusId,
+                    'assigned_analyst_id'  => $newAnalystId ?? $oldAnalystId,
+                ],
+                'old_priority_id' => $oldPriorityId,
+                'new_priority_id' => $newPriorityId,
+            ]);
+        }
+
+        // ticket.assigned
+        if ($newAnalystId !== null && (string)$newAnalystId !== (string)$oldAnalystId) {
+            WorkflowEngine::dispatch('ticket.assigned', [
+                'ticket'     => ['id' => (int)$ticket_id],
+                'analyst_id' => $newAnalystId,
+                'team_id'    => null,
+            ]);
+        }
+    } catch (Exception $wfEx) {
+        error_log('Workflow dispatch error in assign_ticket: ' . $wfEx->getMessage());
     }
 
 } catch (Exception $e) {

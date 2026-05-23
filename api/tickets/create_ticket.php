@@ -6,6 +6,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once dirname(dirname(__DIR__)) . '/workflow/includes/engine.php';
 
 header('Content-Type: application/json');
 
@@ -140,6 +141,32 @@ try {
         'ticket_id' => $ticketId,
         'ticket_number' => $ticketNumber
     ]);
+
+    // Workflow engine: ticket.created. Read back the resolved status_id /
+    // priority_id (the INSERT used subselects on name) so the payload carries
+    // real ids — that's what condition fields like ticket.priority_id compare
+    // against. Engine swallows its own errors; outer try/catch is belt+braces.
+    try {
+        $readBack = $conn->prepare("SELECT status_id, priority_id FROM tickets WHERE id = ?");
+        $readBack->execute([$ticketId]);
+        $row = $readBack->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        WorkflowEngine::dispatch('ticket.created', [
+            'ticket' => [
+                'id'                  => (int)$ticketId,
+                'subject'             => $subject,
+                'priority_id'         => isset($row['priority_id']) ? (int)$row['priority_id'] : null,
+                'status_id'           => isset($row['status_id'])   ? (int)$row['status_id']   : null,
+                'department_id'       => $departmentId,
+                'type_id'             => $ticketTypeId,
+                'assigned_analyst_id' => $assignedAnalystId,
+                'created_by'          => $analystId,
+                'requester_email'     => $fromEmail,
+            ],
+        ]);
+    } catch (Exception $wfEx) {
+        error_log('Workflow dispatch error in create_ticket: ' . $wfEx->getMessage());
+    }
 
 } catch (Exception $e) {
     if (isset($conn)) {
