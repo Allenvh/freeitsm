@@ -476,7 +476,7 @@ $path_prefix = '../';
             </a>
             <a href="#connectors" class="pm-help-nav-link" data-section="connectors">
                 <span class="pm-help-nav-num">4</span>
-                Drawing connectors
+                Connectors &amp; right-click
             </a>
             <a href="#arranging" class="pm-help-nav-link highlight" data-section="arranging">
                 <span class="pm-help-nav-num highlight">5</span>
@@ -486,8 +486,12 @@ $path_prefix = '../';
                 <span class="pm-help-nav-num">6</span>
                 Saving &amp; loading
             </a>
+            <a href="#export" class="pm-help-nav-link highlight" data-section="export">
+                <span class="pm-help-nav-num highlight">7</span>
+                Exporting
+            </a>
             <a href="#tips" class="pm-help-nav-link" data-section="tips">
-                <span class="pm-help-nav-num">7</span>
+                <span class="pm-help-nav-num">8</span>
                 Quick tips
             </a>
         </div>
@@ -631,13 +635,13 @@ $path_prefix = '../';
                     <p class="pm-help-tip">The detail panel lets you change a step's type after it is placed, so you can re-shape an existing step (for example, promoting a Process box to a Decision diamond) without having to delete and recreate it.</p>
                 </div>
 
-                <!-- Section 4: Drawing connectors -->
+                <!-- Section 4: Drawing connectors + the rest of the right-click menu -->
                 <div class="pm-help-section" id="connectors">
                     <div class="pm-help-section-header">
                         <span class="pm-help-section-num">4</span>
-                        <h3>Drawing connectors</h3>
+                        <h3>Connectors &amp; the right-click menu</h3>
                     </div>
-                    <p>Connectors are the arrows between steps. Process Mapper offers a few ways to draw them &mdash; pick whichever feels more natural in the moment.</p>
+                    <p>Connectors are the arrows between steps. Process Mapper offers a few ways to draw them, plus a right-click menu on each step that surfaces the quickest editing shortcuts &mdash; build a flow, swap a step's type, copy a colour scheme from one step to another, all without leaving the canvas.</p>
 
                     <div class="pm-help-steps">
                         <div class="pm-help-step-item">
@@ -667,7 +671,25 @@ $path_prefix = '../';
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">5</div>
                             <div>
-                                <strong>Right-click to branch off a step</strong> &mdash; right-click any step and choose <em>Create new</em>, then pick a shape (Process, Decision, Terminal or Document). A new step of that type is dropped just to the right, already connected from the step you clicked, with the detail panel open and the cursor in the label box &mdash; name it and carry on. The quickest way to build a flow out left-to-right.
+                                <strong>Right-click to branch off a step</strong> &mdash; right-click any step and choose <em>Create new&hellip;</em>, then pick a shape. A new step of that type is dropped just to the right, already connected from the step you clicked, with the detail panel open and the cursor in the label box &mdash; name it and carry on. The quickest way to build a flow out left-to-right.
+                            </div>
+                        </div>
+                        <div class="pm-help-step-item">
+                            <div class="pm-help-step-num">6</div>
+                            <div>
+                                <strong>Connect to&hellip; (click-to-connect)</strong> &mdash; on the same right-click menu, picking <em>Connect to&hellip;</em> arms a one-shot click-to-connect mode: the cursor turns to a crosshair and a blue prompt appears at the bottom. The next click on any step pairs them up; a click on empty canvas or a lane background, a right-click, or pressing <span class="pm-help-kbd">Esc</span> cancels.
+                            </div>
+                        </div>
+                        <div class="pm-help-step-item">
+                            <div class="pm-help-step-num">7</div>
+                            <div>
+                                <strong>Change to&hellip;</strong> &mdash; same right-click menu offers <em>Change to&hellip;</em>, which turns the step into a different type. The new type's default colour and shape apply automatically (gradient cleared) so a Process box becomes a Decision diamond in one click. Faster than opening the detail panel and changing the Type dropdown.
+                            </div>
+                        </div>
+                        <div class="pm-help-step-item">
+                            <div class="pm-help-step-num">8</div>
+                            <div>
+                                <strong>Copy / Apply formatting</strong> &mdash; <em>Copy formatting</em> stashes the right-clicked step's colour and gradient second-stop. Once something is copied, every step's right-click menu reveals <em>Apply formatting</em>, which paints those values onto whichever step you right-click next. Position, label, type and size aren't copied &mdash; just the &ldquo;paint job&rdquo;. Saves a lot of trips to the colour picker when you want a row of steps to match.
                             </div>
                         </div>
                     </div>
@@ -693,7 +715,7 @@ $path_prefix = '../';
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">2</div>
                             <div>
-                                <strong>Multi-select</strong> &mdash; <span class="pm-help-kbd">Ctrl</span>+click toggles individual steps in and out of the selection, or rubber-band by dragging on empty canvas. Press <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">A</span> to select everything.
+                                <strong>Multi-select</strong> &mdash; <span class="pm-help-kbd">Ctrl</span>+click toggles individual steps in and out of the selection, or rubber-band by dragging across the canvas. Rubber-band works on the dot-grid background <em>and</em> over lane backgrounds, so it still works on processes that fill the canvas with swimlanes. Press <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">A</span> to select everything. Once a group of steps is selected, drag any one of them and the rest follow.
                             </div>
                         </div>
                         <div class="pm-help-step-item">
@@ -743,6 +765,12 @@ $path_prefix = '../';
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">3</div>
                             <div>
+                                <strong>Bookmarkable URLs</strong> &mdash; the address bar updates to <span class="pm-help-kbd">process-mapper/?id=N</span> whenever you open a process, so each diagram has a URL you can share or bookmark. Pasting a deep-link straight into the browser jumps to that diagram. The browser <strong>back / forward</strong> buttons navigate between processes you've opened in the current session.
+                            </div>
+                        </div>
+                        <div class="pm-help-step-item">
+                            <div class="pm-help-step-num">4</div>
+                            <div>
                                 <strong>Delete a process</strong> &mdash; hover over a process in the sidebar and click the &times; that appears. You will be asked to confirm; the process and all its steps and connectors are removed permanently.
                             </div>
                         </div>
@@ -751,10 +779,40 @@ $path_prefix = '../';
                     <p class="pm-help-tip">Save replaces all the steps and connectors for a process in one transaction, so the database always matches what is on screen. There is no partial-save state to worry about.</p>
                 </div>
 
-                <!-- Section 7: Quick Tips -->
+                <!-- Section 7: Exporting -->
+                <div class="pm-help-section pm-help-section-highlight" id="export">
+                    <div class="pm-help-section-header">
+                        <span class="pm-help-section-num highlight">7</span>
+                        <h3>Exporting</h3>
+                    </div>
+                    <p class="pm-help-intro">Process Mapper can export the current diagram in three formats. Click <strong>Export</strong> on the toolbar and pick a format from the chooser.</p>
+
+                    <div class="pm-help-data-grid">
+                        <div class="pm-help-data-card">
+                            <strong>PNG image</strong>
+                            <span>Captures the canvas as a high-resolution (2&times;) PNG, ideal for slides, screenshots and embedding in tickets or change records. Edit-time chrome (edge handles, selection rings, dot grid) is hidden in the capture. File downloads as <em>process-title.png</em>.</span>
+                        </div>
+                        <div class="pm-help-data-card">
+                            <strong>PDF document</strong>
+                            <span>Same capture wrapped onto an A4 page; portrait or landscape is picked automatically from the diagram's aspect ratio, with a 24pt margin and proportional fit-to-page so big diagrams aren't stretched. Print-ready and easy to attach to a ticket or change.</span>
+                        </div>
+                        <div class="pm-help-data-card">
+                            <strong>Mermaid markup</strong>
+                            <span>Generates <a href="https://mermaid.js.org/" target="_blank">Mermaid</a> flowchart syntax ready to paste into GitHub/GitLab READMEs and wikis, Notion, Confluence, Obsidian, the Mermaid Live Editor, etc. Lanes become <code>subgraph</code> blocks; auto-layout takes over from your hand-placed positions. Lossy on visuals, faithful on structure.</span>
+                        </div>
+                        <div class="pm-help-data-card">
+                            <strong>What gets captured?</strong>
+                            <span>The PNG/PDF capture extends to the bounding box of everything on the canvas plus a 40px margin &mdash; including steps that sit beyond the visible viewport. When swimlanes are present the capture starts at <em>x=0, y=0</em> so lane headers and the top of the first lane are always included.</span>
+                        </div>
+                    </div>
+
+                    <p class="pm-help-tip">For Mermaid, the <strong>shape</strong> of each step decides the syntax (rectangle, rounded, pill, circle, diamond, hexagon, parallelogram, trapezoid, cylinder, subroutine), so custom step types you've added in Settings export cleanly via whichever shape they were built on.</p>
+                </div>
+
+                <!-- Section 8: Quick Tips -->
                 <div class="pm-help-section" id="tips">
                     <div class="pm-help-section-header">
-                        <span class="pm-help-section-num">7</span>
+                        <span class="pm-help-section-num">8</span>
                         <h3>Quick tips</h3>
                     </div>
                     <div class="pm-help-tips-grid">
@@ -772,7 +830,7 @@ $path_prefix = '../';
                         </div>
                         <div class="pm-help-tip-card">
                             <div class="pm-help-tip-icon">&#9997;</div>
-                            <div><strong>Save often</strong><br>The save shortcut is <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span>. There is no auto-save, so press it whenever you have made changes you would not want to redo.</div>
+                            <div><strong>Turn on autosave</strong><br>The toolbar has an autosave toggle that debounces a save ~2 seconds after the last edit, with a live status pip beside it. If you prefer manual saves the shortcut is <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span>.</div>
                         </div>
                     </div>
                 </div>
