@@ -635,14 +635,15 @@ $path_prefix = '../';
                     <p class="pm-help-tip">The detail panel lets you change a step's type after it is placed, so you can re-shape an existing step (for example, promoting a Process box to a Decision diamond) without having to delete and recreate it.</p>
                 </div>
 
-                <!-- Section 4: Drawing connectors + the rest of the right-click menu -->
+                <!-- Section 4: Drawing connectors + the right-click menu -->
                 <div class="pm-help-section" id="connectors">
                     <div class="pm-help-section-header">
                         <span class="pm-help-section-num">4</span>
                         <h3>Connectors &amp; the right-click menu</h3>
                     </div>
-                    <p>Connectors are the arrows between steps. Process Mapper offers a few ways to draw them, plus a right-click menu on each step that surfaces the quickest editing shortcuts &mdash; build a flow, swap a step's type, copy a colour scheme from one step to another, all without leaving the canvas.</p>
+                    <p>Connectors are the arrows between steps. Process Mapper offers a few ways to draw them, plus a rich right-click menu on each step that surfaces the quickest editing shortcuts &mdash; rename, connect, recolour, clipboard &mdash; without leaving the canvas.</p>
 
+                    <h4 style="margin: 22px 0 8px; font-size: 15px; color: #333;">Drawing arrows</h4>
                     <div class="pm-help-steps">
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">1</div>
@@ -659,38 +660,43 @@ $path_prefix = '../';
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">3</div>
                             <div>
-                                <strong>Add a label</strong> &mdash; double-click any connector to add or edit a short text label. Useful on Decision branches (Yes / No, Approved / Rejected, P1 / P2 / P3) and any time the meaning of an arrow is not obvious from context.
+                                <strong>Right-click &rarr; Connect to&hellip;</strong> &mdash; a click-to-connect mode: the cursor turns to a crosshair and a blue prompt appears at the bottom. The next click on any step pairs them up; a click on empty canvas or a lane background, a right-click, or pressing <span class="pm-help-kbd">Esc</span> cancels.
                             </div>
                         </div>
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">4</div>
                             <div>
-                                <strong>Connect to anywhere</strong> &mdash; you do not need to pick a specific edge on the target step. Drop the connector anywhere on the destination and Process Mapper picks the closest edge automatically, redrawing if you later move either step.
+                                <strong>Add a label</strong> &mdash; double-click any connector to add or edit a short text label. Useful on Decision branches (Yes / No, Approved / Rejected, P1 / P2 / P3) and any time the meaning of an arrow is not obvious from context. You do not need to pick a specific edge on the target step &mdash; Process Mapper picks the closest edge automatically and re-routes whenever either end moves.
                             </div>
                         </div>
-                        <div class="pm-help-step-item">
-                            <div class="pm-help-step-num">5</div>
-                            <div>
-                                <strong>Right-click to branch off a step</strong> &mdash; right-click any step and choose <em>Create new&hellip;</em>, then pick a shape. A new step of that type is dropped just to the right, already connected from the step you clicked, with the detail panel open and the cursor in the label box &mdash; name it and carry on. The quickest way to build a flow out left-to-right.
-                            </div>
+                    </div>
+
+                    <h4 style="margin: 26px 0 8px; font-size: 15px; color: #333;">Right-click menu</h4>
+                    <p>Right-click any step for a menu grouped into four sections.</p>
+                    <div class="pm-help-data-grid">
+                        <div class="pm-help-data-card">
+                            <strong>Edit label · Add note · Link to URL&hellip;</strong>
+                            <span><em>Edit label</em> opens the inline rename (same as double-click). <em>Add note</em> drops a free-floating sticky-note annotation next to the step &mdash; drag it to position, double-click to type, resize via the corner. <em>Link to URL</em> prompts for a link target (<code>http(s)://</code> only); steps with a URL gain a small chain-link badge in their top-right corner that opens in a new tab on click.</span>
                         </div>
-                        <div class="pm-help-step-item">
-                            <div class="pm-help-step-num">6</div>
-                            <div>
-                                <strong>Connect to&hellip; (click-to-connect)</strong> &mdash; on the same right-click menu, picking <em>Connect to&hellip;</em> arms a one-shot click-to-connect mode: the cursor turns to a crosshair and a blue prompt appears at the bottom. The next click on any step pairs them up; a click on empty canvas or a lane background, a right-click, or pressing <span class="pm-help-kbd">Esc</span> cancels.
-                            </div>
+                        <div class="pm-help-data-card">
+                            <strong>Create new&hellip; · Change to&hellip;</strong>
+                            <span><em>Create new&hellip;</em> drops a new step of the chosen type to the right, already connected &mdash; the fastest way to build a flow left-to-right (placement nudges down to dodge overlaps, and the new step inherits whichever lane / group it lands in). <em>Change to&hellip;</em> swaps the existing step's type, recolours to the new type's default, clears any gradient.</span>
                         </div>
-                        <div class="pm-help-step-item">
-                            <div class="pm-help-step-num">7</div>
-                            <div>
-                                <strong>Change to&hellip;</strong> &mdash; same right-click menu offers <em>Change to&hellip;</em>, which turns the step into a different type. The new type's default colour and shape apply automatically (gradient cleared) so a Process box becomes a Decision diamond in one click. Faster than opening the detail panel and changing the Type dropdown.
-                            </div>
+                        <div class="pm-help-data-card">
+                            <strong>Reverse connection&hellip; · Delete all connections</strong>
+                            <span><em>Reverse connection</em> opens a submenu listing every arrow into or out of the step with the direction arrow + the other end's name &mdash; pick one to flip its direction. <em>Delete all connections</em> wipes every arrow incident to the step (with confirm). Both are greyed when the step has no connectors.</span>
                         </div>
-                        <div class="pm-help-step-item">
-                            <div class="pm-help-step-num">8</div>
-                            <div>
-                                <strong>Copy / Apply formatting</strong> &mdash; <em>Copy formatting</em> stashes the right-clicked step's colour and gradient second-stop. Once something is copied, every step's right-click menu reveals <em>Apply formatting</em>, which paints those values onto whichever step you right-click next. Position, label, type and size aren't copied &mdash; just the &ldquo;paint job&rdquo;. Saves a lot of trips to the colour picker when you want a row of steps to match.
-                            </div>
+                        <div class="pm-help-data-card">
+                            <strong>Cut · Copy · Paste · Duplicate</strong>
+                            <span><em>Cut</em> fades the source on the canvas and removes it only when you <em>Paste</em> &mdash; cut+paste behaves like a move. <em>Copy</em> keeps the clipboard live so you can paste repeatedly. Paste drops the new step at the right-click cursor position. <em>Duplicate</em> offsets a copy 40px down-right. <span class="pm-help-kbd">Esc</span> un-cuts a pending source.</span>
+                        </div>
+                        <div class="pm-help-data-card">
+                            <strong>Copy formatting · Apply formatting</strong>
+                            <span>Just the &ldquo;paint job&rdquo; &mdash; <em>Copy formatting</em> stashes the right-clicked step's colour and gradient. Every other step's menu then shows <em>Apply formatting</em>, which paints those values onto the next step you right-click. Position, label, type and size aren't copied. Saves a lot of trips to the colour picker.</span>
+                        </div>
+                        <div class="pm-help-data-card">
+                            <strong>Delete&hellip;</strong>
+                            <span>Red-highlighted destructive action at the bottom &mdash; asks for confirmation, then removes the step and every connector attached to it. (For multi-select bulk delete, use the <span class="pm-help-kbd">Delete</span> key instead.)</span>
                         </div>
                     </div>
 
@@ -727,7 +733,7 @@ $path_prefix = '../';
                         <div class="pm-help-step-item">
                             <div class="pm-help-step-num">4</div>
                             <div>
-                                <strong>The detail panel</strong> &mdash; clicking a single step slides in a panel from the right with everything you can edit: label, type, description, colour, and exact x/y coordinates. Updates apply instantly as you type.
+                                <strong>The detail panel</strong> &mdash; clicking a single step slides in a panel from the right with everything you can edit: label, type, description, link URL, colour, and exact x/y coordinates. Updates apply instantly as you type. The panel only opens on click-release (not on mousedown), so picking a step up to drag it doesn't flash the panel in.
                             </div>
                         </div>
                         <div class="pm-help-step-item">
