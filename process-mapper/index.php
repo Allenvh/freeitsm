@@ -451,6 +451,6 @@ try {
          CDN at print time. Same versions used by Network Mapper (#257). -->
     <script src="../assets/js/vendor/html2canvas.min.js"></script>
     <script src="../assets/js/vendor/jspdf.umd.min.js"></script>
-    <script src="../assets/js/process-mapper.js?v=8"></script>
+    <script src="../assets/js/process-mapper.js?v=9"></script>
 </body>
 </html>

@@ -652,7 +652,11 @@ const PM = (() => {
             updateSelectionVisuals();
         }
 
-        showDetailForStep(step);
+        // The detail panel was previously shown here on mousedown — but that
+        // meant any aborted drag attempt (or a real drag) still flashed the
+        // panel open. We now defer the show to onDocMouseUp's "click without
+        // drag" branch, so the panel only appears when the user actually
+        // commits to selecting (mousedown→mouseup without movement).
 
         // Start drag
         const rect = canvas.getBoundingClientRect();
@@ -856,6 +860,12 @@ const PM = (() => {
                 reassignStepLanes(movedIds);
                 reassignStepGroups(movedIds);
                 markDirty();
+            } else {
+                // Click without drag — NOW reveal the detail panel for the
+                // clicked step. Deferred from onStepMouseDown so a real drag
+                // doesn't flash the panel open mid-grab.
+                const step = getStep(dragging.stepId);
+                if (step) showDetailForStep(step);
             }
             dragging = null;
             return;
