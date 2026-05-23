@@ -574,11 +574,10 @@ const WFE = (() => {
             window.showToast(window.t('workflow.toast.name_required'), 'error');
             return;
         }
+        // No "actions required" block — let the user save in-progress drafts.
+        // We warn after a successful save if there are 0 actions, so they
+        // know the workflow won't do anything useful yet.
         const actionNodes = nodes.filter(n => n.kind === 'action');
-        if (!actionNodes.length) {
-            window.showToast(window.t('workflow.toast.actions_required'), 'error');
-            return;
-        }
         setStatus('saving');
 
         // Sort by y so execution order matches visual order on the canvas.
@@ -610,7 +609,13 @@ const WFE = (() => {
                 window.showToast(d.error || 'Save failed', 'error');
                 return;
             }
-            window.showToast(window.t('workflow.toast.saved'), 'success');
+            // Saved successfully. If the workflow has no actions yet, tell
+            // the user it won't do anything — but don't block the save.
+            if (!actionNodes.length) {
+                window.showToast(window.t('workflow.toast.saved_no_actions'), 'info');
+            } else {
+                window.showToast(window.t('workflow.toast.saved'), 'success');
+            }
             dirty = false;
             setStatus('saved');
             if (!workflow.id && d.id) {

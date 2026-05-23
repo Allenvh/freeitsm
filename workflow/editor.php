@@ -246,6 +246,6 @@ foreach (array_keys($triggers) as $t) {
         window.WF_ID             = <?php echo (int)$id; ?>;
         window.WF_API            = '../api/workflow/';
     </script>
-    <script src="../assets/js/workflow-editor.js?v=2"></script>
+    <script src="../assets/js/workflow-editor.js?v=3"></script>
 </body>
 </html>

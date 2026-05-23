@@ -110,6 +110,7 @@ return [
         'fire_failed'   => 'Test fire failed: %s',
         'name_required' => 'Name is required.',
         'actions_required' => 'At least one action is required.',
+        'saved_no_actions' => 'Saved — but this workflow has no actions yet, so it won\'t do anything until you add one.',
         'ai_applied'      => 'AI proposal applied to the canvas. Tweak then save.',
         'ai_failed'       => 'AI co-author failed: %s',
         'saved_settings'  => 'Settings saved.',

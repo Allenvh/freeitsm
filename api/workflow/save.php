@@ -41,10 +41,9 @@ if (!array_key_exists($triggerEvent, WorkflowEngine::availableTriggers())) {
     echo json_encode(['success' => false, 'error' => 'Unknown trigger event']);
     exit;
 }
-if (empty($actions)) {
-    echo json_encode(['success' => false, 'error' => 'At least one action is required']);
-    exit;
-}
+// No "actions required" check — the engine tolerates 0 actions (the loop
+// just doesn't run), and the client warns the user that the workflow is a
+// no-op rather than blocking the save. Lets you save in-progress drafts.
 
 // Validate each action's type is in the catalogue so we don't store something
 // the engine can't execute.
