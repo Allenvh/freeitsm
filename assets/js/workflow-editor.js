@@ -174,7 +174,15 @@ const WFE = (() => {
     }
     function addAction() {
         const firstType = Object.keys(window.WF_ACTION_DEFS)[0];
-        const defaults = firstType === 'log_message' ? { message: '' } : {};
+        // Seed args from the action's spec — picks up `default` values
+        // like `{{ticket.id}}` for ticket_id, so the user doesn't have
+        // to type the variable themselves.
+        const def = window.WF_ACTION_DEFS[firstType] || {};
+        const defaults = {};
+        Object.keys(def.args || {}).forEach(k => {
+            const s = def.args[k];
+            if (s && typeof s === 'object' && s.default != null) defaults[k] = s.default;
+        });
         const lastY = lowestNodeY('action', 'condition', 'trigger');
         const n = addActionNode(COL_X, lastY + ROW_GAP, firstType, defaults);
         renderAll();
@@ -280,12 +288,33 @@ const WFE = (() => {
         if (n.kind === 'action') {
             const def = window.WF_ACTION_DEFS[n.type];
             const label = def ? def.label : n.type;
-            // Show a snippet of the args so the action's intent is visible
-            // on the canvas without selecting it.
+            // Show a one-line summary of the configured args so the action's
+            // intent is visible on the canvas without selecting it. Picks
+            // the most salient arg for each action type — message / status /
+            // priority / analyst / subject — falling back to the first
+            // non-empty arg's value otherwise.
+            const args = n.args || {};
+            const lookupLabel = (lookupKey, idVal) => {
+                const list = (window.WF_ACTION_LOOKUPS && window.WF_ACTION_LOOKUPS[lookupKey]) || [];
+                const hit = list.find(v => String(v.id) === String(idVal));
+                return hit ? hit.label : String(idVal);
+            };
             let snippet = '';
-            if (n.type === 'log_message' && n.args && typeof n.args.message === 'string') {
-                snippet = n.args.message.slice(0, 60) + (n.args.message.length > 60 ? '…' : '');
+            switch (n.type) {
+                case 'log_message':         snippet = String(args.message || ''); break;
+                case 'set_ticket_status':   if (args.status_id)   snippet = '→ ' + lookupLabel('ticket_status',   args.status_id);   break;
+                case 'set_ticket_priority': if (args.priority_id) snippet = '→ ' + lookupLabel('ticket_priority', args.priority_id); break;
+                case 'assign_ticket':       if (args.analyst_id)  snippet = '→ ' + lookupLabel('analyst',         args.analyst_id);  break;
+                case 'add_ticket_note':     snippet = String(args.note || ''); break;
+                case 'send_email':          snippet = String(args.subject || ''); break;
+                case 'create_task':         snippet = String(args.title || ''); break;
+                case 'create_ticket':       snippet = String(args.subject || ''); break;
+                default: {
+                    const first = Object.values(args).find(v => v != null && v !== '');
+                    if (first != null) snippet = String(first);
+                }
             }
+            if (snippet.length > 60) snippet = snippet.slice(0, 60) + '…';
             return `
                 <div class="wf-node-kind">Action</div>
                 <div class="wf-node-title">${escHtml(label)}</div>
@@ -640,7 +669,100 @@ const WFE = (() => {
         typeSel.value = n.type;
         const def = window.WF_ACTION_DEFS[n.type];
         document.getElementById('wfActDesc').textContent = def ? def.description : '';
-        document.getElementById('wfActArgs').value = JSON.stringify(n.args || {}, null, 2);
+        renderActionArgsForm(n, def);
+    }
+
+    /**
+     * Render the per-action form into #wfActArgsHost based on the action's
+     * args spec in WF_ACTION_DEFS. Replaces the old single JSON textarea —
+     * users now get a labelled control per arg (text input / textarea /
+     * number / checkbox / lookup dropdown). Free-text args that support
+     * variables show a small `{{ticket.id}}` hint underneath.
+     */
+    function renderActionArgsForm(n, def) {
+        const host = document.getElementById('wfActArgsHost');
+        if (!host) return;
+        host.innerHTML = '';
+        if (!def || !def.args) return;
+        const argsSpec = def.args;
+        n.args = n.args || {};
+        Object.keys(argsSpec).forEach(argName => {
+            const spec = argsSpec[argName] || {};
+            // Allow the legacy short-form `'message' => 'string'` spec to
+            // still work — treat unknown spec shapes as a plain text input.
+            const norm = (typeof spec === 'object' && spec) ? spec : { type: 'text', label: argName };
+            const fg = document.createElement('div');
+            fg.className = 'form-group';
+            const labelEl = document.createElement('label');
+            labelEl.textContent = (norm.label || argName) + (norm.required ? ' *' : '');
+            labelEl.setAttribute('for', 'wfActArg_' + argName);
+            fg.appendChild(labelEl);
+
+            const currentVal = (argName in n.args) ? n.args[argName] : (norm.default != null ? norm.default : '');
+
+            let ctrl;
+            if (norm.type === 'textarea') {
+                ctrl = document.createElement('textarea');
+                ctrl.rows = 4;
+                ctrl.value = currentVal == null ? '' : String(currentVal);
+            } else if (norm.type === 'numeric') {
+                ctrl = document.createElement('input');
+                ctrl.type = 'number';
+                ctrl.value = currentVal == null ? '' : String(currentVal);
+            } else if (norm.type === 'bool') {
+                ctrl = document.createElement('input');
+                ctrl.type = 'checkbox';
+                ctrl.checked = !!currentVal;
+            } else if (norm.type === 'lookup') {
+                ctrl = document.createElement('select');
+                const blank = document.createElement('option');
+                blank.value = ''; blank.textContent = norm.required ? '— select —' : '(none)';
+                ctrl.appendChild(blank);
+                const values = (window.WF_ACTION_LOOKUPS && window.WF_ACTION_LOOKUPS[norm.lookup]) || [];
+                values.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = String(v.id);
+                    opt.textContent = v.label;
+                    if (String(currentVal) === String(v.id)) opt.selected = true;
+                    ctrl.appendChild(opt);
+                });
+            } else {
+                ctrl = document.createElement('input');
+                ctrl.type = 'text';
+                ctrl.value = currentVal == null ? '' : String(currentVal);
+            }
+            ctrl.id = 'wfActArg_' + argName;
+            ctrl.dataset.argName = argName;
+            ctrl.addEventListener(norm.type === 'bool' ? 'change' : 'input', () => {
+                updateActionArgFromControl(argName, norm.type, ctrl);
+            });
+            fg.appendChild(ctrl);
+
+            if (norm.supports_vars) {
+                const hint = document.createElement('small');
+                hint.style.cssText = 'display: block; color: #6b7280; margin-top: 4px; font-size: 11.5px;';
+                hint.textContent = 'Supports variables like {{ticket.id}}, {{ticket.subject}}, {{ticket.priority_id}}.';
+                fg.appendChild(hint);
+            }
+            host.appendChild(fg);
+
+            // Seed n.args with the rendered default so it round-trips
+            // through save without the user having to touch every field.
+            if (!(argName in n.args) && norm.default != null) n.args[argName] = norm.default;
+        });
+    }
+
+    function updateActionArgFromControl(argName, type, ctrl) {
+        const n = nodes.find(x => x.id === selectedNodeId);
+        if (!n || n.kind !== 'action') return;
+        let val;
+        if (type === 'bool') val = ctrl.checked;
+        else val = ctrl.value;
+        n.args = n.args || {};
+        if (val === '' && type !== 'bool') delete n.args[argName];
+        else n.args[argName] = val;
+        if (n.el) n.el.innerHTML = renderNodeContent(n);
+        markDirty();
     }
 
     function bindWorkflowDetailEvents() {
@@ -703,25 +825,19 @@ const WFE = (() => {
         const n = nodes.find(x => x.id === selectedNodeId);
         if (!n || n.kind !== 'action') return;
         n.type = document.getElementById('wfActType').value;
-        // Reset args to the new action's defaults so the user sees a sensible
-        // starting JSON rather than the previous action's keys.
-        if (n.type === 'log_message') n.args = { message: '' };
-        else n.args = {};
+        // Reset args and seed defaults from the new action's spec so the
+        // user sees the right per-arg controls (and pre-filled `{{ticket.id}}`
+        // / similar defaults) rather than the previous action's keys.
+        const def = window.WF_ACTION_DEFS[n.type] || {};
+        const next = {};
+        Object.keys(def.args || {}).forEach(k => {
+            const s = def.args[k];
+            if (s && typeof s === 'object' && s.default != null) next[k] = s.default;
+        });
+        n.args = next;
         showDetailForAction(n);
         if (n.el) n.el.innerHTML = renderNodeContent(n);
         markDirty();
-    }
-    function updateActionArgsFromDetail() {
-        const n = nodes.find(x => x.id === selectedNodeId);
-        if (!n || n.kind !== 'action') return;
-        const raw = document.getElementById('wfActArgs').value;
-        try {
-            n.args = raw ? JSON.parse(raw) : {};
-            if (n.el) n.el.innerHTML = renderNodeContent(n);
-            markDirty();
-        } catch (e) {
-            // Invalid JSON — keep the old args; the user is mid-edit.
-        }
     }
 
     // =========================================================
@@ -1125,7 +1241,6 @@ const WFE = (() => {
         updateConditionFromDetail,
         onConditionMultiToggle,
         updateActionTypeFromDetail,
-        updateActionArgsFromDetail,
         // AI co-author
         openAiModal, closeAiModal, aiGenerate, aiApply, aiDiscard,
     };

@@ -55,6 +55,22 @@ foreach ($fieldsByTrigger as $fields) {
         $fieldTypeByField[$field] = WorkflowEngine::fieldType($field);
     }
 }
+
+// Action-arg lookups — same idea as the condition lookups above, but keyed
+// by lookup name (the value of an action arg's `lookup` spec). Built once
+// here so the editor can populate <select> dropdowns offline.
+$actionLookupValues = [];
+foreach ($actionDefs as $actionKey => $def) {
+    foreach (($def['args'] ?? []) as $argSpec) {
+        if (is_array($argSpec) && ($argSpec['type'] ?? '') === 'lookup' && !empty($argSpec['lookup'])) {
+            $lk = $argSpec['lookup'];
+            if (!isset($actionLookupValues[$lk])) {
+                $vals = WorkflowEngine::availableActionLookup($lk);
+                $actionLookupValues[$lk] = $vals ?? [];
+            }
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -196,10 +212,12 @@ foreach ($fieldsByTrigger as $fields) {
                         </select>
                         <small id="wfActDesc" style="display: block; color: #666; margin-top: 4px;"></small>
                     </div>
-                    <div class="form-group">
-                        <label for="wfActArgs"><?php echo htmlspecialchars(t('workflow.editor.action_args')); ?></label>
-                        <textarea id="wfActArgs" rows="6" spellcheck="false" oninput="WFE.updateActionArgsFromDetail()" style="font-family: 'Consolas', monospace; font-size: 12.5px;"></textarea>
-                    </div>
+                    <!-- JS builds a per-arg form here based on
+                         WF_ACTION_DEFS[type].args (text / textarea /
+                         numeric / bool / lookup). Replaces the old single
+                         JSON textarea so users don't need to hand-author
+                         JSON to wire an action. -->
+                    <div id="wfActArgsHost"></div>
                     <button class="wf-detail-delete" onclick="WFE.deleteSelected()">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         <?php echo htmlspecialchars(t('workflow.editor.remove')); ?>
@@ -276,9 +294,13 @@ foreach ($fieldsByTrigger as $fields) {
         // operators the editor offers for each field — text fields don't
         // get gt/lt, numeric fields don't get contains/not_contains.
         window.WF_FIELD_TYPES    = <?php echo json_encode($fieldTypeByField); ?>;
+        // Per-named-lookup {id, label} pairs for action-arg dropdowns
+        // (status, priority, analyst, department, etc.). Mirrors
+        // WF_LOOKUP_VALUES but keyed by lookup name rather than field path.
+        window.WF_ACTION_LOOKUPS = <?php echo json_encode($actionLookupValues); ?>;
         window.WF_ID             = <?php echo (int)$id; ?>;
         window.WF_API            = '../api/workflow/';
     </script>
-    <script src="../assets/js/workflow-editor.js?v=7"></script>
+    <script src="../assets/js/workflow-editor.js?v=8"></script>
 </body>
 </html>

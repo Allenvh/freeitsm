@@ -98,10 +98,31 @@ try {
     foreach ($ops as $slug => $label) {
         $opLines[] = "  - {$slug} ({$label})";
     }
+    // Build a human-readable per-arg list for each action — the AI can read
+    // it more reliably than the raw JSON shape. Each arg is annotated with
+    // its type, whether it's required, default value, and (for lookup args)
+    // a compact id=label table so the model picks real ids.
     $actionLines = [];
     foreach ($actions as $slug => $def) {
-        $argsShape = isset($def['args']) ? json_encode($def['args']) : '{}';
-        $actionLines[] = "  - {$slug} — {$def['label']}. Args shape: {$argsShape}. {$def['description']}";
+        $argLines = [];
+        foreach (($def['args'] ?? []) as $argName => $spec) {
+            // Backwards-compat: older spec form was a plain type string.
+            $norm = is_array($spec) ? $spec : ['type' => (string)$spec, 'label' => $argName];
+            $bits = [$norm['type'] ?? 'text'];
+            if (!empty($norm['required']))      $bits[] = 'required';
+            if (!empty($norm['supports_vars'])) $bits[] = 'supports {{vars}}';
+            if (array_key_exists('default', $norm)) $bits[] = 'default=' . json_encode($norm['default']);
+            $line = "      • {$argName} (" . implode(', ', $bits) . ')';
+            if (($norm['type'] ?? '') === 'lookup' && !empty($norm['lookup'])) {
+                $values = WorkflowEngine::availableActionLookup($norm['lookup']) ?: [];
+                $sample = array_slice($values, 0, 8);
+                $pairs = [];
+                foreach ($sample as $v) $pairs[] = $v['id'] . '=' . $v['label'];
+                if ($pairs) $line .= ' [' . implode(', ', $pairs) . (count($values) > count($sample) ? ', …' : '') . ']';
+            }
+            $argLines[] = $line;
+        }
+        $actionLines[] = "  - {$slug} — {$def['label']}. {$def['description']}\n" . implode("\n", $argLines);
     }
 
     $systemPrompt = <<<SYS
@@ -120,10 +141,14 @@ Available triggers (slug — description. Fields list valid `condition.field` va
 Available operators (use the slug, not the label):
 {OPS}
 
-Available actions (slug — description. Args shape shows what keys go in `action.args`):
+Available actions (slug — description, then per-arg type / required / defaults / lookup tables):
 {ACTIONS}
 
-IMPORTANT — only one action handler is implemented right now: `log_message`. Even if the user describes "send an email" or "create a ticket", the realistic action you can propose today is `log_message` with a message that documents the intent (e.g. "TODO: send email to manager when this fires"). Be honest about this limitation in your explanation if relevant.
+Action arg rules:
+  - Arg values are strings. For lookup args (status_id / priority_id / analyst_id / department_id / type_id / assignee_id) use the numeric id from the lookup table shown alongside the arg, as a string. Example: `{"type": "set_ticket_priority", "args": {"ticket_id": "{{ticket.id}}", "priority_id": "4"}}`.
+  - Args marked "supports {{vars}}" can reference fields from the dispatch payload via `{{path.to.field}}` — e.g. `{{ticket.id}}`, `{{ticket.subject}}`, `{{ticket.priority_id}}`. The engine substitutes them at execution time. Prefer the variable to a literal id whenever the workflow should operate on the ticket that triggered it.
+  - Args with a default value (shown as `default=...`) can be omitted from your output if the default is right — but it's clearer to include them explicitly.
+  - Don't include args the action's spec doesn't list — the engine ignores unknown keys but the editor's preview won't show them.
 
 Operator rules per field type:
   - LOOKUP fields (those with id=label annotations): use `in` / `not_in` / `is_empty` / `is_not_empty` only. `in` works fine with a single-value array for an exact match, so don't reach for `equals`. Value is an array of ids as strings.
@@ -147,7 +172,7 @@ Output format — respond ONLY with a single JSON object, no markdown fences, no
   "actions": [
     { "type": "<action slug>", "args": { ... } }
   ],
-  "explanation": "2-4 sentences describing what you built and why, in plain English. Mention any caveats (e.g. 'the only action available today is log_message, so I've made it document the intent — a real send-email action lands in a future commit')."
+  "explanation": "2-4 sentences describing what you built and why, in plain English. Mention any caveats (e.g. 'I used {{ticket.id}} so this fires for whichever ticket triggered the workflow' or 'I left the assignee blank so it lands unassigned — set one if you want auto-assignment')."
 }
 
 If the user is iterating on an existing workflow, you'll see it in the input. Treat the request as a delta: keep what makes sense, change what they asked to change.

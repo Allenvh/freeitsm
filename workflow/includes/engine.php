@@ -245,21 +245,139 @@ class WorkflowEngine
     }
 
     /**
-     * Action handlers available to the engine. v1 ships just `log_message`
-     * so the engine is exercisable end-to-end (build a workflow, fire it,
-     * see the log entry) without needing every host module to be wired up.
-     * Subsequent commits will add set_ticket_status, send_email, create_task,
-     * graph_add_to_group, etc.
+     * Action handlers available to the engine. Each entry's `args` is the
+     * editor UI spec, NOT just a name → type map — it drives the per-action
+     * form the user sees when they pick an action from the dropdown, so the
+     * editor never has to know about specific action types.
+     *
+     * Per-arg fields:
+     *   - type:          'text' / 'textarea' / 'numeric' / 'bool' / 'lookup'
+     *   - label:         human-readable label shown above the input
+     *   - required:      whether the engine throws if missing (default false)
+     *   - default:       pre-fill value when the action is first added
+     *   - supports_vars: arg can reference payload data via {{path.to.field}}
+     *                    (drives an inline hint in the UI; the engine
+     *                    interpolates these via renderTemplate())
+     *   - lookup:        for type='lookup', names a lookup source
+     *                    (`ticket_status`, `ticket_priority`, `analyst`,
+     *                    `department`, `ticket_type`, `task_status`,
+     *                    `task_priority`) — values listed in
+     *                    ACTION_ARG_LOOKUPS below
      */
     public static function availableActions(): array
     {
+        $ticketIdArg = [
+            'type'          => 'text',
+            'label'         => 'Ticket ID',
+            'default'       => '{{ticket.id}}',
+            'supports_vars' => true,
+            'required'      => true,
+        ];
         return [
             'log_message' => [
                 'label'       => 'Log a message',
                 'description' => 'Write a message into this workflow\'s execution log. Useful as a placeholder while you scaffold a rule and as a test for the engine itself.',
-                'args'        => ['message' => 'string'],
+                'args'        => [
+                    'message' => ['type' => 'textarea', 'label' => 'Message', 'required' => true, 'supports_vars' => true],
+                ],
+            ],
+            'set_ticket_status' => [
+                'label'       => 'Set ticket status',
+                'description' => 'Change a ticket\'s status. Mirrors picking from the Status dropdown — automatically sets / clears the closed timestamp.',
+                'args'        => [
+                    'ticket_id' => $ticketIdArg,
+                    'status_id' => ['type' => 'lookup', 'label' => 'New status', 'lookup' => 'ticket_status', 'required' => true],
+                ],
+            ],
+            'set_ticket_priority' => [
+                'label'       => 'Set ticket priority',
+                'description' => 'Change a ticket\'s priority.',
+                'args'        => [
+                    'ticket_id'   => $ticketIdArg,
+                    'priority_id' => ['type' => 'lookup', 'label' => 'New priority', 'lookup' => 'ticket_priority', 'required' => true],
+                ],
+            ],
+            'assign_ticket' => [
+                'label'       => 'Assign ticket to analyst',
+                'description' => 'Set a ticket\'s owner / assignee. Use the round-robin or load-balancing logic elsewhere — this just assigns to the chosen analyst.',
+                'args'        => [
+                    'ticket_id'  => $ticketIdArg,
+                    'analyst_id' => ['type' => 'lookup', 'label' => 'Assign to', 'lookup' => 'analyst', 'required' => true],
+                ],
+            ],
+            'add_ticket_note' => [
+                'label'       => 'Add a note to the ticket',
+                'description' => 'Append a free-text note to the ticket\'s audit trail (visible to analysts; never sent to the requester).',
+                'args'        => [
+                    'ticket_id' => $ticketIdArg,
+                    'note'      => ['type' => 'textarea', 'label' => 'Note', 'required' => true, 'supports_vars' => true],
+                ],
+            ],
+            'send_email' => [
+                'label'       => 'Send an email',
+                'description' => 'Send an email to the ticket\'s requester using the ticket\'s mailbox. The body is plain-text-with-newlines or HTML; both work.',
+                'args'        => [
+                    'ticket_id' => $ticketIdArg,
+                    'to'        => ['type' => 'text', 'label' => 'To (blank = ticket requester)', 'supports_vars' => true],
+                    'subject'   => ['type' => 'text', 'label' => 'Subject', 'required' => true, 'supports_vars' => true],
+                    'body'      => ['type' => 'textarea', 'label' => 'Body', 'required' => true, 'supports_vars' => true],
+                ],
+            ],
+            'create_task' => [
+                'label'       => 'Create a task',
+                'description' => 'Spawn a task. If a ticket is in scope it\'s linked automatically.',
+                'args'        => [
+                    'title'       => ['type' => 'text', 'label' => 'Title', 'required' => true, 'supports_vars' => true],
+                    'description' => ['type' => 'textarea', 'label' => 'Description', 'supports_vars' => true],
+                    'status_id'   => ['type' => 'lookup', 'label' => 'Status (blank = default)', 'lookup' => 'task_status'],
+                    'priority_id' => ['type' => 'lookup', 'label' => 'Priority (blank = default)', 'lookup' => 'task_priority'],
+                    'assignee_id' => ['type' => 'lookup', 'label' => 'Assign to', 'lookup' => 'analyst'],
+                    'ticket_id'   => ['type' => 'text', 'label' => 'Linked ticket ID', 'default' => '{{ticket.id}}', 'supports_vars' => true],
+                ],
+            ],
+            'create_ticket' => [
+                'label'       => 'Create a ticket',
+                'description' => 'Create a new ticket. Useful for fan-out workflows like "new starter form → IT + HR + Facilities tickets".',
+                'args'        => [
+                    'subject'             => ['type' => 'text', 'label' => 'Subject', 'required' => true, 'supports_vars' => true],
+                    'body'                => ['type' => 'textarea', 'label' => 'Body', 'supports_vars' => true],
+                    'priority_id'         => ['type' => 'lookup', 'label' => 'Priority', 'lookup' => 'ticket_priority'],
+                    'department_id'       => ['type' => 'lookup', 'label' => 'Department', 'lookup' => 'department'],
+                    'type_id'             => ['type' => 'lookup', 'label' => 'Ticket type', 'lookup' => 'ticket_type'],
+                    'assigned_analyst_id' => ['type' => 'lookup', 'label' => 'Assign to', 'lookup' => 'analyst'],
+                    'from_email'          => ['type' => 'text', 'label' => 'Requester email', 'default' => '{{ticket.requester_email}}', 'supports_vars' => true],
+                    'from_name'           => ['type' => 'text', 'label' => 'Requester name', 'supports_vars' => true],
+                ],
             ],
         ];
+    }
+
+    /**
+     * Action-arg lookup sources. Keys are the `lookup` value used in action
+     * arg specs; values name an underlying FIELD_LOOKUP_TABLES entry so
+     * action args reuse the same {id, label} feed that conditions use,
+     * meaning a new lookup field added for conditions is automatically
+     * available to actions too.
+     */
+    private const ACTION_ARG_LOOKUPS = [
+        'ticket_status'   => 'ticket.status_id',
+        'ticket_priority' => 'ticket.priority_id',
+        'analyst'         => 'ticket.assigned_analyst_id',
+        'department'      => 'ticket.department_id',
+        'ticket_type'     => 'ticket.type_id',
+        'task_status'     => 'task.status_id',
+        'task_priority'   => 'task.priority_id',
+    ];
+
+    /**
+     * Resolve a named action-arg lookup to its {id, label} pairs.
+     * Returns null for unknown keys — the editor falls back to a text input
+     * in that case so the workflow editor never breaks on a stale spec.
+     */
+    public static function availableActionLookup(string $key): ?array
+    {
+        if (!isset(self::ACTION_ARG_LOOKUPS[$key])) return null;
+        return self::availableValuesForField(self::ACTION_ARG_LOOKUPS[$key]);
     }
 
     // -----------------------------------------------------------------
@@ -494,20 +612,360 @@ class WorkflowEngine
     private static function executeAction(string $type, array $args, array $payload)
     {
         switch ($type) {
-            case 'log_message':
-                return self::action_log_message($args, $payload);
+            case 'log_message':         return self::action_log_message($args, $payload);
+            case 'set_ticket_status':   return self::action_set_ticket_status($args, $payload);
+            case 'set_ticket_priority': return self::action_set_ticket_priority($args, $payload);
+            case 'assign_ticket':       return self::action_assign_ticket($args, $payload);
+            case 'add_ticket_note':     return self::action_add_ticket_note($args, $payload);
+            case 'send_email':          return self::action_send_email($args, $payload);
+            case 'create_task':         return self::action_create_task($args, $payload);
+            case 'create_ticket':       return self::action_create_ticket($args, $payload);
             default:
                 throw new Exception("Unknown action type: {$type}");
         }
     }
 
+    /**
+     * Substitute `{{path.to.field}}` placeholders in a string with values
+     * read from the payload via dot-notation. Missing fields render as
+     * empty. Arrays are JSON-encoded so a list-valued field renders as
+     * something rather than the surprising-PHP-default of "Array".
+     *
+     * This is what makes `subject: "Ticket {{ticket.id}} closed"` work —
+     * the engine resolves it against the dispatch payload before passing
+     * the string to the action handler.
+     */
+    private static function renderTemplate(string $tmpl, array $payload): string
+    {
+        return preg_replace_callback('/\{\{\s*([^}]+?)\s*\}\}/', function ($m) use ($payload) {
+            $val = self::dotGet($payload, $m[1]);
+            if (is_array($val)) return json_encode($val);
+            return $val === null ? '' : (string)$val;
+        }, $tmpl);
+    }
+
+    /**
+     * Resolve a single arg to a (rendered) string and trim it. Returns
+     * '' if the arg is missing — handlers decide whether that's fatal.
+     */
+    private static function argString(array $args, string $key, array $payload): string
+    {
+        $raw = $args[$key] ?? '';
+        if ($raw === null) return '';
+        $rendered = self::renderTemplate((string)$raw, $payload);
+        return trim($rendered);
+    }
+
+    /**
+     * Resolve a single arg to an int, or null if blank / non-numeric.
+     * (Handler enforces required-ness if the arg matters.)
+     */
+    private static function argInt(array $args, string $key, array $payload): ?int
+    {
+        $s = self::argString($args, $key, $payload);
+        if ($s === '' || !is_numeric($s)) return null;
+        return (int)$s;
+    }
+
     private static function action_log_message(array $args, array $payload): array
     {
-        $message = (string)($args['message'] ?? '');
-        // Echo the message verbatim into the step log result — the engine
-        // already writes the step log row, so there's nothing else to do.
-        // Variables in the form {{ticket.id}} aren't resolved in v1.
+        $message = self::argString($args, 'message', $payload);
+        // Variables in the form {{ticket.id}} are resolved by argString().
         return ['message' => $message];
+    }
+
+    private static function action_set_ticket_status(array $args, array $payload): array
+    {
+        $ticketId = self::argInt($args, 'ticket_id', $payload);
+        $statusId = self::argInt($args, 'status_id', $payload);
+        if (!$ticketId) throw new Exception('ticket_id is required');
+        if (!$statusId) throw new Exception('status_id is required');
+        $conn = connectToDatabase();
+        $sLookup = $conn->prepare("SELECT name, is_closed FROM ticket_statuses WHERE id = ? LIMIT 1");
+        $sLookup->execute([$statusId]);
+        $sRow = $sLookup->fetch(PDO::FETCH_ASSOC);
+        if (!$sRow) throw new Exception("Unknown status_id: {$statusId}");
+        // Mirror assign_ticket.php's closure handling — when the new status
+        // is_closed, stamp closed_datetime if it's not already set; when
+        // reopening, clear it. Idempotent if the status hasn't actually
+        // changed.
+        $sets = ['status_id = ?', 'updated_datetime = UTC_TIMESTAMP()'];
+        $params = [$statusId];
+        if ((int)$sRow['is_closed']) {
+            $sets[] = 'closed_datetime = COALESCE(closed_datetime, UTC_TIMESTAMP())';
+        } else {
+            $sets[] = 'closed_datetime = NULL';
+        }
+        $params[] = $ticketId;
+        $conn->prepare('UPDATE tickets SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($params);
+        return ['ticket_id' => $ticketId, 'status_id' => $statusId, 'status_name' => $sRow['name']];
+    }
+
+    private static function action_set_ticket_priority(array $args, array $payload): array
+    {
+        $ticketId   = self::argInt($args, 'ticket_id', $payload);
+        $priorityId = self::argInt($args, 'priority_id', $payload);
+        if (!$ticketId)   throw new Exception('ticket_id is required');
+        if (!$priorityId) throw new Exception('priority_id is required');
+        $conn = connectToDatabase();
+        $pLookup = $conn->prepare('SELECT name FROM ticket_priorities WHERE id = ? LIMIT 1');
+        $pLookup->execute([$priorityId]);
+        $pRow = $pLookup->fetch(PDO::FETCH_ASSOC);
+        if (!$pRow) throw new Exception("Unknown priority_id: {$priorityId}");
+        $conn->prepare('UPDATE tickets SET priority_id = ?, updated_datetime = UTC_TIMESTAMP() WHERE id = ?')
+             ->execute([$priorityId, $ticketId]);
+        return ['ticket_id' => $ticketId, 'priority_id' => $priorityId, 'priority_name' => $pRow['name']];
+    }
+
+    private static function action_assign_ticket(array $args, array $payload): array
+    {
+        $ticketId  = self::argInt($args, 'ticket_id', $payload);
+        $analystId = self::argInt($args, 'analyst_id', $payload);
+        if (!$ticketId)  throw new Exception('ticket_id is required');
+        if (!$analystId) throw new Exception('analyst_id is required');
+        $conn = connectToDatabase();
+        $aLookup = $conn->prepare('SELECT full_name FROM analysts WHERE id = ? LIMIT 1');
+        $aLookup->execute([$analystId]);
+        $aRow = $aLookup->fetch(PDO::FETCH_ASSOC);
+        if (!$aRow) throw new Exception("Unknown analyst_id: {$analystId}");
+        // Mirror assign_ticket.php's explicit-analyst branch — set BOTH
+        // assigned_analyst_id and owner_id so the detail-pane Owner field
+        // stays in sync.
+        $conn->prepare('UPDATE tickets SET assigned_analyst_id = ?, owner_id = ?, updated_datetime = UTC_TIMESTAMP() WHERE id = ?')
+             ->execute([$analystId, $analystId, $ticketId]);
+        return ['ticket_id' => $ticketId, 'analyst_id' => $analystId, 'analyst_name' => $aRow['full_name']];
+    }
+
+    private static function action_add_ticket_note(array $args, array $payload): array
+    {
+        $ticketId = self::argInt($args, 'ticket_id', $payload);
+        $note     = self::argString($args, 'note', $payload);
+        if (!$ticketId) throw new Exception('ticket_id is required');
+        if ($note === '') throw new Exception('note is required');
+        $conn = connectToDatabase();
+        // Use the same `ticket_audit` table the rest of the app writes to
+        // for analyst-visible activity. analyst_id is null to flag this as
+        // a workflow-engine-driven note (so the UI can render it differently
+        // if it wants to).
+        $conn->prepare(
+            "INSERT INTO ticket_audit (ticket_id, analyst_id, field_name, old_value, new_value, created_datetime)
+             VALUES (?, NULL, 'Workflow Note', NULL, ?, UTC_TIMESTAMP())"
+        )->execute([$ticketId, $note]);
+        return ['ticket_id' => $ticketId, 'note_length' => strlen($note)];
+    }
+
+    private static function action_send_email(array $args, array $payload): array
+    {
+        $ticketId = self::argInt($args, 'ticket_id', $payload);
+        $subject  = self::argString($args, 'subject', $payload);
+        $body     = self::argString($args, 'body',    $payload);
+        $to       = self::argString($args, 'to',      $payload);
+        if (!$ticketId)        throw new Exception('ticket_id is required');
+        if ($subject === '')   throw new Exception('subject is required');
+        if ($body === '')      throw new Exception('body is required');
+
+        // Reuse template_email.php's helpers — they handle mailbox lookup,
+        // token refresh, Graph / Gmail dispatch, and saving the sent email
+        // to the emails table for the threading SDREF marker. We're sending
+        // ad-hoc content (not an ITSM template), but the plumbing is the same.
+        require_once dirname(dirname(__DIR__)) . '/includes/template_email.php';
+
+        $conn = connectToDatabase();
+        $merge = buildTicketMergeData($conn, $ticketId);
+        if (!$merge) throw new Exception("Ticket not found: {$ticketId}");
+
+        $recipient = $to !== '' ? $to : ($merge['requester_email'] ?? '');
+        if ($recipient === '') throw new Exception('No recipient (and ticket has no requester email)');
+
+        $mailbox = templateGetMailboxForTicket($conn, $ticketId);
+        if (!$mailbox) throw new Exception('Ticket has no associated mailbox — cannot send');
+
+        $tokenJson = preg_replace('/[\x00-\x1F\x7F]/', '', $mailbox['token_data'] ?? '');
+        $tokenData = $tokenJson ? json_decode($tokenJson, true) : null;
+        if (!$tokenData || !isset($tokenData['access_token'])) {
+            throw new Exception('Mailbox token is missing or invalid');
+        }
+
+        $provider = $mailbox['provider'] ?? 'microsoft';
+        if ($provider === 'google') {
+            require_once dirname(dirname(__DIR__)) . '/includes/gmail.php';
+            $accessToken = gmailGetValidAccessToken($conn, $mailbox, $tokenData);
+        } else {
+            $accessToken = templateGetValidAccessToken($conn, $mailbox, $tokenData);
+        }
+        if (!$accessToken) throw new Exception('Failed to obtain a valid access token');
+
+        $ticketRef = $merge['ticket_reference'] ?? '';
+        $fullSubject = $ticketRef !== '' ? "[SDREF:{$ticketRef}] {$subject}" : $subject;
+        $fullBody    = buildTemplateEmailBody($body, $ticketRef);
+
+        if ($provider === 'google') {
+            $fromAddress = $mailbox['target_mailbox'] ?? '';
+            gmailSendEmail($accessToken, $recipient, $fullSubject, $fullBody, $fromAddress);
+        } else {
+            $message = [
+                'message' => [
+                    'subject'      => $fullSubject,
+                    'body'         => ['contentType' => 'HTML', 'content' => $fullBody],
+                    'toRecipients' => [['emailAddress' => ['address' => $recipient]]],
+                ],
+                'saveToSentItems' => true,
+            ];
+            templateSendViaGraph($accessToken, $message);
+        }
+        templateSaveSentEmail($conn, $ticketId, $mailbox, $recipient, $fullSubject, $body);
+        return ['ticket_id' => $ticketId, 'to' => $recipient, 'subject' => $subject];
+    }
+
+    private static function action_create_task(array $args, array $payload): array
+    {
+        $title       = self::argString($args, 'title',       $payload);
+        $description = self::argString($args, 'description', $payload);
+        $statusId    = self::argInt($args, 'status_id',   $payload);
+        $priorityId  = self::argInt($args, 'priority_id', $payload);
+        $assigneeId  = self::argInt($args, 'assignee_id', $payload);
+        $ticketId    = self::argInt($args, 'ticket_id',   $payload);
+        if ($title === '') throw new Exception('title is required');
+
+        $conn = connectToDatabase();
+        // Fill in default status / priority when the user didn't pick one,
+        // so the resulting task lands somewhere sensible on the board.
+        if (!$statusId) {
+            $s = $conn->query("SELECT id FROM task_statuses WHERE is_default = 1 LIMIT 1")->fetchColumn();
+            if (!$s) $s = $conn->query("SELECT id FROM task_statuses ORDER BY display_order, id LIMIT 1")->fetchColumn();
+            $statusId = $s ? (int)$s : null;
+        }
+        if (!$priorityId) {
+            $p = $conn->query("SELECT id FROM task_priorities WHERE is_default = 1 LIMIT 1")->fetchColumn();
+            $priorityId = $p ? (int)$p : null;
+        }
+        // Append to the end of the destination column's board (same
+        // calculation api/tasks/save.php does on create).
+        $boardPos = 0;
+        if ($statusId) {
+            $posStmt = $conn->prepare("SELECT COALESCE(MAX(board_position), -1) + 1 FROM tasks WHERE status_id = ? AND parent_task_id IS NULL");
+            $posStmt->execute([$statusId]);
+            $boardPos = (int)$posStmt->fetchColumn();
+        }
+        $conn->prepare(
+            "INSERT INTO tasks (title, description, status_id, priority_id,
+                                assigned_analyst_id, ticket_id, board_position, created_by_id,
+                                created_datetime, updated_datetime)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+        )->execute([
+            $title,
+            $description !== '' ? $description : null,
+            $statusId,
+            $priorityId,
+            $assigneeId,
+            $ticketId,
+            $boardPos,
+        ]);
+        $newId = (int)$conn->lastInsertId();
+        return [
+            'task_id'     => $newId,
+            'title'       => $title,
+            'status_id'   => $statusId,
+            'priority_id' => $priorityId,
+            'assignee_id' => $assigneeId,
+            'ticket_id'   => $ticketId,
+        ];
+    }
+
+    private static function action_create_ticket(array $args, array $payload): array
+    {
+        $subject            = self::argString($args, 'subject', $payload);
+        $body               = self::argString($args, 'body',    $payload);
+        $priorityId         = self::argInt($args, 'priority_id',         $payload);
+        $departmentId       = self::argInt($args, 'department_id',       $payload);
+        $typeId             = self::argInt($args, 'type_id',             $payload);
+        $assignedAnalystId  = self::argInt($args, 'assigned_analyst_id', $payload);
+        $fromEmail          = self::argString($args, 'from_email', $payload);
+        $fromName           = self::argString($args, 'from_name',  $payload);
+        if ($subject === '') throw new Exception('subject is required');
+
+        $conn = connectToDatabase();
+        $conn->beginTransaction();
+        try {
+            // Resolve / upsert the user row by email so the ticket has a
+            // requester. If from_email is blank we leave user_id null —
+            // the rest of the app handles unattributed tickets fine.
+            $userId = null;
+            if ($fromEmail !== '') {
+                $uLookup = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+                $uLookup->execute([$fromEmail]);
+                $userId = $uLookup->fetchColumn();
+                if (!$userId) {
+                    $conn->prepare('INSERT INTO users (email, display_name, created_at) VALUES (?, ?, UTC_TIMESTAMP())')
+                         ->execute([$fromEmail, $fromName !== '' ? $fromName : $fromEmail]);
+                    $userId = (int)$conn->lastInsertId();
+                } else {
+                    $userId = (int)$userId;
+                }
+            }
+
+            // Default status to 'Open' (matches api/tickets/create_ticket.php).
+            $statusId = $conn->query("SELECT id FROM ticket_statuses WHERE name = 'Open' LIMIT 1")->fetchColumn();
+            $statusId = $statusId ? (int)$statusId : null;
+
+            // Mirror create_ticket.php's number generator pattern.
+            $ticketNumber = null;
+            for ($attempt = 0; $attempt < 10; $attempt++) {
+                $candidate = chr(rand(65, 90)) . chr(rand(65, 90)) . chr(rand(65, 90)) . '-'
+                           . rand(0, 9) . rand(0, 9) . rand(0, 9) . '-'
+                           . rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9);
+                $check = $conn->prepare("SELECT 1 FROM tickets WHERE ticket_number = ?");
+                $check->execute([$candidate]);
+                if (!$check->fetchColumn()) { $ticketNumber = $candidate; break; }
+            }
+            if (!$ticketNumber) throw new Exception('Failed to generate unique ticket number');
+
+            $conn->prepare(
+                "INSERT INTO tickets (ticket_number, subject, status_id, priority_id,
+                                     department_id, ticket_type_id, assigned_analyst_id,
+                                     user_id, created_datetime, updated_datetime)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+            )->execute([
+                $ticketNumber, $subject, $statusId, $priorityId,
+                $departmentId, $typeId, $assignedAnalystId, $userId,
+            ]);
+            $newTicketId = (int)$conn->lastInsertId();
+
+            // Initial "Manual" email entry so the new ticket appears in the
+            // inbox like all others (same trick api/tickets/create_ticket.php
+            // uses). If body is blank we still want a row.
+            $safeBody = $body !== '' ? $body : '(created by workflow)';
+            $bodyHtml = nl2br(htmlspecialchars($safeBody));
+            $bodyPreview = substr(strip_tags($safeBody), 0, 200);
+            $conn->prepare(
+                "INSERT INTO emails (subject, from_address, from_name, to_recipients,
+                                    received_datetime, body_preview, body_content, body_type,
+                                    has_attachments, importance, is_read, ticket_id,
+                                    is_initial, direction)
+                 VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, 'html', 0, 'normal', 1, ?, 1, 'Manual')"
+            )->execute([
+                $subject,
+                $fromEmail !== '' ? $fromEmail : '',
+                $fromName  !== '' ? $fromName  : ($fromEmail ?: 'Workflow Engine'),
+                $fromEmail !== '' ? $fromEmail : '',
+                $bodyPreview, $bodyHtml, $newTicketId,
+            ]);
+
+            $conn->prepare(
+                "INSERT INTO ticket_audit (ticket_id, analyst_id, field_name, old_value, new_value, created_datetime)
+                 VALUES (?, NULL, 'Ticket Created', NULL, 'Created by workflow', UTC_TIMESTAMP())"
+            )->execute([$newTicketId]);
+
+            $conn->commit();
+            return [
+                'ticket_id'     => $newTicketId,
+                'ticket_number' => $ticketNumber,
+                'subject'       => $subject,
+            ];
+        } catch (Exception $e) {
+            $conn->rollBack();
+            throw $e;
+        }
     }
 
     // -----------------------------------------------------------------
