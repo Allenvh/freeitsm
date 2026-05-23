@@ -39,6 +39,7 @@ define('ENCRYPTED_SETTING_KEYS', [
     'rfp_ai_api_key',
     'tickets_reply_cleanup_api_key',
     'cmdb_ai_api_key',
+    'workflow_ai_api_key',
 ]);
 
 /**
@@ -58,6 +59,7 @@ define('MASKED_SETTING_KEYS', [
     'rfp_ai_api_key',
     'tickets_reply_cleanup_api_key',
     'cmdb_ai_api_key',
+    'workflow_ai_api_key',
 ]);
 
 /**

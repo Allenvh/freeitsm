@@ -23,7 +23,7 @@ $path_prefix = '../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('workflow.help.page_title')); ?></title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/workflow.css?v=3">
+    <link rel="stylesheet" href="../assets/css/workflow.css?v=4">
     <style>
         body { overflow: auto; height: auto; }
         .container { max-width: 880px; }
@@ -54,7 +54,7 @@ $path_prefix = '../';
             <h3>What's in this release</h3>
             <ul>
                 <li><strong>Visual canvas editor</strong> — drag trigger / condition / action nodes on a snap-to-grid canvas; arrows are auto-routed in execution order. Position IS the order — drag a condition above another to reorder.</li>
-                <li><strong>AI co-author</strong> — click the <em>AI co-author</em> button on the toolbar, describe what you want in plain English, and Claude scaffolds the workflow on the canvas. You can iterate ("make it only match Finance" / "add an action to log the ticket id too") and the AI edits what's already there. Requires an Anthropic API key configured under <strong>CMDB &rarr; Settings &rarr; AI Integration</strong> (the workflow co-author reuses that key for now).</li>
+                <li><strong>AI co-author</strong> — click the <em>AI co-author</em> button on the toolbar, describe what you want in plain English, and the AI scaffolds the workflow on the canvas. You can iterate ("make it only match Finance" / "add an action to log the ticket id too") and the AI edits what's already there. Configure the provider (Anthropic / OpenAI), model and API key under <strong>Workflow &rarr; Settings &rarr; AI</strong> — keys are stored per module so billing and access can be granular.</li>
                 <li><strong>Test fire</strong> — synthetic-payload run that exercises the engine end-to-end so you can verify a rule before host modules are wired up.</li>
             </ul>
             <p>The single available action handler is <code>log_message</code>, which writes a message to the workflow's execution log — useful as a placeholder while you scaffold rules, and what the AI co-author leans on as a stand-in for unimplemented actions like "send email". Trigger wiring from host modules (Tickets, Forms, Tasks, Changes&hellip;) is being added in subsequent commits — the trigger dropdown lists every catalogued event, but only a subset will actually fire today.</p>

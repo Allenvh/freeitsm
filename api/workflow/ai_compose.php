@@ -122,8 +122,9 @@ SYS;
                      .  json_encode($existing, JSON_PRETTY_PRINT);
     }
 
-    $resp     = callAnthropicJson($cfg, $systemPrompt, $userMessage);
-    $rawText  = anthropicResponseText($resp);
+    // Provider-agnostic call — Anthropic or OpenAI depending on the saved
+    // setting. callWorkflowAi() returns the assistant's text directly.
+    $rawText  = callWorkflowAi($cfg, $systemPrompt, $userMessage);
     $proposal = parseClaudeJson($rawText);
 
     // ----- Validate the proposal against the catalogues -----

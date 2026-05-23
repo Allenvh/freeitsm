@@ -12,7 +12,30 @@ return [
 
     'nav' => [
         'workflows' => 'Workflows',
+        'settings'  => 'Settings',
         'help'      => 'Help',
+    ],
+
+    'settings_tabs' => [
+        'ai' => 'AI',
+    ],
+
+    'ai_settings' => [
+        'title'                   => 'AI integration',
+        'intro'                   => 'Configure the AI provider that powers the workflow co-author. Each module has its own key so billing and access can be granular. The API key is encrypted at rest. Use Test to verify your key + model before saving.',
+        'provider_label'          => 'Provider',
+        'model_label'             => 'Model',
+        'model_hint'              => 'Pick a suggestion or paste any model id supported by the chosen provider.',
+        'key_label'               => 'API key',
+        'key_placeholder_empty'   => '(no key stored — paste a fresh one to set)',
+        'key_placeholder_stored'  => 'Stored — leave unchanged to keep',
+        'key_hint'                => 'Encrypted at rest. Leave blank or unchanged to keep the existing key.',
+        'verify_ssl_label'        => 'Verify SSL',
+        'verify_ssl_hint'         => 'Disable only for testing against environments with self-signed certificates (e.g. behind an inspecting proxy).',
+        'ssl_warning_title'       => 'Warning',
+        'ssl_warning_body'        => 'SSL verification is turned off. FreeITSM will accept any TLS certificate from the AI provider without checking it. Anyone with access to your network could pose as the provider, intercept the traffic, and steal your API key — along with every prompt and response that follows. Only leave this off in test environments with self-signed certificates — never in production.',
+        'test_btn'                => 'Test',
+        'testing'                 => 'Testing…',
     ],
 
     'list' => [
@@ -87,8 +110,9 @@ return [
         'fire_failed'   => 'Test fire failed: %s',
         'name_required' => 'Name is required.',
         'actions_required' => 'At least one action is required.',
-        'ai_applied'    => 'AI proposal applied to the canvas. Tweak then save.',
-        'ai_failed'     => 'AI co-author failed: %s',
+        'ai_applied'      => 'AI proposal applied to the canvas. Tweak then save.',
+        'ai_failed'       => 'AI co-author failed: %s',
+        'saved_settings'  => 'Settings saved.',
     ],
 
     'ai' => [
