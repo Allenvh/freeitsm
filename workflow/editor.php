@@ -34,6 +34,23 @@ $fieldsByTrigger = [];
 foreach (array_keys($triggers) as $t) {
     $fieldsByTrigger[$t] = WorkflowEngine::availableFields($t);
 }
+
+// Lookup values per normalised-id field — built once at page load and
+// exported to JS. For free-text fields we get null back (the editor falls
+// back to a plain text input). Keeps the dropdowns offline-capable without
+// extra AJAX round-trips when the user picks a field.
+$lookupValuesByField = [];
+$_seenFields = [];
+foreach ($fieldsByTrigger as $fields) {
+    foreach ($fields as $field) {
+        if (isset($_seenFields[$field])) continue;
+        $_seenFields[$field] = true;
+        $values = WorkflowEngine::availableValuesForField($field);
+        if ($values !== null) {
+            $lookupValuesByField[$field] = $values;
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -151,8 +168,12 @@ foreach (array_keys($triggers) as $t) {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="wfCondValue"><?php echo htmlspecialchars(t('workflow.editor.condition_value')); ?></label>
-                        <input type="text" id="wfCondValue" autocomplete="off" oninput="WFE.updateConditionFromDetail()">
+                        <label><?php echo htmlspecialchars(t('workflow.editor.condition_value')); ?></label>
+                        <!-- JS fills this with a dropdown / checkbox list /
+                             text input depending on the chosen field + op.
+                             For lookup fields like ticket.priority_id we
+                             show the real labels from the joined table. -->
+                        <div id="wfCondValueHost"></div>
                     </div>
                     <button class="wf-detail-delete" onclick="WFE.deleteSelected()">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -243,9 +264,13 @@ foreach (array_keys($triggers) as $t) {
         window.WF_OPS            = <?php echo json_encode($ops); ?>;
         window.WF_ACTION_DEFS    = <?php echo json_encode($actionDefs); ?>;
         window.WF_FIELDS_BY_TRIG = <?php echo json_encode($fieldsByTrigger); ?>;
+        // Normalised id fields → list of {id, label} pairs from their lookup
+        // table. Drives the condition value control's dropdown / multi-select.
+        // Fields not in this map are free-text and use a plain input.
+        window.WF_LOOKUP_VALUES  = <?php echo json_encode($lookupValuesByField); ?>;
         window.WF_ID             = <?php echo (int)$id; ?>;
         window.WF_API            = '../api/workflow/';
     </script>
-    <script src="../assets/js/workflow-editor.js?v=3"></script>
+    <script src="../assets/js/workflow-editor.js?v=4"></script>
 </body>
 </html>

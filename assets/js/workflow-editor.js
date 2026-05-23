@@ -253,10 +253,28 @@ const WFE = (() => {
             // visible polygon — the .wf-node-condition CSS handles the clip.
             const op = window.WF_OPS[n.op] || n.op;
             const fieldShort = (n.field || '?').split('.').pop();
+            // Pretty-print the value: array → joined labels; lookup → resolve
+            // id to label; otherwise use the raw value as-is. Keeps the node
+            // glanceable rather than showing opaque ids.
+            const lookup = window.WF_LOOKUP_VALUES[n.field] || null;
+            const labelFor = id => {
+                if (!lookup) return String(id);
+                const row = lookup.find(v => String(v.id) === String(id));
+                return row ? row.label : String(id);
+            };
+            const arrValue = Array.isArray(n.value) ? n.value : (n.value == null || n.value === '' ? [] : [n.value]);
+            let valueStr;
+            if (n.op === 'is_empty' || n.op === 'is_not_empty') {
+                valueStr = '';
+            } else if (n.op === 'in' || n.op === 'not_in') {
+                valueStr = arrValue.length ? arrValue.map(labelFor).join(', ') : '(no values)';
+            } else {
+                valueStr = labelFor(n.value);
+            }
             return `
                 <div class="wf-node-kind">Condition</div>
                 <div class="wf-node-title">${escHtml(fieldShort)} <em style="color:#888; font-style: normal; font-weight: 400;">${escHtml(op)}</em></div>
-                <div class="wf-node-sub">${escHtml(n.value)}</div>
+                <div class="wf-node-sub">${escHtml(valueStr)}</div>
             `;
         }
         if (n.kind === 'action') {
@@ -474,9 +492,94 @@ const WFE = (() => {
             fieldSel.appendChild(opt);
         }
         document.getElementById('wfCondOp').value = n.op;
-        const valueInput = document.getElementById('wfCondValue');
-        valueInput.value = n.value ?? '';
-        valueInput.disabled = (n.op === 'is_empty' || n.op === 'is_not_empty');
+        renderConditionValueInput(n);
+    }
+
+    /**
+     * The value control adapts to (a) whether the chosen field has a lookup
+     * (i.e. is a normalised id like `ticket.priority_id`) and (b) which
+     * operator is selected:
+     *
+     *   - lookup + equals / not_equals  → single-select dropdown of labels
+     *   - lookup + in / not_in          → checkbox list (OR across selected)
+     *   - lookup + gt / lt              → numeric input
+     *   - lookup + is_empty / is_not_empty → no control (value is irrelevant)
+     *   - free text + equals / not_equals / contains / not_contains → text input
+     *   - free text + in / not_in       → comma-separated text input
+     *   - free text + gt / lt           → numeric input
+     *   - free text + is_empty / is_not_empty → no control
+     *
+     * Existing data shape is preserved: single-value ops store a string,
+     * multi-value ops (`in`/`not_in`) store an array.
+     */
+    function renderConditionValueInput(n) {
+        const host = document.getElementById('wfCondValueHost');
+        const lookup = window.WF_LOOKUP_VALUES[n.field] || null;
+        const op = n.op;
+
+        // No value control needed for is_empty / is_not_empty.
+        if (op === 'is_empty' || op === 'is_not_empty') {
+            host.innerHTML = '<div style="font-size:12px; color:#888; padding: 6px 0;"><em>No value needed — this operator just checks presence.</em></div>';
+            return;
+        }
+
+        // Multi-value operators: in / not_in.
+        if (op === 'in' || op === 'not_in') {
+            const selected = Array.isArray(n.value) ? n.value.map(String)
+                           : (typeof n.value === 'string' && n.value !== '')
+                             ? n.value.split(',').map(s => s.trim())
+                             : [];
+            if (lookup) {
+                // Checkbox list of the lookup table's rows.
+                host.innerHTML =
+                    '<div style="border:1px solid #ddd; border-radius:4px; padding:8px 10px; max-height:180px; overflow-y:auto; background:#fafafa;">' +
+                    lookup.map(v => {
+                        const isOn = selected.includes(String(v.id));
+                        return `<label style="display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; font-size: 13px; color: #333;">
+                            <input type="checkbox" value="${escAttr(v.id)}" ${isOn ? 'checked' : ''} onchange="WFE.onConditionMultiToggle()">
+                            ${escAttr(v.label)} <span style="color:#999; font-size:11px;">(${escAttr(v.id)})</span>
+                        </label>`;
+                    }).join('') +
+                    '</div>' +
+                    '<small style="display:block; color:#888; margin-top:4px;">Matches if the field is any of the ticked values.</small>';
+            } else {
+                // Free-text fallback: comma-separated.
+                host.innerHTML =
+                    '<input type="text" id="wfCondValue" autocomplete="off" oninput="WFE.updateConditionFromDetail()" value="' + escAttr(selected.join(', ')) + '" placeholder="comma-separated values">' +
+                    '<small style="display:block; color:#888; margin-top:4px;">Comma-separate the values.</small>';
+            }
+            return;
+        }
+
+        // Single-value operators: equals / not_equals / contains / not_contains / gt / lt.
+        if (lookup && (op === 'equals' || op === 'not_equals')) {
+            const currentId = (typeof n.value === 'string' || typeof n.value === 'number') ? String(n.value) : '';
+            host.innerHTML =
+                '<select id="wfCondValue" onchange="WFE.updateConditionFromDetail()">' +
+                '<option value="">— pick a value —</option>' +
+                lookup.map(v =>
+                    `<option value="${escAttr(v.id)}" ${String(v.id) === currentId ? 'selected' : ''}>${escAttr(v.label)} (id: ${escAttr(v.id)})</option>`
+                ).join('') +
+                '</select>';
+            return;
+        }
+
+        // Free text (or lookup-but-numeric-op).
+        const valStr = Array.isArray(n.value) ? n.value.join(', ') : String(n.value ?? '');
+        host.innerHTML =
+            '<input type="text" id="wfCondValue" autocomplete="off" oninput="WFE.updateConditionFromDetail()" value="' + escAttr(valStr) + '">';
+    }
+
+    // When a multi-select checkbox toggles, gather every checked value and
+    // store as an array on the condition node. Re-render the canvas node so
+    // its preview reflects the new list.
+    function onConditionMultiToggle() {
+        const n = nodes.find(x => x.id === selectedNodeId);
+        if (!n || n.kind !== 'condition') return;
+        const checks = document.querySelectorAll('#wfCondValueHost input[type="checkbox"]:checked');
+        n.value = Array.from(checks).map(c => c.value);
+        if (n.el) n.el.innerHTML = renderNodeContent(n);
+        markDirty();
     }
 
     function showDetailForAction(n) {
@@ -513,10 +616,25 @@ const WFE = (() => {
     function updateConditionFromDetail() {
         const n = nodes.find(x => x.id === selectedNodeId);
         if (!n || n.kind !== 'condition') return;
-        n.field = document.getElementById('wfCondField').value;
-        n.op    = document.getElementById('wfCondOp').value;
-        n.value = document.getElementById('wfCondValue').value;
-        document.getElementById('wfCondValue').disabled = (n.op === 'is_empty' || n.op === 'is_not_empty');
+        const newField = document.getElementById('wfCondField').value;
+        const newOp    = document.getElementById('wfCondOp').value;
+        const fieldChanged = (newField !== n.field);
+        const opChanged    = (newOp !== n.op);
+        n.field = newField;
+        n.op    = newOp;
+
+        // If the field or op changed in a way that changes the value
+        // control's shape, reset the value to a sensible default and
+        // re-render the input. Otherwise just read the current control.
+        if (fieldChanged || opChanged) {
+            if (newOp === 'in' || newOp === 'not_in') n.value = Array.isArray(n.value) ? n.value : [];
+            else if (newOp === 'is_empty' || newOp === 'is_not_empty') n.value = '';
+            else n.value = Array.isArray(n.value) ? (n.value[0] ?? '') : (n.value ?? '');
+            renderConditionValueInput(n);
+        } else {
+            const ctrl = document.getElementById('wfCondValue');
+            if (ctrl) n.value = ctrl.value;
+        }
         if (n.el) n.el.innerHTML = renderNodeContent(n);
         markDirty();
     }
@@ -891,6 +1009,7 @@ const WFE = (() => {
         save, testFire,
         updateTriggerFromDetail,
         updateConditionFromDetail,
+        onConditionMultiToggle,
         updateActionTypeFromDetail,
         updateActionArgsFromDetail,
         // AI co-author

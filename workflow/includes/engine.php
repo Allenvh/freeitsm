@@ -104,6 +104,8 @@ class WorkflowEngine
         return [
             'equals'       => 'equals',
             'not_equals'   => 'does not equal',
+            'in'           => 'is one of',          // OR across a list of values
+            'not_in'       => 'is not one of',
             'contains'     => 'contains',
             'not_contains' => 'does not contain',
             'gt'           => 'greater than',
@@ -111,6 +113,74 @@ class WorkflowEngine
             'is_empty'     => 'is empty',
             'is_not_empty' => 'is not empty',
         ];
+    }
+
+    /**
+     * Lookup-table map for normalised id fields. When a condition is built
+     * against one of these field paths, the editor offers a dropdown / multi-
+     * select of real values from the joined table instead of asking the
+     * user to type opaque ids. Each entry: which table to read, which
+     * column holds the human-readable label, and optional `where` / `order`
+     * for sensible defaults (active-only, sorted).
+     *
+     * Tables are interpolated into a SELECT statement — the map is a code-
+     * level const so there's no untrusted input here, but if you ever expose
+     * a mechanism to add entries dynamically, switch to a whitelist instead
+     * of string concatenation.
+     */
+    private const FIELD_LOOKUP_TABLES = [
+        'ticket.priority_id'         => ['table' => 'ticket_priorities', 'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'display_order, name'],
+        'ticket.status_id'           => ['table' => 'ticket_statuses',   'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'display_order, name'],
+        'ticket.department_id'       => ['table' => 'departments',       'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'name'],
+        'ticket.type_id'             => ['table' => 'ticket_types',      'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'name'],
+        'ticket.assigned_analyst_id' => ['table' => 'analysts',          'label_col' => 'full_name', 'where' => 'is_active = 1', 'order' => 'full_name'],
+        'ticket.created_by'          => ['table' => 'analysts',          'label_col' => 'full_name', 'where' => 'is_active = 1', 'order' => 'full_name'],
+        'old_status_id'              => ['table' => 'ticket_statuses',   'label_col' => 'name',      'order' => 'display_order, name'],
+        'new_status_id'              => ['table' => 'ticket_statuses',   'label_col' => 'name',      'order' => 'display_order, name'],
+        'old_priority_id'            => ['table' => 'ticket_priorities', 'label_col' => 'name',      'order' => 'display_order, name'],
+        'new_priority_id'            => ['table' => 'ticket_priorities', 'label_col' => 'name',      'order' => 'display_order, name'],
+        'analyst_id'                 => ['table' => 'analysts',          'label_col' => 'full_name', 'where' => 'is_active = 1', 'order' => 'full_name'],
+        'team_id'                    => ['table' => 'teams',             'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'name'],
+        'task.priority_id'           => ['table' => 'task_priorities',   'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'display_order, name'],
+        'task.status_id'             => ['table' => 'task_statuses',     'label_col' => 'name',      'where' => 'is_active = 1', 'order' => 'display_order, name'],
+        'task.assignee_id'           => ['table' => 'analysts',          'label_col' => 'full_name', 'where' => 'is_active = 1', 'order' => 'full_name'],
+        'form.id'                    => ['table' => 'forms',             'label_col' => 'name',      'order' => 'name'],
+        'approver.id'                => ['table' => 'analysts',          'label_col' => 'full_name', 'where' => 'is_active = 1', 'order' => 'full_name'],
+    ];
+
+    /**
+     * For a normalised id field, return the list of selectable {id, label}
+     * pairs from the joined table. Returns null for free-text fields (the
+     * editor falls back to a plain text input in that case). Returns null
+     * defensively if the lookup table doesn't exist (older installs that
+     * haven't migrated yet) so the editor still works.
+     */
+    public static function availableValuesForField(string $fieldPath): ?array
+    {
+        if (!isset(self::FIELD_LOOKUP_TABLES[$fieldPath])) return null;
+        $spec = self::FIELD_LOOKUP_TABLES[$fieldPath];
+        try {
+            $conn = connectToDatabase();
+            $where = isset($spec['where']) ? ' WHERE ' . $spec['where'] : '';
+            $order = isset($spec['order']) ? ' ORDER BY ' . $spec['order'] : '';
+            $sql = sprintf(
+                'SELECT id AS id, %s AS label FROM `%s`%s%s',
+                $spec['label_col'],
+                $spec['table'],
+                $where,
+                $order
+            );
+            $stmt = $conn->query($sql);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            // Stringify ids so the editor's form values (always strings)
+            // compare cleanly without type juggling.
+            return array_map(
+                fn($r) => ['id' => (string)$r['id'], 'label' => (string)$r['label']],
+                $rows
+            );
+        } catch (Exception $e) {
+            return null;
+        }
     }
 
     /**
@@ -311,12 +381,39 @@ class WorkflowEngine
         switch ($op) {
             case 'equals':       return self::loose_equal($actual, $value);
             case 'not_equals':   return !self::loose_equal($actual, $value);
+            // `in` / `not_in` accept an array of values for OR semantics.
+            // Tolerant on the input shape: a single scalar is treated as a
+            // 1-element list, and a comma-separated string is split — so
+            // older workflows that stored "1,2" as a string still work.
+            case 'in':           return self::value_in_list($actual, $value);
+            case 'not_in':       return !self::value_in_list($actual, $value);
             case 'contains':     return is_string($actual) && is_string($value) && $value !== '' && strpos($actual, $value) !== false;
             case 'not_contains': return !(is_string($actual) && is_string($value) && $value !== '' && strpos($actual, $value) !== false);
             case 'gt':           return is_numeric($actual) && is_numeric($value) && $actual > $value;
             case 'lt':           return is_numeric($actual) && is_numeric($value) && $actual < $value;
             case 'is_empty':     return $actual === null || $actual === '' || $actual === [];
             case 'is_not_empty': return !($actual === null || $actual === '' || $actual === []);
+        }
+        return false;
+    }
+
+    /**
+     * True if `$actual` matches any value in `$list`. `$list` can be an
+     * array, a comma-separated string, or a single scalar. Comparison uses
+     * loose-equal (string cast both sides) so ids stored as numbers in the
+     * payload match the strings the form serialises.
+     */
+    private static function value_in_list($actual, $list): bool
+    {
+        if (is_string($list)) {
+            // Split comma-separated values; trim whitespace around each.
+            $list = array_map('trim', explode(',', $list));
+        }
+        if (!is_array($list)) {
+            $list = [$list];
+        }
+        foreach ($list as $candidate) {
+            if (self::loose_equal($actual, $candidate)) return true;
         }
         return false;
     }

@@ -86,6 +86,8 @@ return [
     'op' => [
         'equals'      => 'equals',
         'not_equals'  => 'does not equal',
+        'in'          => 'is one of',
+        'not_in'      => 'is not one of',
         'contains'    => 'contains',
         'not_contains'=> 'does not contain',
         'gt'          => 'greater than',
