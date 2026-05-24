@@ -282,6 +282,13 @@ $translationNamespaces = ['common', 'tickets'];
             padding: 30px;
             max-width: 500px;
         }
+
+        /* Title sits flush with the modal-content padding rather than gaining its own 20px 24px on top */
+        #userModal .modal-header {
+            padding: 0;
+            margin-bottom: 20px;
+            border-bottom: none;
+        }
     </style>
 </head>
 <body>
