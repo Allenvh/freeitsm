@@ -450,6 +450,20 @@ return [
             'priority'      => 'Priority',
             'created'       => 'Created',
         ],
+        'modal' => [
+            'add_title'                  => 'Add user',
+            'edit_title'                 => 'Edit user',
+            'email'                      => 'Email',
+            'email_placeholder'          => 'user@example.com',
+            'display_name'               => 'Display name',
+            'display_name_placeholder'   => 'e.g. Jane Smith',
+            'preferred_name'             => 'Preferred name',
+            'preferred_name_placeholder' => 'e.g. Jane',
+            'password'                   => 'Password',
+            'password_placeholder'       => 'Leave blank for passwordless account',
+            'password_help'              => 'Optional. If blank, the user can set their own password later via the self-service portal.',
+            'confirm_delete'             => 'Delete user "{name}"? This cannot be undone.',
+        ],
     ],
 
     // tickets/calendar.php — scheduled-tickets calendar view

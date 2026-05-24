@@ -285,7 +285,10 @@ $translationNamespaces = ['common', 'tickets'];
         <!-- Users List -->
         <div class="users-list-container">
             <div class="users-list-header">
-                <h3><?php echo htmlspecialchars(t('tickets.users.list_title')); ?></h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="margin: 0;"><?php echo htmlspecialchars(t('tickets.users.list_title')); ?></h3>
+                    <button class="add-btn" onclick="openUserModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+                </div>
                 <input type="text" class="search-box" id="userSearch" placeholder="<?php echo htmlspecialchars(t('tickets.users.search_placeholder')); ?>" oninput="searchUsers()">
                 <div class="user-count" id="userCount"></div>
             </div>
@@ -301,6 +304,42 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="empty-state">
                 <?php echo htmlspecialchars(t('tickets.users.select_user')); ?>
             </div>
+        </div>
+    </div>
+
+    <!-- User Modal -->
+    <div class="modal" id="userModal">
+        <div class="modal-content">
+            <div class="modal-header" id="userModalTitle"><?php echo htmlspecialchars(t('tickets.users.modal.add_title')); ?></div>
+            <form id="userForm">
+                <input type="hidden" id="userId">
+
+                <div class="form-group">
+                    <label for="userEmail"><?php echo htmlspecialchars(t('tickets.users.modal.email')); ?> *</label>
+                    <input type="email" id="userEmail" required placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.email_placeholder')); ?>">
+                </div>
+
+                <div class="form-group">
+                    <label for="userDisplayName"><?php echo htmlspecialchars(t('tickets.users.modal.display_name')); ?></label>
+                    <input type="text" id="userDisplayName" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.display_name_placeholder')); ?>">
+                </div>
+
+                <div class="form-group">
+                    <label for="userPreferredName"><?php echo htmlspecialchars(t('tickets.users.modal.preferred_name')); ?></label>
+                    <input type="text" id="userPreferredName" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.preferred_name_placeholder')); ?>">
+                </div>
+
+                <div class="form-group">
+                    <label for="userPassword"><?php echo htmlspecialchars(t('tickets.users.modal.password')); ?></label>
+                    <input type="password" id="userPassword" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.password_placeholder')); ?>" minlength="8">
+                    <small style="color: #666;"><?php echo htmlspecialchars(t('tickets.users.modal.password_help')); ?></small>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeUserModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -379,8 +418,16 @@ $translationNamespaces = ['common', 'tickets'];
             const detailContainer = document.getElementById('userDetail');
             detailContainer.innerHTML = `
                 <div class="user-detail-header">
-                    <h2 class="user-detail-name">${escapeHtml(user.display_name || unknownName)}</h2>
-                    <div class="user-detail-email">${escapeHtml(user.email || '')}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                        <div>
+                            <h2 class="user-detail-name">${escapeHtml(user.display_name || unknownName)}</h2>
+                            <div class="user-detail-email">${escapeHtml(user.email || '')}</div>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                            <button class="btn btn-secondary" onclick="openUserModal(${user.id})">${escapeHtml(t('common.edit'))}</button>
+                            <button class="btn btn-secondary" onclick="deleteUser(${user.id})">${escapeHtml(t('common.delete'))}</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="user-info-grid">
                     <div class="info-item">
@@ -478,6 +525,94 @@ $translationNamespaces = ['common', 'tickets'];
                 month: 'short',
                 year: 'numeric'
             });
+        }
+
+        // Open the create/edit modal. Pass an id to edit; omit to create.
+        function openUserModal(userId) {
+            const modal = document.getElementById('userModal');
+            const title = document.getElementById('userModalTitle');
+            const idField = document.getElementById('userId');
+            const emailField = document.getElementById('userEmail');
+            const displayField = document.getElementById('userDisplayName');
+            const preferredField = document.getElementById('userPreferredName');
+            const passwordField = document.getElementById('userPassword');
+
+            if (userId) {
+                const user = users.find(u => u.id == userId);
+                title.textContent = t('tickets.users.modal.edit_title');
+                idField.value = userId;
+                emailField.value = user?.email || '';
+                displayField.value = user?.display_name || '';
+                preferredField.value = user?.preferred_name || '';
+            } else {
+                title.textContent = t('tickets.users.modal.add_title');
+                idField.value = '';
+                emailField.value = '';
+                displayField.value = '';
+                preferredField.value = '';
+            }
+            passwordField.value = '';
+            modal.classList.add('active');
+            emailField.focus();
+        }
+
+        function closeUserModal() {
+            document.getElementById('userModal').classList.remove('active');
+        }
+
+        document.getElementById('userForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('userId').value;
+            const payload = {
+                id: id || null,
+                email: document.getElementById('userEmail').value.trim(),
+                display_name: document.getElementById('userDisplayName').value.trim(),
+                preferred_name: document.getElementById('userPreferredName').value.trim(),
+                password: document.getElementById('userPassword').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}save_user.php`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    alert(data.error || 'Save failed');
+                    return;
+                }
+                const savedId = data.id;
+                closeUserModal();
+                await loadUsers(document.getElementById('userSearch').value);
+                if (savedId) selectUser(savedId);
+            } catch (err) {
+                alert('Save failed: ' + err.message);
+            }
+        });
+
+        async function deleteUser(userId) {
+            const user = users.find(u => u.id == userId);
+            const label = user?.display_name || user?.email || `#${userId}`;
+            if (!confirm(t('tickets.users.modal.confirm_delete', { name: label }))) return;
+
+            try {
+                const response = await fetch(`${API_BASE}delete_user.php`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: userId })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    alert(data.error || 'Delete failed');
+                    return;
+                }
+                selectedUserId = null;
+                document.getElementById('userDetail').innerHTML = `<div class="empty-state">${escapeHtml(t('tickets.users.select_user'))}</div>`;
+                await loadUsers(document.getElementById('userSearch').value);
+            } catch (err) {
+                alert('Delete failed: ' + err.message);
+            }
         }
     </script>
 </body>

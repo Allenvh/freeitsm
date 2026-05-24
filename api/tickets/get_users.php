@@ -26,6 +26,7 @@ try {
                 u.id,
                 u.email,
                 u.display_name,
+                u.preferred_name,
                 u.created_at,
                 (SELECT COUNT(*) FROM tickets t WHERE t.user_id = u.id) as ticket_count
             FROM users u";
