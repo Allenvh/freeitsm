@@ -324,27 +324,27 @@ $translationNamespaces = ['common', 'tickets'];
     <div class="modal" id="userModal">
         <div class="modal-content">
             <div class="modal-header" id="userModalTitle"><?php echo htmlspecialchars(t('tickets.users.modal.add_title')); ?></div>
-            <form id="userForm">
+            <form id="userForm" autocomplete="off">
                 <input type="hidden" id="userId">
 
                 <div class="form-group">
                     <label for="userEmail"><?php echo htmlspecialchars(t('tickets.users.modal.email')); ?> *</label>
-                    <input type="email" id="userEmail" required placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.email_placeholder')); ?>">
+                    <input type="email" id="userEmail" required autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.email_placeholder')); ?>">
                 </div>
 
                 <div class="form-group">
                     <label for="userDisplayName"><?php echo htmlspecialchars(t('tickets.users.modal.display_name')); ?></label>
-                    <input type="text" id="userDisplayName" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.display_name_placeholder')); ?>">
+                    <input type="text" id="userDisplayName" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.display_name_placeholder')); ?>">
                 </div>
 
                 <div class="form-group">
                     <label for="userPreferredName"><?php echo htmlspecialchars(t('tickets.users.modal.preferred_name')); ?></label>
-                    <input type="text" id="userPreferredName" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.preferred_name_placeholder')); ?>">
+                    <input type="text" id="userPreferredName" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.preferred_name_placeholder')); ?>">
                 </div>
 
                 <div class="form-group">
                     <label for="userPassword"><?php echo htmlspecialchars(t('tickets.users.modal.password')); ?></label>
-                    <input type="password" id="userPassword" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.password_placeholder')); ?>" minlength="8">
+                    <input type="password" id="userPassword" autocomplete="new-password" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.password_placeholder')); ?>" minlength="8">
                     <small style="color: #666;"><?php echo htmlspecialchars(t('tickets.users.modal.password_help')); ?></small>
                 </div>
 
