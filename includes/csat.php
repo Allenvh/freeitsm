@@ -60,25 +60,59 @@ function csatBuildUrl(string $token): string {
 }
 
 /**
- * Create a CSAT response row and send the survey email. Returns the new row id,
- * or null if the feature is disabled / no template configured / ticket has been
- * surveyed already with csat_one_per_ticket = 1.
+ * Result codes returned by sendCsatSurvey() so the caller can give an honest
+ * UI message rather than silently lying. The DB row + email send are only
+ * performed when the result will be 'sent' — every other case is a precondition
+ * failure that should NOT leave an orphan row behind.
+ */
+const CSAT_RESULT_SENT          = 'sent';
+const CSAT_RESULT_OFF           = 'off';            // csat_mode = off
+const CSAT_RESULT_ALREADY_SENT  = 'already_sent';   // one-per-ticket guard tripped
+const CSAT_RESULT_NO_TEMPLATE   = 'no_template';    // no active csat_request template
+const CSAT_RESULT_NO_MAILBOX    = 'no_mailbox';     // ticket has no mailbox to send from
+
+/**
+ * Create a CSAT response row and send the survey email. Returns an array:
+ *   ['result' => <CSAT_RESULT_*>, 'response_id' => int|null]
  *
  * Pass $force = true to bypass the one-per-ticket guard when the analyst
  * deliberately re-requests feedback.
+ *
+ * Pre-flight checks (mode, template existence, mailbox availability) all run
+ * BEFORE the row is inserted, so failed sends don't leave orphan tokens behind.
  */
-function sendCsatSurvey(PDO $conn, int $ticketId, ?int $analystId, bool $force = false): ?int {
+function sendCsatSurvey(PDO $conn, int $ticketId, ?int $analystId, bool $force = false): array {
     $mode = csatGetSetting($conn, 'csat_mode', 'off');
-    if ($mode === 'off') return null;
+    if ($mode === 'off') {
+        return ['result' => CSAT_RESULT_OFF, 'response_id' => null];
+    }
 
     // Skip if a response row already exists and one-per-ticket is on (unless forced)
     if (!$force && csatGetSetting($conn, 'csat_one_per_ticket', '1') === '1') {
         $existing = $conn->prepare("SELECT id FROM ticket_csat_responses WHERE ticket_id = ? LIMIT 1");
         $existing->execute([$ticketId]);
-        if ($existing->fetchColumn()) return null;
+        if ($existing->fetchColumn()) {
+            return ['result' => CSAT_RESULT_ALREADY_SENT, 'response_id' => null];
+        }
     }
 
-    // Create the response row first so we have a token to embed in the email
+    // Pre-flight: an active csat_request template must exist. Without it, the
+    // template engine silently no-ops and we'd save a useless row with a useless token.
+    $tplCheck = $conn->prepare("SELECT id FROM ticket_email_templates WHERE event_trigger = 'csat_request' AND is_active = 1 LIMIT 1");
+    $tplCheck->execute();
+    if (!$tplCheck->fetchColumn()) {
+        return ['result' => CSAT_RESULT_NO_TEMPLATE, 'response_id' => null];
+    }
+
+    // Pre-flight: a mailbox must be reachable from this ticket. Manual / portal
+    // tickets that came in without an email won't have one — survey would no-op.
+    require_once __DIR__ . '/template_email.php';
+    $mailbox = templateGetMailboxForTicket($conn, $ticketId);
+    if (!$mailbox) {
+        return ['result' => CSAT_RESULT_NO_MAILBOX, 'response_id' => null];
+    }
+
+    // All checks passed — now we can durably create the row and dispatch the email
     $token = csatGenerateToken();
     $insert = $conn->prepare(
         "INSERT INTO ticket_csat_responses (ticket_id, token, sent_datetime, analyst_id, created_at)
@@ -87,11 +121,9 @@ function sendCsatSurvey(PDO $conn, int $ticketId, ?int $analystId, bool $force =
     $insert->execute([$ticketId, $token, $analystId]);
     $responseId = (int)$conn->lastInsertId();
 
-    // Inject the survey URL as an extra merge code; the rest of the merge data
-    // (ticket_reference, requester_name, etc.) is filled in by the template engine
     sendTemplateEmail($conn, $ticketId, 'csat_request', [
         'csat_link' => csatBuildUrl($token),
     ]);
 
-    return $responseId;
+    return ['result' => CSAT_RESULT_SENT, 'response_id' => $responseId];
 }
