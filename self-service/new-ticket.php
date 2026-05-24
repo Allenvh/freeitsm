@@ -645,7 +645,10 @@ require_once 'includes/auth.php';
         document.getElementById('recStartBtn').style.display = '';
         document.getElementById('recUseBtn').style.display = 'none';
         document.getElementById('recDiscardBtn').style.display = 'none';
-        document.getElementById('recStatus').textContent = 'Ready — max 5 minutes';
+        const status = document.getElementById('recStatus');
+        status.style.color = '';
+        status.style.fontWeight = '';
+        status.textContent = 'Ready — max 5 minutes';
     }
 
     async function useRecording() {
@@ -713,6 +716,21 @@ require_once 'includes/auth.php';
 
     async function handleSubmit(e) {
         e.preventDefault();
+
+        // Block submit if there's a recorded-but-not-claimed blob sitting in the
+        // preview. Easy to miss the "Use this" button otherwise, and the recording
+        // would be silently lost when the form posts.
+        if (recordedBlob !== null) {
+            const panel = document.getElementById('recordPanel');
+            panel.classList.remove('hidden');
+            panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const status = document.getElementById('recStatus');
+            status.style.color = '#dc2626';
+            status.style.fontWeight = '600';
+            status.innerHTML = 'Click <strong>Use this</strong> to attach the recording, or <strong>Discard</strong> to drop it &mdash; then submit again.';
+            return;
+        }
+
         const btn = document.getElementById('submitBtn');
         const errEl = document.getElementById('errorMsg');
         const successEl = document.getElementById('successMsg');
