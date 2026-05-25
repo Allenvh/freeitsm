@@ -71,15 +71,6 @@ $path_prefix = '../';
             font-weight: 600;
         }
 
-        .mc-help-nav-link.highlight {
-            color: #00838f;
-        }
-
-        .mc-help-nav-link.highlight.active {
-            background: #00838f;
-            color: white;
-        }
-
         .mc-help-nav-num {
             display: flex;
             align-items: center;
@@ -96,16 +87,6 @@ $path_prefix = '../';
 
         .mc-help-nav-link.active .mc-help-nav-num {
             background: #00838f;
-            color: white;
-        }
-
-        .mc-help-nav-num.highlight {
-            background: #e0f7fa;
-            color: #00838f;
-        }
-
-        .mc-help-nav-link.highlight.active .mc-help-nav-num {
-            background: rgba(255,255,255,0.25);
             color: white;
         }
 
@@ -477,16 +458,16 @@ $path_prefix = '../';
                 <span class="mc-help-nav-num">2</span>
                 Performing daily checks
             </a>
-            <a href="#trend-chart" class="mc-help-nav-link highlight" data-section="trend-chart">
-                <span class="mc-help-nav-num highlight">3</span>
+            <a href="#trend-chart" class="mc-help-nav-link" data-section="trend-chart">
+                <span class="mc-help-nav-num">3</span>
                 The trend chart
             </a>
             <a href="#pdf-export" class="mc-help-nav-link" data-section="pdf-export">
                 <span class="mc-help-nav-num">4</span>
                 PDF export
             </a>
-            <a href="#settings" class="mc-help-nav-link highlight" data-section="settings">
-                <span class="mc-help-nav-num highlight">5</span>
+            <a href="#settings" class="mc-help-nav-link" data-section="settings">
+                <span class="mc-help-nav-num">5</span>
                 Settings
             </a>
             <a href="#tips" class="mc-help-nav-link" data-section="tips">
