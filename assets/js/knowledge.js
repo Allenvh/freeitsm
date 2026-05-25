@@ -1109,20 +1109,36 @@ function blobToBase64(blob) {
 }
 
 // Check for article ID in URL on page load (for shared links)
+//
+// Supports two flavours of deep-link:
+//   ?article=N        — opens the article in view mode
+//   ?article=N&edit=1 — opens straight into edit mode (used by the
+//                       review screen's edit icon so the user doesn't
+//                       have to click View → Edit themselves)
 (function() {
     const urlParams = new URLSearchParams(window.location.search);
     const articleId = urlParams.get('article') || urlParams.get('id');
-    if (articleId) {
-        // Wait for articles to load, then open the specific article
-        const checkAndLoad = setInterval(() => {
-            if (articles.length > 0 || document.getElementById('articleList').innerHTML.includes('No articles')) {
-                clearInterval(checkAndLoad);
-                viewArticle(articleId);
-            }
-        }, 100);
-        // Timeout after 5 seconds
-        setTimeout(() => clearInterval(checkAndLoad), 5000);
-    }
+    const wantEdit = urlParams.get('edit') === '1';
+    if (!articleId) return;
+
+    const checkAndLoad = setInterval(() => {
+        if (articles.length > 0 || document.getElementById('articleList').innerHTML.includes('No articles')) {
+            clearInterval(checkAndLoad);
+            Promise.resolve(viewArticle(articleId)).then(() => {
+                if (!wantEdit) return;
+                // editCurrentArticle populates TinyMCE — wait until the
+                // editor instance is ready so the article body isn't lost.
+                const editCheck = setInterval(() => {
+                    if (articleEditor) {
+                        clearInterval(editCheck);
+                        editCurrentArticle();
+                    }
+                }, 100);
+                setTimeout(() => clearInterval(editCheck), 8000);
+            });
+        }
+    }, 100);
+    setTimeout(() => clearInterval(checkAndLoad), 5000);
 })();
 
 function formatDate(dateStr) {

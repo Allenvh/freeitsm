@@ -13,14 +13,12 @@ $path_prefix = '../';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - Knowledge Review</title>
+    <title>Service Desk - Knowledge review</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
     <link rel="stylesheet" href="../assets/css/knowledge.css">
     <style>
         .review-container {
-            padding: 20px 30px;
-            max-width: 1400px;
-            margin: 0 auto;
+            padding: 16px 30px 24px;
         }
 
         .review-header {
@@ -181,20 +179,39 @@ $path_prefix = '../';
             font-style: italic;
         }
 
+        /* Icon-only edit button — same shape as the action buttons in the
+           other settings pages. Square white box that picks up the module's
+           accent (purple) on hover. */
         .action-btn {
-            padding: 6px 12px;
-            background: #8764b8;
-            color: white;
-            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            background: none;
+            border: 1px solid #ddd;
+            color: #666;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 13px;
             text-decoration: none;
-            display: inline-block;
+            transition: all 0.15s;
+        }
+        .action-btn:hover {
+            background: #f0f0f0;
+            border-color: #8764b8;
+            color: #8764b8;
+        }
+        .action-btn svg {
+            width: 16px;
+            height: 16px;
         }
 
-        .action-btn:hover {
-            background: #6b4fa2;
+        /* Days overdue column — bare number, red, bold. Empty cell if the
+           article isn't overdue. */
+        .days-overdue {
+            color: #dc3545;
+            font-weight: 600;
         }
 
         .empty-state {
@@ -236,12 +253,12 @@ $path_prefix = '../';
 
     <div class="review-container">
         <div class="review-header">
-            <h1>Article Review Schedule</h1>
+            <h1>Article review schedule</h1>
         </div>
 
         <div class="filter-tabs">
             <button class="filter-tab active" data-filter="all" onclick="filterArticles('all')">
-                All Articles <span class="badge" id="countAll">0</span>
+                All articles <span class="badge" id="countAll">0</span>
             </button>
             <button class="filter-tab overdue" data-filter="overdue" onclick="filterArticles('overdue')">
                 Overdue <span class="badge" id="countOverdue">0</span>
@@ -250,7 +267,7 @@ $path_prefix = '../';
                 Due in 30 days <span class="badge" id="countUpcoming">0</span>
             </button>
             <button class="filter-tab" data-filter="no_date" onclick="filterArticles('no_date')">
-                No Review Date <span class="badge" id="countNoDate">0</span>
+                No review date <span class="badge" id="countNoDate">0</span>
             </button>
         </div>
 
@@ -309,11 +326,12 @@ $path_prefix = '../';
                 <table class="review-table">
                     <thead>
                         <tr>
-                            <th>Article Title</th>
+                            <th>Article title</th>
                             <th>Owner</th>
-                            <th>Next Review Date</th>
-                            <th>Last Modified</th>
-                            <th>Action</th>
+                            <th>Next review date</th>
+                            <th>Days overdue</th>
+                            <th>Last modified</th>
+                            <th>Edit</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -325,16 +343,18 @@ $path_prefix = '../';
 
                 let reviewDateHtml = '';
                 if (article.next_review_date_formatted) {
-                    let daysBadge = '';
-                    if (article.is_overdue) {
-                        daysBadge = `<span class="days-badge">${Math.abs(article.days_until_review)} days overdue</span>`;
-                    } else if (article.days_until_review <= 30) {
-                        daysBadge = `<span class="days-badge">in ${article.days_until_review} days</span>`;
+                    let dueBadge = '';
+                    if (!article.is_overdue && article.days_until_review !== null && article.days_until_review <= 30) {
+                        dueBadge = `<span class="days-badge">in ${article.days_until_review} days</span>`;
                     }
-                    reviewDateHtml = `<span class="review-date ${reviewDateClass}">${article.next_review_date_formatted} ${daysBadge}</span>`;
+                    reviewDateHtml = `<span class="review-date ${reviewDateClass}">${article.next_review_date_formatted} ${dueBadge}</span>`;
                 } else {
                     reviewDateHtml = '<span class="no-date">Not set</span>';
                 }
+
+                const daysOverdueHtml = article.is_overdue
+                    ? `<span class="days-overdue">${Math.abs(article.days_until_review)}</span>`
+                    : '';
 
                 const ownerHtml = article.owner_name
                     ? `<span class="owner-cell">${escapeHtml(article.owner_name)}</span>`
@@ -351,9 +371,15 @@ $path_prefix = '../';
                         </td>
                         <td>${ownerHtml}</td>
                         <td>${reviewDateHtml}</td>
+                        <td>${daysOverdueHtml}</td>
                         <td>${modifiedDate}</td>
                         <td>
-                            <a href="./?article=${article.id}&edit=1" class="action-btn">Edit</a>
+                            <a href="./?article=${article.id}&edit=1" class="action-btn" title="Edit">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                            </a>
                         </td>
                     </tr>
                 `;
