@@ -1,10 +1,12 @@
 <h1 align="center">Thanks for Visiting 👋</h1>
 
+<p align="center"><strong>FreeITSM is a one-developer project — your engagement is what keeps it moving.</strong></p>
+
 <p align="center">
-If you're downloading this project and find it useful,<br>
-⭐ Please consider starring it<br>
-🌍 And mentioning <a href="https://freeitsm.co.uk">freeitsm.co.uk</a> on Reddit, Hacker News, Spiceworks, LinkedIn, or anywhere IT pros hang out<br><br>
-It genuinely helps and means a lot!
+⭐ <strong>If you're regularly cloning or using FreeITSM, please <a href="https://github.com/edmozley/freeitsm/stargazers">give the repo a star</a></strong> — it's the single biggest signal that the work is landing<br><br>
+📬 <strong>Got feedback, an idea, or a bug?</strong> Email me directly at <a href="mailto:ed@freeitsm.co.uk">ed@freeitsm.co.uk</a> — I read every message<br><br>
+💬 <strong>Or jump into the community</strong> — <a href="https://github.com/edmozley/freeitsm/discussions">Discussions</a> for questions, ideas and show-and-tell · <a href="https://github.com/edmozley/freeitsm/issues">Issues</a> for bugs and feature requests<br><br>
+🌍 And if you mention <a href="https://freeitsm.co.uk">freeitsm.co.uk</a> on Reddit, Hacker News, Spiceworks, LinkedIn, or anywhere IT pros hang out — it genuinely helps and means a lot
 </p>
 
 <p align="center">
