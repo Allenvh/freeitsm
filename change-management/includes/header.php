@@ -19,8 +19,11 @@ if (!isset($_SESSION['analyst_id'])) {
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 $current_page = $current_page ?? '';
 
-// Include the shared waffle menu component
-require_once $path_prefix . 'includes/waffle-menu.php';
+// Include the shared waffle menu component. __DIR__ here is
+// change-management/includes/ — so __DIR__/../../includes/waffle-menu.php
+// resolves to the shared /includes/waffle-menu.php regardless of which
+// entry script included us (e.g. /change-management/new/index.php).
+require_once __DIR__ . '/../../includes/waffle-menu.php';
 ?>
 
 <div class="header changes-header">

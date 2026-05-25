@@ -3,7 +3,7 @@
  * Change Management - Create, view and manage IT changes
  */
 session_start();
-require_once '../config.php';
+require_once __DIR__ . '/../config.php';
 
 $current_page = 'changes';
 $path_prefix = '../';
@@ -19,7 +19,7 @@ $path_prefix = '../';
     <script src="<?php echo BASE_URL; ?>assets/js/tinymce/tinymce.min.js"></script>
 </head>
 <body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
-    <?php include 'includes/header.php'; ?>
+    <?php include __DIR__ . '/includes/header.php'; ?>
 
     <div class="changes-container">
         <!-- Sidebar with search and status filters -->
