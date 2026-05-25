@@ -366,7 +366,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         <!-- SLA Tab — see docs/sla.md -->
         <div class="tab-content" id="sla-tab">
-            <h2>Service Level Agreements</h2>
+            <h2>Service level agreements</h2>
             <p style="margin-bottom: 20px; color: #666;">
                 Business-hours-aware SLAs with per-priority response and resolution targets. The clock pauses on statuses
                 flagged "Pauses SLA" on the <a href="#" onclick="event.preventDefault();switchTab('statuses');">Statuses tab</a>.
@@ -447,7 +447,7 @@ $translationNamespaces = ['common', 'tickets'];
 
             <!-- ===== SLA Targets per priority ===== -->
             <div class="settings-group" style="margin-bottom:30px;">
-                <h3>SLA Targets per priority</h3>
+                <h3>SLA targets per priority</h3>
                 <p style="color:#666;margin-bottom:14px;">Response and resolution times for each ticket priority. Times are in minutes (60 = 1 hour, 240 = 4 hours, 1440 = 1 day). The calendar determines which business hours the clock ticks against. Leave blank to skip that target.</p>
                 <table>
                     <thead>
@@ -468,7 +468,7 @@ $translationNamespaces = ['common', 'tickets'];
             <!-- ===== Business Calendars ===== -->
             <div class="settings-group">
                 <div class="section-header">
-                    <h3 style="margin:0;">Business Calendars</h3>
+                    <h3 style="margin:0;">Business calendars</h3>
                     <button class="add-btn" onclick="openSlaCalendarModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
                 </div>
                 <p style="color:#666;margin-bottom:14px;">Define working hours, timezones, and holiday lists. Calendars are referenced by SLA targets (above) and by individual priorities. One calendar is the default for new priorities.</p>
@@ -492,7 +492,7 @@ $translationNamespaces = ['common', 'tickets'];
             <!-- ===== Breach Notifications ===== -->
             <div class="settings-group">
                 <div class="section-header">
-                    <h3 style="margin:0;">Breach Notifications</h3>
+                    <h3 style="margin:0;">Breach notifications</h3>
                     <button class="add-btn" onclick="openSlaNotifModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
                 </div>
 
@@ -547,7 +547,7 @@ $translationNamespaces = ['common', 'tickets'];
             <!-- ===== Cron Activity ===== -->
             <div class="settings-group">
                 <div class="section-header">
-                    <h3 style="margin:0;">Cron Activity</h3>
+                    <h3 style="margin:0;">Cron activity</h3>
                     <button class="add-btn" onclick="loadSlaCronRuns()" title="Refresh">&#x21bb;</button>
                 </div>
                 <p style="color:#666;margin-bottom:14px;font-size:13px;">
@@ -580,7 +580,7 @@ $translationNamespaces = ['common', 'tickets'];
         <div id="slaNotifModal" class="modal">
             <div class="modal-content" style="max-width:640px;">
                 <div class="modal-header">
-                    <h3 id="slaNotifModalTitle">Add Notification Rule</h3>
+                    <h3 id="slaNotifModalTitle">Add notification rule</h3>
                     <span class="close" onclick="closeSlaNotifModal()">&times;</span>
                 </div>
                 <div class="modal-body">
@@ -682,7 +682,7 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="exchange-status authenticated" id="oauth-success-msg">
                 <span class="status-icon">&#10003;</span>
                 <div>
-                    <strong>Authentication Successful!</strong><br>
+                    <strong>Authentication successful!</strong><br>
                     Mailbox is now connected and ready to check for emails.
                 </div>
             </div>
@@ -791,7 +791,7 @@ $translationNamespaces = ['common', 'tickets'];
             </div>
             <form id="generalSettingsForm" style="max-width: 600px;">
                 <div class="form-group">
-                    <label for="systemName">System Name</label>
+                    <label for="systemName">System name</label>
                     <input type="text" id="systemName" placeholder="e.g., Service Desk Ticketing System">
                     <small style="color: #666;">This name appears in the header and page titles.</small>
                 </div>
@@ -831,7 +831,7 @@ $translationNamespaces = ['common', 'tickets'];
 
             <form id="replyCleanupForm" style="max-width: 600px; margin-top: 24px;">
                 <div class="form-group">
-                    <label for="rcApiKey">Anthropic API Key</label>
+                    <label for="rcApiKey">Anthropic API key</label>
                     <input type="password" id="rcApiKey" autocomplete="off" placeholder="sk-ant-...">
                     <small style="color: #666;">Encrypted at rest. Leave the masked value untouched to keep the existing key.</small>
                 </div>
@@ -857,7 +857,7 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="form-group">
-                    <label for="rcCustomInstructions">Custom Instructions <span style="color: #999; font-weight: normal;">(optional)</span></label>
+                    <label for="rcCustomInstructions">Custom instructions <span style="color: #999; font-weight: normal;">(optional)</span></label>
                     <textarea id="rcCustomInstructions" rows="6" maxlength="4000"
                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; resize: vertical;"
                               placeholder="e.g. Always sign off with 'Many thanks,'&#10;Refer to the company as 'BillCorp'&#10;Use British English spellings throughout"></textarea>
@@ -1403,7 +1403,7 @@ $translationNamespaces = ['common', 'tickets'];
     <!-- SLA Calendar Modal -->
     <div class="modal" id="slaCalendarModal">
         <div class="modal-content" style="max-width:680px;">
-            <div class="modal-header" id="slaCalendarModalTitle">Add Business Calendar</div>
+            <div class="modal-header" id="slaCalendarModalTitle">Add business calendar</div>
             <form id="slaCalendarForm" style="padding:20px 24px;overflow-y:auto;flex:1;">
                 <input type="hidden" id="slaCalendarId">
 
@@ -2264,7 +2264,7 @@ $translationNamespaces = ['common', 'tickets'];
             tbody.innerHTML = mailboxes.map(mb => {
                 const statusBadge = mb.is_authenticated
                     ? '<span class="status-badge status-active">Authenticated</span>'
-                    : '<span class="status-badge status-inactive">Not Authenticated</span>';
+                    : '<span class="status-badge status-inactive">Not authenticated</span>';
 
                 const activeBadge = mb.is_active
                     ? ''
@@ -2630,7 +2630,7 @@ $translationNamespaces = ['common', 'tickets'];
             }
 
             result.innerHTML = `
-                <strong>Check Complete</strong>
+                <strong>Check complete</strong>
                 <p>${successCount} mailbox(es) checked successfully, ${totalEmails} total email(s) processed</p>
                 <ul style="margin-top: 10px; padding-left: 20px;">
                     ${results.map(r => '<li>' + r + '</li>').join('')}
@@ -3851,7 +3851,7 @@ $translationNamespaces = ['common', 'tickets'];
                     grid.querySelector(`.sla-hours-start[data-wd="${w.num}"]`).disabled = !open;
                     grid.querySelector(`.sla-hours-end[data-wd="${w.num}"]`).disabled = !open;
                 });
-                document.getElementById('slaCalendarModalTitle').textContent = 'Add Business Calendar';
+                document.getElementById('slaCalendarModalTitle').textContent = 'Add business calendar';
                 document.getElementById('slaCalendarDeleteBtn').style.display = 'none';
             };
             reset();
@@ -3866,7 +3866,7 @@ $translationNamespaces = ['common', 'tickets'];
                     document.getElementById('slaCalendarName').value = c.name;
                     tzSelect.value = c.timezone;
                     document.getElementById('slaCalendarIsDefault').checked = c.is_default;
-                    document.getElementById('slaCalendarModalTitle').textContent = 'Edit Business Calendar';
+                    document.getElementById('slaCalendarModalTitle').textContent = 'Edit business calendar';
                     document.getElementById('slaCalendarDeleteBtn').style.display = '';
                     // Reset all days closed first, then apply
                     SLA_WEEKDAYS.forEach(w => {
@@ -4070,7 +4070,7 @@ $translationNamespaces = ['common', 'tickets'];
             if (id) {
                 const r = slaNotifData.rules.find(x => x.id === id);
                 if (!r) return;
-                document.getElementById('slaNotifModalTitle').textContent = 'Edit Notification Rule';
+                document.getElementById('slaNotifModalTitle').textContent = 'Edit notification rule';
                 document.getElementById('slaNotifId').value = r.id;
                 dept.value = r.department_id || '';
                 document.getElementById('slaNotifTrigger').value = r.trigger_type;
@@ -4081,7 +4081,7 @@ $translationNamespaces = ['common', 'tickets'];
                 document.getElementById('slaNotifEmails').value = r.notify_emails || '';
                 document.getElementById('slaNotifActive').checked = !!r.is_active;
             } else {
-                document.getElementById('slaNotifModalTitle').textContent = 'Add Notification Rule';
+                document.getElementById('slaNotifModalTitle').textContent = 'Add notification rule';
                 document.getElementById('slaNotifId').value = '';
                 dept.value = '';
                 document.getElementById('slaNotifTrigger').value = 'warning';
