@@ -18,25 +18,30 @@ $analyst_id = $_SESSION['analyst_id'] ?? 0;
 $current_page = 'dashboard';
 $path_prefix = '../';
 
-// Pre-fetch the analyst's preferred chart height so the first paint is
-// already at the right size — otherwise the page would render at the
-// CSS default (280px) and snap to the saved percentage once the JS
-// fetch completed, causing a visible flicker.
-$chart_height_pct = 35.0;  // matches DEFAULT_CHART_PCT in the page-script
+// Pre-fetch the analyst's chart preferences so the first paint is
+// already correct. Two preferences:
+//   mc_chart_height_pct   — how much of the screen the chart occupies
+//   mc_chart_fill_style   — 'plain' or 'gradient' bar fill
+// Falling back to defaults if not set / DB unreachable.
+$chart_height_pct = 35.0;     // matches DEFAULT_CHART_PCT in the page-script
+$chart_fill_style = 'plain';
 try {
     $conn = connectToDatabase();
     $stmt = $conn->prepare(
-        "SELECT preference_value FROM user_preferences
-         WHERE analyst_id = ? AND preference_key = 'mc_chart_height_pct' LIMIT 1"
+        "SELECT preference_key, preference_value FROM user_preferences
+         WHERE analyst_id = ? AND preference_key IN ('mc_chart_height_pct', 'mc_chart_fill_style')"
     );
     $stmt->execute([(int)$analyst_id]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($row && is_numeric($row['preference_value'])) {
-        $v = (float)$row['preference_value'];
-        if ($v >= 12 && $v <= 80) $chart_height_pct = $v;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if ($row['preference_key'] === 'mc_chart_height_pct' && is_numeric($row['preference_value'])) {
+            $v = (float)$row['preference_value'];
+            if ($v >= 12 && $v <= 80) $chart_height_pct = $v;
+        } elseif ($row['preference_key'] === 'mc_chart_fill_style' && $row['preference_value'] === 'gradient') {
+            $chart_fill_style = 'gradient';
+        }
     }
 } catch (Exception $e) {
-    // Stick with the default
+    // Stick with the defaults
 }
 // CSS calc() needs the percentage as a fraction (0-1). The 60px is a
 // reasonable approximation of the global header height — JS will
@@ -306,10 +311,11 @@ $chart_initial_height_calc = 'calc((100vh - 60px) * ' . ($chart_height_pct / 100
             name: <?php echo json_encode($analyst_name); ?>,
             email: <?php echo json_encode($analyst_email); ?>
         };
-        // Chart height preference pre-fetched server-side so we don't
+        // Chart preferences pre-fetched server-side so we don't
         // need a separate AJAX round-trip (and so the page paints at
-        // the right size from the start).
+        // the right size and style from the start).
         const INITIAL_CHART_PCT = <?php echo json_encode($chart_height_pct); ?>;
+        const CHART_FILL_STYLE = <?php echo json_encode($chart_fill_style); ?>;
         let rtAnalystOptions = [];
         let rtDepartmentOptions = [];
         let rtTicketTypeOptions = [];
@@ -626,14 +632,32 @@ $chart_initial_height_calc = 'calc((100vh - 60px) * ' . ($chart_height_pct / 100
                 ? ('Last 30 days overview · ' + monthTitle)
                 : 'Last 30 days overview';
 
+            // Background colour resolver — returns the solid colour when
+            // CHART_FILL_STYLE is 'plain', or a function that produces a
+            // top-to-bottom linear gradient when 'gradient'. Returning a
+            // function lets Chart.js rebuild the gradient on every draw,
+            // so it tracks the chart's actual area as it resizes.
+            function barFill(baseHex) {
+                if (CHART_FILL_STYLE !== 'gradient') return baseHex;
+                return function(context) {
+                    const chart = context.chart;
+                    const { ctx, chartArea } = chart;
+                    if (!chartArea) return baseHex;   // first frame before layout — fall back
+                    const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                    gradient.addColorStop(0, lighten(baseHex, 0.45));
+                    gradient.addColorStop(1, baseHex);
+                    return gradient;
+                };
+            }
+
             chartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: data.dates,
                     datasets: [
-                        { label: 'Green', data: data.green, backgroundColor: '#28a745' },
-                        { label: 'Amber', data: data.amber, backgroundColor: '#ffc107' },
-                        { label: 'Red', data: data.red, backgroundColor: '#dc3545' }
+                        { label: 'Green', data: data.green, backgroundColor: barFill('#28a745') },
+                        { label: 'Amber', data: data.amber, backgroundColor: barFill('#ffc107') },
+                        { label: 'Red',   data: data.red,   backgroundColor: barFill('#dc3545') }
                     ]
                 },
                 options: {
@@ -691,6 +715,19 @@ $chart_initial_height_calc = 'calc((100vh - 60px) * ' . ($chart_height_pct / 100
                     }
                 }
             });
+        }
+
+        // Blend a #rrggbb colour toward white by `amount` (0 = no change,
+        // 1 = fully white). Used to compute the top stop of the bar
+        // gradient when CHART_FILL_STYLE is 'gradient'.
+        function lighten(hex, amount) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            const nr = Math.round(r + (255 - r) * amount);
+            const ng = Math.round(g + (255 - g) * amount);
+            const nb = Math.round(b + (255 - b) * amount);
+            return 'rgb(' + nr + ',' + ng + ',' + nb + ')';
         }
 
         // Build the x-axis title that replaces per-tick month names.

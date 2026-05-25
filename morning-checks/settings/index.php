@@ -177,6 +177,7 @@ $path_prefix = '../../';
     <div class="settings-container">
         <div class="tabs">
             <button class="tab active" data-tab="checks" onclick="switchTab('checks')">Checks</button>
+            <button class="tab" data-tab="chart" onclick="switchTab('chart')">Chart</button>
         </div>
 
         <div class="tab-content active" id="checks-tab">
@@ -186,6 +187,31 @@ $path_prefix = '../../';
             </div>
             <div class="checks-list" id="checksList">
                 <div class="checks-empty">Loading checks...</div>
+            </div>
+        </div>
+
+        <!-- Chart tab: visual options for the dashboard trend chart.
+             Saved per-analyst via the generic user-preference API so
+             different analysts can choose different looks. -->
+        <div class="tab-content" id="chart-tab">
+            <div class="section-header">
+                <h2>Chart</h2>
+            </div>
+            <p style="color: #666; margin-bottom: 16px;">Visual style for the trend chart on the dashboard.</p>
+
+            <div class="form-group">
+                <label style="display: block; font-weight: 500; margin-bottom: 8px; color: #333; font-size: 13px;">Bar fill</label>
+                <div style="display: flex; gap: 24px; margin-top: 4px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #333;">
+                        <input type="radio" name="chartFill" value="plain" id="chartFillPlain">
+                        Plain
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #333;">
+                        <input type="radio" name="chartFill" value="gradient" id="chartFillGradient">
+                        Gradient
+                    </label>
+                </div>
+                <p style="font-size: 12px; color: #888; margin-top: 8px;">Plain uses a solid fill. Gradient fades from a lighter shade at the top of each bar segment down to the full colour.</p>
             </div>
         </div>
     </div>
@@ -532,8 +558,53 @@ $path_prefix = '../../';
             return div.innerHTML;
         }
 
+        // ===== Chart tab — fill style preference =====
+        // Per-analyst preference saved via the generic user-preference
+        // API. Dashboard reads the same key on page load to decide
+        // whether to render plain or gradient bars.
+        const CHART_FILL_PREF = 'mc_chart_fill_style';
+
+        async function loadChartFillSetting() {
+            let v = 'plain';
+            try {
+                const res = await fetch('../../api/system/get_user_preference.php?key=' + CHART_FILL_PREF);
+                const data = await res.json();
+                if (data && data.success && data.value === 'gradient') v = 'gradient';
+            } catch (e) {
+                // Stick with default 'plain'
+            }
+            const radio = document.querySelector('input[name="chartFill"][value="' + v + '"]');
+            if (radio) radio.checked = true;
+        }
+
+        function wireChartFillSetting() {
+            document.querySelectorAll('input[name="chartFill"]').forEach(radio => {
+                radio.addEventListener('change', async function() {
+                    try {
+                        const res = await fetch('../../api/system/set_user_preference.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: CHART_FILL_PREF, value: this.value })
+                        });
+                        const data = await res.json();
+                        if (data && data.success) {
+                            showToast('Saved', 'success');
+                        } else {
+                            showToast((data && data.error) || 'Failed to save', 'error');
+                        }
+                    } catch (e) {
+                        showToast('Failed to save', 'error');
+                    }
+                });
+            });
+        }
+
         // Initialize
-        document.addEventListener('DOMContentLoaded', loadChecks);
+        document.addEventListener('DOMContentLoaded', function() {
+            loadChecks();
+            loadChartFillSetting();
+            wireChartFillSetting();
+        });
     </script>
 </body>
 </html>
