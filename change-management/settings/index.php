@@ -149,10 +149,16 @@ $path_prefix = '../../';
         .badge-active   { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #e0f2f1; color: #00695c; font-size: 11px; font-weight: 600; }
         .badge-inactive { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #fafafa; color: #999;   font-size: 11px; font-weight: 600; }
         .swatch { display: inline-block; width: 18px; height: 18px; border-radius: 3px; vertical-align: middle; border: 1px solid #ddd; margin-right: 6px; }
-        .action-btn { background: none; border: none; cursor: pointer; padding: 4px; color: #666; }
-        /* Keep the Edit / Delete icons together on one row in the Actions
-           column even when other columns wrap to narrow widths. */
-        table td:last-child { white-space: nowrap; }
+        .action-btn { background: none; border: none; cursor: pointer; padding: 4px; color: #666; display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+        /* Force the Actions column to size to its content (width: 1%) and
+           never wrap the icon buttons. width:1% + white-space:nowrap is the
+           classic trick to collapse a table cell to exactly its content
+           width regardless of how wide the table is. */
+        .lookup-table td:last-child,
+        .lookup-table th:last-child {
+            white-space: nowrap;
+            width: 1%;
+        }
         .action-btn:hover { color: #00897b; }
         .action-btn.delete:hover { color: #c62828; }
         .add-btn { background: #00897b; color: white; padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; }
