@@ -148,7 +148,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                             <input type="text" class="form-input" id="articleTitle" placeholder="Enter article title...">
                         </div>
                         <div class="form-group" style="flex: 1;">
-                            <label class="form-label">Tags <small style="font-weight: normal; color: #888;">— press Enter or comma to add</small></label>
+                            <label class="form-label">Tags <small style="display: inline; margin-top: 0; font-weight: normal; color: #888;">— press Enter or comma to add</small></label>
                             <div class="tag-input-container">
                                 <div class="selected-tags" id="selectedTags"></div>
                                 <input type="text" class="tag-input" id="tagInput" placeholder="Type to add tags...">
