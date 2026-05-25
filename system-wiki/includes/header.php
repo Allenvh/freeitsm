@@ -9,7 +9,7 @@ $module_title = 'System Wiki';
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . $path_prefix . 'login.php');
+    header('Location: ' . BASE_URL . 'login.php');
     exit;
 }
 
@@ -27,20 +27,20 @@ require_once $path_prefix . 'includes/waffle-menu.php';
         <span class="module-title"><?php echo $module_title; ?></span>
     </div>
     <nav class="header-nav">
-        <a href="<?php echo $path_prefix; ?>system-wiki/" class="nav-btn <?php echo $current_page === 'browse' ? 'active' : ''; ?>" title="Browse Files">
+        <a href="<?php echo BASE_URL; ?>system-wiki/" class="nav-btn <?php echo $current_page === 'browse' ? 'active' : ''; ?>" title="Browse Files">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
             <span>Browse</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>system-wiki/search.php" class="nav-btn <?php echo $current_page === 'search' ? 'active' : ''; ?>" title="Search">
+        <a href="<?php echo BASE_URL; ?>system-wiki/search.php" class="nav-btn <?php echo $current_page === 'search' ? 'active' : ''; ?>" title="Search">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
             <span>Search</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>system-wiki/tables.php" class="nav-btn <?php echo $current_page === 'tables' ? 'active' : ''; ?>" title="Database Tables">
+        <a href="<?php echo BASE_URL; ?>system-wiki/tables.php" class="nav-btn <?php echo $current_page === 'tables' ? 'active' : ''; ?>" title="Database Tables">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                 <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
@@ -48,7 +48,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Tables</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>system-wiki/scan.php" class="nav-btn <?php echo $current_page === 'scan' ? 'active' : ''; ?>" title="Scan Management">
+        <a href="<?php echo BASE_URL; ?>system-wiki/scan.php" class="nav-btn <?php echo $current_page === 'scan' ? 'active' : ''; ?>" title="Scan Management">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="23 4 23 10 17 10"></polyline>
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>

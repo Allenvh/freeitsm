@@ -31,7 +31,7 @@ I18n::initFromSession();
 if (!empty($_SESSION['password_expired'])) {
     $currentUrl = $_SERVER['REQUEST_URI'] ?? '';
     if (strpos($currentUrl, 'force_password_change.php') === false && strpos($currentUrl, 'analyst_logout.php') === false && strpos($currentUrl, 'api/') === false) {
-        header('Location: ' . $path_prefix . 'force_password_change.php');
+        header('Location: ' . BASE_URL . 'force_password_change.php');
         exit;
     }
 }
@@ -322,7 +322,7 @@ function renderWaffleMenuPanel($modules, $current_module, $path_prefix) {
             <?php foreach ($modules as $key => $module):
                 if ($allowed !== null && !in_array($key, $allowed)) continue;
             ?>
-            <a href="<?php echo $path_prefix . $module['path']; ?>" class="waffle-module-link <?php echo $key === $current_module ? 'current' : ''; ?>">
+            <a href="<?php echo BASE_URL . $module['path']; ?>" class="waffle-module-link <?php echo $key === $current_module ? 'current' : ''; ?>">
                 <div class="waffle-module-icon <?php echo $key; ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <?php echo $module['icon']; ?>
@@ -734,7 +734,7 @@ function renderHeaderRight($analyst_name, $path_prefix) {
                 <span class="mfa-badge disabled" id="trustBadgeMenu"><?php echo htmlspecialchars(t('common.account.badge_off')); ?></span>
             </button>
             <div class="user-menu-divider"></div>
-            <button class="user-menu-item logout-item" onclick="if(confirm(<?php echo htmlspecialchars(json_encode(t('common.account.logout_confirm')), ENT_QUOTES); ?>)) window.location.href='<?php echo $path_prefix; ?>analyst_logout.php';">
+            <button class="user-menu-item logout-item" onclick="if(confirm(<?php echo htmlspecialchars(json_encode(t('common.account.logout_confirm')), ENT_QUOTES); ?>)) window.location.href='<?php echo BASE_URL; ?>analyst_logout.php';">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                 <span><?php echo htmlspecialchars(t('common.account.logout')); ?></span>
             </button>
@@ -784,9 +784,9 @@ function renderHeaderRight($analyst_name, $path_prefix) {
         </div>
     </div>
 
-    <script src="<?php echo $path_prefix; ?>assets/js/qrcode.min.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/qrcode.min.js"></script>
     <script>
-    const _pathPrefix = '<?php echo $path_prefix; ?>';
+    const _pathPrefix = '<?php echo BASE_URL; ?>';
 
     /* --- User Menu --- */
     function toggleUserMenu() {

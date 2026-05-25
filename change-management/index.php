@@ -14,9 +14,9 @@ $path_prefix = '../';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Change Management</title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/change-management.css">
-    <script src="../assets/js/tinymce/tinymce.min.js"></script>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/change-management.css">
+    <script src="<?php echo BASE_URL; ?>assets/js/tinymce/tinymce.min.js"></script>
 </head>
 <body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
     <?php include 'includes/header.php'; ?>
@@ -380,7 +380,14 @@ $path_prefix = '../';
 
     <!-- html2pdf for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script>window.API_BASE = '../api/change-management/';</script>
-    <script src="../assets/js/change-management.js?v=5"></script>
+    <script>
+        window.API_BASE = '<?php echo BASE_URL; ?>api/change-management/';
+        <?php if (!empty($openCreateOnLoad)): ?>
+        // Bootstrap from /change-management/new/ — tells the JS to open
+        // the editor in create mode as soon as the page is ready.
+        window.openCreateOnLoad = true;
+        <?php endif; ?>
+    </script>
+    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=6"></script>
 </body>
 </html>

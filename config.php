@@ -23,4 +23,28 @@ define('SSL_VERIFY_PEER', false);
 // Error reporting (set to 0 in production)
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+
+/**
+ * BASE_URL — absolute URL path prefix for the app's deployment root.
+ *
+ * Examples:
+ *   App served at http://localhost/freeitsm-app/ → BASE_URL = '/freeitsm-app/'
+ *   App served at https://itsm.company.com/      → BASE_URL = '/'
+ *
+ * Used everywhere we build internal links so we don't have to fiddle with
+ * $path_prefix or '../' on every page. Auto-detected from the filesystem
+ * location of this config.php relative to the web server's DOCUMENT_ROOT.
+ */
+if (!defined('BASE_URL')) {
+    $__appRoot = str_replace('\\', '/', realpath(__DIR__));
+    $__docRoot = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? ''));
+    $__rel = '';
+    if ($__docRoot && strpos($__appRoot, $__docRoot) === 0) {
+        $__rel = substr($__appRoot, strlen($__docRoot));
+    }
+    $__rel = '/' . trim($__rel, '/') . '/';
+    if ($__rel === '//') $__rel = '/'; // app deployed at document root
+    define('BASE_URL', $__rel);
+    unset($__appRoot, $__docRoot, $__rel);
+}
 ?>

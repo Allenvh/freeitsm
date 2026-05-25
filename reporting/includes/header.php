@@ -9,7 +9,7 @@ $module_title = 'Reporting';
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . $path_prefix . 'login.php');
+    header('Location: ' . BASE_URL . 'login.php');
     exit;
 }
 
@@ -27,7 +27,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
         <span class="module-title"><?php echo $module_title; ?></span>
     </div>
     <nav class="header-nav">
-        <a href="<?php echo $path_prefix; ?>reporting/logs/" class="nav-btn <?php echo $current_page === 'logs' ? 'active' : ''; ?>" title="System Logs">
+        <a href="<?php echo BASE_URL; ?>reporting/logs/" class="nav-btn <?php echo $current_page === 'logs' ? 'active' : ''; ?>" title="System Logs">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -37,7 +37,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Logs</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>reporting/tickets/" class="nav-btn <?php echo $current_page === 'tickets' ? 'active' : ''; ?>" title="Ticket Dashboards">
+        <a href="<?php echo BASE_URL; ?>reporting/tickets/" class="nav-btn <?php echo $current_page === 'tickets' ? 'active' : ''; ?>" title="Ticket Dashboards">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="20" x2="18" y2="10"></line>
                 <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -45,7 +45,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Tickets</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>reporting/intune/" class="nav-btn <?php echo $current_page === 'intune' ? 'active' : ''; ?>" title="Intune Dashboard">
+        <a href="<?php echo BASE_URL; ?>reporting/intune/" class="nav-btn <?php echo $current_page === 'intune' ? 'active' : ''; ?>" title="Intune Dashboard">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
                 <line x1="8" y1="21" x2="16" y2="21"></line>
@@ -53,7 +53,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Intune</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>reporting/help.php" class="nav-btn <?php echo $current_page === 'help' ? 'active' : ''; ?>" title="Help">
+        <a href="<?php echo BASE_URL; ?>reporting/help.php" class="nav-btn <?php echo $current_page === 'help' ? 'active' : ''; ?>" title="Help">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>

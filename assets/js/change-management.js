@@ -29,27 +29,19 @@ document.addEventListener('DOMContentLoaded', function() {
     setupFileUpload();
 
     // Handle deep links:
-    //   ?open=ID  — calendar / shared link to view an existing change
-    //   ?new=1    — pretty-URL bounce from /change-management/new/ that
-    //               opens the editor in create mode straight away
+    //   ?open=ID                  — shared link to view an existing change
+    //   window.openCreateOnLoad   — set by /change-management/new/index.php
+    //                               (a thin include wrapper). Opens the
+    //                               editor in create mode straight away.
     const urlParams = new URLSearchParams(window.location.search);
     const openId = urlParams.get('open');
     if (openId) {
         viewChange(parseInt(openId, 10));
-    } else if (urlParams.get('new') === '1') {
+    } else if (window.openCreateOnLoad) {
         // openCreateChange() needs the Status dropdown populated by
         // loadStatuses() before it can set the default value, so wait
         // for that fetch to land before opening the editor.
         statusesReady.then(() => openCreateChange());
-        // Drop ?new=1 from the URL so a page refresh after the user
-        // has saved doesn't re-open the create-mode editor on top of
-        // the just-saved change. The /new/ pretty URL is still
-        // available as the button target / bookmark — it just 302s
-        // here, and the param triggers the editor exactly once.
-        // We deliberately do NOT push the URL to /new/ instead: header
-        // nav links are built with $path_prefix='../' relative to
-        // /change-management/ so a deeper URL would break them all.
-        try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
     }
 
     // Enter key triggers search in search modal

@@ -12,7 +12,7 @@ $module_title = 'Change Management';
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . $path_prefix . 'login.php');
+    header('Location: ' . BASE_URL . 'login.php');
     exit;
 }
 
@@ -30,7 +30,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
         <span class="module-title"><?php echo $module_title; ?></span>
     </div>
     <nav class="header-nav">
-        <a href="<?php echo $path_prefix; ?>change-management/" class="nav-btn <?php echo $current_page === 'changes' ? 'active' : ''; ?>" title="Changes">
+        <a href="<?php echo BASE_URL; ?>change-management/" class="nav-btn <?php echo $current_page === 'changes' ? 'active' : ''; ?>" title="Changes">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="16 3 21 3 21 8"></polyline>
                 <line x1="4" y1="20" x2="21" y2="3"></line>
@@ -40,7 +40,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Changes</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>change-management/calendar.php" class="nav-btn <?php echo $current_page === 'calendar' ? 'active' : ''; ?>" title="Calendar">
+        <a href="<?php echo BASE_URL; ?>change-management/calendar.php" class="nav-btn <?php echo $current_page === 'calendar' ? 'active' : ''; ?>" title="Calendar">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                 <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -49,21 +49,21 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Calendar</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>change-management/approvals.php" class="nav-btn <?php echo $current_page === 'approvals' ? 'active' : ''; ?>" title="Approvals">
+        <a href="<?php echo BASE_URL; ?>change-management/approvals.php" class="nav-btn <?php echo $current_page === 'approvals' ? 'active' : ''; ?>" title="Approvals">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
             <span>Approvals</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>change-management/settings/" class="nav-btn <?php echo $current_page === 'settings' ? 'active' : ''; ?>" title="Settings">
+        <a href="<?php echo BASE_URL; ?>change-management/settings/" class="nav-btn <?php echo $current_page === 'settings' ? 'active' : ''; ?>" title="Settings">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
             <span>Settings</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>change-management/help.php" class="nav-btn <?php echo $current_page === 'help' ? 'active' : ''; ?>" title="Help">
+        <a href="<?php echo BASE_URL; ?>change-management/help.php" class="nav-btn <?php echo $current_page === 'help' ? 'active' : ''; ?>" title="Help">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>

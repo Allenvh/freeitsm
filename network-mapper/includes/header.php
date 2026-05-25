@@ -11,7 +11,7 @@ $current_module = 'network-mapper';
 $module_title = 'Network Mapper';
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . $path_prefix . 'login.php');
+    header('Location: ' . BASE_URL . 'login.php');
     exit;
 }
 
@@ -28,7 +28,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
         <span class="module-title"><?php echo htmlspecialchars($module_title); ?></span>
     </div>
     <nav class="header-nav">
-        <a href="<?php echo $path_prefix; ?>network-mapper/" class="nav-btn <?php echo $current_page === 'diagrams' ? 'active' : ''; ?>" title="Diagrams">
+        <a href="<?php echo BASE_URL; ?>network-mapper/" class="nav-btn <?php echo $current_page === 'diagrams' ? 'active' : ''; ?>" title="Diagrams">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="6" cy="6" r="2.5"></circle>
                 <circle cx="18" cy="6" r="2.5"></circle>
@@ -39,7 +39,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span>Diagrams</span>
         </a>
-        <a href="<?php echo $path_prefix; ?>network-mapper/help.php" class="nav-btn <?php echo $current_page === 'help' ? 'active' : ''; ?>" title="Help">
+        <a href="<?php echo BASE_URL; ?>network-mapper/help.php" class="nav-btn <?php echo $current_page === 'help' ? 'active' : ''; ?>" title="Help">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
