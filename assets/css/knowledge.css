@@ -396,6 +396,33 @@
 .knowledge-container.editor-popout .editor-properties .form-row + .form-row {
     margin-top: 16px;
 }
+
+/* In the narrow right-hand panel, the chips-next-to-label layout that
+   works in the wide regular view gets cramped. Reorder so the layout
+   becomes: [label] / [input] / [chips]. display: contents on the
+   .tag-label-row dissolves the wrapper so the label and the chips
+   become direct flex children of the form-group; then `order` rearranges
+   them around the input container. */
+.knowledge-container.editor-popout .editor-properties .tag-form-group {
+    display: flex;
+    flex-direction: column;
+}
+.knowledge-container.editor-popout .editor-properties .tag-form-group .tag-label-row {
+    display: contents;
+}
+.knowledge-container.editor-popout .editor-properties .tag-form-group > .tag-label-row > .form-label,
+.knowledge-container.editor-popout .editor-properties .tag-form-group > .form-label {
+    order: 1;
+}
+.knowledge-container.editor-popout .editor-properties .tag-form-group > .tag-input-container {
+    order: 2;
+}
+.knowledge-container.editor-popout .editor-properties .tag-form-group > .tag-label-row > .selected-tags,
+.knowledge-container.editor-popout .editor-properties .tag-form-group > .selected-tags {
+    order: 3;
+    justify-content: flex-start;
+    margin-top: 8px;
+}
 .knowledge-container.editor-popout .editor-content {
     flex: 1;
     min-width: 0;
