@@ -104,12 +104,16 @@ Return EXACTLY ONE JSON object with this shape:
 
 # FIELD TYPES
 
-You may use ONLY these four field types — no others exist:
+You may use ONLY these eight field types — no others exist:
 
-- "text" — single-line text input. Use for names, short answers, dates (formatted as text), email addresses, phone numbers, reference numbers.
+- "text" — single-line free text. Use for names, short answers, phone numbers, reference numbers, dates formatted as text.
 - "textarea" — multi-line text input. Use for longer free-text answers like descriptions, comments, notes, justifications, explanations.
-- "checkbox" — single yes/no toggle. Use for confirmations, agreements, consent flags, or any single boolean answer.
-- "dropdown" — single-select from a fixed list of options. Use ONLY when there is a clear, finite set of choices. ALWAYS provide an "options" array with 2-12 items.
+- "email" — text input with email-address format validation. PREFER over "text" whenever the question asks for an email address.
+- "number" — numeric input (rejects letters). Use for quantities, ages, counts, amounts, hours, days. PREFER over "text" whenever the question asks for a number.
+- "checkbox" — SINGLE yes/no toggle (one checkbox). Use for confirmations, agreements, consent flags, or any one-question boolean. The label IS the question. NEVER use this when the user wants to pick multiple things from a list (use "checkboxes" for that).
+- "checkboxes" — MULTI-SELECT from a list of options (zero or more can be picked). Use when the user wants to capture "tick everything that applies". ALWAYS provide an "options" array with 2-12 items.
+- "radio" — SINGLE-select from a small visible list of 2-5 options (radio buttons). Use when there are a small number of mutually-exclusive choices and you want them all visible at once. ALWAYS provide an "options" array with 2-5 items. For more than 5 options prefer "dropdown".
+- "dropdown" — SINGLE-select from a fixed list of options (collapsed dropdown). Use when there are 6+ mutually-exclusive choices, or when space is tight. ALWAYS provide an "options" array with 2-12 items.
 
 # RULES
 
@@ -117,9 +121,9 @@ You may use ONLY these four field types — no others exist:
 - "description" should be one short sentence (8-25 words) explaining the form's purpose. Optional but encouraged.
 - Aim for 3-12 fields. Fewer is better — capture the user's intent with the minimum needed.
 - Mark a field as "is_required": true ONLY when the field is clearly essential to the form's purpose (e.g. requester name on a request form, dates on a leave request, the confirmation checkbox on a consent form). Default to false otherwise.
-- For "dropdown" fields, the "options" array must contain real, sensible choices the user would expect to see — do not output placeholder values like "Option 1" / "Option 2".
+- For "dropdown", "radio" and "checkboxes" fields, the "options" array must contain real, sensible choices the user would expect to see — do not output placeholder values like "Option 1" / "Option 2".
 - For all other field types, "options" should be an empty array [].
-- If the user mentions something that doesn't fit the four field types (e.g. file upload, date picker, multi-select, signature), pick the closest type and reflect the constraint in the label. For example, a date question becomes "text" with a label like "Start date (DD/MM/YYYY)". A multi-select becomes "dropdown" with the most-likely single choice.
+- If the user mentions something that doesn't fit the available types (e.g. file upload, date picker, signature), pick the closest type and reflect the constraint in the label. For example, a date question becomes "text" with a label like "Start date (DD/MM/YYYY)".
 - Use British English spelling.
 - Use clear, professional, neutral language for labels and the description. No marketing copy.
 - Order the fields in a sensible flow: identifying information first (name, email, reference), then context (dates, type, category), then free-text fields (descriptions, notes), then any agreement / consent checkbox at the end.
@@ -148,9 +152,9 @@ If there is NO "Current form" block, generate a new form from scratch as usual.
 
 - Return ONLY valid JSON. No markdown code fences. No explanation prose. No leading or trailing text.
 - Every field MUST include all four keys: field_type, label, is_required, options.
-- "field_type" must be exactly one of: "text", "textarea", "checkbox", "dropdown".
+- "field_type" must be exactly one of: "text", "textarea", "email", "number", "checkbox", "checkboxes", "radio", "dropdown".
 - "is_required" must be a boolean (true or false), not a string or number.
-- "options" must always be an array (empty [] for non-dropdown fields).
+- "options" must always be an array (empty [] for field types that don't use it: text, textarea, email, number, checkbox).
 PROMPT;
 
 try {
@@ -209,7 +213,10 @@ try {
     }
 
     // Validate + sanitise the shape so the front-end can trust it.
-    $allowedTypes = ['text', 'textarea', 'checkbox', 'dropdown'];
+    // Allowed types must stay in sync with the renderer in
+    // forms/edit/index.php's FIELD_TYPES_WITH_OPTIONS / preview switch.
+    $allowedTypes = ['text', 'textarea', 'email', 'number', 'checkbox', 'checkboxes', 'radio', 'dropdown'];
+    $typesWithOptions = ['dropdown', 'radio', 'checkboxes'];
     $cleanFields  = [];
     foreach (($payload['fields'] ?? []) as $f) {
         if (!is_array($f)) continue;
@@ -224,10 +231,10 @@ try {
         if (!is_array($options)) $options = [];
         $options = array_values(array_filter(array_map(fn($o) => trim((string)$o), $options), fn($o) => $o !== ''));
 
-        if ($type === 'dropdown' && count($options) === 0) {
+        if (in_array($type, $typesWithOptions, true) && count($options) === 0) {
             $options = ['Option 1'];
         }
-        if ($type !== 'dropdown') {
+        if (!in_array($type, $typesWithOptions, true)) {
             $options = [];
         }
 

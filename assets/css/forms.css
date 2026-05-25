@@ -374,10 +374,14 @@
     letter-spacing: 0.3px;
 }
 
-.field-type-badge.text { background: #e3f2fd; color: #1565c0; }
-.field-type-badge.textarea { background: #f3e5f5; color: #7b1fa2; }
-.field-type-badge.checkbox { background: #e8f5e9; color: #2e7d32; }
-.field-type-badge.dropdown { background: #fff3e0; color: #e65100; }
+.field-type-badge.text       { background: #e3f2fd; color: #1565c0; }
+.field-type-badge.textarea   { background: #f3e5f5; color: #7b1fa2; }
+.field-type-badge.checkbox   { background: #e8f5e9; color: #2e7d32; }
+.field-type-badge.dropdown   { background: #fff3e0; color: #e65100; }
+.field-type-badge.email      { background: #e0f2f1; color: #00695c; }
+.field-type-badge.number     { background: #fce4ec; color: #ad1457; }
+.field-type-badge.checkboxes { background: #dcedc8; color: #33691e; }
+.field-type-badge.radio      { background: #fff8e1; color: #ff8f00; }
 
 /* Field items */
 .field-list {

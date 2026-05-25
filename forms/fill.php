@@ -80,6 +80,8 @@ $path_prefix = '../';
         }
 
         .form-field input[type="text"],
+        .form-field input[type="email"],
+        .form-field input[type="number"],
         .form-field textarea,
         .form-field select {
             width: 100%;
@@ -122,10 +124,41 @@ $path_prefix = '../';
             cursor: pointer;
         }
 
+        /* .choice-field is the wrapper for radio groups and multi-
+           checkbox groups. Each option lives in a .choice-row beneath
+           the field label. */
+        .form-field.choice-field .choice-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+        .form-field.choice-field .choice-row input {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .form-field.choice-field .choice-row label {
+            margin: 0;
+            cursor: pointer;
+            font-weight: normal;
+            font-size: 14px;
+            color: #333;
+        }
+
         .form-field.has-error input,
         .form-field.has-error textarea,
         .form-field.has-error select {
             border-color: #d32f2f;
+        }
+        /* When a radio/checkbox group errors, highlight the wrapper
+           border instead of every input. */
+        .form-field.choice-field.has-error {
+            border: 1px solid #d32f2f;
+            border-radius: 6px;
+            padding: 8px 12px;
         }
 
         .field-error {
@@ -274,6 +307,20 @@ $path_prefix = '../';
                             <div class="field-error">This field is required</div>
                         </div>`;
                         break;
+                    case 'email':
+                        html += `<div class="form-field" ${reqAttr}>
+                            <label>${esc(f.label)}${reqStar}</label>
+                            <input type="email" name="field_${f.id}" data-field-id="${f.id}" placeholder="name@example.com">
+                            <div class="field-error">Please enter a valid email address</div>
+                        </div>`;
+                        break;
+                    case 'number':
+                        html += `<div class="form-field" ${reqAttr}>
+                            <label>${esc(f.label)}${reqStar}</label>
+                            <input type="number" name="field_${f.id}" data-field-id="${f.id}" inputmode="decimal" step="any">
+                            <div class="field-error">Please enter a number</div>
+                        </div>`;
+                        break;
                     case 'checkbox':
                         html += `<div class="form-field checkbox-field" ${reqAttr}>
                             <input type="checkbox" name="field_${f.id}" data-field-id="${f.id}" id="cb_${f.id}">
@@ -281,7 +328,7 @@ $path_prefix = '../';
                             <div class="field-error">This field is required</div>
                         </div>`;
                         break;
-                    case 'dropdown':
+                    case 'dropdown': {
                         const opts = f.options ? JSON.parse(f.options) : [];
                         html += `<div class="form-field" ${reqAttr}>
                             <label>${esc(f.label)}${reqStar}</label>
@@ -292,6 +339,43 @@ $path_prefix = '../';
                             <div class="field-error">This field is required</div>
                         </div>`;
                         break;
+                    }
+                    case 'radio': {
+                        const opts = f.options ? JSON.parse(f.options) : [];
+                        // Radios share a name so the browser enforces
+                        // single-select. data-field-id on the wrapper
+                        // (not the individual inputs) so submitForm can
+                        // read the chosen value via name=field_X.
+                        html += `<div class="form-field choice-field" ${reqAttr} data-field-id="${f.id}" data-field-kind="radio">
+                            <label>${esc(f.label)}${reqStar}</label>
+                            ${opts.map((o, i) => `
+                                <div class="choice-row">
+                                    <input type="radio" name="field_${f.id}" value="${esc(o)}" id="r_${f.id}_${i}">
+                                    <label for="r_${f.id}_${i}">${esc(o)}</label>
+                                </div>
+                            `).join('')}
+                            <div class="field-error">This field is required</div>
+                        </div>`;
+                        break;
+                    }
+                    case 'checkboxes': {
+                        const opts = f.options ? JSON.parse(f.options) : [];
+                        // Multi-checkbox group — each option is its own
+                        // <input type="checkbox">; submitForm reads the
+                        // wrapper's [data-field-kind="checkboxes"] and
+                        // collects every checked value into an array.
+                        html += `<div class="form-field choice-field" ${reqAttr} data-field-id="${f.id}" data-field-kind="checkboxes">
+                            <label>${esc(f.label)}${reqStar}</label>
+                            ${opts.map((o, i) => `
+                                <div class="choice-row">
+                                    <input type="checkbox" name="field_${f.id}[]" value="${esc(o)}" id="c_${f.id}_${i}">
+                                    <label for="c_${f.id}_${i}">${esc(o)}</label>
+                                </div>
+                            `).join('')}
+                            <div class="field-error">Please tick at least one option</div>
+                        </div>`;
+                        break;
+                    }
                 }
             });
 
@@ -316,25 +400,46 @@ $path_prefix = '../';
             let valid = true;
 
             formData.fields.forEach(f => {
-                const el = document.querySelector(`[data-field-id="${f.id}"]`);
-                if (!el) return;
+                // The wrapper carries data-field-id for radio +
+                // checkboxes groups; for everything else it's on the
+                // input itself. Read the wrapper first so the lookup
+                // works for both shapes.
+                const wrapper = document.querySelector(`.form-field[data-field-id="${f.id}"]`);
+                const el = wrapper ? null : document.querySelector(`[data-field-id="${f.id}"]`);
 
                 let value;
+                let isEmpty = false;
                 if (f.field_type === 'checkbox') {
+                    // Single yes/no toggle — '1' or '0'.
+                    if (!el) return;
                     value = el.checked ? '1' : '0';
+                    isEmpty = !el.checked;
+                } else if (f.field_type === 'radio') {
+                    // Single-select from a group — the value is the
+                    // checked radio's value (or empty string if none).
+                    const picked = wrapper && wrapper.querySelector('input[type="radio"]:checked');
+                    value = picked ? picked.value : '';
+                    isEmpty = !picked;
+                } else if (f.field_type === 'checkboxes') {
+                    // Multi-select — collect every ticked value into
+                    // an array and serialise as JSON. submit_form.php
+                    // stores it as a JSON string; submissions.php
+                    // decodes for display.
+                    const picked = wrapper ? wrapper.querySelectorAll('input[type="checkbox"]:checked') : [];
+                    const arr = Array.from(picked).map(p => p.value);
+                    value = JSON.stringify(arr);
+                    isEmpty = arr.length === 0;
                 } else {
-                    value = el.value.trim();
+                    if (!el) return;
+                    value = (el.value || '').trim();
+                    isEmpty = !value;
                 }
 
                 data[f.id] = value;
 
-                // Validate required
-                if (f.is_required == 1) {
-                    const isEmpty = f.field_type === 'checkbox' ? !el.checked : !value;
-                    if (isEmpty) {
-                        el.closest('.form-field').classList.add('has-error');
-                        valid = false;
-                    }
+                if (f.is_required == 1 && isEmpty) {
+                    (wrapper || el.closest('.form-field')).classList.add('has-error');
+                    valid = false;
                 }
             });
 

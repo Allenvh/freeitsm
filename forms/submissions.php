@@ -473,6 +473,13 @@ $path_prefix = '../';
                     if (f.field_type === 'checkbox') {
                         const checked = val === '1';
                         html += `<td><span class="cb-value ${checked ? 'cb-yes' : 'cb-no'}">${checked ? '&#10003;' : '&#10007;'}</span></td>`;
+                    } else if (f.field_type === 'checkboxes') {
+                        // Stored as a JSON-encoded array; show as a
+                        // comma-joined list. Title attr keeps the raw
+                        // value visible on hover for long lists.
+                        const list = decodeMultiValue(val);
+                        const display = list.length ? list.join(', ') : '';
+                        html += `<td title="${esc(display)}">${esc(display) || '<span style="color:#ccc">—</span>'}</td>`;
                     } else {
                         html += `<td title="${esc(val)}">${esc(val) || '<span style="color:#ccc">—</span>'}</td>`;
                     }
@@ -505,6 +512,13 @@ $path_prefix = '../';
                 if (f.field_type === 'checkbox') {
                     const checked = val === '1';
                     html += `<div class="detail-field-value"><span class="cb-value ${checked ? 'cb-yes' : 'cb-no'}">${checked ? '&#10003;' : '&#10007;'}</span> ${checked ? 'Yes' : 'No'}</div>`;
+                } else if (f.field_type === 'checkboxes') {
+                    const list = decodeMultiValue(val);
+                    if (list.length === 0) {
+                        html += `<div class="detail-field-value empty">No response</div>`;
+                    } else {
+                        html += `<div class="detail-field-value"><ul style="margin:0; padding-left: 18px;">${list.map(v => `<li>${esc(v)}</li>`).join('')}</ul></div>`;
+                    }
                 } else {
                     html += `<div class="detail-field-value ${!val ? 'empty' : ''}">${esc(val) || 'No response'}</div>`;
                 }
@@ -562,6 +576,8 @@ $path_prefix = '../';
                     const val = sub.data[f.id] ?? '';
                     if (f.field_type === 'checkbox') {
                         row.push(val === '1' ? 'Yes' : 'No');
+                    } else if (f.field_type === 'checkboxes') {
+                        row.push(decodeMultiValue(val).join('; '));
                     } else {
                         row.push(val);
                     }
@@ -644,6 +660,18 @@ $path_prefix = '../';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // Decode the JSON-encoded array stored for multi-checkbox values.
+        // Tolerant of empty / null / non-JSON garbage — never throws.
+        function decodeMultiValue(raw) {
+            if (raw == null || raw === '') return [];
+            try {
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed.map(v => String(v)) : [];
+            } catch (e) {
+                return [];
+            }
         }
     </script>
 </body>

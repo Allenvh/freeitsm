@@ -206,10 +206,14 @@ $path_prefix = '../';
                                 Add
                             </button>
                             <div class="add-field-menu" id="addFieldMenu">
-                                <button onclick="addField('text')"><span class="field-type-badge text">Abc</span> Text Input</button>
-                                <button onclick="addField('textarea')"><span class="field-type-badge textarea">Txt</span> Text Area</button>
-                                <button onclick="addField('checkbox')"><span class="field-type-badge checkbox">Chk</span> Checkbox</button>
-                                <button onclick="addField('dropdown')"><span class="field-type-badge dropdown">Sel</span> Dropdown</button>
+                                <button onclick="addField('text')"><span class="field-type-badge text">Abc</span> Text input</button>
+                                <button onclick="addField('textarea')"><span class="field-type-badge textarea">Txt</span> Text area</button>
+                                <button onclick="addField('email')"><span class="field-type-badge email">@</span> Email</button>
+                                <button onclick="addField('number')"><span class="field-type-badge number">123</span> Number</button>
+                                <button onclick="addField('dropdown')"><span class="field-type-badge dropdown">Sel</span> Dropdown (one of)</button>
+                                <button onclick="addField('radio')"><span class="field-type-badge radio">&#9673;</span> Radio buttons (one of)</button>
+                                <button onclick="addField('checkbox')"><span class="field-type-badge checkbox">Chk</span> Checkbox (yes/no)</button>
+                                <button onclick="addField('checkboxes')"><span class="field-type-badge checkboxes">&#9745;</span> Checkboxes (many of)</button>
                             </div>
                         </div>
                     </div>
@@ -459,12 +463,19 @@ $path_prefix = '../';
             document.getElementById('addFieldMenu').classList.toggle('open');
         }
 
+        // Shared helper — which field types use an editable options
+        // list (dropdown / radio / checkboxes). The legacy single
+        // 'checkbox' (yes/no) is NOT in this set. Mirrored from
+        // forms/edit/index.php so the fallback inline editor matches.
+        const FIELD_TYPES_WITH_OPTIONS = ['dropdown', 'radio', 'checkboxes'];
+        function hasOptions(type) { return FIELD_TYPES_WITH_OPTIONS.includes(type); }
+
         function addField(type) {
             document.getElementById('addFieldMenu').classList.remove('open');
             fields.push({
                 field_type: type,
                 label: '',
-                options: type === 'dropdown' ? ['Option 1'] : [],
+                options: hasOptions(type) ? ['Option 1'] : [],
                 is_required: false
             });
             markDirty();
@@ -486,10 +497,13 @@ $path_prefix = '../';
 
             list.innerHTML = fields.map((f, i) => {
                 let optionsHtml = '';
-                if (f.field_type === 'dropdown') {
+                if (hasOptions(f.field_type)) {
+                    const optsLabel = f.field_type === 'dropdown' ? 'Dropdown options'
+                                    : f.field_type === 'radio'    ? 'Radio options'
+                                    :                               'Checkbox options';
                     optionsHtml = `
                         <div class="field-options">
-                            <div class="field-options-label">Dropdown Options</div>
+                            <div class="field-options-label">${optsLabel}</div>
                             ${(f.options || []).map((opt, oi) => `
                                 <div class="option-item" draggable="true"
                                      ondragstart="onOptDragStart(event, ${i}, ${oi})"
@@ -536,7 +550,16 @@ $path_prefix = '../';
         }
 
         function typeName(t) {
-            return { text: 'Text', textarea: 'Textarea', checkbox: 'Checkbox', dropdown: 'Dropdown' }[t] || t;
+            return {
+                text:       'Text',
+                textarea:   'Textarea',
+                checkbox:   'Checkbox',
+                dropdown:   'Dropdown',
+                email:      'Email',
+                number:     'Number',
+                checkboxes: 'Checkboxes',
+                radio:      'Radio'
+            }[t] || t;
         }
 
         function updateLabel(i, val) { fields[i].label = val; markDirty(); updatePreview(); }
@@ -723,11 +746,26 @@ $path_prefix = '../';
                         return `<div class="preview-field"><label>${label}${reqStar}</label><input type="text" disabled placeholder="Text input..."></div>`;
                     case 'textarea':
                         return `<div class="preview-field"><label>${label}${reqStar}</label><textarea disabled placeholder="Text area..."></textarea></div>`;
+                    case 'email':
+                        return `<div class="preview-field"><label>${label}${reqStar}</label><input type="email" disabled placeholder="name@example.com"></div>`;
+                    case 'number':
+                        return `<div class="preview-field"><label>${label}${reqStar}</label><input type="number" disabled placeholder="0"></div>`;
                     case 'checkbox':
                         return `<div class="preview-field"><div class="checkbox-row"><input type="checkbox" disabled> <label>${label}${reqStar}</label></div></div>`;
-                    case 'dropdown':
+                    case 'dropdown': {
                         const opts = (f.options || []).filter(o => o).map(o => `<option>${esc(o)}</option>`).join('');
                         return `<div class="preview-field"><label>${label}${reqStar}</label><select disabled><option value="">Select...</option>${opts}</select></div>`;
+                    }
+                    case 'radio': {
+                        const items = (f.options || []).filter(o => o).map(o =>
+                            `<div class="checkbox-row"><input type="radio" disabled> <label>${esc(o)}</label></div>`).join('');
+                        return `<div class="preview-field"><label>${label}${reqStar}</label>${items || '<small style="color:#999">No options yet</small>'}</div>`;
+                    }
+                    case 'checkboxes': {
+                        const items = (f.options || []).filter(o => o).map(o =>
+                            `<div class="checkbox-row"><input type="checkbox" disabled> <label>${esc(o)}</label></div>`).join('');
+                        return `<div class="preview-field"><label>${label}${reqStar}</label>${items || '<small style="color:#999">No options yet</small>'}</div>`;
+                    }
                     default:
                         return '';
                 }
