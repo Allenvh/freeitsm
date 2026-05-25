@@ -341,26 +341,30 @@
     border-top: 1px solid #e0e0e0;
 }
 
-/* Tag input — chips sit above an unbordered row, and the actual text
-   input has the same border / padding as a standard .form-input so the
-   Title and Tags fields line up visually. */
+/* Tag input — the label and the selected chips share a single flex row
+   (chips right-aligned), and the actual text input lives on the row
+   beneath wearing the same .form-input border so the Title and Tags
+   fields line up height-for-height. */
+.tag-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+.tag-label-row .form-label {
+    margin-bottom: 0;
+}
+
 .tag-input-container {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
 }
 
 .selected-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-}
-
-/* Hide the chips row entirely when no tags are selected, so the form
-   row collapses to just the input — identical height to the Title. */
-.selected-tags:empty {
-    display: none;
+    justify-content: flex-end;
 }
 
 .selected-tag {
