@@ -115,7 +115,6 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     height: 100%;
-    grid-auto-rows: minmax(0, 1fr);
 }
 
 .month-header {
