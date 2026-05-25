@@ -42,7 +42,8 @@ $path_prefix = '../';
             height: calc(100vh - 48px);
             overflow: hidden;
             max-width: none;
-            padding: 20px 24px 24px;
+            margin: 0;
+            padding: 16px 24px;
             display: flex;
             flex-direction: column;
         }
