@@ -199,8 +199,7 @@ function renderMonthView(container) {
     // Header row
     html += '<div class="month-header">';
     for (let i = 0; i < 7; i++) {
-        const isWeekend = i >= 5;
-        html += `<div class="month-header-cell${isWeekend ? ' weekend' : ''}">${shortWeekdayLabel(i)}</div>`;
+        html += `<div class="month-header-cell">${shortWeekdayLabel(i)}</div>`;
     }
     html += '</div>';
 
