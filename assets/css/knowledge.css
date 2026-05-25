@@ -341,27 +341,26 @@
     border-top: 1px solid #e0e0e0;
 }
 
-/* Tag input */
+/* Tag input — chips sit above an unbordered row, and the actual text
+   input has the same border / padding as a standard .form-input so the
+   Title and Tags fields line up visually. */
 .tag-input-container {
     position: relative;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 8px;
-    min-height: 44px;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 6px;
-    align-items: center;
-}
-
-.tag-input-container:focus-within {
-    border-color: #0078d4;
 }
 
 .selected-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+/* Hide the chips row entirely when no tags are selected, so the form
+   row collapses to just the input — identical height to the Title. */
+.selected-tags:empty {
+    display: none;
 }
 
 .selected-tag {
@@ -386,12 +385,12 @@
 }
 
 .tag-input {
-    border: none;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
     outline: none;
-    flex: 1;
-    min-width: 120px;
     font-size: 14px;
-    padding: 4px;
 }
 
 .tag-suggestions {
