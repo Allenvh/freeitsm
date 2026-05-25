@@ -15,7 +15,7 @@ $path_prefix = '../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Change Management</title>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css">
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/change-management.css">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/change-management.css?v=2">
     <script src="<?php echo BASE_URL; ?>assets/js/tinymce/tinymce.min.js"></script>
 </head>
 <body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
@@ -88,7 +88,7 @@ $path_prefix = '../';
                     -->
 
                     <div class="cm-form-section" data-section-id="1" data-section-key="general">
-                        <h3 class="form-section-title" style="margin-top:0; padding-top:0; border-top:none;">General information</h3>
+                        <h3 class="form-section-title">General information</h3>
 
                         <div class="cm-field-wrap" data-field-key="title">
                             <div class="form-group">
@@ -453,6 +453,6 @@ $path_prefix = '../';
         window.openCreateOnLoad = true;
         <?php endif; ?>
     </script>
-    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=7"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=8"></script>
 </body>
 </html>

@@ -187,7 +187,8 @@ try {
         if (!array_key_exists($key, FIELD_CATALOGUE)) continue;
         $fieldsResp[] = [
             'key'           => $key,
-            'label'         => FIELD_CATALOGUE[$key],
+            'label'         => FIELD_CATALOGUE[$key]['label'],
+            'width'         => FIELD_CATALOGUE[$key]['width'],
             'section_id'    => (int)$r['section_id'],
             'display_order' => (int)$r['display_order'],
             'is_visible'    => (bool)$r['is_visible'],

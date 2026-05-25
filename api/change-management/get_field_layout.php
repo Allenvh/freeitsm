@@ -60,7 +60,8 @@ try {
         }
         $fields[] = [
             'key'           => $key,
-            'label'         => FIELD_CATALOGUE[$key],
+            'label'         => FIELD_CATALOGUE[$key]['label'],
+            'width'         => FIELD_CATALOGUE[$key]['width'],
             'section_id'    => (int)$r['section_id'],
             'display_order' => (int)$r['display_order'],
             'is_visible'    => (bool)$r['is_visible'],
@@ -72,11 +73,12 @@ try {
     // included as orphans the settings UI can show under a default section.
     $placed = array_column($fields, 'key');
     $unplaced = [];
-    foreach (FIELD_CATALOGUE as $key => $label) {
+    foreach (FIELD_CATALOGUE as $key => $meta) {
         if (!in_array($key, $placed, true)) {
             $unplaced[] = [
                 'key'   => $key,
-                'label' => $label,
+                'label' => $meta['label'],
+                'width' => $meta['width'],
             ];
         }
     }

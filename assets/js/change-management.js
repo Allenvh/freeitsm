@@ -187,6 +187,8 @@ function refreshFormLayout() {
     });
 
     // Place non-rich-text wraps inside their target section in display order.
+    // Stamp each wrap with its preferred width ('half' or 'full') from the
+    // catalogue — CSS uses [data-width] to drive flex sizing on each row.
     sortedSections.forEach(s => {
         const sectionEl = wrappersById[s.id];
         if (!sectionEl) return;
@@ -196,6 +198,7 @@ function refreshFormLayout() {
                 const wrap = wrapsByKey[f.key];
                 if (!wrap) return;
                 sectionEl.appendChild(wrap);
+                wrap.dataset.width = f.width || 'full';
                 wrap.style.display = f.is_visible ? '' : 'none';
             });
     });
@@ -252,6 +255,45 @@ function refreshFormLayout() {
             wrapper.style.display = 'none';
         }
     });
+
+    // Pair up adjacent half-width wraps and flag orphan halves. A half is
+    // considered orphaned (and stretches to full width via CSS) when its
+    // next visible sibling is NOT also half — i.e. it can't pair with
+    // something. Walked per-section so a half at the end of section A
+    // doesn't accidentally pair with the first half of section B.
+    sortedSections.forEach(s => {
+        const wrapper = wrappersById[s.id];
+        if (!wrapper || wrapper.style.display === 'none') return;
+        const visible = Array.from(wrapper.children).filter(
+            el => el.classList.contains('cm-field-wrap') && el.style.display !== 'none'
+        );
+        let i = 0;
+        while (i < visible.length) {
+            const a = visible[i];
+            const b = visible[i + 1];
+            if (a.dataset.width === 'half' && b && b.dataset.width === 'half') {
+                a.classList.remove('cm-field-half-orphan');
+                b.classList.remove('cm-field-half-orphan');
+                i += 2;
+            } else {
+                if (a.dataset.width === 'half') a.classList.add('cm-field-half-orphan');
+                else a.classList.remove('cm-field-half-orphan');
+                i += 1;
+            }
+        }
+    });
+
+    // Mark the first VISIBLE section so its heading can drop the top
+    // border / padding (we want the section divider on every heading
+    // except the one at the top of the form, regardless of which
+    // section is currently first after reordering).
+    editorForm.querySelectorAll('.cm-form-section--first').forEach(
+        el => el.classList.remove('cm-form-section--first')
+    );
+    const firstVisible = sortedSections
+        .map(s => wrappersById[s.id])
+        .find(w => w && w.style.display !== 'none');
+    if (firstVisible) firstVisible.classList.add('cm-form-section--first');
 }
 
 // ============ Data Loading ============

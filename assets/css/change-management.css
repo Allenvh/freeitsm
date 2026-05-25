@@ -450,6 +450,37 @@
     margin-bottom: 20px;
 }
 
+/* Flex-wrap layout for the configurable editor sections. Each .cm-field-wrap
+   gets its width from data-width set by refreshFormLayout() in JS. CSS
+   handles the pairing automatically — half + half land on the same row,
+   full takes the whole row. JS only intervenes to flag orphan halves
+   (which then stretch to full via the --orphan class below). */
+.cm-form-section {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 20px;
+}
+
+.cm-form-section > .form-section-title,
+.cm-form-section > .cm-rich-text-widget,
+.cm-form-section > .rich-text-tabs,
+.cm-form-section > .rich-text-panel {
+    flex: 0 0 100%;
+}
+
+.cm-field-wrap {
+    flex: 0 0 100%;
+    min-width: 0;
+}
+
+.cm-field-wrap[data-width="half"] {
+    flex: 0 0 calc(50% - 10px);
+}
+
+.cm-field-wrap.cm-field-half-orphan {
+    flex: 0 0 100%;
+}
+
 .form-label {
     display: block;
     font-size: 13px;
@@ -485,6 +516,16 @@
 }
 
 .form-section-title:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* refreshFormLayout() tags the first VISIBLE section with this class so
+   its heading doesn't show the divider — needed because the seed-order
+   :first-of-type rule above stops applying once sections get reordered
+   or the first one is hidden. */
+.cm-form-section--first > .form-section-title {
     margin-top: 0;
     padding-top: 0;
     border-top: none;
