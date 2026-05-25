@@ -138,22 +138,24 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
             <!-- Article editor view -->
             <div class="article-editor-view" id="articleEditorView" style="display: none;">
                 <div class="editor-header">
-                    <h2 id="editorTitle">New Article</h2>
+                    <h2 id="editorTitle">New article</h2>
                 </div>
                 <div class="editor-form">
                     <input type="hidden" id="editArticleId" value="">
-                    <div class="form-group">
-                        <label class="form-label">Title *</label>
-                        <input type="text" class="form-input" id="articleTitle" placeholder="Enter article title...">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Tags</label>
-                        <div class="tag-input-container">
-                            <div class="selected-tags" id="selectedTags"></div>
-                            <input type="text" class="tag-input" id="tagInput" placeholder="Type to add tags...">
-                            <div class="tag-suggestions" id="tagSuggestions"></div>
+                    <div class="form-row" style="display: flex; gap: 20px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Title *</label>
+                            <input type="text" class="form-input" id="articleTitle" placeholder="Enter article title...">
                         </div>
-                        <small>Press Enter or comma to add a new tag</small>
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label">Tags</label>
+                            <div class="tag-input-container">
+                                <div class="selected-tags" id="selectedTags"></div>
+                                <input type="text" class="tag-input" id="tagInput" placeholder="Type to add tags...">
+                                <div class="tag-suggestions" id="tagSuggestions"></div>
+                            </div>
+                            <small>Press Enter or comma to add a new tag</small>
+                        </div>
                     </div>
                     <div class="form-row" style="display: flex; gap: 20px;">
                         <div class="form-group" style="flex: 1;">
@@ -163,7 +165,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                             </select>
                         </div>
                         <div class="form-group" style="flex: 1;">
-                            <label class="form-label">Next Review Date</label>
+                            <label class="form-label">Next review date</label>
                             <input type="date" class="form-input" id="articleReviewDate">
                         </div>
                     </div>
@@ -272,7 +274,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>window.API_BASE = '../api/knowledge/';</script>
     <script src="../assets/js/custom-alert.js?v=1"></script>
-    <script src="../assets/js/knowledge.js?v=7"></script>
+    <script src="../assets/js/knowledge.js?v=8"></script>
     <!-- Prism.js for code syntax highlighting when viewing articles -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-powershell.min.js"></script>

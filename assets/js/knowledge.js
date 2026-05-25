@@ -309,7 +309,7 @@ function openCreateArticle() {
     selectedTags = [];
     document.getElementById('editArticleId').value = '';
     document.getElementById('articleTitle').value = '';
-    document.getElementById('editorTitle').textContent = 'New Article';
+    document.getElementById('editorTitle').textContent = 'New article';
     renderSelectedTags();
 
     // Clear owner and review date
@@ -332,7 +332,7 @@ function editCurrentArticle() {
 
     document.getElementById('editArticleId').value = currentArticle.id;
     document.getElementById('articleTitle').value = currentArticle.title;
-    document.getElementById('editorTitle').textContent = 'Edit Article';
+    document.getElementById('editorTitle').textContent = 'Edit article';
 
     selectedTags = (currentArticle.tags || []).map(t => t.name);
     renderSelectedTags();
