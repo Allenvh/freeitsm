@@ -73,7 +73,12 @@ $path_prefix = '../../';
         .properties-backdrop.open { opacity: 1; pointer-events: auto; }
         .properties-drawer {
             position: fixed;
-            top: 48px;   /* under the global header */
+            /* top is set inline by openPropertiesDrawer() to the
+               actual measured .header height — assuming a fixed value
+               here would mean any header restyle (e.g. nav-btn font
+               change) leaves the drawer overlapping the navbar.
+               Sensible fallback of 62px in case JS fails. */
+            top: 62px;
             right: 0; bottom: 0;
             width: 360px;
             max-width: 90vw;
@@ -505,9 +510,16 @@ $path_prefix = '../../';
             else openPropertiesDrawer();
         }
         function openPropertiesDrawer() {
-            document.getElementById('propertiesDrawer').classList.add('open');
+            const drawer = document.getElementById('propertiesDrawer');
+            // Measure the global header so the drawer always tucks
+            // under it, regardless of how tall the navbar actually
+            // renders (it's ~60px today but I'd rather not bake that
+            // in — see #415 for the same trap we hit on morning-checks).
+            const header = document.querySelector('.header');
+            if (header) drawer.style.top = header.offsetHeight + 'px';
+            drawer.classList.add('open');
             document.getElementById('propertiesBackdrop').classList.add('open');
-            document.getElementById('propertiesDrawer').setAttribute('aria-hidden', 'false');
+            drawer.setAttribute('aria-hidden', 'false');
         }
         function closePropertiesDrawer() {
             document.getElementById('propertiesDrawer').classList.remove('open');
