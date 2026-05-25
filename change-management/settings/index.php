@@ -26,7 +26,8 @@ $path_prefix = '../../';
             height: calc(100vh - 48px);
             overflow-y: auto;
             max-width: none;
-            padding: 30px;
+            margin: 0;
+            padding: 16px 30px 24px;
         }
 
         /* Teal theme for tabs */
@@ -149,6 +150,9 @@ $path_prefix = '../../';
         .badge-inactive { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #fafafa; color: #999;   font-size: 11px; font-weight: 600; }
         .swatch { display: inline-block; width: 18px; height: 18px; border-radius: 3px; vertical-align: middle; border: 1px solid #ddd; margin-right: 6px; }
         .action-btn { background: none; border: none; cursor: pointer; padding: 4px; color: #666; }
+        /* Keep the Edit / Delete icons together on one row in the Actions
+           column even when other columns wrap to narrow widths. */
+        table td:last-child { white-space: nowrap; }
         .action-btn:hover { color: #00897b; }
         .action-btn.delete:hover { color: #c62828; }
         .add-btn { background: #00897b; color: white; padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; }
