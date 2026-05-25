@@ -64,6 +64,21 @@ $path_prefix = '../';
             border-top-color: #00acc1;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
         }
+
+        /* Drag handle between the checks list and the chart. Hover /
+           active states use a subtle blue tint so it's discoverable
+           without being noisy in its resting state. */
+        .mc-divider {
+            flex-shrink: 0;
+            height: 6px;
+            background: transparent;
+            cursor: row-resize;
+            border-top: 1px solid #e0e0e0;
+            transition: background 0.15s;
+            user-select: none;
+        }
+        .mc-divider:hover { background: rgba(0, 123, 255, 0.18); }
+        .mc-divider.dragging { background: rgba(0, 123, 255, 0.35); }
     </style>
 </head>
 <body>
@@ -97,6 +112,11 @@ $path_prefix = '../';
                 </tbody>
             </table>
         </div>
+
+        <!-- Drag-handle between the checks list and the chart. The chart's
+             height is a per-analyst preference (mc_chart_height_pct) so the
+             split each user prefers persists across reloads. -->
+        <div class="mc-divider" id="mcDivider" title="Drag to resize chart"></div>
 
         <!-- Chart now lives inside .container so it participates in the
              flex column layout — sits at the bottom and shrinks /
@@ -585,14 +605,109 @@ $path_prefix = '../';
         function toggleChart() {
             const chartContainer = document.getElementById('chartContainer');
             const toggleIcon = document.getElementById('chartToggle');
+            const divider = document.getElementById('mcDivider');
 
             if (chartContainer.style.display === 'none') {
                 chartContainer.style.display = 'block';
                 toggleIcon.textContent = '▼';
+                if (divider) divider.style.display = '';
             } else {
                 chartContainer.style.display = 'none';
                 toggleIcon.textContent = '▲';
+                // Nothing to resize once collapsed, hide the handle.
+                if (divider) divider.style.display = 'none';
             }
+        }
+
+        // ===== Resizable chart =====
+        // The divider between the checks list and the chart can be
+        // dragged to resize the chart. The chosen split is saved per
+        // analyst as a percentage of the container height so it follows
+        // the user across reloads / window sizes.
+
+        const CHART_PCT_PREF = 'mc_chart_height_pct';
+        const DEFAULT_CHART_PCT = 35;   // chart takes ~a third of the available vertical space by default
+        const MIN_CHART_PCT = 12;
+        const MAX_CHART_PCT = 80;
+        let currentChartPct = DEFAULT_CHART_PCT;
+
+        function applyChartHeightFromPct(pct) {
+            const container = document.querySelector('.container');
+            const header = document.querySelector('.chart-footer-header');
+            const inner = document.getElementById('chartContainer');
+            if (!container || !header || !inner) return;
+            const containerH = container.clientHeight;
+            const headerH = header.offsetHeight;
+            const targetFooterH = containerH * (pct / 100);
+            // chart-footer height = header height + inner height, so we
+            // back-compute the inner (canvas) area from the target.
+            const innerH = Math.max(60, targetFooterH - headerH);
+            inner.style.height = innerH + 'px';
+            if (typeof chartInstance !== 'undefined' && chartInstance) {
+                chartInstance.resize();
+            }
+        }
+
+        async function loadChartHeightPref() {
+            try {
+                const res = await fetch('../api/system/get_user_preference.php?key=' + CHART_PCT_PREF);
+                const data = await res.json();
+                const v = data && data.success ? parseFloat(data.value) : NaN;
+                currentChartPct = (!isNaN(v) && v >= MIN_CHART_PCT && v <= MAX_CHART_PCT) ? v : DEFAULT_CHART_PCT;
+            } catch (e) {
+                currentChartPct = DEFAULT_CHART_PCT;
+            }
+            applyChartHeightFromPct(currentChartPct);
+        }
+
+        function saveChartHeightPref(pct) {
+            // Fire-and-forget — a missed save isn't worth blocking the UI.
+            fetch('../api/system/set_user_preference.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: CHART_PCT_PREF, value: pct.toFixed(1) })
+            }).catch(() => {});
+        }
+
+        function startChartResize(e) {
+            const chartContainer = document.getElementById('chartContainer');
+            // Don't allow drag when the chart is collapsed — nothing to resize.
+            if (chartContainer && chartContainer.style.display === 'none') return;
+
+            const container = document.querySelector('.container');
+            const chartFooter = document.querySelector('.chart-footer');
+            const divider = document.getElementById('mcDivider');
+            const containerH = container.clientHeight;
+            const startY = e.clientY;
+            const startFooterH = chartFooter.offsetHeight;
+
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            divider.classList.add('dragging');
+
+            function onMove(ev) {
+                const dy = ev.clientY - startY;
+                // Cursor moving DOWN shrinks the chart; UP grows it.
+                let newFooterH = startFooterH - dy;
+                const minH = containerH * (MIN_CHART_PCT / 100);
+                const maxH = containerH * (MAX_CHART_PCT / 100);
+                newFooterH = Math.max(minH, Math.min(maxH, newFooterH));
+                currentChartPct = (newFooterH / containerH) * 100;
+                applyChartHeightFromPct(currentChartPct);
+            }
+
+            function onUp() {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                divider.classList.remove('dragging');
+                saveChartHeightPref(currentChartPct);
+            }
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            e.preventDefault();
         }
 
         // Save to PDF
@@ -673,6 +788,13 @@ $path_prefix = '../';
         document.addEventListener('DOMContentLoaded', function() {
             loadChecks();
             loadChart();
+            loadChartHeightPref();
+
+            // Wire up the resize divider and keep the chosen proportion
+            // consistent across window-resizes.
+            const divider = document.getElementById('mcDivider');
+            if (divider) divider.addEventListener('mousedown', startChartResize);
+            window.addEventListener('resize', () => applyChartHeightFromPct(currentChartPct));
         });
     </script>
 </body>
