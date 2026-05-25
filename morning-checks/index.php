@@ -82,6 +82,18 @@ $path_prefix = '../';
            footer (one level up) so it's unaffected by this. */
         .chart-container-inner {
             padding: 6px 14px 4px 14px;
+            overflow: hidden;
+            transition: height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+        }
+        /* Collapsed state — height animates from its inline px value to
+           0 over the transition. !important needed to beat the inline
+           style.height that applyChartHeightFromPct sets. The chart-
+           footer's min-height (40px) keeps the chevron visible. */
+        .chart-container-inner.collapsed {
+            height: 0 !important;
+            padding-top: 0;
+            padding-bottom: 0;
+            opacity: 0;
         }
 
         /* Collapse chevron — small floating button in the bottom-right
@@ -663,13 +675,26 @@ $path_prefix = '../';
             const chartContainer = document.getElementById('chartContainer');
             const toggleIcon = document.getElementById('chartToggle');
             const divider = document.getElementById('mcDivider');
+            const collapsed = chartContainer.classList.contains('collapsed');
 
-            if (chartContainer.style.display === 'none') {
-                chartContainer.style.display = 'block';
+            if (collapsed) {
+                // Update the target inline height before un-collapsing
+                // (handles the window-was-resized-while-collapsed case)
+                // but DON'T call chartInstance.resize() yet — the canvas
+                // parent is still 0px tall, that'd fit the chart to nothing.
+                applyChartHeightFromPct(currentChartPct, false);
+                chartContainer.classList.remove('collapsed');
                 toggleIcon.textContent = '▼';
                 if (divider) divider.style.display = '';
+                // After the slide-out transition lands, redraw the chart
+                // at the new canvas size.
+                setTimeout(() => {
+                    if (typeof chartInstance !== 'undefined' && chartInstance) {
+                        chartInstance.resize();
+                    }
+                }, 280);
             } else {
-                chartContainer.style.display = 'none';
+                chartContainer.classList.add('collapsed');
                 toggleIcon.textContent = '▲';
                 // Nothing to resize once collapsed, hide the handle.
                 if (divider) divider.style.display = 'none';
@@ -688,7 +713,11 @@ $path_prefix = '../';
         const MAX_CHART_PCT = 80;
         let currentChartPct = DEFAULT_CHART_PCT;
 
-        function applyChartHeightFromPct(pct) {
+        function applyChartHeightFromPct(pct, resizeChart) {
+            // resizeChart defaults to true. Pass false when the chart is
+            // hidden / collapsed (calling resize() would fit the canvas
+            // to 0 and require a re-resize on expand).
+            if (resizeChart === undefined) resizeChart = true;
             const container = document.querySelector('.container');
             const inner = document.getElementById('chartContainer');
             if (!container || !inner) return;
@@ -698,7 +727,7 @@ $path_prefix = '../';
             // positioned so it doesn't take in-flow space.
             const innerH = Math.max(60, containerH * (pct / 100));
             inner.style.height = innerH + 'px';
-            if (typeof chartInstance !== 'undefined' && chartInstance) {
+            if (resizeChart && typeof chartInstance !== 'undefined' && chartInstance) {
                 chartInstance.resize();
             }
         }
