@@ -13,7 +13,7 @@ $path_prefix = '../../';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - System Logs</title>
+    <title>Service Desk - System logs</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <style>
         .logs-outer {
@@ -353,13 +353,13 @@ $path_prefix = '../../';
     <div class="main-container logs-outer">
         <div class="logs-container">
             <div class="logs-header">
-                <h2>System Logs</h2>
+                <h2>System logs</h2>
                 <button class="refresh-btn" onclick="loadLogs()">Refresh</button>
             </div>
 
             <div class="log-tabs">
-                <button class="log-tab active" onclick="switchLogType('login')">User Logins</button>
-                <button class="log-tab" onclick="switchLogType('email_import')">Email Imports</button>
+                <button class="log-tab active" onclick="switchLogType('login')">User logins</button>
+                <button class="log-tab" onclick="switchLogType('email_import')">Email imports</button>
             </div>
 
             <div class="logs-content">
@@ -469,11 +469,11 @@ $path_prefix = '../../';
                 <table class="logs-table">
                     <thead>
                         <tr>
-                            <th>Date/Time</th>
+                            <th>Date/time</th>
                             <th>Username</th>
                             <th>Status</th>
-                            <th>IP Address</th>
-                            <th>User Agent</th>
+                            <th>IP address</th>
+                            <th>User agent</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -500,7 +500,7 @@ $path_prefix = '../../';
                 <table class="logs-table">
                     <thead>
                         <tr>
-                            <th>Date/Time</th>
+                            <th>Date/time</th>
                             <th>From</th>
                             <th>Subject</th>
                             <th>Type</th>
