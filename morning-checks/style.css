@@ -279,34 +279,21 @@ tr.status-red {
     word-wrap: break-word;
 }
 
-/* Buttons */
-.save-btn, .btn-primary, .btn-secondary {
-    padding: 8px 20px;
+/* Buttons — .btn-primary / .btn-secondary come from inbox.css now.
+   .save-btn is a legacy alias still referenced in some places; keep it
+   as a primary-style button to match the rest of the app. */
+.save-btn {
+    padding: 10px 20px;
     border: none;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s;
+    font-weight: 500;
+    transition: all 0.2s;
     font-size: 14px;
-}
-
-.save-btn, .btn-primary {
-    background-color: #007bff;
+    background-color: #0078d4;
     color: white;
 }
-
-.save-btn:hover, .btn-primary:hover {
-    background-color: #0056b3;
-}
-
-.btn-secondary {
-    background-color: #6c757d;
-    color: white;
-}
-
-.btn-secondary:hover {
-    background-color: #545b62;
-}
+.save-btn:hover { background-color: #005a9e; }
 
 .btn-edit, .btn-delete {
     padding: 6px 12px;
@@ -489,94 +476,27 @@ tr.status-red {
     border-color: #80deea;
 }
 
-/* Form fields inside modal */
-.modal-content .form-group {
-    margin-bottom: 14px;
-}
-.modal-content .form-group label {
-    display: block;
-    margin-bottom: 6px;
-    font-weight: 500;
-    font-size: 13px;
-    color: #333;
-}
-.modal-content .form-group input[type="text"],
-.modal-content .form-group input[type="email"],
-.modal-content .form-group select,
-.modal-content .form-group textarea {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 13px;
-    box-sizing: border-box;
-    font-family: inherit;
-}
-.modal-content .form-group textarea { resize: vertical; }
-
-/* Modal */
-.modal {
-    position: fixed;
-    z-index: 2000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.6);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-}
-
-.modal.active {
-    opacity: 1;
-    visibility: visible;
-}
+/* Form fields and base .modal styling come from inbox.css now —
+   only the per-page modal-content sizing + the h2-as-header
+   styling remain here (this module's modals use a plain <h2>
+   inside .modal-content rather than the canonical .modal-header). */
 
 .modal-content {
-    background-color: white;
-    padding: 30px;
-    border-radius: 8px;
-    width: 90%;
+    padding: 20px;
     max-width: 600px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    transform: scale(0.95) translateY(-10px);
-    transition: transform 0.2s ease;
 }
-
-.modal.active .modal-content {
-    transform: scale(1) translateY(0);
-}
-
 
 .modal-content h2 {
-    font-size: 24px;
-    color: #2c3e50;
-    margin-bottom: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 10px;
 }
 
 .modal-content p {
     color: #6c757d;
-    margin-bottom: 20px;
-}
-
-.close {
-    color: #aaa;
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-    line-height: 1;
-    margin-top: -5px;
-}
-
-.close:hover,
-.close:focus {
-    color: #000;
+    margin: 0 0 20px;
+    font-size: 14px;
 }
 
 .modal-actions {
@@ -584,10 +504,6 @@ tr.status-red {
     gap: 10px;
     margin-top: 20px;
     justify-content: flex-end;
-}
-
-.modal-actions button {
-    min-width: 100px;
 }
 
 

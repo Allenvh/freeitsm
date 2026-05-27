@@ -312,8 +312,8 @@ $chart_initial_height_calc = 'calc((100vh - 60px) * ' . ($chart_height_pct / 100
                     <textarea id="modalNotes" name="modalNotes" rows="5" required></textarea>
                 </div>
                 <div class="modal-actions">
-                    <button type="submit" class="btn-primary">Save</button>
                     <button type="button" class="btn-secondary" onclick="closeNotesModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save</button>
                 </div>
             </form>
         </div>
@@ -362,8 +362,8 @@ $chart_initial_height_calc = 'calc((100vh - 60px) * ' . ($chart_height_pct / 100
                     <textarea id="rtBody" rows="6"></textarea>
                 </div>
                 <div class="modal-actions">
-                    <button type="submit" class="btn-primary" id="rtSubmitBtn">Create ticket</button>
                     <button type="button" class="btn-secondary" onclick="closeRaiseTicketModal()">Cancel</button>
+                    <button type="submit" class="btn-primary" id="rtSubmitBtn">Create ticket</button>
                 </div>
             </form>
         </div>
