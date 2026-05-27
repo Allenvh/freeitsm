@@ -37,6 +37,9 @@ $shapes = include '../includes/shapes.php';
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
     <style>
+        /* Module accent for the shared .toggle-switch (defined in inbox.css). */
+        body { --toggle-accent: #0078d4; }
+
         /* Identical to tickets/settings/index.php — settings pages scroll the
            page rather than the body, and fill the full width (no 1200px cap). */
 
@@ -207,7 +210,13 @@ $shapes = include '../includes/shapes.php';
                     <input type="color" id="pmsColor" value="#0078d4" autocomplete="off" style="width: 60px; height: 32px; padding: 2px;">
                 </div>
                 <div class="form-group">
-                    <label><input type="checkbox" id="pmsActive" checked autocomplete="off"> <?php echo htmlspecialchars(t('process-mapper.settings.field_active')); ?></label>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="pmsActive" checked autocomplete="off">
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <?php echo htmlspecialchars(t('process-mapper.settings.field_active')); ?>
+                    </label>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="PMS.closeModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>

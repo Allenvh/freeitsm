@@ -200,44 +200,8 @@ $translationNamespaces = ['common', 'tickets'];
             padding: 0;
             border-bottom: none;
         }
-        /* Toggle switch */
-        .toggle-switch {
-            position: relative;
-            display: inline-block;
-            width: 44px;
-            height: 24px;
-            vertical-align: middle;
-        }
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: #ccc;
-            border-radius: 24px;
-            transition: background 0.2s;
-        }
-        .toggle-slider::before {
-            content: '';
-            position: absolute;
-            width: 18px;
-            height: 18px;
-            left: 3px;
-            bottom: 3px;
-            background: #fff;
-            border-radius: 50%;
-            transition: transform 0.2s;
-        }
-        .toggle-switch input:checked + .toggle-slider {
-            background: #0078d4;
-        }
-        .toggle-switch input:checked + .toggle-slider::before {
-            transform: translateX(20px);
-        }
+        /* Toggle switch — base styles in inbox.css; just pin the accent. */
+        body { --toggle-accent: #0078d4; }
     </style>
 </head>
 <body>
@@ -672,7 +636,13 @@ $translationNamespaces = ['common', 'tickets'];
                     </fieldset>
 
                     <div class="form-group">
-                        <label><input type="checkbox" id="slaNotifActive" checked> Active</label>
+                        <label class="toggle-label">
+                            <span class="toggle-switch">
+                                <input type="checkbox" id="slaNotifActive" checked>
+                                <span class="toggle-slider"></span>
+                            </span>
+                            Active
+                        </label>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1057,8 +1027,12 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="itemActive" checked> <?php echo htmlspecialchars(t('tickets.settings.modals.lookup.active_label')); ?>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="itemActive" checked>
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <?php echo htmlspecialchars(t('tickets.settings.modals.lookup.active_label')); ?>
                     </label>
                 </div>
 
@@ -1274,8 +1248,12 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="analystActive" checked> <?php echo htmlspecialchars(t('tickets.settings.modals.analyst.active')); ?>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="analystActive" checked>
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <?php echo htmlspecialchars(t('tickets.settings.modals.analyst.active')); ?>
                     </label>
                 </div>
 
@@ -1428,8 +1406,12 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="rotaShiftActive" checked> <?php echo htmlspecialchars(t('tickets.settings.modals.rota_shift.active')); ?>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="rotaShiftActive" checked>
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <?php echo htmlspecialchars(t('tickets.settings.modals.rota_shift.active')); ?>
                     </label>
                 </div>
 

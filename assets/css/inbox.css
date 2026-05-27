@@ -2094,11 +2094,102 @@ body.ticket-popout .ticket-toolbar {
     border-color: #0078d4;
 }
 
-/* Modal Actions */
+/* Modal Actions — sticky at the bottom of the scrolling modal so Save /
+   Cancel are always reachable on long forms (#453). Requires the modal's
+   scroll container to be set: either `.modal-content` (for modals that
+   put form fields directly inside it) or `.modal-body` (for modals that
+   use the canonical header / body / footer 3-pane layout — those use
+   `.modal-footer` instead of `.modal-actions`, see below). */
 .modal-actions {
     display: flex;
     gap: 10px;
     justify-content: flex-end;
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    z-index: 1;
+    padding-top: 12px;
+    margin-top: 16px;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* Sticky too — same intent, used in modals that follow the
+   header / body / footer layout (.modal-footer is a flex sibling of
+   .modal-body, naturally pinned by the flex column when modal-body
+   scrolls). */
+.modal-footer {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    z-index: 1;
+}
+
+/* By default, .modal-content (a flex column with max-height 90vh) doesn't
+   scroll — modals are expected to provide their own .modal-body to host
+   the scrolling region. Many settings modals don't, so make .modal-content
+   itself scrollable as a fallback; suppress it when a modal-body sibling
+   already handles scrolling (avoids double scrollbars). */
+.modal-content { overflow-y: auto; }
+.modal-content:has(> .modal-body),
+.modal-content:has(> form > .modal-body) { overflow-y: visible; }
+
+/* Shared toggle switch (#453). Modules customise the on-state colour by
+   setting --toggle-accent on a parent (typically the page's <style> block
+   or the modal-content), so we keep the structural CSS in one place and
+   the brand colour in each module. Defaults to the app blue. */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+    --toggle-accent: #0078d4;
+}
+.toggle-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #ccc;
+    border-radius: 24px;
+    transition: background 0.2s;
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--toggle-accent);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+}
+/* Wrapper label that puts the toggle + its caption on the same row. Some
+   modules used `.toggle-group` or `.toggle-row` historically — keep them
+   as aliases so existing markup keeps working. */
+.toggle-label,
+.toggle-group,
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    cursor: pointer;
 }
 
 /* Exchange/Integration Status Boxes */

@@ -54,21 +54,8 @@ $path_prefix = '../../';
         .modal .form-group input, .modal .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
         .modal .form-group textarea { height: 60px; resize: vertical; }
         .modal .form-group input:focus, .modal .form-group textarea:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1); }
-        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
-        .toggle-switch input { opacity: 0; width: 0; height: 0; }
-        .toggle-slider {
-            position: absolute; cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: #ccc; border-radius: 24px; transition: background 0.2s;
-        }
-        .toggle-slider::before {
-            content: ''; position: absolute;
-            height: 18px; width: 18px; left: 3px; bottom: 3px;
-            background: white; border-radius: 50%; transition: transform 0.2s;
-        }
-        .toggle-switch input:checked + .toggle-slider { background: #10b981; }
-        .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
-        .toggle-label { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
+        /* Toggle switch — base styles in inbox.css; just pin the accent. */
+        body { --toggle-accent: #10b981; }
 
         .modal-actions { margin-top: 20px; }
 

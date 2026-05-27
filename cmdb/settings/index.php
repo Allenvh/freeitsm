@@ -22,7 +22,7 @@ $path_prefix = '../../';
     <title>FreeITSM - CMDB Settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <style>
-        body { background: #f5f5f5; }
+        body { background: #f5f5f5; --toggle-accent: #be185d; }
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 24px 0; padding: 0 20px; }
         .tabs {
             display: flex;
@@ -112,16 +112,21 @@ $path_prefix = '../../';
         /* Modal styling */
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; }
         .modal.active { display: flex; align-items: center; justify-content: center; }
-        .modal-content { background: white; border-radius: 8px; width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+        .modal-content { background: white; border-radius: 8px; width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
         .modal-content.wide { width: 900px; }
-        .modal-header { padding: 18px 24px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 16px; }
-        .modal-body { padding: 24px; }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 16px; flex-shrink: 0; background: #fff; position: sticky; top: 0; z-index: 1; }
+        .modal-body { padding: 24px; flex: 1; overflow-y: auto; min-height: 0; }
         .modal-actions {
             padding: 16px 24px;
             border-top: 1px solid #e5e7eb;
             display: flex;
             gap: 12px;
             justify-content: flex-end;
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            z-index: 1;
+            flex-shrink: 0;
         }
 
         .form-group { margin-bottom: 16px; }
@@ -361,8 +366,12 @@ $path_prefix = '../../';
                         </div>
                         <div class="form-group">
                             <label>&nbsp;</label>
-                            <label class="form-check">
-                                <input type="checkbox" id="classIsActive" checked> Active
+                            <label class="toggle-label">
+                                <span class="toggle-switch">
+                                    <input type="checkbox" id="classIsActive" checked>
+                                    <span class="toggle-slider"></span>
+                                </span>
+                                Active
                             </label>
                         </div>
                     </div>
@@ -503,8 +512,12 @@ $path_prefix = '../../';
                         </div>
                         <div class="form-group">
                             <label>&nbsp;</label>
-                            <label class="form-check">
-                                <input type="checkbox" id="relTypeIsActive" checked> Active
+                            <label class="toggle-label">
+                                <span class="toggle-switch">
+                                    <input type="checkbox" id="relTypeIsActive" checked>
+                                    <span class="toggle-slider"></span>
+                                </span>
+                                Active
                             </label>
                         </div>
                     </div>

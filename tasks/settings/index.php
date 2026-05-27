@@ -28,7 +28,7 @@ $translationNamespaces = ['common', 'tasks'];
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
     <style>
-        body { display: block; }
+        body { display: block; --toggle-accent: #9333ea; }
 
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 0; padding: 30px; }
 
@@ -58,13 +58,13 @@ $translationNamespaces = ['common', 'tasks'];
         /* Modal */
         .lk-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; }
         .lk-modal.active { display: flex; align-items: center; justify-content: center; }
-        .lk-modal-content { background: white; border-radius: 8px; padding: 24px; width: 100%; max-width: 480px; }
+        .lk-modal-content { background: white; border-radius: 8px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
         .lk-modal-header { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
         .lk-form-group { margin-bottom: 14px; }
         .lk-form-group label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
         .lk-form-group input[type="text"], .lk-form-group input[type="number"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
         .lk-form-group .help { display: block; font-size: 12px; color: #888; margin-top: 4px; }
-        .lk-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .lk-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; position: sticky; bottom: 0; background: #fff; z-index: 1; padding-top: 12px; border-top: 1px solid #e0e0e0; }
         .btn { padding: 10px 20px; border-radius: 4px; font-size: 14px; cursor: pointer; border: none; transition: all 0.2s; }
         .btn-primary { background: #9333ea; color: white; }
         .btn-primary:hover { background: #7e22ce; }
@@ -337,7 +337,13 @@ $translationNamespaces = ['common', 'tasks'];
                 </div>
 
                 <div class="lk-form-group" id="lookupItemActiveGroup">
-                    <label><input type="checkbox" id="lookupItemActive" checked> <?php echo htmlspecialchars(t('tasks.settings.modal_active')); ?></label>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="lookupItemActive" checked>
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <?php echo htmlspecialchars(t('tasks.settings.modal_active')); ?>
+                    </label>
                 </div>
 
                 <div class="lk-modal-actions">

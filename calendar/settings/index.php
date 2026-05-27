@@ -23,6 +23,9 @@ $path_prefix = '../../';
     <title>Service Desk - Calendar settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <style>
+        /* Module accent for the shared .toggle-switch (defined in inbox.css). */
+        body { --toggle-accent: #ef6c00; }
+
         /* Full-width settings page matching the canonical settings layout
            (change-management/settings, tickets/settings). */
         .container {
@@ -157,12 +160,16 @@ $path_prefix = '../../';
             border-radius: 8px;
             width: 450px;
             max-width: 90vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
         }
 
         .modal-header {
             padding: 20px;
             border-bottom: 1px solid #e0e0e0;
+            flex-shrink: 0;
         }
 
         .modal-header h3 {
@@ -172,7 +179,8 @@ $path_prefix = '../../';
             color: #333;
         }
 
-        .modal-body { padding: 20px; }
+        /* Body scrolls; header + footer stay fixed (canonical 3-pane). */
+        .modal-body { padding: 20px; flex: 1; overflow-y: auto; min-height: 0; }
 
         .modal-footer {
             padding: 15px 20px;
@@ -180,6 +188,8 @@ $path_prefix = '../../';
             display: flex;
             justify-content: flex-end;
             gap: 10px;
+            flex-shrink: 0;
+            background: #fff;
         }
 
         .btn {
@@ -312,8 +322,11 @@ $path_prefix = '../../';
                         <input type="color" id="categoryColor" value="#ef6c00" autocomplete="off">
                     </div>
                     <div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 10px;">
-                        <label class="form-checkbox">
-                            <input type="checkbox" id="categoryActive" checked>
+                        <label class="toggle-label">
+                            <span class="toggle-switch">
+                                <input type="checkbox" id="categoryActive" checked>
+                                <span class="toggle-slider"></span>
+                            </span>
                             Active
                         </label>
                     </div>

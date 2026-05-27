@@ -17,6 +17,9 @@ $path_prefix = '../../';
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <script src="../../assets/js/chart.min.js"></script>
     <style>
+        /* Module accent for the shared .toggle-switch (defined in inbox.css). */
+        body { --toggle-accent: #107c10; }
+
         .container {
             height: calc(100vh - 48px);
             overflow-y: auto;
@@ -395,8 +398,11 @@ $path_prefix = '../../';
                     <input type="number" id="itemOrder" value="0" min="0">
                 </div>
                 <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="itemActive" checked>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="itemActive" checked>
+                            <span class="toggle-slider"></span>
+                        </span>
                         Active
                     </label>
                 </div>

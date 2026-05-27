@@ -195,51 +195,8 @@ $path_prefix = '../../';
             background: #00695c;
         }
 
-        /* Toggle switch */
-        .toggle-switch {
-            position: relative;
-            width: 44px;
-            height: 24px;
-            flex-shrink: 0;
-        }
-
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #ccc;
-            border-radius: 24px;
-            transition: background 0.2s;
-        }
-
-        .toggle-slider:before {
-            content: '';
-            position: absolute;
-            width: 18px;
-            height: 18px;
-            left: 3px;
-            bottom: 3px;
-            background: white;
-            border-radius: 50%;
-            transition: transform 0.2s;
-        }
-
-        .toggle-switch input:checked + .toggle-slider {
-            background: #00897b;
-        }
-
-        .toggle-switch input:checked + .toggle-slider:before {
-            transform: translateX(20px);
-        }
+        /* Toggle switch — base styles in inbox.css; just pin the accent. */
+        body { --toggle-accent: #00897b; }
 
         .form-actions {
             display: flex;
@@ -291,13 +248,13 @@ $path_prefix = '../../';
         /* Modal */
         .lk-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; }
         .lk-modal.active { display: flex; align-items: center; justify-content: center; }
-        .lk-modal-content { background: white; border-radius: 8px; padding: 24px; width: 100%; max-width: 480px; }
+        .lk-modal-content { background: white; border-radius: 8px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
         .lk-modal-header { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
         .lk-form-group { margin-bottom: 14px; }
         .lk-form-group label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
         .lk-form-group input[type="text"], .lk-form-group input[type="number"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
         .lk-form-group .help { display: block; font-size: 12px; color: #888; margin-top: 4px; }
-        .lk-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .lk-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; position: sticky; bottom: 0; background: #fff; z-index: 1; padding-top: 12px; border-top: 1px solid #e0e0e0; }
     </style>
 </head>
 <body>
@@ -415,7 +372,13 @@ $path_prefix = '../../';
                 </div>
 
                 <div class="lk-form-group">
-                    <label><input type="checkbox" id="lookupItemActive" checked> Active</label>
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="lookupItemActive" checked>
+                            <span class="toggle-slider"></span>
+                        </span>
+                        Active
+                    </label>
                 </div>
 
                 <div class="lk-modal-actions">
