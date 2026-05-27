@@ -45,17 +45,12 @@ $path_prefix = '../../';
         .status-badge.active { background: #d4edda; color: #155724; }
         .status-badge.inactive { background: #f8d7da; color: #721c24; }
 
+        /* Module accent — drives the shared toggle, focus rings and button
+           colours defined in inbox.css. Modal form styling is all there too. */
+        body { --accent: #f59e0b; }
+
         .modal-content { padding: 30px; max-width: 500px; }
         .modal-header { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #333; padding: 0; border-bottom: none; }
-
-        .modal .form-group { margin-bottom: 15px; }
-        .modal .form-group label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px; color: #333; }
-        .modal .form-group input, .modal .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
-        .modal .form-group textarea { height: 60px; resize: vertical; }
-        .modal .form-group input:focus, .modal .form-group textarea:focus { outline: none; border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1); }
-        /* Toggle switch — base styles in inbox.css; just pin the accent. */
-        body { --toggle-accent: #f59e0b; }
-
         .modal-actions { margin-top: 20px; }
 
         .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: background-color 0.15s; }

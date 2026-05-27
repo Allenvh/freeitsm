@@ -17,8 +17,9 @@ $path_prefix = '../../';
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <script src="../../assets/js/chart.min.js"></script>
     <style>
-        /* Module accent for the shared .toggle-switch (defined in inbox.css). */
-        body { --toggle-accent: #107c10; }
+        /* Module accent — drives toggle, focus rings, button colours.
+           Modal form CSS lives entirely in inbox.css. */
+        body { --accent: #107c10; }
 
         .container {
             height: calc(100vh - 48px);
@@ -187,14 +188,7 @@ $path_prefix = '../../';
             border-bottom: none;
         }
 
-        .modal .form-group { margin-bottom: 15px; }
-        .modal .form-group label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px; color: #333; }
-        .modal .form-group input, .modal .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
-        .modal .form-group textarea { height: 60px; resize: vertical; }
-        .modal .form-group input:focus, .modal .form-group textarea:focus { outline: none; border-color: #107c10; box-shadow: 0 0 0 2px rgba(16, 124, 16, 0.1); }
-        .modal .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
-        .modal .checkbox-label input[type="checkbox"] { width: auto; }
-
+        /* Modal form CSS now lives entirely in inbox.css. */
         .modal-actions { margin-top: 20px; }
     </style>
 </head>

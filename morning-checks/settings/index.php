@@ -166,7 +166,7 @@ $path_prefix = '../../';
         }
 
         /* Toggle switch — base styles in inbox.css; just pin the accent. */
-        body { --toggle-accent: #007bff; }
+        body { --accent: #007bff; }
     </style>
 </head>
 <body>

@@ -2080,6 +2080,9 @@ body.ticket-popout .ticket-toolbar {
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 14px;
+    /* Textareas default to monospace in most browsers — force inherit so
+       a Description field doesn't look like a code editor (#454). */
+    font-family: inherit;
 }
 
 .form-group textarea {
@@ -2134,16 +2137,14 @@ body.ticket-popout .ticket-toolbar {
 .modal-content:has(> form > .modal-body) { overflow-y: visible; }
 
 /* Shared toggle switch (#453). Modules customise the on-state colour by
-   setting --toggle-accent on a parent (typically the page's <style> block
-   or the modal-content), so we keep the structural CSS in one place and
-   the brand colour in each module. Defaults to the app blue. */
+   setting --accent (or the legacy --toggle-accent) on a parent — the
+   structural CSS lives here so every module looks identical. */
 .toggle-switch {
     position: relative;
     display: inline-block;
     width: 44px;
     height: 24px;
     flex-shrink: 0;
-    --toggle-accent: #0078d4;
 }
 .toggle-switch input {
     position: absolute;
@@ -2174,7 +2175,7 @@ body.ticket-popout .ticket-toolbar {
     transition: transform 0.2s;
 }
 .toggle-switch input:checked + .toggle-slider {
-    background: var(--toggle-accent);
+    background: var(--toggle-accent, var(--accent, #0078d4));
 }
 .toggle-switch input:checked + .toggle-slider::before {
     transform: translateX(20px);
@@ -2190,6 +2191,73 @@ body.ticket-popout .ticket-toolbar {
     gap: 10px;
     font-size: 14px;
     cursor: pointer;
+}
+
+/* Canonical modal form-field styling (#454). One file for fonts, sizes,
+   focus rings, spacing — every settings modal looks identical. Modules
+   only supply --accent for the focus-ring colour. */
+.modal .form-group {
+    margin-bottom: 16px;
+}
+.modal .form-group:last-of-type {
+    margin-bottom: 0;
+}
+.modal .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 13px;
+    color: #333;
+    font-family: inherit;
+}
+.modal .form-group input[type="text"],
+.modal .form-group input[type="number"],
+.modal .form-group input[type="email"],
+.modal .form-group input[type="password"],
+.modal .form-group input[type="url"],
+.modal .form-group input[type="search"],
+.modal .form-group input[type="tel"],
+.modal .form-group input[type="date"],
+.modal .form-group input[type="datetime-local"],
+.modal .form-group input[type="time"],
+.modal .form-group select,
+.modal .form-group textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    /* Textareas default to monospace in most browsers — force inherit so
+       a Description field looks the same as a Name field above it. */
+    font-family: inherit;
+    color: #333;
+    background: #fff;
+    box-sizing: border-box;
+    line-height: 1.45;
+}
+.modal .form-group textarea {
+    min-height: 70px;
+    resize: vertical;
+}
+.modal .form-group input:focus,
+.modal .form-group select:focus,
+.modal .form-group textarea:focus {
+    outline: none;
+    border-color: var(--accent, #0078d4);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #0078d4) 15%, transparent);
+}
+.modal .form-group small,
+.modal .form-group .form-hint,
+.modal .form-group .help {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #888;
+}
+.modal .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
 }
 
 /* Exchange/Integration Status Boxes */

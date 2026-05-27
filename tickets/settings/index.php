@@ -201,7 +201,7 @@ $translationNamespaces = ['common', 'tickets'];
             border-bottom: none;
         }
         /* Toggle switch — base styles in inbox.css; just pin the accent. */
-        body { --toggle-accent: #0078d4; }
+        body { --accent: #0078d4; }
     </style>
 </head>
 <body>

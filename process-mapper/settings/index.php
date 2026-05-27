@@ -38,7 +38,7 @@ $shapes = include '../includes/shapes.php';
     <script src="../../assets/js/i18n.js"></script>
     <style>
         /* Module accent for the shared .toggle-switch (defined in inbox.css). */
-        body { --toggle-accent: #0078d4; }
+        body { --accent: #0078d4; }
 
         /* Identical to tickets/settings/index.php — settings pages scroll the
            page rather than the body, and fill the full width (no 1200px cap). */

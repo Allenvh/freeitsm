@@ -23,8 +23,9 @@ $path_prefix = '../../';
     <title>Service Desk - Calendar settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <style>
-        /* Module accent for the shared .toggle-switch (defined in inbox.css). */
-        body { --toggle-accent: #ef6c00; }
+        /* Module accent — drives toggle, focus rings, button colours.
+           Modal form CSS lives entirely in inbox.css. */
+        body { --accent: #ef6c00; }
 
         /* Full-width settings page matching the canonical settings layout
            (change-management/settings, tickets/settings). */
@@ -207,37 +208,8 @@ $path_prefix = '../../';
         .btn-danger { background: #c62828; color: white; }
         .btn-danger:hover { background: #a02020; }
 
-        .form-group { margin-bottom: 16px; }
-        .form-group label {
-            display: block;
-            font-weight: 500;
-            margin-bottom: 6px;
-            color: #333;
-            font-size: 13px;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        .form-group input:focus,
-        .form-group textarea:focus { outline: none; border-color: #ef6c00; }
-        .form-group textarea { resize: vertical; min-height: 80px; }
-
-        .form-row { display: flex; gap: 16px; }
-        .form-row .form-group { flex: 1; }
-
-        .form-group input[type="color"] {
-            width: 60px;
-            height: 40px;
-            padding: 2px;
-            cursor: pointer;
-        }
+        /* Form-group + form-row + colour-input sizing all live in inbox.css. */
+        .form-group input[type="color"] { width: 60px; height: 40px; padding: 2px; cursor: pointer; }
 
         .form-checkbox {
             display: flex;
@@ -316,6 +288,10 @@ $path_prefix = '../../';
                     <label for="categoryName">Name *</label>
                     <input type="text" id="categoryName" placeholder="e.g. Certificate expiry" autocomplete="off">
                 </div>
+                <div class="form-group">
+                    <label for="categoryDescription">Description</label>
+                    <textarea id="categoryDescription" placeholder="Optional description..." autocomplete="off"></textarea>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label for="categoryColor">Colour</label>
@@ -330,10 +306,6 @@ $path_prefix = '../../';
                             Active
                         </label>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="categoryDescription">Description</label>
-                    <textarea id="categoryDescription" placeholder="Optional description..." autocomplete="off"></textarea>
                 </div>
             </form>
             <div class="modal-footer">

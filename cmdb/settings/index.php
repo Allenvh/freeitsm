@@ -22,7 +22,7 @@ $path_prefix = '../../';
     <title>FreeITSM - CMDB Settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <style>
-        body { background: #f5f5f5; --toggle-accent: #be185d; }
+        body { background: #f5f5f5; --accent: #be185d; }
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 24px 0; padding: 0 20px; }
         .tabs {
             display: flex;
@@ -109,49 +109,9 @@ $path_prefix = '../../';
         .badge.clickable:hover { background: #fce7f3; color: #be185d; }
         .badge.type { background: #ede9fe; color: #6d28d9; font-family: 'Consolas', monospace; }
 
-        /* Modal styling */
-        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; }
-        .modal.active { display: flex; align-items: center; justify-content: center; }
-        .modal-content { background: white; border-radius: 8px; width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
+        /* Modal sizing — base modal / form CSS lives in inbox.css. */
+        .modal-content { width: 600px; max-width: 95vw; }
         .modal-content.wide { width: 900px; }
-        .modal-header { padding: 18px 24px; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 16px; flex-shrink: 0; background: #fff; position: sticky; top: 0; z-index: 1; }
-        .modal-body { padding: 24px; flex: 1; overflow-y: auto; min-height: 0; }
-        .modal-actions {
-            padding: 16px 24px;
-            border-top: 1px solid #e5e7eb;
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-            position: sticky;
-            bottom: 0;
-            background: #fff;
-            z-index: 1;
-            flex-shrink: 0;
-        }
-
-        .form-group { margin-bottom: 16px; }
-        .form-group label {
-            display: block;
-            font-size: 13px;
-            font-weight: 500;
-            color: #374151;
-            margin-bottom: 6px;
-        }
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 9px 12px;
-            border: 1px solid #d1d5db;
-            border-radius: 4px;
-            font-size: 14px;
-            font-family: inherit;
-        }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: #be185d;
-            box-shadow: 0 0 0 3px rgba(190, 24, 93, 0.1);
-        }
-        .form-group small { color: #6b7280; font-size: 12px; display: block; margin-top: 4px; }
-        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .form-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
         .form-check input[type="checkbox"] { width: auto; }
 
@@ -351,13 +311,13 @@ $path_prefix = '../../';
                         <small>What an analyst sees in lists and forms. Edit freely later.</small>
                     </div>
                     <div class="form-group">
+                        <label for="classDescription">Description</label>
+                        <textarea id="classDescription" rows="2" maxlength="500" placeholder="Short description of what this class represents"></textarea>
+                    </div>
+                    <div class="form-group">
                         <label for="classKey">Key</label>
                         <input type="text" id="classKey" maxlength="100" placeholder="auto-generated from Name">
                         <small class="key-hint">Immutable identifier used in storage and AI prompts. Auto-generated from Name; edit only if you have a strong reason.</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="classDescription">Description</label>
-                        <textarea id="classDescription" rows="2" maxlength="500" placeholder="Short description of what this class represents"></textarea>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
