@@ -360,7 +360,7 @@ $path_prefix = '../../';
                 document.getElementById('rfpModal').classList.add('active');
                 setTimeout(() => document.getElementById('rfpName').focus(), 50);
             } catch (err) {
-                alert('Could not load RFP: ' + err.message);
+                showToast('Could not load RFP: ' + err.message, 'error');
             }
         }
 
@@ -370,7 +370,7 @@ $path_prefix = '../../';
 
         async function saveRfp() {
             const name = document.getElementById('rfpName').value.trim();
-            if (!name) { alert('Name is required'); return; }
+            if (!name) { showToast('Name is required', 'error'); return; }
             const payload = {
                 id: document.getElementById('rfpId').value || null,
                 name,
@@ -390,14 +390,14 @@ $path_prefix = '../../';
                 closeModal();
                 loadRfps();
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false; btn.textContent = 'Save';
             }
         }
 
         async function deleteRfp(id, name) {
-            if (!confirm(`Delete RFP "${name}"?\n\nThis will permanently remove all documents, requirements, scores, and history for this RFP.`)) return;
+            if (!(await showConfirm({ title: 'Delete', message: `Delete RFP "${name}"?\n\nThis will permanently remove all documents, requirements, scores, and history for this RFP.`, okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'delete_rfp.php', {
                     method: 'POST',
@@ -408,7 +408,7 @@ $path_prefix = '../../';
                 if (!data.success) throw new Error(data.error || 'Delete failed');
                 loadRfps();
             } catch (err) {
-                alert('Delete failed: ' + err.message);
+                showToast('Delete failed: ' + err.message, 'error');
             }
         }
 

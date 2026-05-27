@@ -76,7 +76,6 @@ $chart_initial_height_calc = 'calc((100vh - 60px) * ' . ($chart_height_pct / 100
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Morning Checks</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <link rel="stylesheet" href="style.css">
     <style>
         /* Layout: body is the outer flex column so .container fills

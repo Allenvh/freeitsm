@@ -253,20 +253,6 @@ $path_prefix = '../';
         </div>
     </div>
 
-    <!-- Delete confirmation -->
-    <div class="confirm-overlay" id="confirmOverlay" onclick="if(event.target===this)closeConfirm()">
-        <div class="confirm-box">
-            <h3>Delete form?</h3>
-            <p>This will permanently delete this form, every version in its chain, and all submissions across all versions. This can't be undone.</p>
-            <div class="confirm-actions">
-                <button class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
-                <button class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast notification -->
-    <div class="toast" id="toast"></div>
 
     <script>
         const API_BASE = '<?php echo BASE_URL; ?>api/forms/';
@@ -434,45 +420,32 @@ $path_prefix = '../';
             return div.innerHTML;
         }
 
-        // ===== Toast =====
-        function showToast(message, isError) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
-
         // ===== Delete =====
-        let deleteFormId = null;
-        function confirmDelete(id) {
-            deleteFormId = id;
-            document.getElementById('confirmOverlay').classList.add('open');
-        }
-        function closeConfirm() {
-            document.getElementById('confirmOverlay').classList.remove('open');
-            deleteFormId = null;
-        }
-        document.getElementById('confirmDeleteBtn').addEventListener('click', async function() {
-            if (!deleteFormId) return;
+        async function confirmDelete(id) {
+            const ok = await showConfirm({
+                title: 'Delete form',
+                message: "This will permanently delete this form, every version in its chain, and all submissions across all versions. This can't be undone.",
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
             try {
                 const res = await fetch(API_BASE + 'delete_form.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: deleteFormId })
+                    body: JSON.stringify({ id })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    closeConfirm();
                     await loadForms();
-                    showToast('Form deleted');
+                    showToast('Form deleted', 'success');
                 } else {
-                    showToast(data.error || 'Failed to delete', true);
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (e) {
-                showToast('Failed to delete', true);
+                showToast('Failed to delete', 'error');
             }
-        });
+        }
     </script>
 </body>
 </html>

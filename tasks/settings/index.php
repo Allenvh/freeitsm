@@ -348,7 +348,6 @@ $translationNamespaces = ['common', 'tasks'];
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
 
     <script>
         const API_BASE = '../../api/tasks/';
@@ -408,9 +407,9 @@ $translationNamespaces = ['common', 'tasks'];
                     body: JSON.stringify({ settings: { tag_settings: ts } })
                 });
                 const data = await res.json();
-                if (data.success) showToast(t('tasks.toast.saved'));
-                else showToast(data.error || t('tasks.toast.save_failed'), true);
-            } catch (e) { showToast(t('tasks.toast.save_failed'), true); }
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
         }
 
         // ── Calendar span mode ──
@@ -432,9 +431,9 @@ $translationNamespaces = ['common', 'tasks'];
                     body: JSON.stringify({ settings: { calendar_span_mode: value } })
                 });
                 const data = await res.json();
-                if (data.success) showToast(t('tasks.toast.saved'));
-                else showToast(data.error || t('tasks.toast.save_failed'), true);
-            } catch (e) { showToast(t('tasks.toast.save_failed'), true); }
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
         }
 
         function markSelectedCard() {
@@ -470,9 +469,9 @@ $translationNamespaces = ['common', 'tasks'];
                     body: JSON.stringify({ settings: { card_fields: cf } })
                 });
                 const data = await res.json();
-                if (data.success) showToast(t('tasks.toast.saved'));
-                else showToast(data.error || t('tasks.toast.save_failed'), true);
-            } catch (e) { showToast(t('tasks.toast.save_failed'), true); }
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
         }
 
         async function loadLookup(kind) {
@@ -579,7 +578,7 @@ $translationNamespaces = ['common', 'tasks'];
         }
 
         async function deleteLookup(kind, id, name) {
-            if (!confirm(t('tasks.settings.delete_confirm', { name: name }))) return;
+            if (!(await showConfirm({ title: 'Delete', message: t('tasks.settings.delete_confirm', { name: name }), okLabel: 'Delete', okClass: 'danger' }))) return;
             const cfg = LOOKUP_KINDS[kind];
             try {
                 const res = await fetch(API_BASE + cfg.del, {
@@ -587,9 +586,9 @@ $translationNamespaces = ['common', 'tasks'];
                     body: JSON.stringify({id: id})
                 });
                 const data = await res.json();
-                if (data.success) { showToast(t('tasks.toast.deleted')); loadLookup(kind); }
-                else { showToast(data.error || t('tasks.toast.delete_failed'), true); }
-            } catch (e) { showToast(t('tasks.toast.delete_failed'), true); }
+                if (data.success) { showToast(t('tasks.toast.deleted'), 'success'); loadLookup(kind); }
+                else { showToast(data.error || t('tasks.toast.delete_failed'), 'error'); }
+            } catch (e) { showToast(t('tasks.toast.delete_failed'), 'error'); }
         }
 
         document.getElementById('lookupForm').addEventListener('submit', async function(e) {
@@ -614,21 +613,14 @@ $translationNamespaces = ['common', 'tasks'];
                 const data = await res.json();
                 if (data.success) {
                     closeLookupModal();
-                    showToast(t('tasks.toast.saved'));
+                    showToast(t('tasks.toast.saved'), 'success');
                     loadLookup(kind);
                 } else {
-                    showToast(data.error || t('tasks.toast.save_failed'), true);
+                    showToast(data.error || t('tasks.toast.save_failed'), 'error');
                 }
-            } catch (e) { showToast(t('tasks.toast.save_failed'), true); }
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
         });
 
-        function showToast(message, isError) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
     </script>
 </body>
 </html>

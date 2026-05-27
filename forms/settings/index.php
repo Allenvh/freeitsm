@@ -341,7 +341,6 @@ $path_prefix = '../../';
     </div>
 
     <!-- Toast notification -->
-    <div class="toast" id="toast"></div>
 
     <script>
         const API_BASE = '../../api/forms/';
@@ -527,21 +526,13 @@ $path_prefix = '../../';
                 const data = await res.json();
 
                 if (data.success) {
-                    showToast('Settings saved');
+                    showToast('Settings saved', 'success');
                 } else {
-                    showToast('Error: ' + data.error, true);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (e) {
-                showToast('Failed to save settings', true);
+                showToast('Failed to save settings', 'error');
             }
-        }
-
-        function showToast(message, isError) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
         }
     </script>
 </body>

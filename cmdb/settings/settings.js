@@ -25,7 +25,7 @@ function showInlineToast(msg, isError = false) {
     if (typeof showToast === 'function') {
         showToast(msg, isError ? 'error' : 'success');
     } else {
-        alert(msg);
+        showToast(msg, 'error');
     }
 }
 
@@ -132,7 +132,7 @@ async function saveClass(ev) {
 }
 
 async function deleteClass(id, name) {
-    if (!confirm(`Delete the class "${name}"?\n\nThis is only allowed when no objects exist for it. Property definitions are removed automatically.`)) return;
+    if (!(await showConfirm({ title: 'Delete', message: `Delete the class "${name}"?\n\nThis is only allowed when no objects exist for it. Property definitions are removed automatically.`, okLabel: 'Delete', okClass: 'danger' }))) return;
     try {
         const data = await postJson(API + 'delete_class.php', { id });
         if (!data.success) throw new Error(data.error || 'Delete failed');
@@ -310,7 +310,7 @@ async function saveProperty(ev) {
 }
 
 async function deleteProperty(id, label) {
-    if (!confirm(`Delete property "${label}"?\n\nOnly allowed when no objects have a value for it.`)) return;
+    if (!(await showConfirm({ title: 'Delete', message: `Delete property "${label}"?\n\nOnly allowed when no objects have a value for it.`, okLabel: 'Delete', okClass: 'danger' }))) return;
     try {
         const data = await postJson(API + 'delete_class_property.php', { id });
         if (!data.success) throw new Error(data.error || 'Delete failed');
@@ -399,7 +399,7 @@ async function saveRelType(ev) {
 }
 
 async function deleteRelType(id, verb) {
-    if (!confirm(`Delete relationship type "${verb}"?\n\nOnly allowed when no relationships currently use it.`)) return;
+    if (!(await showConfirm({ title: 'Delete', message: `Delete relationship type "${verb}"?\n\nOnly allowed when no relationships currently use it.`, okLabel: 'Delete', okClass: 'danger' }))) return;
     try {
         const data = await postJson(API + 'delete_relationship_type.php', { id });
         if (!data.success) throw new Error(data.error || 'Delete failed');

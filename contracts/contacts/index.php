@@ -378,7 +378,7 @@ $path_prefix = '../../';
         }
 
         async function deleteContact(id, name) {
-            if (!confirm('Delete contact "' + name + '"?')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete contact "' + name + '"?', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const response = await fetch(API_BASE + 'delete_contact.php', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -386,8 +386,8 @@ $path_prefix = '../../';
                 });
                 const data = await response.json();
                 if (data.success) loadContacts();
-                else alert('Error: ' + data.error);
-            } catch (error) { alert('Failed to delete contact'); }
+                else showToast('Error: ' + data.error, 'error');
+            } catch (error) { showToast('Failed to delete contact', 'error'); }
         }
 
         document.getElementById('editForm').addEventListener('submit', async function(e) {
@@ -412,8 +412,8 @@ $path_prefix = '../../';
                 });
                 const data = await response.json();
                 if (data.success) { closeModal(); loadContacts(); }
-                else alert('Error: ' + data.error);
-            } catch (error) { alert('Failed to save contact'); }
+                else showToast('Error: ' + data.error, 'error');
+            } catch (error) { showToast('Failed to save contact', 'error'); }
         });
 
         let modalMouseDownTarget = null;

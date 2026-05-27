@@ -92,9 +92,6 @@ $translationNamespaces = ['common', 'tasks'];
             </div>
         </div>
     </div>
-
-    <div class="toast" id="toast"></div>
-
     <script>window.API_BASE = '../../api/tasks/';</script>
     <script src="../../assets/js/tasks-calendar.js?v=4"></script>
 </body>

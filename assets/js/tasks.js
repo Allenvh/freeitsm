@@ -319,7 +319,7 @@ function persistColumnOrder() {
     }).then(r => r.json()).then(d => {
         showToast(d.success ? window.t('tasks.toast.order_saved')
             : window.t('tasks.toast.error_prefix', { message: d.error || window.t('tasks.toast.order_failed') }));
-    }).catch(() => showToast(window.t('tasks.toast.order_failed')));
+    }).catch(() => showToast(window.t('tasks.toast.order_failed'), 'success'));
 }
 
 function renderBoard() {
@@ -465,12 +465,12 @@ async function handleQuickAdd(event, status, col) {
             input.value = '';
             col.querySelector('.quick-add-container').style.display = 'none';
             loadTasks();
-            showToast(window.t('tasks.toast.task_created'));
+            showToast(window.t('tasks.toast.task_created'), 'success');
         } else {
             showToast(window.t('tasks.toast.error_prefix', { message: data.error || window.t('tasks.toast.create_failed') }));
         }
     } catch (e) {
-        showToast(window.t('tasks.toast.create_failed'));
+        showToast(window.t('tasks.toast.create_failed'), 'success');
     }
     input.disabled = false;
 }
@@ -1075,9 +1075,9 @@ async function createAndAddTag() {
             const fresh = document.getElementById('tagPickerInput');
             if (fresh) fresh.focus();
         } else {
-            showToast(data.error || window.t('tasks.toast.tag_create_failed'));
+            showToast(data.error || window.t('tasks.toast.tag_create_failed'), 'success');
         }
-    } catch (e) { showToast(window.t('tasks.toast.tag_create_failed')); }
+    } catch (e) { showToast(window.t('tasks.toast.tag_create_failed'), 'success'); }
 }
 
 function saveDetailTags() {
@@ -1188,7 +1188,7 @@ async function removeLink(field) {
 
 async function deleteCurrentTask() {
     if (!selectedTaskId) return;
-    if (!confirm(window.t('tasks.detail.delete_confirm'))) return;
+    if (!(await showConfirm({ title: 'Confirm', message: window.t('tasks.detail.delete_confirm'), okLabel: 'OK', okClass: 'primary' }))) return;
 
     try {
         const data = await fetch(API_BASE + 'delete.php', {
@@ -1199,7 +1199,7 @@ async function deleteCurrentTask() {
 
         if (data.success) {
             closeDetailPanel();
-            showToast(window.t('tasks.toast.task_deleted'));
+            showToast(window.t('tasks.toast.task_deleted'), 'success');
         }
     } catch (e) { console.error(e); }
 }
@@ -1313,9 +1313,9 @@ async function ctxSetField(field, value) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, [field]: value })
         }).then(r => r.json());
-        if (data.success) { showToast(window.t('tasks.toast.task_updated')); loadTasks(); }
+        if (data.success) { showToast(window.t('tasks.toast.task_updated'), 'success'); loadTasks(); }
         else showToast(window.t('tasks.toast.error_prefix', { message: data.error || window.t('tasks.toast.update_failed') }));
-    } catch (e) { showToast(window.t('tasks.toast.update_failed')); }
+    } catch (e) { showToast(window.t('tasks.toast.update_failed'), 'success'); }
 }
 
 function ctxCreateSubtask() {
@@ -1352,9 +1352,3 @@ function formatDateTime(dt) {
         + ' ' + d.toLocaleTimeString(UI_LOCALE, { hour: '2-digit', minute: '2-digit' });
 }
 
-function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2500);
-}

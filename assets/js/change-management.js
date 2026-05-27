@@ -477,7 +477,7 @@ async function viewChange(id) {
         const data = await response.json();
 
         if (!data.success) {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'success');
             return;
         }
 
@@ -486,7 +486,7 @@ async function viewChange(id) {
         showView('detail');
     } catch (error) {
         console.error('Error loading change:', error);
-        showToast('Error loading change');
+        showToast('Error loading change', 'success');
     }
 }
 
@@ -864,7 +864,7 @@ async function postComment() {
     const input = document.getElementById('commentInput');
     const text = input.value.trim();
     if (!text) {
-        showToast('Please enter a comment');
+        showToast('Please enter a comment', 'success');
         return;
     }
 
@@ -878,13 +878,13 @@ async function postComment() {
 
         if (data.success) {
             input.value = '';
-            showToast('Comment added');
+            showToast('Comment added', 'success');
             loadActivityTimeline(currentChange.id);
         } else {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'success');
         }
     } catch (error) {
-        showToast('Error posting comment');
+        showToast('Error posting comment', 'success');
     }
 }
 
@@ -958,7 +958,7 @@ async function performSearch() {
     const title = document.getElementById('searchChangeTitle').value.trim();
 
     if (!changeNumber && !title) {
-        alert('Please enter at least one search criterion');
+        showToast('Please enter at least one search criterion', 'error');
         return;
     }
 
@@ -1182,7 +1182,7 @@ function restoreUrlFromNewRoute() {
 async function saveChange() {
     const title = document.getElementById('changeTitle').value.trim();
     if (!title) {
-        showToast('Title is required');
+        showToast('Title is required', 'success');
         return;
     }
 
@@ -1244,7 +1244,7 @@ async function saveChange() {
                 });
             }
 
-            showToast('Change saved successfully');
+            showToast('Change saved successfully', 'success');
             destroyEditors();
             // If we came in via /change-management/new/, drop the create-route
             // path now the change is saved — viewChange() will show the detail
@@ -1254,11 +1254,11 @@ async function saveChange() {
             await loadChanges();
             await viewChange(data.change_id);
         } else {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'success');
         }
     } catch (error) {
         console.error('Error saving change:', error);
-        showToast('Error saving change');
+        showToast('Error saving change', 'success');
     }
 }
 
@@ -1296,16 +1296,16 @@ async function confirmDelete(id) {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Change deleted');
+            showToast('Change deleted', 'success');
             closeDeleteModal();
             currentChange = null;
             showView('list');
             loadChanges();
         } else {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'success');
         }
     } catch (error) {
-        showToast('Error deleting change');
+        showToast('Error deleting change', 'success');
     }
 }
 
@@ -1345,7 +1345,7 @@ function setupFileUpload() {
 async function uploadFiles(files) {
     const changeId = document.getElementById('editChangeId').value;
     if (!changeId) {
-        showToast('Please save the change first before uploading attachments');
+        showToast('Please save the change first before uploading attachments', 'success');
         return;
     }
 
@@ -1362,7 +1362,7 @@ async function uploadFiles(files) {
             const data = await response.json();
 
             if (data.success) {
-                showToast('File uploaded: ' + file.name);
+                showToast('File uploaded: ' + file.name, 'success');
                 // Refresh the change to get updated attachments
                 const refreshResp = await fetch(API_BASE + 'get.php?id=' + changeId);
                 const refreshData = await refreshResp.json();
@@ -1371,10 +1371,10 @@ async function uploadFiles(files) {
                     renderEditorAttachments(currentChange.attachments || []);
                 }
             } else {
-                showToast('Upload failed: ' + data.error);
+                showToast('Upload failed: ' + data.error, 'success');
             }
         } catch (error) {
-            showToast('Upload error: ' + file.name);
+            showToast('Upload error: ' + file.name, 'success');
         }
     }
 }
@@ -1406,7 +1406,7 @@ function downloadAttachment(id) {
 }
 
 async function deleteAttachment(id) {
-    if (!confirm('Delete this attachment?')) return;
+    if (!(await showConfirm({ title: 'Delete', message: 'Delete this attachment?', okLabel: 'Delete', okClass: 'danger' }))) return;
 
     try {
         const response = await fetch(API_BASE + 'delete_attachment.php', {
@@ -1417,7 +1417,7 @@ async function deleteAttachment(id) {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Attachment deleted');
+            showToast('Attachment deleted', 'success');
             // Refresh attachments
             const changeId = document.getElementById('editChangeId').value;
             if (changeId) {
@@ -1429,10 +1429,10 @@ async function deleteAttachment(id) {
                 }
             }
         } else {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'success');
         }
     } catch (error) {
-        showToast('Error deleting attachment');
+        showToast('Error deleting attachment', 'success');
     }
 }
 
@@ -1544,7 +1544,7 @@ function addCabMember() {
 
     // Check if already added
     if (cabEditorMembers.some(m => m.analyst_id === analystId)) {
-        showToast('Already added');
+        showToast('Already added', 'success');
         return;
     }
 
@@ -1670,17 +1670,17 @@ async function submitCabVote(vote) {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Vote recorded: ' + vote);
+            showToast('Vote recorded: ' + vote, 'success');
             // Refresh the change detail
             await viewChange(currentChange.id);
             if (data.status_changed) {
                 loadChanges();
             }
         } else {
-            showToast('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'success');
         }
     } catch (error) {
-        showToast('Error submitting vote');
+        showToast('Error submitting vote', 'success');
     }
 }
 
@@ -1746,12 +1746,6 @@ function formatFileSize(bytes) {
     return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
-function showToast(message) {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3000);
-}
 
 // ============ Share Functions ============
 
@@ -1788,7 +1782,7 @@ function shareChangeLink() {
 
     const url = getChangeUrl();
     navigator.clipboard.writeText(url).then(() => {
-        showToast('Link copied to clipboard!');
+        showToast('Link copied to clipboard!', 'success');
     }).catch(() => {
         // Fallback for older browsers
         const input = document.createElement('input');
@@ -1797,7 +1791,7 @@ function shareChangeLink() {
         input.select();
         document.execCommand('copy');
         document.body.removeChild(input);
-        showToast('Link copied to clipboard!');
+        showToast('Link copied to clipboard!', 'success');
     });
 }
 
@@ -1844,12 +1838,12 @@ async function sendShareEmail() {
     const includePdf = document.getElementById('shareIncludePdf').checked;
 
     if (!toEmail) {
-        alert('Please enter a recipient email address');
+        showToast('Please enter a recipient email address', 'error');
         return;
     }
 
     if (!includeLink && !includePdf) {
-        alert('Please select at least one option to include');
+        showToast('Please select at least one option to include', 'error');
         return;
     }
 
@@ -1873,7 +1867,7 @@ async function sendShareEmail() {
             pdfBase64 = await blobToBase64(pdfBlob);
         } catch (error) {
             console.error('Error generating PDF:', error);
-            alert('Error generating PDF. Please try again.');
+            showToast('Error generating PDF. Please try again.', 'error');
             return;
         }
     }
@@ -1898,13 +1892,13 @@ async function sendShareEmail() {
 
         if (data.success) {
             closeShareEmailModal();
-            showToast('Email sent successfully!');
+            showToast('Email sent successfully!', 'success');
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error sending email:', error);
-        alert('Error sending email: ' + error.message);
+        showToast('Error sending email: ' + error.message, 'error');
     }
 }
 

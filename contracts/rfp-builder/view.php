@@ -484,7 +484,7 @@ $path_prefix = '../../';
         }
 
         async function deleteRfp() {
-            if (!confirm(`Delete RFP "${currentRfp.name}"?\n\nThis will permanently remove all documents, requirements, scores, and history for this RFP.`)) return;
+            if (!(await showConfirm({ title: 'Delete', message: `Delete RFP "${currentRfp.name}"?\n\nThis will permanently remove all documents, requirements, scores, and history for this RFP.`, okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'delete_rfp.php', {
                     method: 'POST',
@@ -495,7 +495,7 @@ $path_prefix = '../../';
                 if (!data.success) throw new Error(data.error || 'Delete failed');
                 window.location.href = './';
             } catch (err) {
-                alert('Delete failed: ' + err.message);
+                showToast('Delete failed: ' + err.message, 'error');
             }
         }
 

@@ -544,8 +544,6 @@ $path_prefix = '../../';
     </aside>
 
     <!-- Toast notification -->
-    <div class="toast" id="toast"></div>
-
     <script>
         const API_BASE = '<?php echo BASE_URL; ?>api/forms/';
         // Resolve the form id from the URL once on load. Saved into a
@@ -615,22 +613,13 @@ $path_prefix = '../../';
             document.getElementById('saveBtn').classList.remove('has-changes');
         }
 
-        // ===== Toast =====
-        function showToast(message, isError) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
-
         // ===== Load & versioning metadata =====
         async function loadFormForEdit(id) {
             try {
                 const res = await fetch(API_BASE + 'get_form.php?id=' + id);
                 const data = await res.json();
                 if (!data.success) {
-                    showToast(data.error || 'Form not found', true);
+                    showToast(data.error || 'Form not found', 'error');
                     return;
                 }
                 document.getElementById('formTitle').value = data.form.title;
@@ -645,7 +634,7 @@ $path_prefix = '../../';
                 updatePreview();
                 renderFormMeta(data.form);
             } catch (e) {
-                showToast('Failed to load form: ' + e.message, true);
+                showToast('Failed to load form: ' + e.message, 'error');
             }
         }
 
@@ -801,11 +790,17 @@ $path_prefix = '../../';
         // ===== Save as new version =====
         async function createNewVersion() {
             if (!currentFormId) {
-                showToast('Save the form first before creating a new version.', true);
+                showToast('Save the form first before creating a new version.', 'error');
                 return;
             }
-            if (isDirty && !confirm('You have unsaved changes. Save them as part of the new version? Cancel here and click Save first if you want to keep both.')) {
-                return;
+            if (isDirty) {
+                const proceed = await showConfirm({
+                    title: 'Unsaved changes',
+                    message: 'You have unsaved changes. Save them as part of the new version? Cancel here and click Save first if you want to keep both.',
+                    okLabel: 'Continue',
+                    okClass: 'primary'
+                });
+                if (!proceed) return;
             }
             // If the user has unsaved changes, persist them first so
             // the new version snapshot reflects what they see.
@@ -813,7 +808,7 @@ $path_prefix = '../../';
                 const ok = await saveForm();
                 if (!ok) return;
             }
-            if (!confirm('Create a new version? The current version becomes a frozen historical snapshot; the new one becomes the editable current version.')) return;
+            if (!(await showConfirm({ title: 'Confirm', message: 'Create a new version? The current version becomes a frozen historical snapshot; the new one becomes the editable current version.', okLabel: 'OK', okClass: 'primary' }))) return;
             try {
                 const res = await fetch(API_BASE + 'create_version.php', {
                     method: 'POST',
@@ -822,14 +817,14 @@ $path_prefix = '../../';
                 });
                 const data = await res.json();
                 if (!data.success) {
-                    showToast(data.error || 'Failed to create version', true);
+                    showToast(data.error || 'Failed to create version', 'error');
                     return;
                 }
                 showToast('Created v' + data.version_number);
                 // Jump to the new version
                 window.location.href = '?id=' + data.id;
             } catch (e) {
-                showToast('Failed to create version', true);
+                showToast('Failed to create version', 'error');
             }
         }
 
@@ -871,8 +866,16 @@ $path_prefix = '../../';
         });
 
         // ===== Cancel / back =====
-        function cancelEdit() {
-            if (isDirty && !confirm('You have unsaved changes. Discard them?')) return;
+        async function cancelEdit() {
+            if (isDirty) {
+                const ok = await showConfirm({
+                    title: 'Discard changes',
+                    message: 'You have unsaved changes. Discard them?',
+                    okLabel: 'Discard',
+                    okClass: 'danger'
+                });
+                if (!ok) return;
+            }
             isDirty = false;   // skip the beforeunload warning
             window.location.href = '<?php echo BASE_URL; ?>forms/';
         }
@@ -1163,10 +1166,10 @@ $path_prefix = '../../';
         // version snapshot reflects exactly what the user sees.
         async function saveForm() {
             const title = document.getElementById('formTitle').value.trim();
-            if (!title) { showToast('Please enter a form title', true); return false; }
+            if (!title) { showToast('Please enter a form title', 'error'); return false; }
             const validFields = fields.filter(f => f.label.trim());
             if (validFields.length === 0) {
-                showToast('Please add at least one field with a label', true);
+                showToast('Please add at least one field with a label', 'error');
                 return false;
             }
             const payload = {
@@ -1206,10 +1209,10 @@ $path_prefix = '../../';
                     loadFormForEdit(currentFormId);
                     return true;
                 }
-                showToast('Error: ' + data.error, true);
+                showToast('Error: ' + data.error, 'error');
                 return false;
             } catch (e) {
-                showToast('Failed to save form', true);
+                showToast('Failed to save form', 'error');
                 return false;
             }
         }
@@ -1430,18 +1433,18 @@ $path_prefix = '../../';
             applyGeneratedForm(aiProposedForm);
             switchFormTab('preview');
             closeAiModal();
-            showToast(isEditingExistingForm() ? 'Form updated' : 'Form built', false);
+            showToast(isEditingExistingForm() ? 'Form updated' : 'Form built', 'success');
             aiProposedForm = null;
         }
         async function runAiGeneration() {
             const description = document.getElementById('aiDescription').value.trim();
             const editing = isEditingExistingForm();
             if (!description) {
-                showToast(editing ? 'Please describe what you want to change' : 'Please describe the form you want to build', true);
+                showToast(editing ? 'Please describe what you want to change' : 'Please describe the form you want to build', 'error');
                 return;
             }
             if (description.length > 2000) {
-                showToast('Description is too long (max 2000 characters)', true);
+                showToast('Description is too long (max 2000 characters)', 'error');
                 return;
             }
             // No destructive-replace warning in edit mode — the backend
@@ -1551,7 +1554,7 @@ $path_prefix = '../../';
                 } else {
                     prog.classList.add('error');
                     document.getElementById('aiStatus').textContent = 'Error: ' + err.message;
-                    showToast('AI Assist failed: ' + err.message, true);
+                    showToast('AI Assist failed: ' + err.message, 'error');
                 }
             } finally {
                 generateBtn.disabled = false;

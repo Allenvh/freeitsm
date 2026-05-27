@@ -233,8 +233,6 @@ $path_prefix = '../';
     </div>
 
     <!-- Toast -->
-    <div class="toast" id="toast"></div>
-
     <script>window.API_BASE = '../api/lms/';</script>
     <script src="../assets/js/lms.js"></script>
 </body>

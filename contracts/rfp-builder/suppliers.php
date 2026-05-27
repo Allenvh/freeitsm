@@ -406,9 +406,7 @@ $path_prefix  = '../../';
         // ─── Remove ────────────────────────────────────────────────
 
         async function removeInvitation(invitationId) {
-            if (!confirm('Remove this supplier from the RFP?\n\nAny scores already entered for them will be deleted. The supplier record itself stays in your main suppliers list.')) {
-                return;
-            }
+            if (!(await showConfirm({ title: 'Delete', message: 'Remove this supplier from the RFP?\n\nAny scores already entered for them will be deleted. The supplier record itself stays in your main suppliers list.', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'remove_invited_supplier.php', {
                     method: 'POST',
@@ -419,7 +417,7 @@ $path_prefix  = '../../';
                 if (!data.success) throw new Error(data.error || 'Remove failed');
                 loadAll();
             } catch (err) {
-                alert('Remove failed: ' + err.message);
+                showToast('Remove failed: ' + err.message, 'error');
             }
         }
 
@@ -500,7 +498,7 @@ $path_prefix  = '../../';
                 closeInviteModal();
                 loadAll();
             } catch (err) {
-                alert('Invite failed: ' + err.message);
+                showToast('Invite failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }

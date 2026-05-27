@@ -372,8 +372,6 @@ try {
     </div>
 
     <!-- Toast -->
-    <div class="toast" id="toast"></div>
-
     <!-- Export modal — three formats: PNG image, PDF document, Mermaid markup -->
     <div class="pm-modal-overlay" id="exportModal" style="display: none;" onclick="if (event.target === this) PM.closeExportModal()">
         <div class="pm-modal">

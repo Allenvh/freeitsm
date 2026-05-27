@@ -32,7 +32,6 @@ $path_prefix = '../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FreeITSM &mdash; Network Diagram</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <style>
         body { background: #f5f5f5; height: 100vh; overflow: hidden; }
 

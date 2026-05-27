@@ -92,7 +92,7 @@ $current_page = $current_page ?? '';
     </nav>
     <div class="header-right">
         <div class="user-info">Welcome, <?php echo htmlspecialchars($analyst_name); ?></div>
-        <button class="nav-btn logout" onclick="if(confirm('Are you sure you want to logout?')) window.location.href='<?php echo $path_prefix; ?>analyst_logout.php';" title="Logout">
+        <button class="nav-btn logout" onclick="showConfirm({title:'Logout',message:'Are you sure you want to logout?',okLabel:'Logout',okClass:'primary',onConfirm:()=>{window.location.href='<?php echo $path_prefix; ?>analyst_logout.php';}});" title="Logout">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>

@@ -594,9 +594,9 @@ $path_prefix = '../../../';
                     closeModal();
                     loadSuppliers();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
-            } catch (e) { alert('Failed to save supplier'); }
+            } catch (e) { showToast('Failed to save supplier', 'error'); }
         });
 
         let modalMouseDownTarget = null;

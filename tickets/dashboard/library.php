@@ -16,7 +16,6 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Ticket Widget Library</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <script src="../../assets/js/toast.js"></script>
     <style>
         .dashboard-page {
             height: calc(100vh - 48px);
@@ -434,7 +433,7 @@ $path_prefix = '../../';
         }
 
         async function deleteWidget(id, title) {
-            if (!confirm('Delete "' + title + '"? This will also remove it from all analyst dashboards.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete "' + title + '"? This will also remove it from all analyst dashboards.', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const res = await fetch(API_BASE + 'delete_ticket_dashboard_widget.php', {

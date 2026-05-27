@@ -20,7 +20,6 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Branding</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <script src="../../assets/js/toast.js"></script>
     <style>
         .branding-container {
             height: calc(100vh - 48px);

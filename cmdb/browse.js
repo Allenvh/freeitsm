@@ -15,7 +15,7 @@ function escapeHtml(s) {
 }
 function showInlineToast(msg, isError = false) {
     if (typeof showToast === 'function') showToast(msg, isError ? 'error' : 'success');
-    else alert(msg);
+    else showToast(msg, 'error');
 }
 async function postJson(url, body) {
     const res = await fetch(url, {

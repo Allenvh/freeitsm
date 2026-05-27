@@ -304,7 +304,7 @@ document.getElementById('rotaEntryForm').addEventListener('submit', async functi
 async function deleteRotaEntry() {
     const id = document.getElementById('entryId').value;
     if (!id) return;
-    if (!confirm(t('tickets.rota.delete_confirm'))) return;
+    if (!(await showConfirm({ title: 'Confirm', message: t('tickets.rota.delete_confirm'), okLabel: 'OK', okClass: 'primary' }))) return;
 
     try {
         const response = await fetch(ROTA_API + 'delete_rota_entry.php', {

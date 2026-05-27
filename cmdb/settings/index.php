@@ -21,7 +21,6 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FreeITSM - CMDB Settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <script src="../../assets/js/toast.js"></script>
     <style>
         body { background: #f5f5f5; }
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 24px 0; padding: 0 20px; }

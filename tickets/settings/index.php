@@ -35,7 +35,6 @@ $translationNamespaces = ['common', 'tickets'];
     <link rel="stylesheet" href="../../assets/css/inbox.css">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
-    <script src="../../assets/js/toast.js"></script>
     <style>
         /* Page-specific overrides for settings page */
 
@@ -1549,7 +1548,7 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     renderDepartments(data.departments);
                 } else {
-                    alert('Error loading departments: ' + data.error);
+                    showToast('Error loading departments: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -1565,7 +1564,7 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     renderTicketTypes(data.ticket_types);
                 } else {
-                    alert('Error loading ticket types: ' + data.error);
+                    showToast('Error loading ticket types: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -1581,7 +1580,7 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     renderTicketOrigins(data.origins);
                 } else {
-                    alert('Error loading ticket origins: ' + data.error);
+                    showToast('Error loading ticket origins: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -1598,7 +1597,7 @@ $translationNamespaces = ['common', 'tickets'];
                     ticketStatusesCache = data.statuses;
                     renderTicketStatuses(data.statuses);
                 } else {
-                    alert('Error loading statuses: ' + data.error);
+                    showToast('Error loading statuses: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -1652,7 +1651,7 @@ $translationNamespaces = ['common', 'tickets'];
                     ticketPrioritiesCache = data.priorities;
                     renderTicketPriorities(data.priorities);
                 } else {
-                    alert('Error loading priorities: ' + data.error);
+                    showToast('Error loading priorities: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -1700,7 +1699,7 @@ $translationNamespaces = ['common', 'tickets'];
                     rotaLocationsCache = data.locations;
                     renderRotaLocations(data.locations);
                 } else {
-                    alert('Error loading rota locations: ' + data.error);
+                    showToast('Error loading rota locations: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -2020,9 +2019,13 @@ $translationNamespaces = ['common', 'tickets'];
 
         // Delete item
         async function deleteItem(type, id, name) {
-            if (!confirm(`Are you sure you want to delete "${name}"?`)) {
-                return;
-            }
+            const ok = await showConfirm({
+                title: 'Delete',
+                message: `Are you sure you want to delete "${name}"?`,
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             const endpoints = {
                 'department': API_BASE + 'delete_department.php',
@@ -2063,11 +2066,11 @@ $translationNamespaces = ['common', 'tickets'];
                         loadRotaLocations();
                     }
                 } else {
-                    alert('Error deleting item: ' + data.error);
+                    showToast('Error deleting item: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to delete item');
+                showToast('Failed to delete item', 'error');
             }
         }
 
@@ -2173,11 +2176,11 @@ $translationNamespaces = ['common', 'tickets'];
                     // Also reload teams to update counts
                     loadTeams();
                 } else {
-                    alert('Error saving team assignments: ' + data.error);
+                    showToast('Error saving team assignments: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to save team assignments');
+                showToast('Failed to save team assignments', 'error');
             }
         });
 
@@ -2258,11 +2261,11 @@ $translationNamespaces = ['common', 'tickets'];
                         loadRotaLocations();
                     }
                 } else {
-                    alert('Error saving: ' + data.error);
+                    showToast('Error saving: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to save');
+                showToast('Failed to save', 'error');
             }
         });
 
@@ -2495,14 +2498,18 @@ $translationNamespaces = ['common', 'tickets'];
             if (mailbox) {
                 openMailboxModal(mailbox);
             } else {
-                alert('Mailbox not found. ID: ' + id);
+                showToast('Mailbox not found. ID: ' + id, 'error');
             }
         }
 
         async function deleteMailbox(id, name) {
-            if (!confirm(`Are you sure you want to delete the mailbox "${name}"?`)) {
-                return;
-            }
+            const ok = await showConfirm({
+                title: 'Delete mailbox',
+                message: `Are you sure you want to delete the mailbox "${name}"?`,
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_mailbox.php', {
@@ -2515,18 +2522,18 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     loadMailboxes();
                 } else {
-                    alert('Error deleting mailbox: ' + data.error);
+                    showToast('Error deleting mailbox: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to delete mailbox');
+                showToast('Failed to delete mailbox', 'error');
             }
         }
 
         function authenticateMailbox(id) {
             const mailbox = mailboxes.find(m => m.id == id);
             if (!mailbox) {
-                alert('Mailbox not found. ID: ' + id);
+                showToast('Mailbox not found. ID: ' + id, 'error');
                 return;
             }
 
@@ -2561,9 +2568,13 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         async function logoutMailbox(id) {
-            if (!confirm('This will remove authentication for this mailbox. You will need to re-authenticate. Continue?')) {
-                return;
-            }
+            const ok = await showConfirm({
+                title: 'Sign out mailbox',
+                message: 'This will remove authentication for this mailbox. You will need to re-authenticate. Continue?',
+                okLabel: 'Continue',
+                okClass: 'primary'
+            });
+            if (!ok) return;
 
             try {
                 const response = await fetch(API_BASE + 'mailbox_logout.php', {
@@ -2576,11 +2587,11 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     loadMailboxes();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to logout mailbox');
+                showToast('Failed to logout mailbox', 'error');
             }
         }
 
@@ -2733,11 +2744,11 @@ $translationNamespaces = ['common', 'tickets'];
                     closeMailboxModal();
                     loadMailboxes();
                 } else {
-                    alert('Error saving mailbox: ' + data.error);
+                    showToast('Error saving mailbox: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to save mailbox');
+                showToast('Failed to save mailbox', 'error');
             }
         });
 
@@ -3020,14 +3031,18 @@ $translationNamespaces = ['common', 'tickets'];
             if (analyst) {
                 openAnalystModal(analyst);
             } else {
-                alert('Analyst not found.');
+                showToast('Analyst not found.', 'error');
             }
         }
 
         async function deleteAnalyst(id, username) {
-            if (!confirm(`Are you sure you want to delete the analyst "${username}"?`)) {
-                return;
-            }
+            const ok = await showConfirm({
+                title: 'Delete analyst',
+                message: `Are you sure you want to delete the analyst "${username}"?`,
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_analyst.php', {
@@ -3040,11 +3055,11 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     loadAnalysts();
                 } else {
-                    alert('Error deleting analyst: ' + data.error);
+                    showToast('Error deleting analyst: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to delete analyst');
+                showToast('Failed to delete analyst', 'error');
             }
         }
 
@@ -3085,11 +3100,11 @@ $translationNamespaces = ['common', 'tickets'];
                     closeAnalystModal();
                     loadAnalysts();
                 } else {
-                    alert('Error saving analyst: ' + data.error);
+                    showToast('Error saving analyst: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to save analyst');
+                showToast('Failed to save analyst', 'error');
             }
         });
 
@@ -3101,12 +3116,12 @@ $translationNamespaces = ['common', 'tickets'];
             const confirmPassword = document.getElementById('confirmPassword').value;
 
             if (newPassword !== confirmPassword) {
-                alert('Passwords do not match.');
+                showToast('Passwords do not match.', 'error');
                 return;
             }
 
             if (newPassword.length < 6) {
-                alert('Password must be at least 6 characters.');
+                showToast('Password must be at least 6 characters.', 'error');
                 return;
             }
 
@@ -3123,13 +3138,13 @@ $translationNamespaces = ['common', 'tickets'];
 
                 if (data.success) {
                     closePasswordResetModal();
-                    alert('Password reset successfully.');
+                    showToast('Password reset successfully.', 'success');
                 } else {
-                    alert('Error resetting password: ' + data.error);
+                    showToast('Error resetting password: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to reset password');
+                showToast('Failed to reset password', 'error');
             }
         });
 
@@ -3457,7 +3472,13 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         async function deleteTemplate(id, name) {
-            if (!confirm(`Delete template "${name}"?`)) return;
+            const ok = await showConfirm({
+                title: 'Delete template',
+                message: `Delete template "${name}"?`,
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_email_template.php', {
@@ -3624,7 +3645,13 @@ $translationNamespaces = ['common', 'tickets'];
         });
 
         async function deleteRotaShift(id, name) {
-            if (!confirm('Delete shift "' + name + '"?')) return;
+            const ok = await showConfirm({
+                title: 'Delete shift',
+                message: 'Delete shift "' + name + '"?',
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_rota_shift.php', {
@@ -4022,7 +4049,13 @@ $translationNamespaces = ['common', 'tickets'];
         async function deleteSlaCalendar() {
             const id = parseInt(document.getElementById('slaCalendarId').value, 10);
             if (!id) return;
-            if (!confirm('Delete this calendar? This cannot be undone.')) return;
+            const ok = await showConfirm({
+                title: 'Delete calendar',
+                message: 'Delete this calendar? This cannot be undone.',
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
             try {
                 const res = await fetch(API_BASE + 'delete_sla_calendar.php', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4171,7 +4204,13 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         async function deleteSlaNotifRule(id) {
-            if (!confirm('Delete this notification rule? This cannot be undone.')) return;
+            const ok = await showConfirm({
+                title: 'Delete notification rule',
+                message: 'Delete this notification rule? This cannot be undone.',
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
             try {
                 const res = await fetch(API_BASE + 'delete_sla_notification_rule.php', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },

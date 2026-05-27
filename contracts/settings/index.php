@@ -335,7 +335,6 @@ $path_prefix = '../../';
                         </span>
                     </label>
                 </div>
-                <span class="save-message" id="leftPanelSaveMessage" style="display:none; color:#155724;">Saved!</span>
             </form>
         </div>
     </div>
@@ -557,7 +556,7 @@ $path_prefix = '../../';
         }
 
         async function deleteRfpDept(id, name) {
-            if (!confirm('Delete RFP department "' + name + '"? Any uploaded documents tagged with this department will have the tag cleared.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete RFP department "' + name + '"? Any uploaded documents tagged with this department will have the tag cleared.', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const response = await fetch(RFP_DEPT_API + 'delete_rfp_department.php', {
                     method: 'POST',
@@ -568,10 +567,10 @@ $path_prefix = '../../';
                 if (data.success) {
                     loadRfpDepartments();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
-                alert('Failed to delete department');
+                showToast('Failed to delete department', 'error');
             }
         }
 
@@ -605,10 +604,10 @@ $path_prefix = '../../';
                     closeRfpDeptModal();
                     loadRfpDepartments();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
-                alert('Failed to save department');
+                showToast('Failed to save department', 'error');
             }
         });
 
@@ -801,11 +800,7 @@ $path_prefix = '../../';
                     body: JSON.stringify({ key: SIDEBAR_MODE_KEY, value: value })
                 });
                 const d = await r.json();
-                if (d.success) {
-                    const msg = document.getElementById('leftPanelSaveMessage');
-                    msg.style.display = 'inline';
-                    setTimeout(() => { msg.style.display = 'none'; }, 1500);
-                }
+                if (d.success) showToast('Saved', 'success');
             } catch (e) { /* no-op */ }
         }
 
@@ -890,7 +885,7 @@ $path_prefix = '../../';
 
         async function deleteItem(type, id, name) {
             const ep = endpoints[type];
-            if (!confirm('Are you sure you want to delete "' + name + '"? Any records using this ' + ep.label.toLowerCase() + ' will have it cleared.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete "' + name + '"? Any records using this ' + ep.label.toLowerCase() + ' will have it cleared.', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const response = await fetch(ep.delete, {
@@ -902,11 +897,11 @@ $path_prefix = '../../';
                 if (data.success) {
                     loadItems(type);
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error deleting:', error);
-                alert('Failed to delete item');
+                showToast('Failed to delete item', 'error');
             }
         }
 
@@ -939,11 +934,11 @@ $path_prefix = '../../';
                     closeModal();
                     loadItems(type);
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error saving:', error);
-                alert('Failed to save item');
+                showToast('Failed to save item', 'error');
             }
         });
 

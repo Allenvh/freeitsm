@@ -547,11 +547,11 @@ async function saveEvent() {
     const description = document.getElementById('eventDescription').value.trim();
 
     if (!title) {
-        alert('Please enter an event title');
+        showToast('Please enter an event title', 'error');
         return;
     }
     if (!startDate) {
-        alert('Please enter a start date');
+        showToast('Please enter a start date', 'error');
         return;
     }
 
@@ -587,11 +587,11 @@ async function saveEvent() {
             closeEventModal();
             renderCalendar();
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error saving event:', error);
-        alert('Error saving event');
+        showToast('Error saving event', 'error');
     }
 }
 
@@ -600,7 +600,7 @@ async function deleteEvent() {
     const id = document.getElementById('eventId').value;
     if (!id) return;
 
-    if (!confirm('Are you sure you want to delete this event?')) return;
+    if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete this event?', okLabel: 'Delete', okClass: 'danger' }))) return;
 
     try {
         const response = await fetch(API_BASE + 'delete_event.php', {
@@ -614,11 +614,11 @@ async function deleteEvent() {
             closeEventPopup();
             renderCalendar();
         } else {
-            alert('Error: ' + data.error);
+            showToast('Error: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error deleting event:', error);
-        alert('Error deleting event');
+        showToast('Error deleting event', 'error');
     }
 }
 
@@ -769,11 +769,11 @@ async function handleDrop(newDateStr, e) {
         if (data.success) {
             await renderCalendar();
         } else {
-            alert('Error moving event: ' + data.error);
+            showToast('Error moving event: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error moving event:', error);
-        alert('Error moving event');
+        showToast('Error moving event', 'error');
     }
 
     draggedEventId = null;

@@ -484,7 +484,7 @@ $path_prefix = '../../';
         }
 
         async function deleteSupplier(id, name) {
-            if (!confirm('Delete "' + name + '"? Contracts and contacts linked to this supplier will have the supplier cleared.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete "' + name + '"? Contracts and contacts linked to this supplier will have the supplier cleared.', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const response = await fetch(API_BASE + 'delete_supplier.php', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -492,8 +492,8 @@ $path_prefix = '../../';
                 });
                 const data = await response.json();
                 if (data.success) loadSuppliers();
-                else alert('Error: ' + data.error);
-            } catch (error) { alert('Failed to delete supplier'); }
+                else showToast('Error: ' + data.error, 'error');
+            } catch (error) { showToast('Failed to delete supplier', 'error'); }
         }
 
         document.getElementById('editForm').addEventListener('submit', async function(e) {
@@ -525,8 +525,8 @@ $path_prefix = '../../';
                 });
                 const data = await response.json();
                 if (data.success) { closeModal(); loadSuppliers(); }
-                else alert('Error: ' + data.error);
-            } catch (error) { alert('Failed to save supplier'); }
+                else showToast('Error: ' + data.error, 'error');
+            } catch (error) { showToast('Failed to save supplier', 'error'); }
         });
 
         let modalMouseDownTarget = null;

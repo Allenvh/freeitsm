@@ -345,15 +345,15 @@ $path_prefix = '../../';
                     closeModal();
                     loadServices();
                 } else {
-                    alert(data.error || 'Failed to save');
+                    showToast(data.error || 'Failed to save', 'error');
                 }
             } catch (error) {
-                alert('Failed to save service');
+                showToast('Failed to save service', 'error');
             }
         });
 
         async function deleteService(id, name) {
-            if (!confirm('Delete "' + name + '"?')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete "' + name + '"?', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_service.php', {
@@ -365,10 +365,10 @@ $path_prefix = '../../';
                 if (data.success) {
                     loadServices();
                 } else {
-                    alert(data.error || 'Failed to delete');
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (error) {
-                alert('Failed to delete service');
+                showToast('Failed to delete service', 'error');
             }
         }
 
@@ -483,7 +483,7 @@ $path_prefix = '../../';
         }
 
         async function deleteLookup(kind, id, name) {
-            if (!confirm(`Delete "${name}"?`)) return;
+            if (!(await showConfirm({ title: 'Delete', message: `Delete "${name}"?`, okLabel: 'Delete', okClass: 'danger' }))) return;
             const cfg = LOOKUP_KINDS[kind];
             try {
                 const res = await fetch(API_BASE + cfg.del, {
@@ -492,8 +492,8 @@ $path_prefix = '../../';
                 });
                 const data = await res.json();
                 if (data.success) loadLookup(kind);
-                else alert(data.error || 'Failed to delete');
-            } catch (e) { alert('Failed to delete'); }
+                else showToast(data.error || 'Failed to delete', 'error');
+            } catch (e) { showToast('Failed to delete', 'error'); }
         }
 
         document.getElementById('lookupForm').addEventListener('submit', async function(e) {
@@ -518,8 +518,8 @@ $path_prefix = '../../';
                 });
                 const data = await res.json();
                 if (data.success) { closeLookupModal(); loadLookup(kind); }
-                else alert(data.error || 'Failed to save');
-            } catch (e) { alert('Failed to save'); }
+                else showToast(data.error || 'Failed to save', 'error');
+            } catch (e) { showToast('Failed to save', 'error'); }
         });
 
         document.getElementById('lookupModal').addEventListener('click', function(e) {

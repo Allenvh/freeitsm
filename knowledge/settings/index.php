@@ -342,7 +342,6 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
 
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save</button>
-                    <span class="save-message" id="saveMessage">Settings saved!</span>
                 </div>
             </form>
         </div>
@@ -372,7 +371,6 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save</button>
                     <button type="button" class="btn btn-test" onclick="testAiConnection()">Test</button>
-                    <span class="save-message" id="aiSaveMessage">Settings saved!</span>
                 </div>
                 <div class="test-result" id="aiTestResult"></div>
             </form>
@@ -421,7 +419,6 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save</button>
-                    <span class="save-message" id="recycleBinSaveMessage" style="display:none;">Settings saved!</span>
                 </div>
             </form>
         </div>
@@ -451,7 +448,6 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                         </span>
                     </label>
                 </div>
-                <span class="save-message" id="leftPanelSaveMessage" style="display:none;">Saved!</span>
             </form>
         </div>
     </div>
@@ -501,11 +497,7 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                     body: JSON.stringify({ key: SIDEBAR_MODE_KEY, value: value })
                 });
                 const d = await r.json();
-                if (d.success) {
-                    const msg = document.getElementById('leftPanelSaveMessage');
-                    msg.style.display = 'inline';
-                    setTimeout(() => { msg.style.display = 'none'; }, 1500);
-                }
+                if (d.success) showToast('Saved', 'success');
             } catch (e) { /* no-op */ }
         }
 
@@ -618,19 +610,14 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                 });
                 const data = await response.json();
 
-                const msg = document.getElementById('saveMessage');
                 if (data.success) {
-                    msg.textContent = 'Settings saved!';
-                    msg.classList.remove('error');
-                    msg.style.display = 'inline';
-                    setTimeout(() => msg.style.display = 'none', 3000);
+                    showToast('Settings saved', 'success');
                 } else {
-                    msg.textContent = 'Error: ' + data.error;
-                    msg.classList.add('error');
-                    msg.style.display = 'inline';
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error saving settings:', error);
+                showToast('Failed to save settings', 'error');
             }
         });
 
@@ -701,10 +688,7 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
             const openaiKey = document.getElementById('openaiApiKey').value.trim();
 
             if (!anthropicKey && !openaiKey) {
-                const msg = document.getElementById('aiSaveMessage');
-                msg.textContent = 'Please enter at least one API key';
-                msg.classList.add('error');
-                msg.style.display = 'inline';
+                showToast('Please enter at least one API key', 'error');
                 return;
             }
 
@@ -720,11 +704,8 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                 });
                 const data = await response.json();
 
-                const msg = document.getElementById('aiSaveMessage');
                 if (data.success) {
-                    msg.textContent = 'AI settings saved!';
-                    msg.classList.remove('error');
-                    msg.style.display = 'inline';
+                    showToast('AI settings saved', 'success');
                     if (anthropicKey) {
                         document.getElementById('aiApiKey').value = '';
                         document.getElementById('aiApiKey').placeholder = 'Key is saved (enter new key to change)';
@@ -733,14 +714,12 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                         document.getElementById('openaiApiKey').value = '';
                         document.getElementById('openaiApiKey').placeholder = 'Key is saved (enter new key to change)';
                     }
-                    setTimeout(() => msg.style.display = 'none', 3000);
                 } else {
-                    msg.textContent = 'Error: ' + data.error;
-                    msg.classList.add('error');
-                    msg.style.display = 'inline';
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error saving AI settings:', error);
+                showToast('Failed to save AI settings', 'error');
             }
         });
 
@@ -908,19 +887,14 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
                 });
                 const data = await response.json();
 
-                const msg = document.getElementById('recycleBinSaveMessage');
                 if (data.success) {
-                    msg.textContent = 'Settings saved!';
-                    msg.style.color = '#155724';
-                    msg.style.display = 'inline';
-                    setTimeout(() => msg.style.display = 'none', 3000);
+                    showToast('Settings saved', 'success');
                 } else {
-                    msg.textContent = 'Error: ' + data.error;
-                    msg.style.color = '#d13438';
-                    msg.style.display = 'inline';
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error saving recycle bin settings:', error);
+                showToast('Failed to save settings', 'error');
             }
         });
     </script>

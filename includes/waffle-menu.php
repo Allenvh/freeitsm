@@ -366,6 +366,12 @@ function renderWaffleMenuJS() {
         }
     }
     ?>
+    <!-- App-wide notification primitives (#451). showToast + showConfirm are
+         available on every page that includes the waffle menu (i.e. every
+         analyst-facing module page). Individual pages no longer need their
+         own <script src="toast.js"> tag. -->
+    <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
     <script>
     // Per-analyst toast preferences pushed from PHP — toast.js reads
     // these before falling back to localStorage / default.
@@ -771,7 +777,7 @@ function renderHeaderRight($analyst_name, $path_prefix) {
                 <span class="mfa-badge disabled" id="trustBadgeMenu"><?php echo htmlspecialchars(t('common.account.badge_off')); ?></span>
             </button>
             <div class="user-menu-divider"></div>
-            <button class="user-menu-item logout-item" onclick="if(confirm(<?php echo htmlspecialchars(json_encode(t('common.account.logout_confirm')), ENT_QUOTES); ?>)) window.location.href='<?php echo BASE_URL; ?>analyst_logout.php';">
+            <button class="user-menu-item logout-item" onclick="showConfirm({title:<?php echo htmlspecialchars(json_encode(t('common.account.logout')), ENT_QUOTES); ?>,message:<?php echo htmlspecialchars(json_encode(t('common.account.logout_confirm')), ENT_QUOTES); ?>,okLabel:<?php echo htmlspecialchars(json_encode(t('common.account.logout')), ENT_QUOTES); ?>,okClass:'primary',onConfirm:()=>{window.location.href='<?php echo BASE_URL; ?>analyst_logout.php';}});">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                 <span><?php echo htmlspecialchars(t('common.account.logout')); ?></span>
             </button>

@@ -592,7 +592,7 @@ $translationNamespaces = ['common', 'tickets'];
                 });
                 const data = await response.json();
                 if (!data.success) {
-                    alert(data.error || 'Save failed');
+                    showToast(data.error || 'Save failed', 'error');
                     return;
                 }
                 const savedId = data.id;
@@ -600,14 +600,14 @@ $translationNamespaces = ['common', 'tickets'];
                 await loadUsers(document.getElementById('userSearch').value);
                 if (savedId) selectUser(savedId);
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             }
         });
 
         async function deleteUser(userId) {
             const user = users.find(u => u.id == userId);
             const label = user?.display_name || user?.email || `#${userId}`;
-            if (!confirm(t('tickets.users.modal.confirm_delete', { name: label }))) return;
+            if (!(await showConfirm({ title: 'Confirm', message: t('tickets.users.modal.confirm_delete', { name: label }), okLabel: 'OK', okClass: 'primary' }))) return;
 
             try {
                 const response = await fetch(`${API_BASE}delete_user.php`, {
@@ -617,14 +617,14 @@ $translationNamespaces = ['common', 'tickets'];
                 });
                 const data = await response.json();
                 if (!data.success) {
-                    alert(data.error || 'Delete failed');
+                    showToast(data.error || 'Delete failed', 'error');
                     return;
                 }
                 selectedUserId = null;
                 document.getElementById('userDetail').innerHTML = `<div class="empty-state">${escapeHtml(t('tickets.users.select_user'))}</div>`;
                 await loadUsers(document.getElementById('userSearch').value);
             } catch (err) {
-                alert('Delete failed: ' + err.message);
+                showToast('Delete failed: ' + err.message, 'error');
             }
         }
     </script>

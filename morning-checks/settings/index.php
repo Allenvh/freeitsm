@@ -21,7 +21,6 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Morning Checks Settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <script src="../../assets/js/toast.js"></script>
     <link rel="stylesheet" href="../style.css">
     <style>
         body { padding-top: 0; }
@@ -652,9 +651,7 @@ $path_prefix = '../../';
         // --- Delete ---
 
         async function deleteCheck(checkId, checkName) {
-            if (!confirm('Are you sure you want to delete "' + checkName + '"?\n\nThis will also delete all associated results.')) {
-                return;
-            }
+            if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete "' + checkName + '"?\n\nThis will also delete all associated results.', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_check.php', {
@@ -888,7 +885,7 @@ $path_prefix = '../../';
         });
 
         async function deleteStatus(statusId, label) {
-            if (!confirm('Delete the "' + label + '" status?\n\nHistorical results that used this status will keep showing the label but will lose its colour mapping.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete the "' + label + '" status?\n\nHistorical results that used this status will keep showing the label but will lose its colour mapping.', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'delete_status.php', {
                     method: 'POST',

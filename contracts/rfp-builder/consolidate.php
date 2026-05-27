@@ -960,10 +960,8 @@ $path_prefix  = '../../';
         let elapsedTimer = null;
         let streamAccumulated = '';
 
-        function runConsolidation() {
-            if (!confirm('Run AI consolidation now?\n\nThis takes 60-180 seconds and replaces any existing consolidation, categories and conflicts for this RFP.\n\nYou can watch the AI work live in the modal that opens.')) {
-                return;
-            }
+        async function runConsolidation() {
+            if (!(await showConfirm({ title: 'Run AI consolidation', message: 'Run AI consolidation now?\n\nThis takes 60-180 seconds and replaces any existing consolidation, categories and conflicts for this RFP.\n\nYou can watch the AI work live in the modal that opens.', okLabel: 'Run', okClass: 'primary' }))) return;
             openStreamModal();
 
             // EventSource is the simplest browser API for SSE — connection
@@ -1166,7 +1164,7 @@ $path_prefix  = '../../';
             const msg = wantLock
                 ? 'Lock all ' + pageData.consolidated.length + ' consolidated requirements for Phase 4 generation?\n\nAll editing tools will be disabled until you unlock again.'
                 : 'Unlock the consolidated requirements for editing?\n\nIf Phase 4 generation has already used these, regenerated sections will reflect any changes you make.';
-            if (!confirm(msg)) return;
+            if (!(await showConfirm({ title: 'Confirm', message: msg, okLabel: 'OK', okClass: 'primary' }))) return;
 
             const btn = document.getElementById('lockBtn');
             btn.disabled = true;
@@ -1180,7 +1178,7 @@ $path_prefix  = '../../';
                 if (!data.success) throw new Error(data.error || 'Lock failed');
                 loadAll();
             } catch (err) {
-                alert('Failed: ' + err.message);
+                showToast('Failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -1271,7 +1269,7 @@ $path_prefix  = '../../';
                 category_id:      document.getElementById('editCategory').value || null,
                 ai_rationale:     document.getElementById('editRationale').value.trim()
             };
-            if (!payload.requirement_text) { alert('Requirement text is required.'); return; }
+            if (!payload.requirement_text) { showToast('Requirement text is required.', 'error'); return; }
 
             const btn = document.getElementById('editSaveBtn');
             btn.disabled = true;
@@ -1294,7 +1292,7 @@ $path_prefix  = '../../';
                 closeEditModal();
                 loadAll();
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -1305,9 +1303,7 @@ $path_prefix  = '../../';
         async function deleteRow(id) {
             const r = findCons(id);
             if (!r) return;
-            if (!confirm('Delete this consolidated requirement?\n\n"' + r.requirement_text.slice(0, 120) + '"\n\nThe linked source items remain untouched.')) {
-                return;
-            }
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete this consolidated requirement?\n\n"' + r.requirement_text.slice(0, 120) + '"\n\nThe linked source items remain untouched.', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'delete_consolidated.php', {
                     method: 'POST',
@@ -1319,7 +1315,7 @@ $path_prefix  = '../../';
                 selectedIds.delete(id);
                 loadAll();
             } catch (err) {
-                alert('Delete failed: ' + err.message);
+                showToast('Delete failed: ' + err.message, 'error');
             }
         }
 
@@ -1426,7 +1422,7 @@ $path_prefix  = '../../';
             if (!card) return;
             // Don't allow fewer than 2 rows
             if (document.querySelectorAll('.split-row-card').length <= 2) {
-                alert('A split needs at least 2 rows. Cancel the split if you only want one.');
+                showToast('A split needs at least 2 rows. Cancel the split if you only want one.', 'error');
                 return;
             }
             card.remove();
@@ -1479,7 +1475,7 @@ $path_prefix  = '../../';
             });
 
             if (newRows.some(r => !r.requirement_text)) {
-                alert('Every new row needs a requirement text.');
+                showToast('Every new row needs a requirement text.', 'error');
                 return;
             }
 
@@ -1494,7 +1490,7 @@ $path_prefix  = '../../';
                 closeSplitModal();
                 loadAll();
             } catch (err) {
-                alert('Split failed: ' + err.message);
+                showToast('Split failed: ' + err.message, 'error');
             }
         }
 
@@ -1503,7 +1499,7 @@ $path_prefix  = '../../';
         function openMergeModal() {
             const ids = Array.from(selectedIds);
             if (ids.length < 2) {
-                alert('Select at least 2 requirements to merge.');
+                showToast('Select at least 2 requirements to merge.', 'error');
                 return;
             }
             const rows = ids.map(findCons).filter(Boolean);
@@ -1543,7 +1539,7 @@ $path_prefix  = '../../';
                 }
             };
             if (!payload.merged.requirement_text) {
-                alert('Merged requirement text is required.');
+                showToast('Merged requirement text is required.', 'error');
                 return;
             }
 
@@ -1559,7 +1555,7 @@ $path_prefix  = '../../';
                 clearSelection();
                 loadAll();
             } catch (err) {
-                alert('Merge failed: ' + err.message);
+                showToast('Merge failed: ' + err.message, 'error');
             }
         }
 
@@ -1621,14 +1617,14 @@ $path_prefix  = '../../';
                 closeResolveModal();
                 loadAll();
             } catch (err) {
-                alert('Resolve failed: ' + err.message);
+                showToast('Resolve failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
         }
 
         async function reopenConflict(conflictId) {
-            if (!confirm('Re-open this conflict? Its current resolution and notes will be cleared.')) return;
+            if (!(await showConfirm({ title: 'Confirm', message: 'Re-open this conflict? Its current resolution and notes will be cleared.', okLabel: 'OK', okClass: 'primary' }))) return;
             try {
                 const res = await fetch(API_BASE + 'resolve_conflict.php', {
                     method: 'POST',
@@ -1639,7 +1635,7 @@ $path_prefix  = '../../';
                 if (!data.success) throw new Error(data.error || 'Re-open failed');
                 loadAll();
             } catch (err) {
-                alert('Re-open failed: ' + err.message);
+                showToast('Re-open failed: ' + err.message, 'error');
             }
         }
 

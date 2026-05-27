@@ -16,7 +16,6 @@ $current_page = 'browse';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FreeITSM - CMDB</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <style>
         body { overflow: hidden; height: 100vh; background: #f5f5f5; }
         .browse-container { display: flex; height: calc(100vh - 60px); }

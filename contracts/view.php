@@ -21,7 +21,6 @@ if (!$contract_id) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - View contract</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <style>
         /* Full-screen layout with sidebar - matches contracts dashboard */
         .contracts-layout {

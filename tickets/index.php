@@ -339,8 +339,6 @@ $translationNamespaces = ['common', 'tickets'];
             </div>
         </div>
     </div>
-
-    <div class="toast" id="toast"></div>
     <script>
         window.API_BASE = '../api/tickets/';
         window.CURRENT_ANALYST_ID = <?php echo (int)($_SESSION['analyst_id'] ?? 0); ?>;

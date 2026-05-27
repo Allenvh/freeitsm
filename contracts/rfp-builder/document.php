@@ -770,11 +770,9 @@ $path_prefix  = '../../';
             startBatch([{ kind: 'framing', action: 'generate', key: sectionKey, label: spec ? spec.label : sectionKey }], !!exists);
         }
 
-        function restyleSection(sectionId) {
+        async function restyleSection(sectionId) {
             const cat = pageData.categories.find(c => c.section_id === sectionId);
-            if (!confirm('Restyle "' + (cat ? cat.name : 'this section') + '"?\n\nThe AI will apply the style guide to the existing content without changing what it says. The current version will be snapshotted into history first.')) {
-                return;
-            }
+            if (!(await showConfirm({ title: 'Restyle section', message: 'Restyle "' + (cat ? cat.name : 'this section') + '"?\n\nThe AI will apply the style guide to the existing content without changing what it says. The current version will be snapshotted into history first.', okLabel: 'Restyle', okClass: 'primary' }))) return;
             startBatch([{
                 kind: 'category', action: 'restyle',
                 id: sectionId, // for restyle action this is section_id, not category_id
@@ -782,15 +780,19 @@ $path_prefix  = '../../';
             }], false);
         }
 
-        function restyleFraming(sectionKey) {
+        async function restyleFraming(sectionKey) {
             const spec = FRAMING_KEYS.find(s => s.key === sectionKey);
-            if (!confirm('Restyle the ' + (spec ? spec.label.toLowerCase() : sectionKey) + '?\n\nThe AI will apply the style guide to the existing content without changing what it says.')) {
-                return;
-            }
+            const ok = await showConfirm({
+                title: 'Restyle',
+                message: 'Restyle the ' + (spec ? spec.label.toLowerCase() : sectionKey) + '?\n\nThe AI will apply the style guide to the existing content without changing what it says.',
+                okLabel: 'Restyle',
+                okClass: 'primary'
+            });
+            if (!ok) return;
             startBatch([{ kind: 'framing', action: 'restyle', key: sectionKey, label: spec ? spec.label : sectionKey }], false);
         }
 
-        function generateAll(forceAll) {
+        async function generateAll(forceAll) {
             // Queue framing first (intro / scope / response_instructions),
             // then every category that has consolidated requirements. The
             // hash-skip optimisation in each endpoint cheaply skips
@@ -802,12 +804,10 @@ $path_prefix  = '../../';
                 .filter(c => c.req_count > 0)
                 .forEach(c => queue.push({ kind: 'category', action: 'generate', id: c.id, label: c.name }));
             if (queue.length === 0) {
-                alert('Nothing to generate yet — run consolidation first.');
+                showToast('Nothing to generate yet — run consolidation first.', 'error');
                 return;
             }
-            if (!confirm('Generate ' + queue.length + ' sections?\n\n• ' + FRAMING_KEYS.length + ' framing sections (introduction, scope, response instructions)\n• ' + (queue.length - FRAMING_KEYS.length) + ' category sections\n\nEach takes 30-90 seconds. Already-generated sections whose inputs have not changed will be skipped automatically.')) {
-                return;
-            }
+            if (!(await showConfirm({ title: 'Generate sections', message: 'Generate ' + queue.length + ' sections?\n\n• ' + FRAMING_KEYS.length + ' framing sections (introduction, scope, response instructions)\n• ' + (queue.length - FRAMING_KEYS.length) + ' category sections\n\nEach takes 30-90 seconds. Already-generated sections whose inputs have not changed will be skipped automatically.', okLabel: 'Generate', okClass: 'primary' }))) return;
             startBatch(queue, !!forceAll);
         }
 
@@ -1032,7 +1032,7 @@ $path_prefix  = '../../';
                 closeContextModal();
                 loadAll();
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -1120,7 +1120,7 @@ $path_prefix  = '../../';
                 closeFramingEdit();
                 loadAll();
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -1159,7 +1159,7 @@ $path_prefix  = '../../';
                 closeSectionEdit();
                 loadAll();
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -1238,9 +1238,7 @@ $path_prefix  = '../../';
         }
 
         async function restoreVersion(historyId) {
-            if (!confirm('Restore this earlier version?\n\nThe current version will be snapshotted into history first, so this is reversible.')) {
-                return;
-            }
+            if (!(await showConfirm({ title: 'Confirm', message: 'Restore this earlier version?\n\nThe current version will be snapshotted into history first, so this is reversible.', okLabel: 'OK', okClass: 'primary' }))) return;
             try {
                 const res = await fetch(API_BASE + 'restore_section_version.php', {
                     method: 'POST',
@@ -1252,7 +1250,7 @@ $path_prefix  = '../../';
                 closeHistoryModal();
                 loadAll();
             } catch (err) {
-                alert('Restore failed: ' + err.message);
+                showToast('Restore failed: ' + err.message, 'error');
             }
         }
 

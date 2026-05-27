@@ -427,7 +427,6 @@ $path_prefix = '../../';
     </div>
 
     <!-- Toast notification -->
-    <div class="toast" id="toast"></div>
 
     <script>
         const API_BASE = '../../api/change-management/';
@@ -571,7 +570,7 @@ $path_prefix = '../../';
         }
 
         async function deleteLookup(kind, id, name) {
-            if (!confirm(`Delete "${name}"?`)) return;
+            if (!(await showConfirm({ title: 'Delete', message: `Delete "${name}"?`, okLabel: 'Delete', okClass: 'danger' }))) return;
             const cfg = LOOKUP_KINDS[kind];
             try {
                 const res = await fetch(API_BASE + cfg.del, {
@@ -580,13 +579,13 @@ $path_prefix = '../../';
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showToast('Deleted');
+                    showToast('Deleted', 'success');
                     loadLookup(kind);
                 } else {
-                    showToast(data.error || 'Failed to delete', true);
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (e) {
-                showToast('Failed to delete', true);
+                showToast('Failed to delete', 'error', 'success');
             }
         }
 
@@ -612,13 +611,13 @@ $path_prefix = '../../';
                 const data = await res.json();
                 if (data.success) {
                     closeLookupModal();
-                    showToast('Saved');
+                    showToast('Saved', 'success');
                     loadLookup(kind);
                 } else {
-                    showToast(data.error || 'Failed to save', true);
+                    showToast(data.error || 'Failed to save', 'error');
                 }
             } catch (e) {
-                showToast('Failed to save', true);
+                showToast('Failed to save', 'error', 'success');
             }
         });
 
@@ -746,10 +745,8 @@ $path_prefix = '../../';
             const fieldsInSection = layout.fields.filter(f => f.section_id === sectionId);
             if (fieldsInSection.length > 0) {
                 const msg = `Delete "${section.name}"?\n\n${fieldsInSection.length} field${fieldsInSection.length === 1 ? '' : 's'} will become unplaced and won't appear on the change form until you drag ${fieldsInSection.length === 1 ? 'it' : 'them'} into another section.`;
-                if (!confirm(msg)) return;
-            } else if (!confirm(`Delete "${section.name}"?`)) {
-                return;
-            }
+                if (!(await showConfirm({ title: 'Delete section', message: msg, okLabel: 'Delete', okClass: 'danger' }))) return;
+            } else if (!(await showConfirm({ title: 'Delete', message: `Delete "${section.name}"?`, okLabel: 'Delete', okClass: 'danger' }))) return;
             // Locally: remove the section and the fields-in-section. The
             // fields then re-surface as "unplaced" after the server save.
             layout.sections = layout.sections.filter(s => s.id !== sectionId);
@@ -963,7 +960,7 @@ $path_prefix = '../../';
                 });
                 const data = await res.json();
                 if (!data.success) {
-                    showToast('Save failed: ' + (data.error || 'unknown error'), true);
+                    showToast('Save failed: ' + (data.error || 'unknown error'), 'error', 'success');
                     return;
                 }
                 // Replace local state with the server's authoritative copy.
@@ -988,7 +985,7 @@ $path_prefix = '../../';
                 showSaveStatus();
             } catch (e) {
                 console.error('Auto-save error:', e);
-                showToast('Save failed: ' + e.message, true);
+                showToast('Save failed: ' + e.message, 'error', 'success');
             }
         }
 
@@ -1000,13 +997,6 @@ $path_prefix = '../../';
             showSaveStatus._t = setTimeout(() => el.classList.remove('visible'), 1500);
         }
 
-        function showToast(message, isError) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = 'toast' + (isError ? ' toast-error' : '');
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
-        }
     </script>
 </body>
 </html>

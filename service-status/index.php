@@ -526,16 +526,23 @@ $path_prefix = '../';
                     closeIncidentModal();
                     loadDashboard();
                 } else {
-                    alert(data.error || 'Failed to save');
+                    showToast(data.error || 'Failed to save', 'error');
                 }
             } catch (error) {
-                alert('Failed to save incident');
+                showToast('Failed to save incident', 'error');
             }
         });
 
         async function deleteIncident() {
             const id = document.getElementById('incidentId').value;
-            if (!id || !confirm('Delete this incident?')) return;
+            if (!id) return;
+            const ok = await showConfirm({
+                title: 'Delete incident',
+                message: 'Delete this incident?',
+                okLabel: 'Delete',
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_incident.php', {
@@ -548,10 +555,10 @@ $path_prefix = '../';
                     closeIncidentModal();
                     loadDashboard();
                 } else {
-                    alert(data.error || 'Failed to delete');
+                    showToast(data.error || 'Failed to delete', 'error');
                 }
             } catch (error) {
-                alert('Failed to delete incident');
+                showToast('Failed to delete incident', 'error');
             }
         }
 

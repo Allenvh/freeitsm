@@ -16,7 +16,6 @@ $contract_id = $_GET['id'] ?? null;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - <?php echo $contract_id ? 'Edit' : 'Add'; ?> contract</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <script src="../assets/js/tinymce/tinymce.min.js"></script>
     <style>
         /* Full-screen layout with sidebar - matches contracts dashboard */

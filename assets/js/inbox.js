@@ -50,13 +50,6 @@ function safeEmailHtml(html) {
     }
 }
 
-function showToast(message, isError = false) {
-    const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = 'toast' + (isError ? ' toast-error' : '');
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3000);
-}
 let departments = [];
 let ticketTypes = [];
 let ticketOrigins = [];
@@ -798,7 +791,7 @@ async function handleTicketDrop(targetEl, ticketId, ticketNumber) {
         }
         await Promise.all(auditCalls);
 
-        showToast(toastMsg);
+        showToast(toastMsg, 'success');
         await loadFolderCounts();
         loadEmails();
 
@@ -809,7 +802,7 @@ async function handleTicketDrop(targetEl, ticketId, ticketNumber) {
         }
     } catch (err) {
         console.error('Drop assign error:', err);
-        showToast('Failed to move ticket: ' + (err.message || err), true);
+        showToast('Failed to move ticket: ' + (err.message || err), 'error');
     }
 }
 
@@ -838,11 +831,11 @@ async function loadEmails() {
             emails = data.emails;
             renderEmailList();
         } else {
-            alert('Error loading emails: ' + data.error);
+            showToast('Error loading emails: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load emails');
+        showToast('Failed to load emails', 'error');
     }
 }
 
@@ -1324,11 +1317,11 @@ async function assignDepartment() {
             loadFolderCounts();
             loadEmails();
         } else {
-            alert('Error assigning department: ' + data.error);
+            showToast('Error assigning department: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign department');
+        showToast('Failed to assign department', 'error');
     }
 }
 
@@ -1353,11 +1346,11 @@ async function assignTicketType() {
             await logAudit(currentEmail.ticket_id, 'Ticket Type', oldValue, newValue);
             currentEmail.ticket_type_id = ticketTypeId || null;
         } else {
-            alert('Error assigning ticket type: ' + data.error);
+            showToast('Error assigning ticket type: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign ticket type');
+        showToast('Failed to assign ticket type', 'error');
     }
 }
 
@@ -1384,11 +1377,11 @@ async function assignStatus() {
             loadFolderCounts();
             loadEmails();
         } else {
-            alert('Error assigning status: ' + data.error);
+            showToast('Error assigning status: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign status');
+        showToast('Failed to assign status', 'error');
     }
 }
 
@@ -1420,11 +1413,11 @@ async function assignPriority() {
             updatePropertiesSummary();
             loadEmails();
         } else {
-            alert('Error assigning priority: ' + data.error);
+            showToast('Error assigning priority: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign priority');
+        showToast('Failed to assign priority', 'error');
     }
 }
 
@@ -1449,11 +1442,11 @@ async function assignOrigin() {
             await logAudit(currentEmail.ticket_id, 'Origin', oldValue, newValue);
             currentEmail.origin_id = originId || null;
         } else {
-            alert('Error assigning origin: ' + data.error);
+            showToast('Error assigning origin: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign origin');
+        showToast('Failed to assign origin', 'error');
     }
 }
 
@@ -1478,11 +1471,11 @@ async function assignFirstTimeFix() {
             await logAudit(currentEmail.ticket_id, 'First Time Fix', oldValue, newValue);
             currentEmail.first_time_fix = value === '' ? null : (value === '1');
         } else {
-            alert('Error assigning first time fix: ' + data.error);
+            showToast('Error assigning first time fix: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign first time fix');
+        showToast('Failed to assign first time fix', 'error');
     }
 }
 
@@ -1507,11 +1500,11 @@ async function assignItTraining() {
             await logAudit(currentEmail.ticket_id, 'IT Training', oldValue, newValue);
             currentEmail.it_training_provided = value === '' ? null : (value === '1');
         } else {
-            alert('Error assigning IT training: ' + data.error);
+            showToast('Error assigning IT training: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign IT training');
+        showToast('Failed to assign IT training', 'error');
     }
 }
 
@@ -1537,21 +1530,21 @@ async function assignOwner() {
             currentEmail.owner_id = ownerId || null;
             updatePropertiesSummary();
         } else {
-            alert('Error assigning owner: ' + data.error);
+            showToast('Error assigning owner: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to assign owner');
+        showToast('Failed to assign owner', 'error');
     }
 }
 
 // Delete ticket
 async function requestCsatSurvey() {
     if (!currentEmail || !currentEmail.ticket_id) {
-        alert('No ticket selected');
+        showToast('No ticket selected', 'error');
         return;
     }
-    if (!confirm('Send a satisfaction survey email to the requester?')) return;
+    if (!(await showConfirm({ title: 'Confirm', message: 'Send a satisfaction survey email to the requester?', okLabel: 'OK', okClass: 'primary' }))) return;
     try {
         const res = await fetch(`${API_BASE}request_csat.php`, {
             method: 'POST',
@@ -1560,24 +1553,22 @@ async function requestCsatSurvey() {
         });
         const data = await res.json();
         if (data.success) {
-            alert('Survey email sent.');
+            showToast('Survey email sent.', 'error');
         } else {
-            alert('Could not send survey: ' + (data.error || 'unknown error'));
+            showToast('Could not send survey: ' + (data.error || 'unknown error'), 'error');
         }
     } catch (err) {
-        alert('Failed: ' + err.message);
+        showToast('Failed: ' + err.message, 'error');
     }
 }
 
 async function deleteTicket() {
     if (!currentEmail || !currentEmail.ticket_id) {
-        alert('No ticket selected');
+        showToast('No ticket selected', 'error');
         return;
     }
 
-    if (!confirm('Are you sure you want to delete this ticket? This will permanently delete the ticket and all associated emails and notes.')) {
-        return;
-    }
+    if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete this ticket? This will permanently delete the ticket and all associated emails and notes.', okLabel: 'Delete', okClass: 'danger' }))) return;
 
     try {
         const response = await fetch(API_BASE + 'delete_ticket.php', {
@@ -1601,18 +1592,18 @@ async function deleteTicket() {
             loadFolderCounts();
             loadEmails();
         } else {
-            alert('Error deleting ticket: ' + data.error);
+            showToast('Error deleting ticket: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to delete ticket');
+        showToast('Failed to delete ticket', 'error');
     }
 }
 
 // Show audit history modal
 async function showAuditHistory() {
     if (!currentEmail || !currentEmail.ticket_id) {
-        alert('No ticket selected');
+        showToast('No ticket selected', 'error');
         return;
     }
 
@@ -1664,11 +1655,11 @@ async function showAuditHistory() {
 
             document.body.appendChild(modal);
         } else {
-            alert('Error loading audit history: ' + data.error);
+            showToast('Error loading audit history: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load audit history');
+        showToast('Failed to load audit history', 'error');
     }
 }
 
@@ -1870,14 +1861,14 @@ function openLinkCmdbPicker(ticketId) {
             const data = await res.json();
             if (!data.success) throw new Error(data.error || 'Link failed');
             if (data.already_linked) {
-                showToast(t('tickets.cmdb.already_linked', { name: r.name }), true);
+                showToast(t('tickets.cmdb.already_linked', { name: r.name }), 'error');
             } else {
-                showToast(t('tickets.cmdb.linked_toast', { name: r.name }));
+                showToast(t('tickets.cmdb.linked_toast', { name: r.name }), 'success');
             }
             picker.style.display = 'none';
             await loadCmdbObjects(ticketId);
         } catch (err) {
-            showToast('Error: ' + err.message, true);
+            showToast('Error: ' + err.message, 'error');
         }
     };
 
@@ -1909,7 +1900,7 @@ function openLinkCmdbPicker(ticketId) {
 async function removeCmdbObject(ev, linkId, ticketId) {
     ev.preventDefault();
     ev.stopPropagation();
-    if (!confirm(t('tickets.cmdb.unlink_confirm'))) return;
+    if (!(await showConfirm({ title: 'Confirm', message: t('tickets.cmdb.unlink_confirm'), okLabel: 'OK', okClass: 'primary' }))) return;
     try {
         const res = await fetch('../api/tickets/delete_ticket_cmdb_object.php', {
             method: 'POST',
@@ -1918,10 +1909,10 @@ async function removeCmdbObject(ev, linkId, ticketId) {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Unlink failed');
-        showToast(t('tickets.cmdb.unlinked_toast'));
+        showToast(t('tickets.cmdb.unlinked_toast'), 'success');
         await loadCmdbObjects(ticketId);
     } catch (err) {
-        showToast('Error: ' + err.message, true);
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -2102,7 +2093,7 @@ async function saveNote() {
     const noteText = document.getElementById('noteText').value.trim();
 
     if (!noteText) {
-        alert('Please enter a note');
+        showToast('Please enter a note', 'error');
         return;
     }
 
@@ -2122,11 +2113,11 @@ async function saveNote() {
             closeNoteModal();
             loadNotes(currentEmail.ticket_id);
         } else {
-            alert('Error saving note: ' + data.error);
+            showToast('Error saving note: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to save note');
+        showToast('Failed to save note', 'error');
     }
 }
 
@@ -2219,13 +2210,13 @@ function replyCleanupTextToHtml(text) {
 async function cleanupReplyDraft() {
     if (!emailEditor) return;
     if (!currentEmail || !currentEmail.ticket_id) {
-        showToast('No ticket loaded', true);
+        showToast('No ticket loaded', 'error');
         return;
     }
 
     const editorContent = emailEditor.getContent({ format: 'text' }).trim();
     if (editorContent === '') {
-        showToast('Type something first, then click Cleanup', true);
+        showToast('Type something first, then click Cleanup', 'error');
         return;
     }
 
@@ -2295,7 +2286,7 @@ async function cleanupReplyDraft() {
                     emailEditor.setContent(replyCleanupTextToHtml(buffer));
                 } else if (eventName === 'error') {
                     streamFailed = true;
-                    showToast(payload.message || 'Cleanup failed', true);
+                    showToast(payload.message || 'Cleanup failed', 'error');
                     break;
                 }
                 // 'usage' / 'done' events are ignored for this UI
@@ -2306,7 +2297,7 @@ async function cleanupReplyDraft() {
     } catch (err) {
         streamFailed = true;
         console.error('Cleanup error:', err);
-        showToast('Cleanup failed: ' + err.message, true);
+        showToast('Cleanup failed: ' + err.message, 'error');
     }
 
     cleanupBtn.disabled = false;
@@ -2369,7 +2360,7 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             if (replyCleanupOriginalDraft !== null && emailEditor) {
                 emailEditor.setContent(replyCleanupOriginalDraft);
-                showToast('Restored your original draft');
+                showToast('Restored your original draft', 'success');
             }
             hideReplyCleanupUndoBar();
         });
@@ -2386,11 +2377,11 @@ async function sendEmail() {
 
     // Basic validation
     if (!to) {
-        alert('Please enter a recipient email address');
+        showToast('Please enter a recipient email address', 'error');
         return;
     }
     if (!subject) {
-        alert('Please enter a subject');
+        showToast('Please enter a subject', 'error');
         return;
     }
 
@@ -2426,23 +2417,23 @@ async function sendEmail() {
             data = JSON.parse(responseText);
         } catch (parseError) {
             console.error('Raw response:', responseText);
-            showToast('Server error: ' + responseText.substring(0, 200), true);
+            showToast('Server error: ' + responseText.substring(0, 200), 'error');
             return;
         }
 
         if (data.success) {
-            showToast('Email sent successfully!');
+            showToast('Email sent successfully!', 'success');
             closeEmailModal();
             // Refresh the current view to show the sent email
             if (currentEmail) {
                 selectEmail(selectedEmailId);
             }
         } else {
-            showToast('Failed to send email: ' + data.error, true);
+            showToast('Failed to send email: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error sending email:', error);
-        showToast('Error sending email: ' + error.message, true);
+        showToast('Error sending email: ' + error.message, 'error');
     } finally {
         // Restore button state
         sendBtn.disabled = false;
@@ -2482,9 +2473,13 @@ function fileToBase64(file) {
 
 // Logout
 function logout() {
-    if (confirm('Are you sure you want to logout?')) {
-        window.location.href = 'analyst_logout.php';
-    }
+    showConfirm({
+        title: 'Logout',
+        message: 'Are you sure you want to logout?',
+        okLabel: 'Logout',
+        okClass: 'primary',
+        onConfirm: () => { window.location.href = 'analyst_logout.php'; }
+    });
 }
 
 // New Ticket Modal Functions
@@ -2524,15 +2519,15 @@ async function createNewTicket() {
 
     // Validate required fields
     if (!fromName) {
-        alert('Please enter the requester name');
+        showToast('Please enter the requester name', 'error');
         return;
     }
     if (!fromEmail) {
-        alert('Please enter the requester email');
+        showToast('Please enter the requester email', 'error');
         return;
     }
     if (!subject) {
-        alert('Please enter a subject');
+        showToast('Please enter a subject', 'error');
         return;
     }
 
@@ -2564,13 +2559,13 @@ async function createNewTicket() {
             // Refresh the view
             loadFolderCounts();
             loadEmails();
-            alert('Ticket created successfully: ' + data.ticket_number);
+            showToast('Ticket created successfully: ' + data.ticket_number, 'success');
         } else {
-            alert('Error creating ticket: ' + data.error);
+            showToast('Error creating ticket: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to create ticket');
+        showToast('Failed to create ticket', 'error');
     } finally {
         createBtn.disabled = false;
         createBtn.textContent = originalText;
@@ -2667,7 +2662,7 @@ async function performSearch() {
 
     // Validate at least one field
     if (!ticketNumber && !email && !subject) {
-        alert('Please enter at least one search criterion');
+        showToast('Please enter at least one search criterion', 'error');
         return;
     }
 
@@ -2759,7 +2754,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function openScheduleModal() {
     if (!currentEmail || !currentEmail.ticket_id) {
-        alert('No ticket selected');
+        showToast('No ticket selected', 'error');
         return;
     }
 
@@ -2802,7 +2797,7 @@ async function saveSchedule() {
     const time = document.getElementById('scheduleTime').value;
 
     if (!date || !time) {
-        alert('Please select both date and time');
+        showToast('Please select both date and time', 'error');
         return;
     }
 
@@ -2823,20 +2818,18 @@ async function saveSchedule() {
         if (data.success) {
             currentEmail.work_start_datetime = workStart;
             closeScheduleModal();
-            alert('Work scheduled successfully');
+            showToast('Work scheduled successfully', 'success');
         } else {
-            alert('Error scheduling: ' + data.error);
+            showToast('Error scheduling: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to schedule work');
+        showToast('Failed to schedule work', 'error');
     }
 }
 
 async function clearSchedule() {
-    if (!confirm('Are you sure you want to clear the scheduled work time?')) {
-        return;
-    }
+    if (!(await showConfirm({ title: 'Confirm', message: 'Are you sure you want to clear the scheduled work time?', okLabel: 'OK', okClass: 'primary' }))) return;
 
     try {
         const response = await fetch(API_BASE + 'schedule_ticket.php', {
@@ -2853,13 +2846,13 @@ async function clearSchedule() {
         if (data.success) {
             currentEmail.work_start_datetime = null;
             closeScheduleModal();
-            alert('Schedule cleared');
+            showToast('Schedule cleared', 'error');
         } else {
-            alert('Error clearing schedule: ' + data.error);
+            showToast('Error clearing schedule: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to clear schedule');
+        showToast('Failed to clear schedule', 'error');
     }
 }
 
@@ -3145,7 +3138,7 @@ async function saveTimeEntry() {
     const notes   = document.getElementById('timeEntryNotes').value.trim();
 
     if (!minutes || minutes <= 0) {
-        alert(t('tickets.time_entries.minutes_required'));
+        showToast(t('tickets.time_entries.minutes_required'), 'error');
         return;
     }
 
@@ -3163,16 +3156,16 @@ async function saveTimeEntry() {
         if (data.success) {
             loadTimeEntries(currentEmail.ticket_id);
         } else {
-            alert(t('tickets.time_entries.save_failed', { error: data.error || 'unknown error' }));
+            showToast(t('tickets.time_entries.save_failed', { error: data.error || 'unknown error' }), 'error');
         }
     } catch (e) {
         console.error('Save time entry failed:', e);
-        alert(t('tickets.time_entries.save_failed', { error: 'network error' }));
+        showToast(t('tickets.time_entries.save_failed', { error: 'network error' }), 'error');
     }
 }
 
 async function deleteTimeEntry(id) {
-    if (!confirm(t('tickets.time_entries.delete_confirm'))) return;
+    if (!(await showConfirm({ title: 'Confirm', message: t('tickets.time_entries.delete_confirm'), okLabel: 'OK', okClass: 'primary' }))) return;
     try {
         const response = await fetch(API_BASE + 'delete_time_entry.php', {
             method: 'POST',
@@ -3183,11 +3176,11 @@ async function deleteTimeEntry(id) {
         if (data.success) {
             if (currentEmail) loadTimeEntries(currentEmail.ticket_id);
         } else {
-            alert(t('tickets.time_entries.delete_failed', { error: data.error || 'unknown error' }));
+            showToast(t('tickets.time_entries.delete_failed', { error: data.error || 'unknown error' }), 'error');
         }
     } catch (e) {
         console.error('Delete time entry failed:', e);
-        alert(t('tickets.time_entries.delete_failed', { error: 'network error' }));
+        showToast(t('tickets.time_entries.delete_failed', { error: 'network error' }), 'error');
     }
 }
 
@@ -3327,7 +3320,7 @@ async function setPriorityFromContext(priorityId) {
         });
         const data = await response.json();
         if (!data.success) {
-            alert('Error setting priority: ' + (data.error || 'unknown'));
+            showToast('Error setting priority: ' + (data.error || 'unknown'), 'error');
             return;
         }
         try {
@@ -3348,7 +3341,7 @@ async function setPriorityFromContext(priorityId) {
         loadEmails();
     } catch (error) {
         console.error('Error setting priority from context:', error);
-        alert('Failed to set priority');
+        showToast('Failed to set priority', 'error');
     }
 }
 
@@ -3407,7 +3400,7 @@ async function setAssigneeFromContext(analystId) {
         });
         const data = await response.json();
         if (!data.success) {
-            alert('Error assigning ticket: ' + (data.error || 'unknown'));
+            showToast('Error assigning ticket: ' + (data.error || 'unknown'), 'error');
             return;
         }
         try {
@@ -3429,7 +3422,7 @@ async function setAssigneeFromContext(analystId) {
         loadEmails();
     } catch (error) {
         console.error('Error assigning ticket from context:', error);
-        alert('Failed to assign ticket');
+        showToast('Failed to assign ticket', 'error');
     }
 }
 
@@ -3450,7 +3443,7 @@ async function setStatusFromContext(statusName) {
         });
         const data = await response.json();
         if (!data.success) {
-            alert('Error setting status: ' + (data.error || 'unknown'));
+            showToast('Error setting status: ' + (data.error || 'unknown'), 'error');
             return;
         }
         // Audit-trail entry mirrors the in-panel assignStatus() flow.
@@ -3469,7 +3462,7 @@ async function setStatusFromContext(statusName) {
         loadEmails();
     } catch (error) {
         console.error('Error setting status from context:', error);
-        alert('Failed to set status');
+        showToast('Failed to set status', 'error');
     }
 }
 
@@ -3561,9 +3554,9 @@ async function linkContextCmdbObject(objectId, objectName) {
         ctxCmdbSessionCount++;
         const logEl = document.getElementById('ctxCmdbSessionLog');
         if (data.already_linked) {
-            showToast(objectName + ' is already linked', true);
+            showToast(objectName + ' is already linked', 'error');
         } else {
-            showToast('Linked ' + objectName);
+            showToast('Linked ' + objectName, 'success');
             const line = document.createElement('div');
             line.textContent = '✓ ' + objectName;
             line.style.color = '#16a34a';
@@ -3576,7 +3569,7 @@ async function linkContextCmdbObject(objectId, objectName) {
         input.focus();
         document.getElementById('ctxCmdbResults').innerHTML = '';
     } catch (err) {
-        showToast('Error: ' + err.message, true);
+        showToast('Error: ' + err.message, 'error');
     }
 }
 
@@ -3607,7 +3600,7 @@ async function saveContextTimeEntry() {
     const when    = document.getElementById('ctxTimeWhen').value;
 
     if (!minutes || minutes <= 0) {
-        showToast('Enter the number of minutes spent', true);
+        showToast('Enter the number of minutes spent', 'error');
         return;
     }
 
@@ -3624,7 +3617,7 @@ async function saveContextTimeEntry() {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Save failed');
-        showToast('Logged ' + minutes + 'm on ' + ctxTargetTicketRef);
+        showToast('Logged ' + minutes + 'm on ' + ctxTargetTicketRef, 'success');
         closeContextTimeModal();
         // If the affected ticket is currently open in the reading pane,
         // refresh its time-entries list so the new row appears.
@@ -3632,7 +3625,7 @@ async function saveContextTimeEntry() {
             loadTimeEntries(currentEmail.ticket_id);
         }
     } catch (err) {
-        showToast('Error: ' + err.message, true);
+        showToast('Error: ' + err.message, 'error');
     }
 }
 

@@ -267,11 +267,11 @@ async function viewArticle(articleId) {
             renderArticleDetail();
             showView('detail');
         } else {
-            alert('Error loading article: ' + data.error);
+            showToast('Error loading article: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load article');
+        showToast('Failed to load article', 'error');
     }
 }
 
@@ -383,13 +383,11 @@ function applyEditorPopoutFromPref() {
 // Save as new version
 async function saveAsNewVersion() {
     const currentVersion = currentArticle.version || 1;
-    const confirmed = await customAlert({
-        title: 'Save as New Version',
-        message: 'The current content will be archived as <strong>v' + currentVersion + '</strong> and your changes will become <strong>v' + (currentVersion + 1) + '</strong>.',
-        type: 'info',
-        confirm: true,
-        okText: 'Confirm',
-        cancelText: 'Cancel'
+    const confirmed = await showConfirm({
+        title: 'Save as new version',
+        message: 'The current content will be archived as v' + currentVersion + ' and your changes will become v' + (currentVersion + 1) + '.',
+        okLabel: 'Confirm',
+        okClass: 'primary'
     });
     if (!confirmed) return;
 
@@ -402,7 +400,7 @@ async function saveAsNewVersion() {
     const nextReviewDate = reviewDateInput ? reviewDateInput.value : null;
 
     if (!title) {
-        await customAlert({ title: 'Missing Title', message: 'Please enter a title before saving.', type: 'warning' });
+        showToast('Please enter a title before saving.', 'warning');
         return;
     }
 
@@ -424,16 +422,16 @@ async function saveAsNewVersion() {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Saved as v' + (currentVersion + 1));
+            showToast('Saved as v' + (currentVersion + 1), 'success');
             loadTags();
             loadArticles();
             showView('list');
         } else {
-            await customAlert({ title: 'Error', message: data.error || 'Failed to save version.', type: 'danger' });
+            showToast(data.error || 'Failed to save version.', 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        await customAlert({ title: 'Error', message: 'Failed to save version. Please try again.', type: 'danger' });
+        showToast('Failed to save version. Please try again.', 'error');
     }
 }
 
@@ -450,7 +448,7 @@ async function saveArticle() {
     const nextReviewDate = reviewDateInput ? reviewDateInput.value : null;
 
     if (!title) {
-        alert('Please enter a title');
+        showToast('Please enter a title', 'error');
         return;
     }
 
@@ -471,16 +469,16 @@ async function saveArticle() {
         const data = await response.json();
 
         if (data.success) {
-            alert(articleId ? 'Article updated successfully' : 'Article created successfully');
+            showToast(articleId ? 'Article updated successfully' : 'Article created successfully', 'success');
             loadTags(); // Refresh tags in case new ones were added
             loadArticles();
             showView('list');
         } else {
-            alert('Error saving article: ' + data.error);
+            showToast('Error saving article: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to save article');
+        showToast('Failed to save article', 'error');
     }
 }
 
@@ -488,9 +486,7 @@ async function saveArticle() {
 async function deleteCurrentArticle() {
     if (!currentArticle) return;
 
-    if (!confirm('Move this article to the recycle bin?')) {
-        return;
-    }
+    if (!(await showConfirm({ title: 'Delete', message: 'Move this article to the recycle bin?', okLabel: 'Delete', okClass: 'danger' }))) return;
 
     try {
         const response = await fetch(API_BASE + 'knowledge_delete.php', {
@@ -502,16 +498,16 @@ async function deleteCurrentArticle() {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Article moved to recycle bin');
+            showToast('Article moved to recycle bin', 'success');
             loadTags();
             loadArticles();
             showView('list');
         } else {
-            alert('Error archiving article: ' + data.error);
+            showToast('Error archiving article: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to archive article');
+        showToast('Failed to archive article', 'error');
     }
 }
 
@@ -602,22 +598,20 @@ async function restoreArticle(id) {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Article restored');
+            showToast('Article restored', 'success');
             loadTags();
             await loadRecycleBin();
         } else {
-            alert('Error restoring article: ' + data.error);
+            showToast('Error restoring article: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to restore article');
+        showToast('Failed to restore article', 'error');
     }
 }
 
 async function hardDeleteArticle(id, title) {
-    if (!confirm(`Permanently delete "${title}"? This cannot be undone.`)) {
-        return;
-    }
+    if (!(await showConfirm({ title: 'Delete', message: `Permanently delete "${title}"? This cannot be undone.`, okLabel: 'Delete', okClass: 'danger' }))) return;
 
     try {
         const response = await fetch(API_BASE + 'knowledge_archive.php', {
@@ -628,15 +622,15 @@ async function hardDeleteArticle(id, title) {
         const data = await response.json();
 
         if (data.success) {
-            showToast('Article permanently deleted');
+            showToast('Article permanently deleted', 'success');
             loadTags();
             await loadRecycleBin();
         } else {
-            alert('Error deleting article: ' + data.error);
+            showToast('Error deleting article: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to delete article');
+        showToast('Failed to delete article', 'error');
     }
 }
 
@@ -658,11 +652,11 @@ async function viewArchivedArticle(id) {
                 Prism.highlightAll();
             }
         } else {
-            alert('Error loading article: ' + data.error);
+            showToast('Error loading article: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to load article');
+        showToast('Failed to load article', 'error');
     }
 }
 
@@ -670,20 +664,6 @@ function closeArchivedArticleModal() {
     document.getElementById('archivedArticleModal').classList.remove('active');
 }
 
-function showToast(message) {
-    const existing = document.querySelector('.kb-toast');
-    if (existing) existing.remove();
-
-    const toast = document.createElement('div');
-    toast.className = 'kb-toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add('show'));
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-}
 
 // Cancel edit
 function cancelEdit() {
@@ -828,7 +808,7 @@ function shareArticleLink() {
     const url = `${window.location.origin}${window.location.pathname}?article=${currentArticle.id}`;
 
     navigator.clipboard.writeText(url).then(() => {
-        showToast('Link copied to clipboard!');
+        showToast('Link copied to clipboard!', 'success');
     }).catch(() => {
         // Fallback for older browsers
         const input = document.createElement('input');
@@ -837,19 +817,10 @@ function shareArticleLink() {
         input.select();
         document.execCommand('copy');
         document.body.removeChild(input);
-        showToast('Link copied to clipboard!');
+        showToast('Link copied to clipboard!', 'success');
     });
 }
 
-// Show toast notification
-function showToast(message) {
-    const toast = document.getElementById('linkCopiedToast');
-    toast.textContent = message;
-    toast.classList.add('show');
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 2500);
-}
 
 // Build a searchable jsPDF document from the current article
 async function buildArticlePdf() {
@@ -1071,12 +1042,12 @@ async function sendShareEmail() {
     const includePdf = document.getElementById('shareIncludePdf').checked;
 
     if (!toEmail) {
-        alert('Please enter a recipient email address');
+        showToast('Please enter a recipient email address', 'error');
         return;
     }
 
     if (!includeLink && !includePdf) {
-        alert('Please select at least one option to include');
+        showToast('Please select at least one option to include', 'error');
         return;
     }
 
@@ -1089,7 +1060,7 @@ async function sendShareEmail() {
             pdfBase64 = await blobToBase64(pdfBlob);
         } catch (error) {
             console.error('Error generating PDF:', error);
-            alert('Error generating PDF. Please try again.');
+            showToast('Error generating PDF. Please try again.', 'error');
             return;
         }
     }
@@ -1116,13 +1087,13 @@ async function sendShareEmail() {
 
         if (data.success) {
             closeShareEmailModal();
-            showToast('Email sent successfully!');
+            showToast('Email sent successfully!', 'success');
         } else {
-            alert('Error sending email: ' + data.error);
+            showToast('Error sending email: ' + data.error, 'error');
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Failed to send email. Please try again.');
+        showToast('Failed to send email. Please try again.', 'error');
     }
 }
 

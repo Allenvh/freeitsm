@@ -33,7 +33,6 @@ $path_prefix = '../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Asset table</title>
     <link rel="stylesheet" href="../assets/css/inbox.css?v=22">
-    <script src="../assets/js/toast.js"></script>
     <!-- jsPDF + autotable (same versions as morning-checks/index.php #362 era) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>

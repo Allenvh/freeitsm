@@ -453,7 +453,7 @@ $path_prefix  = '../../';
                 requirement_type: document.getElementById('editType').value,
                 source_quote: document.getElementById('editQuote').value,
             };
-            if (!payload.requirement_text.trim()) { alert('Requirement text cannot be empty.'); return; }
+            if (!payload.requirement_text.trim()) { showToast('Requirement text cannot be empty.', 'error'); return; }
             const btn = document.getElementById('editSaveBtn');
             btn.disabled = true; btn.textContent = 'Saving...';
             try {
@@ -467,7 +467,7 @@ $path_prefix  = '../../';
                 closeEditModal();
                 await loadRequirements();
             } catch (err) {
-                alert('Save failed: ' + err.message);
+                showToast('Save failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false; btn.textContent = 'Save';
             }
@@ -477,7 +477,7 @@ $path_prefix  = '../../';
             const r = allReqs.find(x => x.id === id);
             const text = r ? r.requirement_text : '';
             const preview = text.length > 80 ? text.substring(0, 77) + '...' : text;
-            if (!confirm('Delete this requirement?\n\n"' + preview + '"')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete this requirement?\n\n"' + preview + '"', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'delete_extracted.php', {
                     method: 'POST',
@@ -488,7 +488,7 @@ $path_prefix  = '../../';
                 if (!data.success) throw new Error(data.error);
                 await loadRequirements();
             } catch (err) {
-                alert('Delete failed: ' + err.message);
+                showToast('Delete failed: ' + err.message, 'error');
             }
         }
 

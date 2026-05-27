@@ -338,13 +338,13 @@ const PM = (() => {
                 await loadProcesses();
                 openProcess(d.id);
             } else {
-                toast(d.error, 'error');
+                showToast(d.error, 'error');
             }
-        } catch (e) { toast('Failed to create process', 'error'); }
+        } catch (e) { showToast('Failed to create process', 'error'); }
     }
 
     async function deleteProcess(id) {
-        if (!confirm('Delete this process?')) return;
+        if (!(await showConfirm({ title: 'Delete', message: 'Delete this process?', okLabel: 'Delete', okClass: 'danger' }))) return;
         try {
             const r = await fetch(API_BASE + 'delete.php', {
                 method: 'POST',
@@ -360,9 +360,9 @@ const PM = (() => {
                     syncUrl(null);   // drop ?id from the address bar
                 }
                 await loadProcesses();
-                toast('Deleted');
+                showToast('Deleted', 'success');
             }
-        } catch (e) { toast('Failed to delete', 'error'); }
+        } catch (e) { showToast('Failed to delete', 'error'); }
     }
 
     // =========================================================
@@ -374,7 +374,15 @@ const PM = (() => {
     // `fromHistory`   — pass true when called from popstate / initial-from-URL
     // so we don't push the same URL onto the history stack again.
     async function openProcess(id, preserveDetail = false, fromHistory = false) {
-        if (dirty && !preserveDetail && !confirm('Unsaved changes will be lost. Continue?')) return;
+        if (dirty && !preserveDetail) {
+            const ok = await showConfirm({
+                title: 'Unsaved changes',
+                message: 'Unsaved changes will be lost. Continue?',
+                okLabel: 'Continue',
+                okClass: 'primary'
+            });
+            if (!ok) return;
+        }
         try {
             const r = await fetch(API_BASE + 'get.php?id=' + id);
             const d = await r.json();
@@ -443,7 +451,7 @@ const PM = (() => {
                 if (!preserveDetail) closeDetail();
                 setStatus(autosaveOn ? 'saved' : 'off');
             }
-        } catch (e) { toast('Failed to load process', 'error'); }
+        } catch (e) { showToast('Failed to load process', 'error'); }
     }
 
     // =========================================================
@@ -1031,7 +1039,7 @@ const PM = (() => {
     //  Add / remove steps and connectors
     // =========================================================
     function addStep(type) {
-        if (!currentProcessId) { toast(t('process-mapper.toast.no_process_open'), 'error'); return; }
+        if (!currentProcessId) { showToast(t('process-mapper.toast.no_process_open'), 'error'); return; }
 
         const tempId = nextTempId--;
         const cx = canvas.scrollLeft + canvas.clientWidth / 2 - 80;
@@ -1312,7 +1320,7 @@ const PM = (() => {
             if (c2) c2.style.display = 'none';
         }
         markDirty();
-        toast(t('process-mapper.toast.type_changed'), 'success');
+        showToast(t('process-mapper.toast.type_changed'), 'success');
     }
 
     // Copy/Apply formatting: stash colour + gradient from one step, paste
@@ -1321,7 +1329,7 @@ const PM = (() => {
     function copyFormat(step) {
         if (!step) return;
         copiedFormat = { color: step.color || '#0078d4', color2: step.color2 || null };
-        toast(t('process-mapper.toast.format_copied'), 'success');
+        showToast(t('process-mapper.toast.format_copied'), 'success');
     }
 
     function applyFormat(step) {
@@ -1342,7 +1350,7 @@ const PM = (() => {
             }
         }
         markDirty();
-        toast(t('process-mapper.toast.format_applied'), 'success');
+        showToast(t('process-mapper.toast.format_applied'), 'success');
     }
 
     // Click-to-connect: arm a one-shot waiting state. The next mousedown
@@ -1355,14 +1363,14 @@ const PM = (() => {
         if (dragging || rubberBand || connectDrag || groupDragging || laneDragging) return;
         clickConnectFromId = fromStep.id || fromStep.tempId;
         canvas.classList.add('pm-connect-mode');
-        toast(t('process-mapper.toast.connect_prompt'), 'info');
+        showToast(t('process-mapper.toast.connect_prompt'), 'info');
     }
 
     function cancelClickConnect() {
         if (clickConnectFromId == null) return;
         clickConnectFromId = null;
         canvas.classList.remove('pm-connect-mode');
-        toast(t('process-mapper.toast.connect_cancelled'), 'info');
+        showToast(t('process-mapper.toast.connect_cancelled'), 'info');
     }
 
     // Called from onStepMouseDown when click-to-connect is armed: completes
@@ -1374,11 +1382,11 @@ const PM = (() => {
         clickConnectFromId = null;
         canvas.classList.remove('pm-connect-mode');
         if (fromId === toId) {
-            toast(t('process-mapper.toast.connect_self'), 'error');
+            showToast(t('process-mapper.toast.connect_self'), 'error');
             return true;
         }
         addConnector(fromId, toId);
-        toast(t('process-mapper.toast.connect_done'), 'success');
+        showToast(t('process-mapper.toast.connect_done'), 'success');
         return true;
     }
 
@@ -1411,11 +1419,11 @@ const PM = (() => {
                 document.getElementById('detailUrl').value = '';
             }
             markDirty();
-            toast(t('process-mapper.toast.url_cleared'), 'success');
+            showToast(t('process-mapper.toast.url_cleared'), 'success');
             return;
         }
         if (!/^https?:\/\//i.test(trimmed)) {
-            toast(t('process-mapper.toast.url_invalid'), 'error');
+            showToast(t('process-mapper.toast.url_invalid'), 'error');
             return;
         }
         step.url = trimmed;
@@ -1427,7 +1435,7 @@ const PM = (() => {
             document.getElementById('detailUrl').value = trimmed;
         }
         markDirty();
-        toast(t('process-mapper.toast.url_set'), 'success');
+        showToast(t('process-mapper.toast.url_set'), 'success');
     }
 
     // Reverse the direction of a single connector.
@@ -1437,24 +1445,24 @@ const PM = (() => {
         c.toId = tmp;
         renderConnectors();
         markDirty();
-        toast(t('process-mapper.toast.connection_reversed'), 'success');
+        showToast(t('process-mapper.toast.connection_reversed'), 'success');
     }
 
     // Remove every connector incident to `step`.
-    function deleteAllConnections(step) {
+    async function deleteAllConnections(step) {
         const sid = step.id || step.tempId;
         const incident = connectors.filter(c => c.fromId == sid || c.toId == sid);
         if (!incident.length) {
-            toast(t('process-mapper.toast.no_connections'), 'info');
+            showToast(t('process-mapper.toast.no_connections'), 'info');
             return;
         }
-        if (!confirm(t('process-mapper.context.delete_all_conn_confirm'))) return;
+        if (!(await showConfirm({ title: 'Delete connections', message: t('process-mapper.context.delete_all_conn_confirm'), okLabel: 'Delete', okClass: 'danger' }))) return;
         connectors = connectors.filter(c => c.fromId != sid && c.toId != sid);
         // Selected connector may have been one of these — clear if so.
         selectedConnectorId = null;
         renderConnectors();
         markDirty();
-        toast(t('process-mapper.toast.connections_deleted'), 'success');
+        showToast(t('process-mapper.toast.connections_deleted'), 'success');
     }
 
     // Capture the cloneable shape of a step — everything that ought to be
@@ -1523,7 +1531,7 @@ const PM = (() => {
     function duplicateStep(step) {
         const data = cloneStepData(step);
         placeClonedStep(data, step.x + 40, step.y + 40);
-        toast(t('process-mapper.toast.step_duplicated'), 'success');
+        showToast(t('process-mapper.toast.step_duplicated'), 'success');
     }
 
     // Clipboard helpers — clear the previous cut's visual cue before stashing
@@ -1541,13 +1549,13 @@ const PM = (() => {
         clearStepClipboardVisual();
         stepClipboard = { mode: 'cut', data: cloneStepData(step), sourceId: step.id || step.tempId };
         if (step.el) step.el.classList.add('is-cut');
-        toast(t('process-mapper.toast.step_cut'), 'info');
+        showToast(t('process-mapper.toast.step_cut'), 'info');
     }
 
     function copyStepForPaste(step) {
         clearStepClipboardVisual();
         stepClipboard = { mode: 'copy', data: cloneStepData(step), sourceId: null };
-        toast(t('process-mapper.toast.step_copied'), 'info');
+        showToast(t('process-mapper.toast.step_copied'), 'info');
     }
 
     // Drop a copy of the clipboard at the screen-coords stashed when the
@@ -1570,12 +1578,12 @@ const PM = (() => {
             stepClipboard = null;
             renderConnectors();
         }
-        toast(t('process-mapper.toast.step_pasted'), 'success');
+        showToast(t('process-mapper.toast.step_pasted'), 'success');
     }
 
     // Delete with confirm — the right-click "Delete…" item.
-    function ctxDeleteStep(step) {
-        if (!confirm(t('process-mapper.context.delete_confirm'))) return;
+    async function ctxDeleteStep(step) {
+        if (!(await showConfirm({ title: 'Delete step', message: t('process-mapper.context.delete_confirm'), okLabel: 'Delete', okClass: 'danger' }))) return;
         const sid = step.id || step.tempId;
         selectedStepIds.clear();
         selectedStepIds.add(sid);
@@ -1596,7 +1604,7 @@ const PM = (() => {
 
     // Drop a new sticky note near `nearStep` (or the canvas centre if no step).
     function addAnnotation(nearStep) {
-        if (!currentProcessId) { toast(t('process-mapper.toast.no_process_open'), 'error'); return; }
+        if (!currentProcessId) { showToast(t('process-mapper.toast.no_process_open'), 'error'); return; }
         const tempId = nextTempId--;
         const w = 180, h = 100;
         let x, y;
@@ -1622,7 +1630,7 @@ const PM = (() => {
         canvasEmpty.style.display = 'none';
         selectAnnotation(a);
         markDirty();
-        toast(t('process-mapper.toast.note_added'), 'success');
+        showToast(t('process-mapper.toast.note_added'), 'success');
         // Drop focus into the text area so the user can type immediately.
         const ta = document.getElementById('detailAnnText');
         if (ta) { ta.focus(); ta.select(); }
@@ -1836,7 +1844,7 @@ const PM = (() => {
     // =========================================================
 
     function addGroup() {
-        if (!currentProcessId) { toast(t('process-mapper.toast.no_process_open'), 'error'); return; }
+        if (!currentProcessId) { showToast(t('process-mapper.toast.no_process_open'), 'error'); return; }
         const tempId = nextTempId--;
         const w = 240, h = 160;
         const x = snap(canvas.scrollLeft + canvas.clientWidth / 2 - w / 2);
@@ -2179,7 +2187,7 @@ const PM = (() => {
     }
 
     function addLane() {
-        if (!currentProcessId) { toast(t('process-mapper.toast.no_process_open'), 'error'); return; }
+        if (!currentProcessId) { showToast(t('process-mapper.toast.no_process_open'), 'error'); return; }
         const tempId = nextTempId--;
         // Suggest a max(display_order)+1 so the new lane is placed at the bottom.
         const maxOrder = lanes.reduce((m, l) => Math.max(m, l.display_order || 0), -1);
@@ -2773,7 +2781,7 @@ const PM = (() => {
     // `isAutosave` controls toast suppression and re-scheduling on retry.
     async function save(isAutosave = false) {
         if (!currentProcessId) {
-            if (!isAutosave) toast(t('process-mapper.toast.no_process_open'), 'error');
+            if (!isAutosave) showToast(t('process-mapper.toast.no_process_open'), 'error');
             return;
         }
         if (saveInFlight) return;
@@ -2947,13 +2955,13 @@ const PM = (() => {
 
             // openProcess resets dirty + status, so set the "Saved" status AFTER it.
             setStatus('saved');
-            if (!isAutosave) toast(t('process-mapper.toast.saved'), 'success');
+            if (!isAutosave) showToast(t('process-mapper.toast.saved'), 'success');
             // If edits arrived during the save, schedule another autosave.
             if (autosaveOn && dirty) scheduleAutosave();
         } else {
             saveInFlight = false;
             setStatus('failed');
-            if (!isAutosave) toast(errMsg, 'error');
+            if (!isAutosave) showToast(errMsg, 'error');
         }
     }
 
@@ -2983,13 +2991,6 @@ const PM = (() => {
         // Drop the clipboard's visual cue if the cut step is on its way out.
         if (stepClipboard && stepClipboard.mode === 'cut') stepClipboard = null;
         dirty = false;
-    }
-
-    function toast(msg, type = 'success') {
-        const el = document.getElementById('toast');
-        el.textContent = msg;
-        el.className = 'toast show ' + type;
-        setTimeout(() => { el.className = 'toast'; }, 2500);
     }
 
     // =========================================================
@@ -3087,7 +3088,7 @@ const PM = (() => {
     // chooser is visible; the Mermaid markup is collapsed until the user
     // picks "Mermaid".
     function openExportModal() {
-        if (!currentProcessId) { toast('Open a process first', 'error'); return; }
+        if (!currentProcessId) { showToast('Open a process first', 'error'); return; }
         document.getElementById('pmExportMermaid').style.display = 'none';
         document.querySelector('#exportModal .pm-export-options').style.display = '';
         document.getElementById('exportModal').style.display = 'flex';
@@ -3130,7 +3131,7 @@ const PM = (() => {
         } catch (e) {
             // Fallback: select the textarea so the user can Ctrl-C.
             document.getElementById('exportText').select();
-            toast('Copy failed — text selected, use Ctrl+C', 'error');
+            showToast('Copy failed — text selected, use Ctrl+C', 'error');
         }
     }
 
@@ -3201,12 +3202,12 @@ const PM = (() => {
     // sits entirely inside the rendered box. Restore in `finally`.
     async function captureCanvas() {
         if (typeof html2canvas !== 'function') {
-            toast(t('process-mapper.toast.export_lib_missing'), 'error');
+            showToast(t('process-mapper.toast.export_lib_missing'), 'error');
             return null;
         }
         const rect = computeExportRect();
         if (!rect) {
-            toast(t('process-mapper.toast.export_empty'), 'error');
+            showToast(t('process-mapper.toast.export_empty'), 'error');
             return null;
         }
 
@@ -3254,7 +3255,7 @@ const PM = (() => {
             });
             return { canvas: out, rect };
         } catch (err) {
-            toast(t('process-mapper.toast.export_failed') + ' ' + (err && err.message ? err.message : ''), 'error');
+            showToast(t('process-mapper.toast.export_failed') + ' ' + (err && err.message ? err.message : ''), 'error');
             return null;
         } finally {
             canvas.classList.remove('is-exporting');
@@ -3272,7 +3273,7 @@ const PM = (() => {
     }
 
     async function exportToPng() {
-        if (!currentProcessId) { toast('Open a process first', 'error'); return; }
+        if (!currentProcessId) { showToast('Open a process first', 'error'); return; }
         closeExportModal();
         const result = await captureCanvas();
         if (!result) return;
@@ -3282,15 +3283,15 @@ const PM = (() => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        toast(t('process-mapper.toast.png_exported'), 'success');
+        showToast(t('process-mapper.toast.png_exported'), 'success');
     }
 
     async function exportToPdf() {
-        if (!currentProcessId) { toast('Open a process first', 'error'); return; }
+        if (!currentProcessId) { showToast('Open a process first', 'error'); return; }
         // jsPDF UMD exposes its constructor under window.jspdf.jsPDF
         const jsPDF = (window.jspdf && window.jspdf.jsPDF) || null;
         if (!jsPDF) {
-            toast(t('process-mapper.toast.export_lib_missing'), 'error');
+            showToast(t('process-mapper.toast.export_lib_missing'), 'error');
             return;
         }
         closeExportModal();
@@ -3318,7 +3319,7 @@ const PM = (() => {
         const drawY = (pageH - drawH) / 2;
         doc.addImage(result.canvas.toDataURL('image/png'), 'PNG', drawX, drawY, drawW, drawH);
         doc.save(exportFilename('pdf'));
-        toast(t('process-mapper.toast.pdf_exported'), 'success');
+        showToast(t('process-mapper.toast.pdf_exported'), 'success');
     }
 
     function esc(str) {

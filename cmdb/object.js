@@ -25,7 +25,7 @@ function escapeHtml(s) {
 }
 function showInlineToast(msg, isError = false) {
     if (typeof showToast === 'function') showToast(msg, isError ? 'error' : 'success');
-    else alert(msg);
+    else showToast(msg, 'error');
 }
 async function postJson(url, body) {
     const res = await fetch(url, {
@@ -795,7 +795,7 @@ async function saveRelationship() {
 }
 
 async function deleteRelationship(id) {
-    if (!confirm('Remove this relationship?')) return;
+    if (!(await showConfirm({ title: 'Delete', message: 'Remove this relationship?', okLabel: 'Delete', okClass: 'danger' }))) return;
     try {
         const data = await postJson(API + 'delete_object_relationship.php', { id });
         if (!data.success) throw new Error(data.error || 'Delete failed');
@@ -815,7 +815,7 @@ async function deleteObject() {
         msg += `\n\nThis will ALSO delete all ${obj.children.length} direct child object(s) and their descendants — parent/child links cascade because the parent is what makes the child meaningful.`;
     }
     msg += '\n\nThis cannot be undone.';
-    if (!confirm(msg)) return;
+    if (!(await showConfirm({ title: 'Confirm', message: msg, okLabel: 'OK', okClass: 'primary' }))) return;
 
     try {
         const data = await postJson(API + 'delete_object.php', { id: obj.id });

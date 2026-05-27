@@ -380,8 +380,6 @@ $path_prefix = '../';
     </div>
 
     <!-- Toast -->
-    <div class="toast" id="toast"></div>
-
     <!-- Search Modal (Draggable) -->
     <div class="search-modal" id="searchModal">
         <div class="search-modal-header" id="searchModalHeader">

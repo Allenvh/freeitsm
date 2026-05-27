@@ -15,7 +15,6 @@ $path_prefix = '../../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Service Desk - Asset settings</title>
     <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <script src="../../assets/js/toast.js"></script>
     <script src="../../assets/js/chart.min.js"></script>
     <style>
         .container {
@@ -530,7 +529,7 @@ $path_prefix = '../../';
 
         async function deleteItem(type, id, name) {
             const ep = endpoints[type];
-            if (!confirm('Are you sure you want to delete "' + name + '"? Any assets using this ' + ep.label.toLowerCase() + ' will have it cleared.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete "' + name + '"? Any assets using this ' + ep.label.toLowerCase() + ' will have it cleared.', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const response = await fetch(ep.delete, {
@@ -542,11 +541,11 @@ $path_prefix = '../../';
                 if (data.success) {
                     loadItems(type);
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error deleting:', error);
-                alert('Failed to delete item');
+                showToast('Failed to delete item', 'error');
             }
         }
 
@@ -579,11 +578,11 @@ $path_prefix = '../../';
                     closeModal();
                     loadItems(type);
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error saving:', error);
-                alert('Failed to save item');
+                showToast('Failed to save item', 'error');
             }
         });
 

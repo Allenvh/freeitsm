@@ -25,7 +25,6 @@ $path_prefix = '../';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FreeITSM &mdash; Network Mapper</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <style>
         body { background: #f5f5f5; height: 100vh; overflow: hidden; }
 
@@ -353,7 +352,7 @@ $path_prefix = '../';
             const title = document.getElementById('newTitle').value.trim();
             const description = document.getElementById('newDescription').value.trim();
             const versionLabel = document.getElementById('newVersionLabel').value.trim() || 'v1';
-            if (!title) { window.showToast ? showToast('Title is required', 'error') : alert('Title is required'); return; }
+            if (!title) { window.showToast ? showToast('Title is required', 'error') : showToast('Title is required', 'error'); return; }
             const btn = document.getElementById('createBtn');
             btn.disabled = true;
             try {
@@ -366,13 +365,13 @@ $path_prefix = '../';
                 if (!data.success) throw new Error(data.error || 'Failed to create');
                 window.location.href = 'diagram.php?id=' + data.id;
             } catch (e) {
-                window.showToast ? showToast('Failed: ' + e.message, 'error') : alert('Failed: ' + e.message);
+                window.showToast ? showToast('Failed: ' + e.message, 'error') : showToast('Failed: ' + e.message, 'error');
                 btn.disabled = false;
             }
         }
 
         async function deleteDiagram(id, title) {
-            if (!confirm('Delete "' + title + '"? This removes the current version only. Older versions in the chain are preserved.')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete "' + title + '"? This removes the current version only. Older versions in the chain are preserved.', okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const resp = await fetch(API + 'delete_diagram.php', {
                     method: 'POST',
@@ -384,7 +383,7 @@ $path_prefix = '../';
                 window.showToast ? showToast('Diagram deleted', 'success') : null;
                 loadDiagrams();
             } catch (e) {
-                window.showToast ? showToast('Delete failed: ' + e.message, 'error') : alert('Delete failed: ' + e.message);
+                window.showToast ? showToast('Delete failed: ' + e.message, 'error') : showToast('Delete failed: ' + e.message, 'error');
             }
         }
 

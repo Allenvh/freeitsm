@@ -544,11 +544,11 @@ $path_prefix = '../../';
                     labelInput.value = '';
                     loadKeys();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error generating key:', error);
-                alert('Failed to generate API key.');
+                showToast('Failed to generate API key.', 'error');
             }
         }
 
@@ -563,11 +563,11 @@ $path_prefix = '../../';
                 if (data.success) {
                     loadKeys();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error toggling key:', error);
-                alert('Failed to update API key.');
+                showToast('Failed to update API key.', 'error');
             }
         }
 
@@ -594,11 +594,11 @@ $path_prefix = '../../';
                     closeConfirm();
                     loadKeys();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error deleting key:', error);
-                alert('Failed to delete API key.');
+                showToast('Failed to delete API key.', 'error');
             }
         }
 

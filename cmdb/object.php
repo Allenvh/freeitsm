@@ -20,7 +20,6 @@ $current_page = 'browse';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FreeITSM - CMDB Object</title>
     <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/toast.js"></script>
     <style>
         body { background: #f5f5f5; }
         .obj-page { height: calc(100vh - 48px); overflow-y: auto; padding: 0 20px; }

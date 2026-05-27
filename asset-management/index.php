@@ -995,7 +995,7 @@ $path_prefix = '../';
                     const asset = assets.find(a => a.id == selectedAssetId);
                     if (asset) asset[field] = value || null;
                 } else {
-                    alert('Error updating asset: ' + data.error);
+                    showToast('Error updating asset: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error updating asset:', error);
@@ -1599,17 +1599,17 @@ $path_prefix = '../';
                     loadAssets(document.getElementById('assetSearch').value);
                     selectAsset(selectedAssetId);
                 } else {
-                    alert('Error assigning user: ' + data.error);
+                    showToast('Error assigning user: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error assigning user:', error);
-                alert('Error assigning user');
+                showToast('Error assigning user', 'error');
             }
         }
 
         // Unassign a user from the asset
         async function unassignUser(userId) {
-            if (!confirm('Are you sure you want to remove this user from the asset?')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to remove this user from the asset?', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const response = await fetch(API_BASE + 'unassign_asset_user.php', {
@@ -1627,11 +1627,11 @@ $path_prefix = '../';
                     loadAssets(document.getElementById('assetSearch').value);
                     selectAsset(selectedAssetId);
                 } else {
-                    alert('Error removing user: ' + data.error);
+                    showToast('Error removing user: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error removing user:', error);
-                alert('Error removing user');
+                showToast('Error removing user', 'error');
             }
         }
 

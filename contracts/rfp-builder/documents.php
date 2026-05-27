@@ -350,7 +350,15 @@ $path_prefix = '../../';
 
         async function extractRequirements(id, btn) {
             const wasExtracted = btn.title.startsWith('Re-extract');
-            if (wasExtracted && !confirm('Re-running will discard the current extracted requirements for this document and replace them. Continue?')) return;
+            if (wasExtracted) {
+                const ok = await showConfirm({
+                    title: 'Re-extract requirements',
+                    message: 'Re-running will discard the current extracted requirements for this document and replace them. Continue?',
+                    okLabel: 'Continue',
+                    okClass: 'primary'
+                });
+                if (!ok) return;
+            }
 
             btn.disabled = true;
             setStatus('Extracting requirements with AI... this can take 10-30 seconds per document.', 'busy');
@@ -463,14 +471,14 @@ $path_prefix = '../../';
                 if (!data.success) throw new Error(data.error);
                 await loadDocuments();
             } catch (err) {
-                alert('Re-extract failed: ' + err.message);
+                showToast('Re-extract failed: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
             }
         }
 
         async function deleteDoc(id, name) {
-            if (!confirm(`Delete "${name}"?\n\nAny extracted requirements from this document will be removed too.`)) return;
+            if (!(await showConfirm({ title: 'Delete', message: `Delete "${name}"?\n\nAny extracted requirements from this document will be removed too.`, okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const res = await fetch(API_BASE + 'delete_document.php', {
                     method: 'POST',
@@ -481,7 +489,7 @@ $path_prefix = '../../';
                 if (!data.success) throw new Error(data.error);
                 await loadDocuments();
             } catch (err) {
-                alert('Delete failed: ' + err.message);
+                showToast('Delete failed: ' + err.message, 'error');
             }
         }
 

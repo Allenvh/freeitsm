@@ -438,12 +438,12 @@ $path_prefix = '../../';
             if (data.success) {
                 checkStatus(); // Refresh the page status
             } else {
-                alert('Error: ' + data.error);
+                showToast('Error: ' + data.error, 'error');
                 btn.disabled = false;
                 btn.innerHTML = origText;
             }
         } catch (e) {
-            alert('Failed to generate key');
+            showToast('Failed to generate key', 'error');
             btn.disabled = false;
             btn.innerHTML = origText;
         }

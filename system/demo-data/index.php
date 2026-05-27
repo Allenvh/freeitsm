@@ -473,7 +473,7 @@ if (!isset($_SESSION['analyst_id'])) {
 
         async function importModule(module, btn) {
             if (btn.classList.contains('success')) {
-                if (!confirm('This will delete existing ' + module + ' demo data and re-import fresh. Continue?')) return;
+                if (!(await showConfirm({ title: 'Delete', message: 'This will delete existing ' + module + ' demo data and re-import fresh. Continue?', okLabel: 'Delete', okClass: 'danger' }))) return;
             }
 
             btn.disabled = true;

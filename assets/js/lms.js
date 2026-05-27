@@ -114,23 +114,23 @@ const LMS = (() => {
 
             if (result.success) {
                 document.getElementById('uploadStatus').textContent = 'Done! SCORM ' + (result.scorm_version || '?') + ' detected.';
-                toast('Course uploaded', 'success');
+                showToast('Course uploaded', 'success');
                 setTimeout(() => {
                     closeModal('uploadModal');
                     loadCourses();
                 }, 1000);
             } else {
-                toast(result.error, 'error');
+                showToast(result.error, 'error');
                 btn.disabled = false;
             }
         } catch (e) {
-            toast('Upload failed', 'error');
+            showToast('Upload failed', 'error');
             btn.disabled = false;
         }
     }
 
     async function deleteCourse(id) {
-        if (!confirm('Delete this course?')) return;
+        if (!(await showConfirm({ title: 'Delete', message: 'Delete this course?', okLabel: 'Delete', okClass: 'danger' }))) return;
         try {
             const r = await fetch(API_BASE + 'course.php', {
                 method: 'POST',
@@ -138,9 +138,9 @@ const LMS = (() => {
                 body: JSON.stringify({ id, _method: 'DELETE' })
             });
             const d = await r.json();
-            if (d.success) { toast('Deleted'); loadCourses(); }
-            else toast(d.error, 'error');
-        } catch (e) { toast('Failed to delete', 'error'); }
+            if (d.success) { showToast('Deleted', 'success'); loadCourses(); }
+            else showToast(d.error, 'error');
+        } catch (e) { showToast('Failed to delete', 'error'); }
     }
 
     // =========================================================
@@ -236,17 +236,17 @@ const LMS = (() => {
             }
             const d = await r.json();
             if (d.success) {
-                toast('Saved', 'success');
+                showToast('Saved', 'success');
                 closeModal('groupModal');
                 loadGroups();
             } else {
-                toast(d.error, 'error');
+                showToast(d.error, 'error');
             }
-        } catch (e) { toast('Failed to save', 'error'); }
+        } catch (e) { showToast('Failed to save', 'error'); }
     }
 
     async function deleteGroup(id) {
-        if (!confirm('Delete this group?')) return;
+        if (!(await showConfirm({ title: 'Delete', message: 'Delete this group?', okLabel: 'Delete', okClass: 'danger' }))) return;
         try {
             const r = await fetch(API_BASE + 'group.php', {
                 method: 'POST',
@@ -254,8 +254,8 @@ const LMS = (() => {
                 body: JSON.stringify({ id, _method: 'DELETE' })
             });
             const d = await r.json();
-            if (d.success) { toast('Deleted'); loadGroups(); }
-        } catch (e) { toast('Failed', 'error'); }
+            if (d.success) { showToast('Deleted', 'success'); loadGroups(); }
+        } catch (e) { showToast('Failed', 'error'); }
     }
 
     // =========================================================
@@ -325,17 +325,17 @@ const LMS = (() => {
             });
             const d = await r.json();
             if (d.success) {
-                toast('Assigned', 'success');
+                showToast('Assigned', 'success');
                 closeModal('assignModal');
                 loadAssignments();
             } else {
-                toast(d.error, 'error');
+                showToast(d.error, 'error');
             }
-        } catch (e) { toast('Failed', 'error'); }
+        } catch (e) { showToast('Failed', 'error'); }
     }
 
     async function deleteAssignment(id) {
-        if (!confirm('Remove this assignment?')) return;
+        if (!(await showConfirm({ title: 'Delete', message: 'Remove this assignment?', okLabel: 'Delete', okClass: 'danger' }))) return;
         try {
             const r = await fetch(API_BASE + 'assignment.php', {
                 method: 'POST',
@@ -343,8 +343,8 @@ const LMS = (() => {
                 body: JSON.stringify({ id, _method: 'DELETE' })
             });
             const d = await r.json();
-            if (d.success) { toast('Removed'); loadAssignments(); }
-        } catch (e) { toast('Failed', 'error'); }
+            if (d.success) { showToast('Removed', 'success'); loadAssignments(); }
+        } catch (e) { showToast('Failed', 'error'); }
     }
 
     // =========================================================
@@ -595,13 +595,6 @@ const LMS = (() => {
     // =========================================================
     //  Utilities
     // =========================================================
-    function toast(msg, type = 'success') {
-        const el = document.getElementById('toast');
-        el.textContent = msg;
-        el.className = 'toast show ' + type;
-        setTimeout(() => { el.className = 'toast'; }, 2500);
-    }
-
     function esc(str) {
         if (!str) return '';
         const div = document.createElement('div');

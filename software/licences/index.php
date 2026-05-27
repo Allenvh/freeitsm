@@ -781,11 +781,11 @@ $path_prefix = '../../';
             const licenceType = document.getElementById('licenceType').value;
 
             if (!appId) {
-                alert('Please select an application.');
+                showToast('Please select an application.', 'error');
                 return;
             }
             if (!licenceType) {
-                alert('Please select a licence type.');
+                showToast('Please select a licence type.', 'error');
                 return;
             }
 
@@ -817,18 +817,18 @@ $path_prefix = '../../';
                     closeLicenceModal();
                     loadLicences();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error saving licence:', error);
-                alert('Failed to save licence.');
+                showToast('Failed to save licence.', 'error');
             }
         }
 
         async function deleteLicence() {
             const id = document.getElementById('licenceId').value;
             if (!id) return;
-            if (!confirm('Are you sure you want to delete this licence?')) return;
+            if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete this licence?', okLabel: 'Delete', okClass: 'danger' }))) return;
 
             try {
                 const response = await fetch(API_BASE + 'delete_licence.php', {
@@ -841,11 +841,11 @@ $path_prefix = '../../';
                     closeLicenceModal();
                     loadLicences();
                 } else {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error deleting licence:', error);
-                alert('Failed to delete licence.');
+                showToast('Failed to delete licence.', 'error');
             }
         }
 

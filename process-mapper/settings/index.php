@@ -36,7 +36,6 @@ $shapes = include '../includes/shapes.php';
     <link rel="stylesheet" href="../../assets/css/process-mapper.css?v=10">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
-    <script src="../../assets/js/toast.js"></script>
     <style>
         /* Identical to tickets/settings/index.php — settings pages scroll the
            page rather than the body, and fill the full width (no 1200px cap). */
@@ -357,7 +356,7 @@ $shapes = include '../includes/shapes.php';
         }
 
         async function del(id) {
-            if (!confirm(window.t('process-mapper.settings.delete_confirm'))) return;
+            if (!(await showConfirm({ title: 'Delete', message: window.t('process-mapper.settings.delete_confirm'), okLabel: 'Delete', okClass: 'danger' }))) return;
             try {
                 const r = await fetch(API + 'delete_step_type.php', {
                     method: 'POST',

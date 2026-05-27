@@ -292,8 +292,6 @@ $path_prefix = '../../';
         </div>
     </div>
 
-    <div id="toast" class="toast"></div>
-
     <script>
     const MODULE_LABELS = {
         'tickets': 'Tickets',
@@ -480,13 +478,6 @@ $path_prefix = '../../';
                 showToast('Failed to save', 'error');
             }
         }, 300);
-    }
-
-    function showToast(message, type) {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.className = 'toast ' + (type || '') + ' show';
-        setTimeout(() => { toast.className = 'toast'; }, 2500);
     }
 
     function escapeHtml(str) {
