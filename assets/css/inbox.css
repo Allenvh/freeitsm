@@ -2000,6 +2000,11 @@ body.ticket-popout .ticket-toolbar {
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
+    /* When .add-btn is on an <a> (e.g. workflow's New button links to
+       editor.php rather than opening a modal) the user-agent underline
+       bleeds through. Strip it so anchor-as-button matches button-as-button. */
+    text-decoration: none;
+    display: inline-block;
 }
 
 .add-btn:hover {
