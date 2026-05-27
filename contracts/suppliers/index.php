@@ -238,6 +238,7 @@ $path_prefix = '../../';
     <div class="modal" id="editModal">
         <div class="modal-content">
             <div class="modal-header" id="modalTitle">Add supplier</div>
+            <div class="modal-body">
             <form id="editForm">
                 <input type="hidden" id="itemId">
                 <div class="form-grid">
@@ -312,17 +313,21 @@ $path_prefix = '../../';
                         <textarea id="comments"></textarea>
                     </div>
                     <div class="form-group full-width">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="itemActive" checked>
+                        <label class="toggle-label">
+                            <span class="toggle-switch">
+                                <input type="checkbox" id="itemActive" checked>
+                                <span class="toggle-slider"></span>
+                            </span>
                             Active
                         </label>
                     </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save</button>
-                    </div>
                 </div>
             </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" form="editForm" class="btn btn-primary">Save</button>
+            </div>
         </div>
     </div>
 
