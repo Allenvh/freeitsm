@@ -54,7 +54,7 @@ $shapes = include '../includes/shapes.php';
 
         /* Modal content override for settings modals — matches tickets. */
         .modal-content {
-            padding: 30px;
+            padding: 20px;
             max-width: 500px;
         }
         .modal-header {

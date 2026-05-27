@@ -183,7 +183,7 @@ $path_prefix = '../';
         }
 
         /* Incident modal */
-        .modal-content { padding: 30px; max-width: 600px; }
+        .modal-content { padding: 20px; max-width: 600px; }
         .modal-header { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #333; padding: 0; border-bottom: none; }
 
         .modal .form-group { margin-bottom: 15px; }

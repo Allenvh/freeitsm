@@ -279,7 +279,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         /* Compact form modal — overrides the default 900px / no-padding modal-content from inbox.css */
         #userModal .modal-content {
-            padding: 30px;
+            padding: 20px;
             max-width: 500px;
         }
 

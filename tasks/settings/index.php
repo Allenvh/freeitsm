@@ -56,7 +56,7 @@ $translationNamespaces = ['common', 'tasks'];
         .add-btn:hover { background: #7e22ce; }
 
         /* Modal sizing — base modal / form CSS lives in inbox.css. */
-        .modal-content { padding: 30px; max-width: 500px; }
+        .modal-content { padding: 20px; max-width: 500px; }
         .modal-header { padding: 0; border-bottom: none; margin-bottom: 20px; font-size: 20px; font-weight: 600; color: #333; }
         .modal-actions { margin-top: 20px; }
         .btn { padding: 10px 20px; border-radius: 4px; font-size: 14px; cursor: pointer; border: none; transition: all 0.2s; }

@@ -246,7 +246,7 @@ $path_prefix = '../../';
         .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 
         /* Modal sizing — base modal / form CSS lives in inbox.css. */
-        .modal-content { padding: 30px; max-width: 500px; }
+        .modal-content { padding: 20px; max-width: 500px; }
         .modal-header { padding: 0; border-bottom: none; margin-bottom: 20px; font-size: 20px; font-weight: 600; color: #333; }
         .modal-actions { margin-top: 20px; }
     </style>

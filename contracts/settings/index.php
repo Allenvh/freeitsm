@@ -49,7 +49,7 @@ $path_prefix = '../../';
            colours defined in inbox.css. Modal form styling is all there too. */
         body { --accent: #f59e0b; }
 
-        .modal-content { padding: 30px; max-width: 500px; }
+        .modal-content { padding: 20px; max-width: 500px; }
         .modal-header { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #333; padding: 0; border-bottom: none; }
         .modal-actions { margin-top: 20px; }
 

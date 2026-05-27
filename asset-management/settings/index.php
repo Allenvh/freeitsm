@@ -175,7 +175,7 @@ $path_prefix = '../../';
         .password-toggle:hover { color: #333; }
 
         .modal-content {
-            padding: 30px;
+            padding: 20px;
             max-width: 500px;
         }
 

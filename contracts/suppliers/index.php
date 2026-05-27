@@ -143,7 +143,7 @@ $path_prefix = '../../';
 
         /* Modal styles */
         .modal-content {
-            padding: 30px;
+            padding: 20px;
             max-width: 750px;
             max-height: 80vh;
             overflow-y: auto;

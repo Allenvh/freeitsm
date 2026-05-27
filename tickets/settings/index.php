@@ -188,7 +188,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         /* Modal content override for settings modals */
         .modal-content {
-            padding: 30px;
+            padding: 20px;
             max-width: 500px;
         }
 

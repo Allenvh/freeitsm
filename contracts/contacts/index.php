@@ -142,7 +142,7 @@ $path_prefix = '../../';
         .status-badge.inactive { background: #f8d7da; color: #721c24; }
 
         /* Modal */
-        .modal-content { padding: 30px; max-width: 500px; }
+        .modal-content { padding: 20px; max-width: 500px; }
         .modal-header { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #333; padding: 0; border-bottom: none; }
         .modal .form-group { margin-bottom: 15px; }
         .modal .form-group label { display: block; margin-bottom: 5px; font-weight: 500; font-size: 13px; color: #333; }
