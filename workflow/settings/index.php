@@ -34,6 +34,13 @@ $translationNamespaces = ['common', 'workflow'];
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
     <style>
+        /* Module accent — drives the tab hover/active colour and any future
+           modal form-field focus rings / toggle on-state (--accent fallback
+           in inbox.css). Workflow's accent is amber #f59e0b. */
+        body { --accent: #f59e0b; }
+        .tab:hover { color: #f59e0b; }
+        .tab.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; }
         /* Amber-tinted SSL warning callout, scoped to the workflow settings
            page so it doesn't leak into other modules' SSL-verify rows. */
