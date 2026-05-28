@@ -130,6 +130,21 @@ $path_prefix = '../../';
         .test-result.success { background: #dcfce7; color: #166534; display: block; }
         .test-result.error { background: #fee2e2; color: #991b1b; display: block; }
 
+        /* AI tab: two-column form so Custom instructions sits next to API key + Model
+           and gets vertical room for a longer textarea without scrolling the page. */
+        .ai-form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 28px;
+            margin-top: 24px;
+        }
+        .ai-col-right { display: flex; flex-direction: column; }
+        .ai-col-right .form-group { flex: 1; display: flex; flex-direction: column; }
+        .ai-col-right textarea { flex: 1; min-height: 200px; resize: vertical; }
+        @media (max-width: 900px) {
+            .ai-form-grid { grid-template-columns: 1fr; }
+        }
+
         /* AI suggestion button — distinct from primary so it reads as an "extra" action */
         .btn-ai {
             background: linear-gradient(135deg, #ec4899, #be185d);
@@ -257,35 +272,41 @@ $path_prefix = '../../';
             <div class="section-header">
                 <h2>AI integration</h2>
             </div>
-            <p style="max-width: 700px; color: #555; font-size: 14px;">
+            <p style="color: #555; font-size: 14px;">
                 Powers the v1 CMDB AI features: <strong>object summaries</strong> at the top of every detail page, <strong>property suggestions</strong> when creating a new class, and <strong>relationship suggestions</strong> on the object detail view.
             </p>
-            <p style="max-width: 700px; color: #555; font-size: 14px;">
+            <p style="color: #555; font-size: 14px;">
                 Uses its own Anthropic API key (separate from RFP AI / Knowledge AI / Reply Cleanup) so usage shows as a discrete line on the Anthropic billing dashboard.
             </p>
 
-            <form id="aiForm" style="max-width: 600px; margin-top: 24px;" onsubmit="saveAiSettings(event)">
-                <div class="form-group">
-                    <label for="aiApiKey">Anthropic API key</label>
-                    <input type="password" id="aiApiKey" autocomplete="off" placeholder="sk-ant-...">
-                    <small>Encrypted at rest. Leave the masked value untouched to keep the existing key.</small>
-                </div>
+            <form id="aiForm" onsubmit="saveAiSettings(event)">
+                <div class="ai-form-grid">
+                    <div class="ai-col-left">
+                        <div class="form-group">
+                            <label for="aiApiKey">Anthropic API key</label>
+                            <input type="password" id="aiApiKey" autocomplete="off" placeholder="sk-ant-...">
+                            <small>Encrypted at rest. Leave the masked value untouched to keep the existing key.</small>
+                        </div>
 
-                <div class="form-group">
-                    <label for="aiModel">Model</label>
-                    <select id="aiModel">
-                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (recommended — fast and cheap)</option>
-                        <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                        <option value="claude-opus-4-7">Claude Opus 4.7</option>
-                    </select>
-                    <small>Haiku handles summaries and suggestions comfortably.</small>
-                </div>
+                        <div class="form-group">
+                            <label for="aiModel">Model</label>
+                            <select id="aiModel">
+                                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (recommended — fast and cheap)</option>
+                                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                                <option value="claude-opus-4-7">Claude Opus 4.7</option>
+                            </select>
+                            <small>Haiku handles summaries and suggestions comfortably.</small>
+                        </div>
+                    </div>
 
-                <div class="form-group">
-                    <label for="aiCustomInstructions">Custom instructions <span style="color: #999; font-weight: normal;">(optional)</span></label>
-                    <textarea id="aiCustomInstructions" rows="5" maxlength="4000"
-                              placeholder="e.g. Use British English spellings.&#10;Refer to the company as 'BillCorp'.&#10;When suggesting properties, prefer ITIL terminology."></textarea>
-                    <small>Appended to every CMDB AI prompt. Use plain English — labels and verbs in the CMDB are sent to the model verbatim.</small>
+                    <div class="ai-col-right">
+                        <div class="form-group">
+                            <label for="aiCustomInstructions">Custom instructions <span style="color: #999; font-weight: normal;">(optional)</span></label>
+                            <textarea id="aiCustomInstructions" maxlength="4000"
+                                      placeholder="e.g. Use British English spellings.&#10;Refer to the company as 'BillCorp'.&#10;When suggesting properties, prefer ITIL terminology."></textarea>
+                            <small>Appended to every CMDB AI prompt. Use plain English — labels and verbs in the CMDB are sent to the model verbatim.</small>
+                        </div>
+                    </div>
                 </div>
 
                 <div style="display: flex; gap: 12px; margin-top: 24px;">
