@@ -24,28 +24,11 @@ $path_prefix = '../../';
     <style>
         body { background: #f5f5f5; --accent: #be185d; }
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 24px 0; padding: 0 20px; }
-        .tabs {
-            display: flex;
-            gap: 4px;
-            border-bottom: 2px solid #e5e7eb;
-            margin-bottom: 24px;
-        }
-        .tab {
-            background: transparent;
-            border: none;
-            padding: 12px 20px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            color: #6b7280;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            transition: color 0.15s, border-color 0.15s;
-        }
+        /* Tabs + tab-content come from inbox.css (canonical). Only the
+           module-accent colour is overridden here so the active tab + hover
+           read as CMDB-magenta. */
         .tab:hover { color: #be185d; }
         .tab.active { color: #be185d; border-bottom-color: #be185d; }
-        .tab-content { display: none; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-        .tab-content.active { display: block; }
         .section-header {
             display: flex;
             justify-content: space-between;
