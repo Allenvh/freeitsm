@@ -461,6 +461,16 @@ $schema = [
         'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
     ],
 
+    // Arbitrary-depth physical location tree (adjacency list). Self-ref FK +
+    // parent index added in the post-schema section below.
+    'asset_locations' => [
+        'id'                => 'INT NOT NULL AUTO_INCREMENT',
+        'name'              => 'VARCHAR(100) NOT NULL',
+        'parent_id'         => 'INT NULL',
+        'display_order'     => 'INT NOT NULL DEFAULT 0',
+        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+    ],
+
     'users_assets' => [
         'id'                        => 'INT NOT NULL AUTO_INCREMENT',
         'user_id'                   => 'INT NOT NULL',
@@ -2850,6 +2860,22 @@ try {
         }
 
         $conn->exec("UPDATE `$tbl` SET `$newCol` = (SELECT id FROM `$lkTbl` WHERE is_default = 1 LIMIT 1) WHERE `$newCol` IS NULL");
+    }
+
+    // FK + index for the asset location tree (self-referencing parent).
+    foreach ([
+        ['asset_locations', 'fk_asset_locations_parent', "ALTER TABLE asset_locations ADD CONSTRAINT fk_asset_locations_parent FOREIGN KEY (parent_id) REFERENCES asset_locations (id)"],
+    ] as [$tbl, $name, $sql]) {
+        if ($tableExists($tbl) && !$fkExists($tbl, $name)) {
+            try { $conn->exec($sql); } catch (Exception $e) {}
+        }
+    }
+    foreach ([
+        ['asset_locations', 'idx_asset_locations_parent', 'parent_id'],
+    ] as [$tbl, $name, $col]) {
+        if ($tableExists($tbl) && !$idxExists($tbl, $name)) {
+            try { $conn->exec("ALTER TABLE `$tbl` ADD KEY `$name` (`$col`)"); } catch (Exception $e) {}
+        }
     }
 
     // FKs and indexes for tasks

@@ -190,6 +190,54 @@ $path_prefix = '../../';
 
         /* Modal form CSS now lives entirely in inbox.css. */
         .modal-actions { margin-top: 20px; }
+
+        /* ── Location tree ─────────────────────────────────────────── */
+        .loc-tree {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 8px 4px;
+            max-width: 760px;
+        }
+        .loc-tree ul { list-style: none; margin: 0; padding: 0; }
+        /* Children indent + a guide line down the branch. */
+        .loc-children { margin-left: 22px; border-left: 1px solid #eee; padding-left: 4px; }
+        .loc-children.collapsed { display: none; }
+
+        .loc-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 5px;
+        }
+        .loc-row:hover { background: #f6f8f6; }
+
+        .loc-caret {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #888;
+            border-radius: 3px;
+            user-select: none;
+            font-size: 11px;
+            transition: transform 0.12s;
+        }
+        .loc-caret:hover { background: #e8efe8; color: #333; }
+        .loc-caret.collapsed { transform: rotate(-90deg); }
+        .loc-caret.leaf { cursor: default; visibility: hidden; }
+
+        .loc-name { flex: 1; font-size: 14px; color: #222; }
+        .loc-name .loc-count { color: #999; font-size: 12px; margin-left: 6px; }
+
+        .loc-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s; }
+        .loc-row:hover .loc-actions { opacity: 1; }
+
+        .loc-empty { color: #999; padding: 16px 12px; }
     </style>
 </head>
 <body>
@@ -199,6 +247,7 @@ $path_prefix = '../../';
         <div class="tabs">
             <button class="tab active" data-tab="asset-types" onclick="switchTab('asset-types')">Asset types</button>
             <button class="tab" data-tab="asset-statuses" onclick="switchTab('asset-statuses')">Asset statuses</button>
+            <button class="tab" data-tab="locations" onclick="switchTab('locations')">Locations</button>
             <button class="tab" data-tab="vcenter" onclick="switchTab('vcenter')">vCenter</button>
             <button class="tab" data-tab="intune" onclick="switchTab('intune')">InTune</button>
         </div>
@@ -245,6 +294,23 @@ $path_prefix = '../../';
                     <tr><td colspan="5" style="text-align: center; padding: 20px; color: #999;">Loading...</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Locations Tab -->
+        <div class="tab-content" id="locations-tab">
+            <div class="section-header">
+                <h2>Locations</h2>
+                <button class="add-btn" onclick="openAddLocation(null)">Add</button>
+            </div>
+            <p class="settings-description" style="margin-bottom: 18px;">
+                Build a location hierarchy that fits your organisation &mdash; nest it as deep or as
+                shallow as you like, and each branch can differ. For example
+                <code>UK &rsaquo; London &rsaquo; Office 1</code> alongside a simple
+                <code>Datacentre</code>. Use <strong>+</strong> on any location to add a sub-location.
+            </p>
+            <div id="locations-tree" class="loc-tree">
+                <div style="color:#999; padding: 12px;">Loading...</div>
+            </div>
         </div>
 
         <!-- vCenter Tab -->
@@ -408,6 +474,31 @@ $path_prefix = '../../';
         </div>
     </div>
 
+    <!-- Location Add/Edit Modal -->
+    <div class="modal" id="locationModal">
+        <div class="modal-content">
+            <div class="modal-header" id="locationModalTitle">Add location</div>
+            <form id="locationForm">
+                <input type="hidden" id="locationId">
+                <div class="form-group">
+                    <label for="locationName">Name</label>
+                    <input type="text" id="locationName" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="locationParent">Parent location</label>
+                    <select id="locationParent">
+                        <option value="">— None (top level) —</option>
+                    </select>
+                    <div class="form-hint">Leave as "None" for a top-level location, or pick a parent to nest it underneath.</div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeLocationModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '../../api/assets/';
         const API_SETTINGS = '../../api/settings/';
@@ -436,6 +527,7 @@ $path_prefix = '../../';
         document.addEventListener('DOMContentLoaded', function() {
             loadItems('asset-type');
             loadItems('asset-status');
+            loadLocations();
             loadIntegrationSettings();
         });
 
@@ -1010,6 +1102,171 @@ $path_prefix = '../../';
                 console.error('Error loading freshness chart:', e);
             }
         }
+
+        // ─── Locations (arbitrary-depth tree) ───────────────────────────────
+        let allLocations = [];
+        const collapsedLocations = new Set();
+
+        async function loadLocations() {
+            const tree = document.getElementById('locations-tree');
+            try {
+                const res = await fetch(API_BASE + 'get_asset_locations.php');
+                const data = await res.json();
+                if (!data.success) {
+                    tree.innerHTML = '<div class="loc-empty" style="color:#d13438;">Error: ' + escapeHtml(data.error) + '</div>';
+                    return;
+                }
+                allLocations = data.locations || [];
+                renderLocationTree();
+            } catch (e) {
+                console.error('Error loading locations:', e);
+                tree.innerHTML = '<div class="loc-empty" style="color:#d13438;">Failed to load locations</div>';
+            }
+        }
+
+        function locationChildren(parentId) {
+            return allLocations.filter(l => l.parent_id === parentId);
+        }
+
+        function renderLocationTree() {
+            const tree = document.getElementById('locations-tree');
+            if (allLocations.length === 0) {
+                tree.innerHTML = '<div class="loc-empty">No locations yet. Click <strong>Add</strong> to create your first one.</div>';
+                return;
+            }
+            const roots = locationChildren(null);
+            tree.innerHTML = '<ul>' + roots.map(r => renderLocationNode(r)).join('') + '</ul>';
+        }
+
+        function renderLocationNode(loc) {
+            const kids = locationChildren(loc.id);
+            const hasKids = kids.length > 0;
+            const collapsed = collapsedLocations.has(loc.id);
+            const caretClass = hasKids ? (collapsed ? 'collapsed' : '') : 'leaf';
+            const count = hasKids ? `<span class="loc-count">${kids.length}</span>` : '';
+            const row = `
+                <div class="loc-row">
+                    <span class="loc-caret ${caretClass}" onclick="toggleLocation(${loc.id})">&#9662;</span>
+                    <span class="loc-name">${escapeHtml(loc.name)}${count}</span>
+                    <span class="loc-actions">
+                        <button class="action-btn" title="Add sub-location" onclick="openAddLocation(${loc.id})">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </button>
+                        <button class="action-btn" title="Edit" onclick="editLocation(${loc.id})">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                        <button class="action-btn delete" title="Delete" onclick="deleteLocation(${loc.id})">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </span>
+                </div>`;
+            const childrenHtml = hasKids
+                ? `<div class="loc-children ${collapsed ? 'collapsed' : ''}"><ul>${kids.map(k => renderLocationNode(k)).join('')}</ul></div>`
+                : '';
+            return `<li class="loc-node">${row}${childrenHtml}</li>`;
+        }
+
+        function toggleLocation(id) {
+            if (collapsedLocations.has(id)) collapsedLocations.delete(id);
+            else collapsedLocations.add(id);
+            renderLocationTree();
+        }
+
+        // Indented <option>s for the parent select. When editing, exclude the
+        // node itself and its whole subtree (a node can't sit under itself).
+        function buildParentOptions(excludeId) {
+            const exclude = new Set();
+            if (excludeId != null) {
+                const stack = [excludeId];
+                while (stack.length) {
+                    const cur = stack.pop();
+                    exclude.add(cur);
+                    locationChildren(cur).forEach(c => stack.push(c.id));
+                }
+            }
+            const opts = ['<option value="">— None (top level) —</option>'];
+            const walk = (parentId, depth) => {
+                locationChildren(parentId).forEach(loc => {
+                    if (!exclude.has(loc.id)) {
+                        opts.push(`<option value="${loc.id}">${'   '.repeat(depth)}${escapeHtml(loc.name)}</option>`);
+                        walk(loc.id, depth + 1);
+                    }
+                });
+            };
+            walk(null, 0);
+            return opts.join('');
+        }
+
+        function openAddLocation(parentId) {
+            document.getElementById('locationModalTitle').textContent = 'Add location';
+            document.getElementById('locationId').value = '';
+            document.getElementById('locationName').value = '';
+            const sel = document.getElementById('locationParent');
+            sel.innerHTML = buildParentOptions(null);
+            sel.value = parentId != null ? String(parentId) : '';
+            document.getElementById('locationModal').classList.add('active');
+            setTimeout(() => document.getElementById('locationName').focus(), 50);
+        }
+
+        function editLocation(id) {
+            const loc = allLocations.find(l => l.id === id);
+            if (!loc) return;
+            document.getElementById('locationModalTitle').textContent = 'Edit location';
+            document.getElementById('locationId').value = loc.id;
+            document.getElementById('locationName').value = loc.name;
+            const sel = document.getElementById('locationParent');
+            sel.innerHTML = buildParentOptions(loc.id);
+            sel.value = loc.parent_id != null ? String(loc.parent_id) : '';
+            document.getElementById('locationModal').classList.add('active');
+            setTimeout(() => document.getElementById('locationName').focus(), 50);
+        }
+
+        function closeLocationModal() {
+            document.getElementById('locationModal').classList.remove('active');
+        }
+
+        async function deleteLocation(id) {
+            const loc = allLocations.find(l => l.id === id);
+            if (!loc) return;
+            if (locationChildren(id).length > 0) {
+                showToast('This location has sub-locations. Delete or move them first.', 'error');
+                return;
+            }
+            if (!(await showConfirm({ title: 'Delete', message: 'Delete location "' + loc.name + '"?', okLabel: 'Delete', okClass: 'danger' }))) return;
+            try {
+                const res = await fetch(API_BASE + 'delete_asset_location.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+                });
+                const data = await res.json();
+                if (data.success) { showToast('Deleted', 'success'); loadLocations(); }
+                else showToast('Error: ' + data.error, 'error');
+            } catch (e) { showToast('Failed to delete location', 'error'); }
+        }
+
+        document.getElementById('locationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const id = document.getElementById('locationId').value;
+            const payload = {
+                name: document.getElementById('locationName').value.trim(),
+                parent_id: document.getElementById('locationParent').value || null
+            };
+            if (!payload.name) { showToast('Name is required', 'error'); return; }
+            if (id) payload.id = parseInt(id);
+            try {
+                const res = await fetch(API_BASE + 'save_asset_location.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) { closeLocationModal(); showToast('Saved', 'success'); loadLocations(); }
+                else showToast('Error: ' + data.error, 'error');
+            } catch (e) { showToast('Failed to save location', 'error'); }
+        });
+
+        let locationMouseDownTarget = null;
+        document.getElementById('locationModal').addEventListener('mousedown', function(e) { locationMouseDownTarget = e.target; });
+        document.getElementById('locationModal').addEventListener('click', function(e) {
+            if (e.target === this && locationMouseDownTarget === this) closeLocationModal();
+        });
 
         function escapeHtml(text) {
             if (!text) return '';

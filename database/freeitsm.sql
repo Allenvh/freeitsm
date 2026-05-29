@@ -600,6 +600,21 @@ CREATE TABLE IF NOT EXISTS `asset_status_types` (
     UNIQUE KEY `uq_asset_status_types_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Arbitrary-depth physical location tree (adjacency list). A NULL parent_id is
+-- a root; any node can have children, so each branch nests as deep as needed
+-- (e.g. UK > London > Office 1). The self-referencing FK is RESTRICT, so a
+-- parent can't be deleted while it still has children.
+CREATE TABLE IF NOT EXISTS `asset_locations` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(100) NOT NULL,
+    `parent_id`         INT NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_asset_locations_parent` (`parent_id`),
+    CONSTRAINT `fk_asset_locations_parent` FOREIGN KEY (`parent_id`) REFERENCES `asset_locations` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `assets` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `hostname`          VARCHAR(50) NULL,
