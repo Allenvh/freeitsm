@@ -101,6 +101,7 @@ return [
         'failed'  => 'Failed',
         'skipped' => 'Skipped (conditions did not match)',
         'running' => 'Running',
+        'aborted' => 'Aborted (loop protection)',
     ],
 
     'toast' => [

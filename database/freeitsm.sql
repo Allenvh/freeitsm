@@ -2292,7 +2292,7 @@ CREATE TABLE IF NOT EXISTS `workflows` (
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `last_run_datetime` DATETIME NULL,
-    `last_run_status`   VARCHAR(20) NULL,             -- 'success' | 'failed' | 'skipped'
+    `last_run_status`   VARCHAR(20) NULL,             -- 'success' | 'failed' | 'skipped' | 'aborted'
     `run_count`         INT NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     KEY `idx_workflows_trigger` (`trigger_event`),
@@ -2304,7 +2304,7 @@ CREATE TABLE IF NOT EXISTS `workflow_executions` (
     `workflow_id`       INT NOT NULL,
     `trigger_event`     VARCHAR(100) NOT NULL,
     `trigger_payload`   TEXT NULL,                    -- JSON snapshot of the event payload
-    `status`            VARCHAR(20) NOT NULL,         -- 'running' | 'success' | 'failed' | 'skipped'
+    `status`            VARCHAR(20) NOT NULL,         -- 'running' | 'success' | 'failed' | 'skipped' | 'aborted'
     `started_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `finished_datetime` DATETIME NULL,
     `step_log`          TEXT NULL,                    -- JSON array of per-step results

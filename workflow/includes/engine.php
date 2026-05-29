@@ -36,6 +36,36 @@
 class WorkflowEngine
 {
     // -----------------------------------------------------------------
+    //  Infinite-loop protection (request-scoped)
+    // -----------------------------------------------------------------
+    //
+    // Workflow actions mutate host data, and host modules dispatch events
+    // from their save flows — so a workflow can trigger itself, either
+    // directly (A fires an event that re-runs A) or through a cycle
+    // (A -> B -> A). Execution is synchronous within one PHP request, so we
+    // guard with three request-scoped counters reset naturally per request:
+    //
+    //   1. $activeWorkflowIds — the stack of workflow ids currently running.
+    //      A workflow already on the stack is refused re-entry. This alone
+    //      catches every cycle: a cycle must revisit a node still on the
+    //      stack.
+    //   2. MAX_CHAIN_DEPTH — a hard ceiling on nesting depth. Backstop for an
+    //      absurdly deep but acyclic cascade (A -> B -> C -> ... all distinct).
+    //   3. MAX_RUNS_PER_REQUEST — a ceiling on total runs in one request.
+    //      Backstop for fan-out blow-ups where each run spawns new, distinct
+    //      workflows without ever cycling.
+    //
+    // A blocked run is still recorded as an 'aborted' execution row so the
+    // user can see the engine stepped in (see recordAbortedRun()).
+
+    private const MAX_CHAIN_DEPTH       = 10;
+    private const MAX_RUNS_PER_REQUEST  = 100;
+
+    private static $chainDepth       = 0;
+    private static $runsThisRequest  = 0;
+    private static $activeWorkflowIds = [];
+
+    // -----------------------------------------------------------------
     //  Catalogue — triggers, actions, operators, fields per trigger
     // -----------------------------------------------------------------
 
@@ -438,7 +468,86 @@ class WorkflowEngine
     //  Core execution loop
     // -----------------------------------------------------------------
 
+    /**
+     * Loop-protection wrapper around runInner(). Refuses re-entrant / runaway
+     * runs (see the class-level notes), recording a blocked attempt as an
+     * 'aborted' execution row, and otherwise manages the request-scoped
+     * counters around the real run.
+     */
     private static function run(array $wf, string $event, array $payload, bool $isManual): array
+    {
+        $wfId = (int)$wf['id'];
+
+        if (in_array($wfId, self::$activeWorkflowIds, true)) {
+            return self::recordAbortedRun($wf, $event, $payload, $isManual,
+                'Loop protection: this workflow is already running in the current event chain — re-entry refused to prevent an infinite loop.');
+        }
+        if (self::$chainDepth >= self::MAX_CHAIN_DEPTH) {
+            return self::recordAbortedRun($wf, $event, $payload, $isManual,
+                'Loop protection: workflow chain depth limit (' . self::MAX_CHAIN_DEPTH . ') reached — execution aborted.');
+        }
+        if (self::$runsThisRequest >= self::MAX_RUNS_PER_REQUEST) {
+            return self::recordAbortedRun($wf, $event, $payload, $isManual,
+                'Loop protection: per-request workflow run limit (' . self::MAX_RUNS_PER_REQUEST . ') reached — execution aborted.');
+        }
+
+        self::$activeWorkflowIds[] = $wfId;
+        self::$chainDepth++;
+        self::$runsThisRequest++;
+        try {
+            return self::runInner($wf, $event, $payload, $isManual);
+        } finally {
+            // Pop this workflow off the active stack and unwind the depth even
+            // if runInner threw, so one bad run can't wedge the counters for
+            // the rest of the request.
+            array_pop(self::$activeWorkflowIds);
+            self::$chainDepth--;
+        }
+    }
+
+    /**
+     * Record a run that loop-protection refused to execute. Writes a single
+     * 'aborted' execution row (status / step_log / error_message) so the
+     * block is visible in the execution audit, and stamps the parent
+     * workflow's last-run state for non-manual runs. Never throws.
+     */
+    private static function recordAbortedRun(array $wf, string $event, array $payload, bool $isManual, string $message): array
+    {
+        $wfId = (int)$wf['id'];
+        error_log('[WorkflowEngine] aborted run for workflow ' . $wfId . ': ' . $message);
+        $stepLog = [['kind' => 'loop_protection', 'error' => $message]];
+        try {
+            $conn = connectToDatabase();
+            $stmt = $conn->prepare(
+                "INSERT INTO workflow_executions
+                 (workflow_id, trigger_event, trigger_payload, status, started_datetime, finished_datetime, step_log, error_message)
+                 VALUES (?, ?, ?, 'aborted', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?, ?)"
+            );
+            $stmt->execute([
+                $wfId, $event, json_encode($payload), json_encode($stepLog), $message,
+            ]);
+            $execId = (int)$conn->lastInsertId();
+            // Reflect the block in the parent workflow's last-run state, but
+            // don't bump run_count — nothing actually executed.
+            if (!$isManual) {
+                $conn->prepare(
+                    "UPDATE workflows SET last_run_datetime = UTC_TIMESTAMP(), last_run_status = 'aborted' WHERE id = ?"
+                )->execute([$wfId]);
+            }
+        } catch (Exception $e) {
+            error_log('[WorkflowEngine::recordAbortedRun] ' . $e->getMessage());
+            $execId = null;
+        }
+        return [
+            'execution_id'  => $execId,
+            'workflow_id'   => $wfId,
+            'status'        => 'aborted',
+            'step_log'      => $stepLog,
+            'error_message' => $message,
+        ];
+    }
+
+    private static function runInner(array $wf, string $event, array $payload, bool $isManual): array
     {
         $conn = connectToDatabase();
         $stepLog = [];

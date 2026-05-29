@@ -1025,6 +1025,7 @@ const WFE = (() => {
             const pill = e.status === 'success'  ? '<span class="status-badge status-active">' + escHtml(window.t('workflow.status.success')) + '</span>'
                        : e.status === 'failed'   ? '<span class="status-badge status-inactive">' + escHtml(window.t('workflow.status.failed'))  + '</span>'
                        : e.status === 'skipped'  ? '<span class="status-badge"   style="background:#fef3c7;color:#92400e;">' + escHtml(window.t('workflow.status.skipped')) + '</span>'
+                       : e.status === 'aborted'  ? '<span class="status-badge"   style="background:#fee2e2;color:#991b1b;">' + escHtml(window.t('workflow.status.aborted')) + '</span>'
                        :                           '<span class="status-badge"   style="background:#e0e7ff;color:#3730a3;">' + escHtml(window.t('workflow.status.running')) + '</span>';
             return `<div style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
                 ${pill}
