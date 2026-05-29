@@ -444,7 +444,7 @@ $schema = [
         'gpu_name'          => 'VARCHAR(250) NULL',
         'purchase_date'     => 'DATE NULL',
         'purchase_cost'     => 'DECIMAL(12,2) NULL',
-        'supplier'          => 'VARCHAR(150) NULL',
+        'supplier_id'       => 'INT NULL',
         'order_number'      => 'VARCHAR(100) NULL',
         'warranty_expiry'   => 'DATE NULL',
     ],
@@ -1515,6 +1515,7 @@ $schema = [
         'questionnaire_date_received'   => 'DATE NULL',
         'comments'                      => 'LONGTEXT NULL',
         'is_active'                     => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'supplies_assets'               => 'TINYINT(1) NOT NULL DEFAULT 0',
         'created_datetime'              => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
     ],
 
@@ -2887,6 +2888,7 @@ try {
     foreach ([
         ['asset_locations', 'fk_asset_locations_parent', "ALTER TABLE asset_locations ADD CONSTRAINT fk_asset_locations_parent FOREIGN KEY (parent_id) REFERENCES asset_locations (id)"],
         ['assets', 'fk_assets_location', "ALTER TABLE assets ADD CONSTRAINT fk_assets_location FOREIGN KEY (location_id) REFERENCES asset_locations (id) ON DELETE SET NULL"],
+        ['assets', 'fk_assets_supplier', "ALTER TABLE assets ADD CONSTRAINT fk_assets_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
         ['asset_checkout_log', 'fk_acl_asset', "ALTER TABLE asset_checkout_log ADD CONSTRAINT fk_acl_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE"],
     ] as [$tbl, $name, $sql]) {
         if ($tableExists($tbl) && !$fkExists($tbl, $name)) {
@@ -2896,11 +2898,35 @@ try {
     foreach ([
         ['asset_locations', 'idx_asset_locations_parent', 'parent_id'],
         ['assets', 'idx_assets_location', 'location_id'],
+        ['assets', 'idx_assets_supplier', 'supplier_id'],
         ['asset_checkout_log', 'idx_acl_asset', 'asset_id'],
     ] as [$tbl, $name, $col]) {
         if ($tableExists($tbl) && !$idxExists($tbl, $name)) {
             try { $conn->exec("ALTER TABLE `$tbl` ADD KEY `$name` (`$col`)"); } catch (Exception $e) {}
         }
+    }
+
+    // Migrate legacy free-text assets.supplier -> normalised supplier_id (FK to
+    // the shared suppliers registry), then drop the old column. Each distinct
+    // free-text value becomes (or matches) a suppliers row flagged supplies_assets.
+    if ($tableExists('assets') && $colExists('assets', 'supplier') && $colExists('assets', 'supplier_id') && $tableExists('suppliers')) {
+        try {
+            $names = $conn->query("SELECT DISTINCT supplier FROM assets WHERE supplier IS NOT NULL AND supplier <> ''")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($names as $nm) {
+                $sel = $conn->prepare("SELECT id FROM suppliers WHERE legal_name = ? LIMIT 1");
+                $sel->execute([$nm]);
+                $sid = $sel->fetchColumn();
+                if (!$sid) {
+                    $ins = $conn->prepare("INSERT INTO suppliers (legal_name, supplies_assets, is_active) VALUES (?, 1, 1)");
+                    $ins->execute([$nm]);
+                    $sid = (int)$conn->lastInsertId();
+                } else {
+                    $conn->prepare("UPDATE suppliers SET supplies_assets = 1 WHERE id = ?")->execute([$sid]);
+                }
+                $conn->prepare("UPDATE assets SET supplier_id = ? WHERE supplier = ? AND supplier_id IS NULL")->execute([$sid, $nm]);
+            }
+            $conn->exec("ALTER TABLE assets DROP COLUMN supplier");
+        } catch (Exception $e) { /* leave the legacy column in place if migration fails */ }
     }
 
     // FKs and indexes for tasks

@@ -642,12 +642,15 @@ CREATE TABLE IF NOT EXISTS `assets` (
     -- Procurement & warranty (Snipe-IT-style lifecycle fields)
     `purchase_date`     DATE NULL,
     `purchase_cost`     DECIMAL(12,2) NULL,
-    `supplier`          VARCHAR(150) NULL,
+    `supplier_id`       INT NULL,
     `order_number`      VARCHAR(100) NULL,
     `warranty_expiry`   DATE NULL,
     PRIMARY KEY (`id`),
     KEY `idx_assets_location` (`location_id`),
+    KEY `idx_assets_supplier` (`supplier_id`),
     CONSTRAINT `fk_assets_location` FOREIGN KEY (`location_id`) REFERENCES `asset_locations` (`id`) ON DELETE SET NULL
+    -- fk_assets_supplier (supplier_id -> suppliers.id) is added in db_verify.php:
+    -- the suppliers table is defined later in this file, so the FK can't be inline here.
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `users_assets` (
@@ -1812,6 +1815,7 @@ CREATE TABLE IF NOT EXISTS `suppliers` (
     `questionnaire_date_received`   DATE NULL,
     `comments`                      LONGTEXT NULL,
     `is_active`                     TINYINT(1) NOT NULL DEFAULT 1,
+    `supplies_assets`               TINYINT(1) NOT NULL DEFAULT 0,
     `created_datetime`              DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

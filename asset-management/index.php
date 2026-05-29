@@ -986,6 +986,7 @@ $path_prefix = '../';
         let assetTypes = [];
         let assetStatusTypes = [];
         let assetLocations = [];
+        let assetSuppliers = [];
         let allAssetSoftware = [];
         let activeSwFilter = 'apps';
         let allDevices = [];
@@ -996,6 +997,7 @@ $path_prefix = '../';
             loadAssetTypesForDropdown();
             loadAssetStatusTypesForDropdown();
             loadLocationsForDropdown();
+            loadAssetSuppliersForDropdown();
         });
 
         async function loadAssetTypesForDropdown() {
@@ -1020,6 +1022,14 @@ $path_prefix = '../';
                 const data = await response.json();
                 if (data.success) assetLocations = data.locations || [];
             } catch (e) { console.error('Error loading locations:', e); }
+        }
+
+        async function loadAssetSuppliersForDropdown() {
+            try {
+                const response = await fetch(API_BASE + 'get_asset_suppliers.php');
+                const data = await response.json();
+                if (data.success) assetSuppliers = data.suppliers || [];
+            } catch (e) { console.error('Error loading suppliers:', e); }
         }
 
         // Build indented full-path <option>s for the location picker, e.g.
@@ -1209,7 +1219,10 @@ $path_prefix = '../';
                         </div>
                         <div class="info-item">
                             <span class="info-label">Supplier</span>
-                            <input type="text" class="info-value-input" value="${escapeHtml(selectedAsset.supplier || '')}" placeholder="-" onchange="updateAssetField('supplier', this.value)">
+                            <select class="info-value-select" onchange="updateAssetField('supplier_id', this.value)">
+                                <option value="">-- None --</option>
+                                ${assetSuppliers.map(s => `<option value="${s.id}" ${s.id == selectedAsset.supplier_id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
+                            </select>
                         </div>
                         <div class="info-item">
                             <span class="info-label">Order number</span>

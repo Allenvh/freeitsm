@@ -26,7 +26,7 @@ try {
 
     // Whitelist allowed fields to prevent SQL injection
     $allowedFields = ['asset_type_id', 'asset_status_id', 'location_id',
-                      'purchase_date', 'purchase_cost', 'supplier', 'order_number', 'warranty_expiry'];
+                      'purchase_date', 'purchase_cost', 'supplier_id', 'order_number', 'warranty_expiry'];
     if (!in_array($field, $allowedFields)) {
         throw new Exception('Invalid field');
     }
@@ -63,12 +63,16 @@ try {
         $nameQuery = "SELECT name FROM asset_locations WHERE id = ?";
         if ($oldValue) { $n = $conn->prepare($nameQuery); $n->execute([$oldValue]); $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $oldDisplay = $r['name']; }
         if ($value)    { $n = $conn->prepare($nameQuery); $n->execute([$value]);    $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $newDisplay = $r['name']; }
+    } elseif ($field === 'supplier_id') {
+        $nameQuery = "SELECT COALESCE(NULLIF(TRIM(trading_name), ''), legal_name) AS name FROM suppliers WHERE id = ?";
+        if ($oldValue) { $n = $conn->prepare($nameQuery); $n->execute([$oldValue]); $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $oldDisplay = $r['name']; }
+        if ($value)    { $n = $conn->prepare($nameQuery); $n->execute([$value]);    $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $newDisplay = $r['name']; }
     }
 
     // Log the change to asset_history
     $fieldLabels = [
         'asset_type_id' => 'Type', 'asset_status_id' => 'Status', 'location_id' => 'Location',
-        'purchase_date' => 'Purchase date', 'purchase_cost' => 'Purchase cost', 'supplier' => 'Supplier',
+        'purchase_date' => 'Purchase date', 'purchase_cost' => 'Purchase cost', 'supplier_id' => 'Supplier',
         'order_number' => 'Order number', 'warranty_expiry' => 'Warranty expiry',
     ];
     $fieldLabel = $fieldLabels[$field] ?? $field;

@@ -53,7 +53,7 @@ try {
                     a.location_id,
                     a.purchase_date,
                     a.purchase_cost,
-                    a.supplier,
+                    a.supplier_id,
                     a.order_number,
                     a.warranty_expiry,";
 
@@ -106,7 +106,7 @@ try {
                     a.location_id,
                     a.purchase_date,
                     a.purchase_cost,
-                    a.supplier,
+                    a.supplier_id,
                     a.order_number,
                     a.warranty_expiry,
                     NULL AS asset_type_id,
@@ -126,7 +126,7 @@ try {
     }
 
     if ($tableExists) {
-        $groupBy = " GROUP BY a.id, a.hostname, a.manufacturer, a.model, a.memory, a.service_tag, a.operating_system, a.feature_release, a.build_number, a.cpu_name, a.speed, a.bios_version, a.location_id, a.purchase_date, a.purchase_cost, a.supplier, a.order_number, a.warranty_expiry";
+        $groupBy = " GROUP BY a.id, a.hostname, a.manufacturer, a.model, a.memory, a.service_tag, a.operating_system, a.feature_release, a.build_number, a.cpu_name, a.speed, a.bios_version, a.location_id, a.purchase_date, a.purchase_cost, a.supplier_id, a.order_number, a.warranty_expiry";
         if ($typeTableExists) {
             $groupBy .= ", a.asset_type_id, aty.name";
         }
@@ -164,6 +164,21 @@ try {
             $lid = isset($a['location_id']) && $a['location_id'] !== null ? (int)$a['location_id'] : null;
             $a['location_name'] = $lid !== null && isset($locById[$lid]) ? $locById[$lid]['name'] : null;
             $a['location_path'] = $lid !== null ? $pathOf($lid) : null;
+        }
+        unset($a);
+    }
+
+    // Attach the supplier display name (trading name, falling back to legal name)
+    // from the shared suppliers registry.
+    $supTableCheck = $conn->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'suppliers'");
+    $supTableCheck->execute([DB_NAME]);
+    if ((int)$supTableCheck->fetchColumn() > 0) {
+        $supRows = $conn->query("SELECT id, COALESCE(NULLIF(TRIM(trading_name), ''), legal_name) AS name FROM suppliers")->fetchAll(PDO::FETCH_ASSOC);
+        $supById = [];
+        foreach ($supRows as $sr) { $supById[(int)$sr['id']] = $sr['name']; }
+        foreach ($assets as &$a) {
+            $sid = isset($a['supplier_id']) && $a['supplier_id'] !== null ? (int)$a['supplier_id'] : null;
+            $a['supplier_name'] = $sid !== null && isset($supById[$sid]) ? $supById[$sid] : null;
         }
         unset($a);
     }

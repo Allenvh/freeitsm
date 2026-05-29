@@ -238,6 +238,14 @@ $path_prefix = '../../';
         .loc-row:hover .loc-actions { opacity: 1; }
 
         .loc-empty { color: #999; padding: 16px 12px; }
+
+        /* ── Suppliers tab ─────────────────────────────────────────── */
+        .supplier-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body>
@@ -248,6 +256,7 @@ $path_prefix = '../../';
             <button class="tab active" data-tab="asset-types" onclick="switchTab('asset-types')">Asset types</button>
             <button class="tab" data-tab="asset-statuses" onclick="switchTab('asset-statuses')">Asset statuses</button>
             <button class="tab" data-tab="locations" onclick="switchTab('locations')">Locations</button>
+            <button class="tab" data-tab="suppliers" onclick="switchTab('suppliers')">Suppliers</button>
             <button class="tab" data-tab="vcenter" onclick="switchTab('vcenter')">vCenter</button>
             <button class="tab" data-tab="intune" onclick="switchTab('intune')">InTune</button>
         </div>
@@ -311,6 +320,37 @@ $path_prefix = '../../';
             <div id="locations-tree" class="loc-tree">
                 <div style="color:#999; padding: 12px;">Loading...</div>
             </div>
+        </div>
+
+        <!-- Suppliers Tab -->
+        <div class="tab-content" id="suppliers-tab">
+            <div class="section-header">
+                <h2>Suppliers</h2>
+            </div>
+            <p class="settings-description" style="margin-bottom: 16px;">
+                Choose which suppliers are available to pick on an asset. These come from the shared
+                supplier registry (also used by Contracts), so a hardware vendor and a contract supplier
+                are the same record. Toggle <strong>Available for assets</strong> on the ones you buy
+                hardware from. Need one that isn't listed? Add it by name &mdash; you can fill in full
+                details later in Contracts.
+            </p>
+            <div class="supplier-toolbar">
+                <input type="text" id="supplierSearch" class="form-input" placeholder="Search suppliers..." autocomplete="off" oninput="renderSupplierList()" style="max-width: 280px;">
+                <span style="flex: 1;"></span>
+                <input type="text" id="supplierQuickAdd" class="form-input" placeholder="New supplier name" autocomplete="off" style="max-width: 220px;">
+                <button class="add-btn" onclick="quickAddSupplier()">Add</button>
+            </div>
+            <table style="margin-top: 14px;">
+                <thead>
+                    <tr>
+                        <th>Supplier</th>
+                        <th style="width: 160px;">Available for assets</th>
+                    </tr>
+                </thead>
+                <tbody id="suppliers-list">
+                    <tr><td colspan="2" style="text-align: center; padding: 20px; color: #999;">Loading...</td></tr>
+                </tbody>
+            </table>
         </div>
 
         <!-- vCenter Tab -->
@@ -528,6 +568,7 @@ $path_prefix = '../../';
             loadItems('asset-type');
             loadItems('asset-status');
             loadLocations();
+            loadSuppliers();
             loadIntegrationSettings();
         });
 
@@ -1267,6 +1308,99 @@ $path_prefix = '../../';
         document.getElementById('locationModal').addEventListener('click', function(e) {
             if (e.target === this && locationMouseDownTarget === this) closeLocationModal();
         });
+
+        // ─── Suppliers (shared registry, flagged for assets) ────────────────
+        let allSuppliers = [];
+
+        async function loadSuppliers() {
+            const tbody = document.getElementById('suppliers-list');
+            try {
+                const res = await fetch(API_BASE + 'search_suppliers.php');
+                const data = await res.json();
+                if (!data.success) {
+                    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:20px;color:#d13438;">Error: ' + escapeHtml(data.error) + '</td></tr>';
+                    return;
+                }
+                allSuppliers = data.suppliers || [];
+                renderSupplierList();
+            } catch (e) {
+                console.error('Error loading suppliers:', e);
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:20px;color:#d13438;">Failed to load suppliers</td></tr>';
+            }
+        }
+
+        function renderSupplierList() {
+            const tbody = document.getElementById('suppliers-list');
+            const term = (document.getElementById('supplierSearch').value || '').trim().toLowerCase();
+            const rows = allSuppliers.filter(s =>
+                !term || (s.name || '').toLowerCase().includes(term) || (s.legal_name || '').toLowerCase().includes(term)
+            );
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:20px;color:#999;">' +
+                    (allSuppliers.length === 0 ? 'No suppliers in the registry yet. Add one by name above.' : 'No suppliers match your search.') + '</td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map(s => {
+                const alt = (s.trading_name && s.legal_name && s.trading_name !== s.legal_name)
+                    ? ` <span style="color:#999;font-size:12px;">(${escapeHtml(s.legal_name)})</span>` : '';
+                const inactive = !s.is_active ? ' <span class="status-badge inactive">Inactive</span>' : '';
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(s.name)}</strong>${alt}${inactive}</td>
+                        <td>
+                            <label class="toggle-label" style="margin:0;">
+                                <span class="toggle-switch">
+                                    <input type="checkbox" ${s.supplies_assets ? 'checked' : ''} onchange="toggleSupplierAssets(${s.id}, this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </span>
+                            </label>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        async function toggleSupplierAssets(id, checked) {
+            try {
+                const res = await fetch(API_BASE + 'toggle_supplier_assets.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, supplies_assets: checked ? 1 : 0 })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const s = allSuppliers.find(x => x.id === id);
+                    if (s) s.supplies_assets = checked ? 1 : 0;
+                    showToast(checked ? 'Available for assets' : 'Removed from asset suppliers', 'success');
+                } else {
+                    showToast('Error: ' + data.error, 'error');
+                    renderSupplierList();
+                }
+            } catch (e) {
+                showToast('Failed to update supplier', 'error');
+                renderSupplierList();
+            }
+        }
+
+        async function quickAddSupplier() {
+            const input = document.getElementById('supplierQuickAdd');
+            const name = input.value.trim();
+            if (!name) { showToast('Enter a supplier name', 'error'); return; }
+            try {
+                const res = await fetch(API_BASE + 'quick_add_supplier.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    input.value = '';
+                    showToast(data.existing ? 'Supplier already existed — enabled for assets' : 'Supplier added', 'success');
+                    loadSuppliers();
+                } else {
+                    showToast('Error: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showToast('Failed to add supplier', 'error');
+            }
+        }
 
         function escapeHtml(text) {
             if (!text) return '';

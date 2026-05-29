@@ -28,7 +28,7 @@
         { key: 'location_path',     label: 'Location',        type: 'string', defaultVisible: true,  defaultOrder: 14 },
         { key: 'purchase_date',     label: 'Purchase date',   type: 'date',   defaultVisible: false, defaultOrder: 15 },
         { key: 'purchase_cost',     label: 'Cost',            type: 'number', defaultVisible: false, defaultOrder: 16 },
-        { key: 'supplier',          label: 'Supplier',        type: 'string', defaultVisible: false, defaultOrder: 17 },
+        { key: 'supplier_name',     label: 'Supplier',        type: 'string', defaultVisible: false, defaultOrder: 17 },
         { key: 'warranty_expiry',   label: 'Warranty expiry', type: 'date',   defaultVisible: false, defaultOrder: 18 },
     ];
 
