@@ -448,5 +448,12 @@ $allowed_modules = $_SESSION['allowed_modules'] ?? null;
     <div class="footer">
         <?php echo htmlspecialchars(t('common.home.footer')); ?>
     </div>
+
+    <!-- The landing page draws the header-right user menu (renderHeaderRight) but
+         not the waffle-menu JS, so it must load the shared toast/confirm helpers
+         itself — the logout button relies on showConfirm. (Both self-guard against
+         double-loading.) -->
+    <script src="assets/js/toast.js"></script>
+    <script src="assets/js/confirm.js"></script>
 </body>
 </html>
