@@ -38,6 +38,33 @@ $schema = [
         'password_changed_datetime' => 'DATETIME NULL',
         'failed_login_count'     => 'INT NOT NULL DEFAULT 0',
         'locked_until'           => 'DATETIME NULL',
+        'auth_provider_id'       => 'INT NULL',
+    ],
+
+    'auth_providers' => [
+        'id'                     => 'INT NOT NULL AUTO_INCREMENT',
+        'display_name'           => 'VARCHAR(100) NOT NULL',
+        'protocol'               => "VARCHAR(20) NOT NULL DEFAULT 'oidc'",
+        'issuer_url'             => 'VARCHAR(500) NOT NULL',
+        'client_id'              => 'VARCHAR(255) NOT NULL',
+        'client_secret'          => 'VARCHAR(500) NULL',
+        'scopes'                 => "VARCHAR(255) NOT NULL DEFAULT 'openid email profile'",
+        'enabled'                => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'auto_create_users'      => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'default_modules'        => 'VARCHAR(500) NULL',
+        'sort_order'             => 'INT NOT NULL DEFAULT 0',
+        'created_datetime'       => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+        'last_modified_datetime' => 'DATETIME NULL',
+    ],
+
+    'analyst_sso_identities' => [
+        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
+        'analyst_id'          => 'INT NOT NULL',
+        'provider_id'         => 'INT NOT NULL',
+        'subject'             => 'VARCHAR(255) NOT NULL',
+        'email'               => 'VARCHAR(100) NULL',
+        'linked_datetime'     => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
+        'last_login_datetime' => 'DATETIME NULL',
     ],
 
     'departments' => [
@@ -2791,6 +2818,17 @@ try {
         try { $conn->exec("ALTER TABLE `$tbl` ADD KEY `$name` (`$col`)"); } catch (Exception $e) {}
     }
 
+    // SSO / OIDC foreign keys (db_verify $schema only builds columns + PK; FKs added here)
+    $ssoFks = [
+        ['analyst_sso_identities', 'fk_sso_identity_analyst',  "ALTER TABLE analyst_sso_identities ADD CONSTRAINT fk_sso_identity_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"],
+        ['analyst_sso_identities', 'fk_sso_identity_provider', "ALTER TABLE analyst_sso_identities ADD CONSTRAINT fk_sso_identity_provider FOREIGN KEY (provider_id) REFERENCES auth_providers (id) ON DELETE CASCADE"],
+        ['analysts',               'fk_analysts_auth_provider', "ALTER TABLE analysts ADD CONSTRAINT fk_analysts_auth_provider FOREIGN KEY (auth_provider_id) REFERENCES auth_providers (id) ON DELETE SET NULL"],
+    ];
+    foreach ($ssoFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
     // Drop legacy change columns once each tablet's rows are fully backfilled
     foreach ([['changes', 'change_type', 'change_type_id'],
               ['changes', 'status',      'status_id'],
@@ -3190,6 +3228,8 @@ try {
         ['ticket_cmdb_objects', 'uq_ticket_cmdb_obj', '(`ticket_id`, `cmdb_object_id`)'],
         ['process_step_types', 'uq_process_step_types_slug', '(`slug`)'],
         ['change_field_layout', 'uq_cfl_field_key', '(`field_key`)'],
+        ['analyst_sso_identities', 'uq_sso_provider_subject', '(`provider_id`, `subject`)'],
+        ['analyst_sso_identities', 'uq_sso_provider_analyst', '(`provider_id`, `analyst_id`)'],
     ];
 
     foreach ($uniqueIndexes as [$tbl, $idxName, $cols]) {

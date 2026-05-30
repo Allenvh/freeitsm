@@ -156,6 +156,15 @@ $path_prefix = '../';
                     <p>Configure trusted device policies, password expiry, and account lockout settings.</p>
                 </a>
 
+                <a href="sso/" class="system-card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                    <h3>Single Sign-On</h3>
+                    <p>Connect external identity providers (OpenID Connect) such as Keycloak, Entra, Okta or Google so users can sign in with SSO.</p>
+                </a>
+
                 <a href="preferences/" class="system-card">
                     <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>

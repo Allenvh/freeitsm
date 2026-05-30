@@ -31,9 +31,52 @@ CREATE TABLE IF NOT EXISTS `analysts` (
     `password_changed_datetime` DATETIME NULL,
     `failed_login_count`        INT NOT NULL DEFAULT 0,
     `locked_until`              DATETIME NULL,
+    `auth_provider_id`          INT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_analysts_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- SSO / OIDC identity providers (one row per configured IdP)
+-- ----------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `auth_providers` (
+    `id`                     INT NOT NULL AUTO_INCREMENT,
+    `display_name`           VARCHAR(100) NOT NULL,
+    `protocol`               VARCHAR(20) NOT NULL DEFAULT 'oidc',
+    `issuer_url`             VARCHAR(500) NOT NULL,
+    `client_id`              VARCHAR(255) NOT NULL,
+    `client_secret`          VARCHAR(500) NULL,
+    `scopes`                 VARCHAR(255) NOT NULL DEFAULT 'openid email profile',
+    `enabled`                TINYINT(1) NOT NULL DEFAULT 1,
+    `auto_create_users`      TINYINT(1) NOT NULL DEFAULT 0,
+    `default_modules`        VARCHAR(500) NULL,
+    `sort_order`             INT NOT NULL DEFAULT 0,
+    `created_datetime`       DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_modified_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Links an analyst to their identity at a given provider (the IdP `sub` claim).
+CREATE TABLE IF NOT EXISTS `analyst_sso_identities` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`          INT NOT NULL,
+    `provider_id`         INT NOT NULL,
+    `subject`             VARCHAR(255) NOT NULL,
+    `email`               VARCHAR(100) NULL,
+    `linked_datetime`     DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_login_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_sso_provider_subject` (`provider_id`, `subject`),
+    UNIQUE KEY `uq_sso_provider_analyst` (`provider_id`, `analyst_id`),
+    CONSTRAINT `fk_sso_identity_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_sso_identity_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- analysts.auth_provider_id => the IdP a user is assigned to (NULL = local password).
+-- Added here (not inline above) because `auth_providers` is defined after `analysts`.
+ALTER TABLE `analysts`
+    ADD CONSTRAINT `fk_analysts_auth_provider` FOREIGN KEY (`auth_provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS `departments` (
     `id`                INT NOT NULL AUTO_INCREMENT,
@@ -2387,6 +2430,12 @@ CREATE TABLE IF NOT EXISTS `system_settings` (
 
 INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
     ('tasks_calendar_span_mode', 'deadline');
+
+-- SSO global switches: master kill switch (off until a provider is configured)
+-- and the local-login break-glass toggle (on by default).
+INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+    ('sso_enabled', '0'),
+    ('local_login_enabled', '1');
 
 CREATE TABLE IF NOT EXISTS `trusted_devices` (
     `id`                 INT NOT NULL AUTO_INCREMENT,
