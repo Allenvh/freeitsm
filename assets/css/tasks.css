@@ -263,12 +263,12 @@ body {
     padding: 12px 14px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     cursor: grab;
-    transition: box-shadow 0.15s, opacity 0.15s;
+    transition: box-shadow 0.15s, opacity 0.15s, transform 0.15s ease-out;
     user-select: none;
     flex-shrink: 0;
 }
 
-.task-card:hover { box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); }
+.task-card:hover { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.14); transform: translateY(-2px); }
 .task-card.dragging { opacity: 0.4; }
 
 .task-card-title {

@@ -180,8 +180,9 @@
 }
 
 .article-card:hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.14);
     border-color: #0078d4;
+    transform: translateY(-3px);
 }
 
 .article-card-title {
