@@ -2142,7 +2142,7 @@ body.ticket-popout .ticket-toolbar {
 }
 
 /* Form Elements (Additional) */
-.form-group label {
+.form-group label:not(.toggle-label):not(.toggle-group):not(.toggle-row) {
     display: block;
     margin-bottom: 8px;
     color: #333;
@@ -2317,7 +2317,7 @@ body.ticket-popout .ticket-toolbar {
 .modal .form-group:last-of-type {
     margin-bottom: 0;
 }
-.modal .form-group label {
+.modal .form-group label:not(.toggle-label):not(.toggle-group):not(.toggle-row) {
     display: block;
     margin-bottom: 6px;
     font-weight: 500;
