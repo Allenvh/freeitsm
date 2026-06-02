@@ -31,7 +31,13 @@ return [
 
     'subscribe' => [
         'heading'       => 'Add to your phone',
-        'intro'         => 'Subscribe in your phone\'s calendar app — events stay up to date automatically.',
+        'intro'         => 'Add the team calendar to your phone — it updates automatically.',
+        'button'        => 'Subscribe',
+        'modal_title'   => 'Add to your phone',
+        'modal_intro'   => 'Scan the QR code with your phone\'s camera, then choose Subscribe. The calendar will keep itself up to date.',
+        'address_label' => 'Server address',
+        'address_hint'  => 'Your phone can\'t reach "localhost" — set this to your computer\'s network IP address (e.g. 192.168.1.50) so the phone can connect. The QR code and link update as you type.',
+        'url_label'     => 'Subscription link',
         'copy'          => 'Copy',
         'copied'        => 'Copied',
         'ios_label'     => 'iPhone',
@@ -40,6 +46,7 @@ return [
         'android_hint'  => 'Open Google Calendar on the web → Other calendars → From URL, and paste the link.',
         'reset'         => 'Reset link',
         'reset_confirm' => 'Reset your calendar link? The current link will stop working on any device already subscribed to it.',
+        'close'         => 'Close',
     ],
 
     'event' => [

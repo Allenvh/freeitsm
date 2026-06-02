@@ -40,14 +40,7 @@ $translationNamespaces = ['common', 'calendar'];
             <div class="sidebar-section calendar-subscribe">
                 <h3><?php echo htmlspecialchars(t('calendar.subscribe.heading')); ?></h3>
                 <p class="subscribe-intro"><?php echo htmlspecialchars(t('calendar.subscribe.intro')); ?></p>
-                <div class="subscribe-qr" id="subscribeQr"></div>
-                <div class="subscribe-url-row">
-                    <input type="text" id="subscribeUrl" class="subscribe-url" readonly value="">
-                    <button type="button" class="btn btn-secondary btn-sm" id="subscribeCopyBtn" onclick="copySubscribeUrl()"><?php echo htmlspecialchars(t('calendar.subscribe.copy')); ?></button>
-                </div>
-                <p class="subscribe-hint"><strong><?php echo htmlspecialchars(t('calendar.subscribe.ios_label')); ?>:</strong> <?php echo htmlspecialchars(t('calendar.subscribe.ios_hint')); ?></p>
-                <p class="subscribe-hint"><strong><?php echo htmlspecialchars(t('calendar.subscribe.android_label')); ?>:</strong> <?php echo htmlspecialchars(t('calendar.subscribe.android_hint')); ?></p>
-                <button type="button" class="subscribe-reset" onclick="resetSubscribeUrl()"><?php echo htmlspecialchars(t('calendar.subscribe.reset')); ?></button>
+                <button type="button" class="btn btn-primary btn-full" onclick="openSubscribeModal()"><?php echo htmlspecialchars(t('calendar.subscribe.button')); ?></button>
             </div>
         </div>
 
@@ -138,6 +131,39 @@ $translationNamespaces = ['common', 'calendar'];
         </div>
     </div>
 
+    <!-- Subscribe ("Add to your phone") Modal -->
+    <div class="modal" id="subscribeModal">
+        <div class="modal-content subscribe-modal">
+            <div class="modal-header">
+                <h3><?php echo htmlspecialchars(t('calendar.subscribe.modal_title')); ?></h3>
+            </div>
+            <div class="modal-body">
+                <p class="subscribe-intro"><?php echo htmlspecialchars(t('calendar.subscribe.modal_intro')); ?></p>
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('calendar.subscribe.address_label')); ?></label>
+                    <input type="text" class="form-input" id="subscribeHost" oninput="refreshSubscribe()" autocomplete="off" autocapitalize="off" spellcheck="false">
+                    <p class="form-hint"><?php echo htmlspecialchars(t('calendar.subscribe.address_hint')); ?></p>
+                </div>
+                <div class="subscribe-qr" id="subscribeQr"></div>
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('calendar.subscribe.url_label')); ?></label>
+                    <div class="subscribe-url-row">
+                        <input type="text" id="subscribeUrl" class="form-input subscribe-url" readonly value="">
+                        <button type="button" class="btn btn-secondary btn-sm" id="subscribeCopyBtn" onclick="copySubscribeUrl()"><?php echo htmlspecialchars(t('calendar.subscribe.copy')); ?></button>
+                    </div>
+                </div>
+                <p class="subscribe-hint"><strong><?php echo htmlspecialchars(t('calendar.subscribe.ios_label')); ?>:</strong> <?php echo htmlspecialchars(t('calendar.subscribe.ios_hint')); ?></p>
+                <p class="subscribe-hint"><strong><?php echo htmlspecialchars(t('calendar.subscribe.android_label')); ?>:</strong> <?php echo htmlspecialchars(t('calendar.subscribe.android_hint')); ?></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="subscribe-reset" onclick="resetSubscribeUrl()"><?php echo htmlspecialchars(t('calendar.subscribe.reset')); ?></button>
+                <div class="modal-footer-right">
+                    <button class="btn btn-secondary" onclick="closeSubscribeModal()"><?php echo htmlspecialchars(t('calendar.subscribe.close')); ?></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Event Detail Popup (for quick view) -->
     <div class="event-popup" id="eventPopup">
         <div class="event-popup-header">
@@ -157,28 +183,59 @@ $translationNamespaces = ['common', 'calendar'];
     <script src="../assets/js/itsm_calendar.js"></script>
     <script src="../assets/js/qrcode.min.js"></script>
     <script>
-    // Calendar subscription panel: fetch the analyst's feed URL, render a QR code
-    // (encodes the webcal:// link so an iPhone camera scan offers "Subscribe").
+    // "Add to your phone" — subscription modal. Fetches the analyst's feed URL once,
+    // then lets the user swap the host (e.g. replace localhost with the laptop's LAN
+    // IP so the phone can reach it); the URL + QR rebuild live. QR encodes the
+    // webcal:// link so an iPhone camera scan offers "Subscribe".
     (function () {
-        function render(d) {
+        var S = null; // { scheme, host, path, suggestedHost }
+
+        function hostValue() {
+            var el = document.getElementById('subscribeHost');
+            return (el && el.value.trim()) ? el.value.trim() : (S ? S.host : '');
+        }
+        function refresh() {
+            if (!S) return;
+            var host = hostValue();
+            var url = S.scheme + '://' + host + S.path;
+            var webcal = 'webcal://' + host + S.path;
             var input = document.getElementById('subscribeUrl');
-            if (input) input.value = d.url;
+            if (input) input.value = url;
             var qr = document.getElementById('subscribeQr');
             if (qr) {
                 qr.innerHTML = '';
-                try { var q = qrcode(0, 'M'); q.addData(d.webcal); q.make(); qr.innerHTML = q.createImgTag(4, 0); }
+                try { var q = qrcode(0, 'M'); q.addData(webcal); q.make(); qr.innerHTML = q.createImgTag(4, 0); }
                 catch (e) { /* QR optional — the copy link still works */ }
             }
         }
-        function load(reset) {
-            var opts = reset
-                ? { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action=reset' }
-                : {};
-            fetch(window.API_BASE + 'get_feed_url.php', opts)
-                .then(function (r) { return r.json(); })
-                .then(function (d) { if (d && d.success) render(d); })
-                .catch(function () {});
+        window.refreshSubscribe = refresh;
+
+        function applyAndPrefill(d) {
+            S = { scheme: d.scheme, host: d.host, path: d.path, suggestedHost: d.suggestedHost || '' };
+            var hostInput = document.getElementById('subscribeHost');
+            if (hostInput) {
+                // If the server was reached on localhost, default to the detected LAN
+                // IP (if any) since a phone can't reach loopback.
+                var isLocal = /^(localhost|127\.|\[?::1\]?)/i.test(d.host || '');
+                hostInput.value = (isLocal && d.suggestedHost) ? d.suggestedHost : d.host;
+            }
+            refresh();
         }
+
+        window.openSubscribeModal = function () {
+            var modal = document.getElementById('subscribeModal');
+            var show = function () { if (modal) modal.classList.add('active'); };
+            if (S) { show(); return; }
+            fetch(window.API_BASE + 'get_feed_url.php')
+                .then(function (r) { return r.json(); })
+                .then(function (d) { if (d && d.success) { applyAndPrefill(d); show(); } })
+                .catch(function () {});
+        };
+        window.closeSubscribeModal = function () {
+            var modal = document.getElementById('subscribeModal');
+            if (modal) modal.classList.remove('active');
+        };
+
         window.copySubscribeUrl = function () {
             var input = document.getElementById('subscribeUrl');
             if (!input || !input.value) return;
@@ -193,19 +250,42 @@ $translationNamespaces = ['common', 'calendar'];
             if (navigator.clipboard) { navigator.clipboard.writeText(input.value).then(done, done); }
             else { try { document.execCommand('copy'); } catch (e) {} done(); }
         };
+
         window.resetSubscribeUrl = function () {
             var msg = window.t('calendar.subscribe.reset_confirm');
+            var doReset = function () {
+                var keepHost = hostValue();
+                fetch(window.API_BASE + 'get_feed_url.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=reset'
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (!d || !d.success) return;
+                        S = { scheme: d.scheme, host: d.host, path: d.path, suggestedHost: d.suggestedHost || '' };
+                        var hostInput = document.getElementById('subscribeHost');
+                        if (hostInput && keepHost) hostInput.value = keepHost; // keep the user's IP override
+                        refresh();
+                    })
+                    .catch(function () {});
+            };
             if (window.showConfirm) {
                 showConfirm({
                     title: window.t('calendar.subscribe.reset'),
                     message: msg,
                     okLabel: window.t('calendar.subscribe.reset'),
                     okClass: 'primary',
-                    onConfirm: function () { load(true); }
+                    onConfirm: doReset
                 });
-            } else if (window.confirm(msg)) { load(true); }
+            } else if (window.confirm(msg)) { doReset(); }
         };
-        document.addEventListener('DOMContentLoaded', function () { load(false); });
+
+        // Click outside the dialog closes the modal (matches the rest of the app).
+        document.addEventListener('click', function (e) {
+            var modal = document.getElementById('subscribeModal');
+            if (modal && e.target === modal) modal.classList.remove('active');
+        });
     })();
     </script>
 </body>

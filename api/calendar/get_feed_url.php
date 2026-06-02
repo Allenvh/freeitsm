@@ -46,17 +46,33 @@ try {
     }
 
     // Build the absolute feed URL from this request's host + this script's folder.
+    // Components are returned too so the client can swap the host (e.g. replace
+    // "localhost" with the laptop's LAN IP) and rebuild the URL/QR without a round-trip.
     $https = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off')
           || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
     $scheme    = $https ? 'https' : 'http';
     $host      = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/api/calendar/get_feed_url.php')), '/');
-    $path      = $scriptDir . '/feed.php?token=' . $token;
+    $path      = $scriptDir . '/feed.php?token=' . $token; // everything after the host
+
+    // Best-effort: suggest this machine's LAN IP (carry over any :port from the
+    // current host) so a localhost install can be reached from a phone. Unreliable
+    // on multi-NIC machines, so it's only a default the user can edit.
+    $port = (strpos($host, ':') !== false) ? substr($host, strpos($host, ':')) : '';
+    $suggestedHost = '';
+    $lanIp = @gethostbyname(@gethostname() ?: '');
+    if ($lanIp && filter_var($lanIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && strpos($lanIp, '127.') !== 0) {
+        $suggestedHost = $lanIp . $port;
+    }
 
     echo json_encode([
-        'success' => true,
-        'url'     => $scheme . '://' . $host . $path,   // https/http — for copy + Android
-        'webcal'  => 'webcal://' . $host . $path,       // for iOS tap/QR subscribe
+        'success'       => true,
+        'scheme'        => $scheme,
+        'host'          => $host,
+        'path'          => $path,
+        'suggestedHost' => $suggestedHost,
+        'url'           => $scheme . '://' . $host . $path,   // https/http — for copy + Android
+        'webcal'        => 'webcal://' . $host . $path,       // for iOS tap/QR subscribe
     ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
