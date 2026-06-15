@@ -210,10 +210,104 @@ if (isset($fksByTable['__error__'])) {
 }
 addSection($sections, "SCHEMA & CONSTRAINT AUDIT", $schemaOut);
 
+// Sub-select reused below: the email ids belonging to this ticket.
+$attEmailSub = "(SELECT id FROM emails WHERE ticket_id = ?)";
+
+// ---- 5b. FOREIGN KEY CHECK & KEY VALUES -------------------------------
+// Zero in on the constraint behind the reported "1451" error and dump the
+// exact rows/ids involved, so support can see whether THIS ticket would be
+// blocked and by which attachments — even if the delete later succeeds.
+
+$fkOut = [];
+
+// (a) The specific FK behind the bug: email_attachments.email_id -> emails.id
+$targetFk = null;
+foreach (($fksByTable['email_attachments'] ?? []) as $fk) {
+    if ($fk['CONSTRAINT_NAME'] === 'fk_email_attachments_email') { $targetFk = $fk; break; }
+    if ($fk['REFERENCED_TABLE_NAME'] === 'emails') { $targetFk = $fk; } // fallback: any FK to emails
+}
+$fkOut[] = "Constraint fk_email_attachments_email (email_attachments.email_id -> emails.id):";
+if ($targetFk) {
+    $blocks = in_array(strtoupper($targetFk['DELETE_RULE']), ['RESTRICT', 'NO ACTION'], true);
+    $fkOut[] = "  present    : YES";
+    $fkOut[] = "  name       : " . $targetFk['CONSTRAINT_NAME'];
+    $fkOut[] = "  reference  : email_attachments.{$targetFk['COLUMN_NAME']} -> {$targetFk['REFERENCED_TABLE_NAME']}({$targetFk['REFERENCED_COLUMN_NAME']})";
+    $fkOut[] = "  ON DELETE  : " . $targetFk['DELETE_RULE'];
+    $fkOut[] = "  blocking?  : " . ($blocks
+        ? "YES — deleting an email with attachments fails unless the attachments are deleted first. This is the reported bug."
+        : "NO — this FK cascades / sets null, so it would not block the delete.");
+} else {
+    $fkOut[] = "  present    : NO";
+    $fkOut[] = "  meaning    : this database has no FK from email_attachments to emails, so the delete cannot fail on it here.";
+    $fkOut[] = "               (A fresh install from freeitsm.sql has this FK; installs grown via Database Verify";
+    $fkOut[] = "                may not — which is why the bug appears on some installs but not others.)";
+}
+$fkOut[] = "";
+
+// (b) The other ticket-child FKs the delete also has to respect
+$fkOut[] = "Other ticket-child constraints (delete_ticket.php clears these too):";
+$otherFks = [
+    'ticket_notes'        => 'fk_notes_tickets',
+    'ticket_audit'        => 'fk_ticket_audit_ticket',
+    'ticket_time_entries' => 'fk_time_entries_tickets',
+];
+foreach ($otherFks as $tbl => $name) {
+    $found = null;
+    foreach (($fksByTable[$tbl] ?? []) as $fk) {
+        if ($fk['CONSTRAINT_NAME'] === $name || $fk['REFERENCED_TABLE_NAME'] === 'tickets') { $found = $fk; break; }
+    }
+    $fkOut[] = sprintf("  %-26s %s", $name . ':', $found ? ('present, ON DELETE ' . $found['DELETE_RULE']) : 'absent');
+}
+$fkOut[] = "";
+
+// (c) The actual ids/values involved — the emails for this ticket...
+$fkOut[] = "Emails linked to this ticket (emails.ticket_id = {$ticketId}):";
+try {
+    $es = $conn->prepare("SELECT id, has_attachments, direction, from_address, subject FROM emails WHERE ticket_id = ? ORDER BY id");
+    $es->execute([$ticketId]);
+    $emailRows = $es->fetchAll(PDO::FETCH_ASSOC);
+    if (!$emailRows) {
+        $fkOut[] = "  (none)";
+    } else {
+        foreach ($emailRows as $er) {
+            $fkOut[] = sprintf("  email id %-6s has_attachments=%s direction=%-8s from=%s",
+                $er['id'], ($er['has_attachments'] ?? '?'), ($er['direction'] ?? ''), ($er['from_address'] ?? ''));
+        }
+    }
+} catch (Throwable $e) {
+    $fkOut[] = "  ERROR reading emails — " . $e->getMessage();
+}
+$fkOut[] = "";
+
+// ...and the attachments hanging off those emails (the rows that block it)
+$fkOut[] = "Attachments on those emails (the rows that trigger the FK error):";
+try {
+    $as = $conn->prepare(
+        "SELECT id, email_id, filename, file_size, file_path
+         FROM email_attachments WHERE email_id IN {$attEmailSub} ORDER BY email_id, id"
+    );
+    $as->execute([$ticketId]);
+    $attRows = $as->fetchAll(PDO::FETCH_ASSOC);
+    if (!$attRows) {
+        $fkOut[] = "  (none — so the foreign key will NOT block this ticket's delete)";
+    } else {
+        foreach ($attRows as $ar) {
+            $fkOut[] = sprintf("  attachment id %-6s email_id=%-6s size=%-9s file=%s",
+                $ar['id'], $ar['email_id'], $ar['file_size'], $ar['filename']);
+            $fkOut[] = "        path: " . $ar['file_path'];
+        }
+        $fkOut[] = "";
+        $fkOut[] = "  -> These " . count($attRows) . " attachment row(s) must be deleted before their emails row.";
+        $fkOut[] = "     That is exactly what Step 1 of the delete below does.";
+    }
+} catch (Throwable $e) {
+    $fkOut[] = "  ERROR reading attachments — " . $e->getMessage();
+}
+addSection($sections, "FOREIGN KEY CHECK & KEY VALUES", $fkOut);
+
 // ---- 6. PRE-DELETE ROW COUNTS -----------------------------------------
 
 $preOut = [];
-$attEmailSub = "(SELECT id FROM emails WHERE ticket_id = ?)";
 $counts = [
     'email_attachments (via emails)' => ["SELECT COUNT(*) FROM email_attachments WHERE email_id IN {$attEmailSub}", [$ticketId]],
     'emails'                         => ["SELECT COUNT(*) FROM emails WHERE ticket_id = ?", [$ticketId]],

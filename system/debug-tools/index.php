@@ -56,6 +56,7 @@ $diagnostics = [
         'checks'      => [
             'Resolves the ticket from the reference (ticket_number, or raw id as a fallback)',
             'Audits every table the delete touches: exists, key columns, and each foreign key + its ON DELETE rule',
+            'Pinpoints the fk_email_attachments_email constraint (present? blocking?) and lists the exact email ids + attachment ids / filenames / paths that trigger the error',
             'Counts the child rows that will be removed (attachments, emails, notes, audit, time entries, plus the cascade children)',
             'Performs the delete inside a transaction, echoing every DELETE statement, its parameters and rows affected, then COMMIT',
             'Verifies the ticket and its children are gone, and removes the orphaned attachment files from disk',
