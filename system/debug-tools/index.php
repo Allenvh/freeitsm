@@ -46,6 +46,23 @@ $diagnostics = [
         'duration'    => '~2 seconds',
         'persists'    => 'The live-import step will populate demo data if it succeeds. Otherwise nothing persists.',
     ],
+    [
+        'id'          => 'D002',
+        'file'        => 'D002_delete_ticket.php',
+        'title'       => 'Delete Ticket (with full SQL trace)',
+        'category'    => 'Tickets',
+        'when'        => 'Run this when deleting a ticket fails with a foreign-key error (e.g. "1451 Cannot delete or update a parent row" on email_attachments). Enter the ticket reference, and it deletes the ticket the same way the app does — but shows every SQL statement and row count so you can see exactly what happened.',
+        'input'       => ['name' => 'ref', 'label' => 'Ticket reference', 'placeholder' => 'e.g. the ticket number shown on the ticket'],
+        'checks'      => [
+            'Resolves the ticket from the reference (ticket_number, or raw id as a fallback)',
+            'Audits every table the delete touches: exists, key columns, and each foreign key + its ON DELETE rule',
+            'Counts the child rows that will be removed (attachments, emails, notes, audit, time entries, plus the cascade children)',
+            'Performs the delete inside a transaction, echoing every DELETE statement, its parameters and rows affected, then COMMIT',
+            'Verifies the ticket and its children are gone, and removes the orphaned attachment files from disk',
+        ],
+        'duration'    => '~1 second',
+        'persists'    => 'DESTRUCTIVE — on success the ticket and all its data are permanently deleted. On any error the transaction is rolled back and nothing changes.',
+    ],
 ];
 ?>
 <!DOCTYPE html>
@@ -166,6 +183,31 @@ $diagnostics = [
 
         .diag-meta strong { color: #333; }
 
+        .diag-input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 14px 0 4px 0;
+            padding-top: 12px;
+            border-top: 1px solid #f0f0f0;
+        }
+        .diag-input-label {
+            font-size: 13px;
+            color: #444;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .diag-input {
+            flex: 1;
+            max-width: 360px;
+            padding: 8px 11px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 13px;
+            font-family: 'Consolas', monospace;
+        }
+        .diag-input:focus { outline: none; border-color: #546e7a; }
+
         .diag-actions {
             display: flex;
             align-items: center;
@@ -277,6 +319,15 @@ $diagnostics = [
                             <span><strong><?php echo htmlspecialchars(t('system.debug.side_effects_label')); ?></strong> <?php echo htmlspecialchars($d['persists']); ?></span>
                         </div>
 
+                        <?php if (!empty($d['input'])): ?>
+                            <div class="diag-input-row">
+                                <label class="diag-input-label" for="diag-input-<?php echo htmlspecialchars($d['id']); ?>"><?php echo htmlspecialchars($d['input']['label']); ?></label>
+                                <input type="text" class="diag-input" id="diag-input-<?php echo htmlspecialchars($d['id']); ?>"
+                                       data-input-name="<?php echo htmlspecialchars($d['input']['name']); ?>"
+                                       placeholder="<?php echo htmlspecialchars($d['input']['placeholder'] ?? ''); ?>">
+                            </div>
+                        <?php endif; ?>
+
                         <div class="diag-actions">
                             <button class="copy-btn"><?php echo htmlspecialchars(t('system.debug.copy')); ?></button>
                             <button class="run-btn"><?php echo htmlspecialchars(t('system.debug.run')); ?></button>
@@ -297,8 +348,22 @@ $diagnostics = [
         const copyBtn = card.querySelector('.copy-btn');
         const panel   = card.querySelector('.output-panel');
         const file    = card.getAttribute('data-diag-file');
+        const input   = card.querySelector('.diag-input');
 
         runBtn.addEventListener('click', async () => {
+            // Tools with an input field require a value before running.
+            let query = '';
+            if (input) {
+                const val = input.value.trim();
+                if (!val) {
+                    panel.style.display = 'block';
+                    panel.textContent = window.t('system.debug.input_required');
+                    input.focus();
+                    return;
+                }
+                query = '?' + encodeURIComponent(input.getAttribute('data-input-name')) + '=' + encodeURIComponent(val);
+            }
+
             runBtn.disabled = true;
             const original = runBtn.innerHTML;
             runBtn.innerHTML = '<span class="spinner-inline"></span> ' + window.t('system.debug.running');
@@ -307,7 +372,7 @@ $diagnostics = [
             copyBtn.style.display = 'none';
 
             try {
-                const res = await fetch('<?php echo $path_prefix; ?>api/system/debug-tools/' + file, {
+                const res = await fetch('<?php echo $path_prefix; ?>api/system/debug-tools/' + file + query, {
                     method: 'GET',
                     credentials: 'same-origin',
                     headers: { 'Cache-Control': 'no-cache' }

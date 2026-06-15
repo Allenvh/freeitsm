@@ -152,6 +152,7 @@ return [
         'copied'  => 'Скопійовано',
         'output_running' => 'Виконується діагностика…',
         'fetch_failed'   => 'Не вдалося отримати діагностику: {message}',
+        'input_required' => 'Будь ласка, введіть значення перед запуском цього інструмента.',
     ],
 
     // Demo data page (system/demo-data/index.php)

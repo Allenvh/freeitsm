@@ -2830,6 +2830,22 @@ try {
         try { $conn->exec($sql); } catch (Exception $e) {}
     }
 
+    // Ticket child foreign keys (db_verify $schema only builds columns + PK; FKs
+    // added here so installs grown via db_verify match a fresh freeitsm.sql).
+    // These have NO cascade, so delete_ticket.php removes the children explicitly.
+    // On installs that already hold orphaned child rows the ADD silently no-ops
+    // (caught below) — the FK simply isn't enforced until the orphans clear.
+    $ticketChildFks = [
+        ['email_attachments',   'fk_email_attachments_email', "ALTER TABLE email_attachments ADD CONSTRAINT fk_email_attachments_email FOREIGN KEY (email_id) REFERENCES emails (id)"],
+        ['ticket_notes',        'fk_notes_tickets',           "ALTER TABLE ticket_notes ADD CONSTRAINT fk_notes_tickets FOREIGN KEY (ticket_id) REFERENCES tickets (id)"],
+        ['ticket_audit',        'fk_ticket_audit_ticket',     "ALTER TABLE ticket_audit ADD CONSTRAINT fk_ticket_audit_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id)"],
+        ['ticket_time_entries', 'fk_time_entries_tickets',    "ALTER TABLE ticket_time_entries ADD CONSTRAINT fk_time_entries_tickets FOREIGN KEY (ticket_id) REFERENCES tickets (id)"],
+    ];
+    foreach ($ticketChildFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
     // Drop legacy change columns once each tablet's rows are fully backfilled
     foreach ([['changes', 'change_type', 'change_type_id'],
               ['changes', 'status',      'status_id'],
