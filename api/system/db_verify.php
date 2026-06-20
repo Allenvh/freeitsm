@@ -39,6 +39,7 @@ $schema = [
         'failed_login_count'     => 'INT NOT NULL DEFAULT 0',
         'locked_until'           => 'DATETIME NULL',
         'auth_provider_id'       => 'INT NULL',
+        'can_access_all_tenants' => 'TINYINT(1) NOT NULL DEFAULT 1',
     ],
 
     'auth_providers' => [
@@ -298,6 +299,23 @@ $schema = [
         'slug'             => 'VARCHAR(100) NULL',
         'is_default'       => 'TINYINT(1) NOT NULL DEFAULT 0',
         'is_active'        => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    ],
+
+    // Domains owned by a tenant (used by shared-intake email routing).
+    'tenant_domains' => [
+        'id'               => 'INT NOT NULL AUTO_INCREMENT',
+        'tenant_id'        => 'INT NOT NULL',
+        'domain'           => 'VARCHAR(255) NOT NULL',
+        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    ],
+
+    // Which analysts may access which tenants (only consulted when an analyst
+    // is NOT flagged can_access_all_tenants).
+    'analyst_tenant_access' => [
+        'id'               => 'INT NOT NULL AUTO_INCREMENT',
+        'analyst_id'       => 'INT NOT NULL',
+        'tenant_id'        => 'INT NOT NULL',
         'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
     ],
 
@@ -2270,6 +2288,30 @@ try {
                 ('Critical', '#dc2626', 0, 40),
                 ('Urgent',   '#b91c1c', 0, 50)");
             $results[] = ['table' => 'ticket_priorities', 'status' => 'seeded', 'details' => ['Inserted 5 default ticket priorities']];
+        }
+    }
+
+    // ----------------------------------------------------------
+    // Multi-tenancy foundation — unique keys + FKs for the tenant tables
+    // (the $schema loop builds columns + PK only). Added idempotently.
+    // ----------------------------------------------------------
+    if ($tableExists('tenant_domains') && $tableExists('tenants')) {
+        if (!$idxExists('tenant_domains', 'uq_tenant_domains_domain')) {
+            try { $conn->exec("ALTER TABLE tenant_domains ADD UNIQUE KEY uq_tenant_domains_domain (domain)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('tenant_domains', 'fk_tenant_domains_tenant')) {
+            try { $conn->exec("ALTER TABLE tenant_domains ADD CONSTRAINT fk_tenant_domains_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('analyst_tenant_access') && $tableExists('analysts') && $tableExists('tenants')) {
+        if (!$idxExists('analyst_tenant_access', 'uq_analyst_tenant')) {
+            try { $conn->exec("ALTER TABLE analyst_tenant_access ADD UNIQUE KEY uq_analyst_tenant (analyst_id, tenant_id)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('analyst_tenant_access', 'fk_ata_analyst')) {
+            try { $conn->exec("ALTER TABLE analyst_tenant_access ADD CONSTRAINT fk_ata_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('analyst_tenant_access', 'fk_ata_tenant')) {
+            try { $conn->exec("ALTER TABLE analyst_tenant_access ADD CONSTRAINT fk_ata_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
         }
     }
 

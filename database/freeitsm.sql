@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS `analysts` (
     `failed_login_count`        INT NOT NULL DEFAULT 0,
     `locked_until`              DATETIME NULL,
     `auth_provider_id`          INT NULL,
+    `can_access_all_tenants`    TINYINT(1) NOT NULL DEFAULT 1,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_analysts_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -442,6 +443,30 @@ CREATE TABLE IF NOT EXISTS `tenants` (
 INSERT INTO `tenants` (`name`, `is_default`, `is_active`)
 SELECT 'Default', 1, 1 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `tenants`);
+
+-- Domains owned by a tenant (used by shared-intake email routing).
+CREATE TABLE IF NOT EXISTS `tenant_domains` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`         INT NOT NULL,
+    `domain`            VARCHAR(255) NOT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_tenant_domains_domain` (`domain`),
+    CONSTRAINT `fk_tenant_domains_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Which analysts may access which tenants (only consulted when an analyst is
+-- NOT flagged can_access_all_tenants).
+CREATE TABLE IF NOT EXISTS `analyst_tenant_access` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`        INT NOT NULL,
+    `tenant_id`         INT NOT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_analyst_tenant` (`analyst_id`, `tenant_id`),
+    CONSTRAINT `fk_ata_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ata_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
 -- Email / Mailbox
