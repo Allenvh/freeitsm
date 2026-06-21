@@ -36,9 +36,10 @@ $translationNamespaces = ['common', 'system'];
 
         .landing-content {
             text-align: center;
-            max-width: 700px;
+            width: 100%;
             margin: auto 0;
-            padding: 30px 20px;
+            padding: 30px 40px;
+            box-sizing: border-box;
         }
 
         .landing-content h2 {
@@ -50,20 +51,19 @@ $translationNamespaces = ['common', 'system'];
         .landing-content .subtitle {
             font-size: 14px;
             color: #888;
-            margin: 0 0 40px 0;
+            margin: 0 0 32px 0;
         }
 
         .system-cards {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-            max-width: 700px;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 16px;
         }
 
         .system-card {
             background: #fff;
-            border-radius: 12px;
-            padding: 32px 30px;
+            border-radius: 10px;
+            padding: 20px 18px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.08);
             text-decoration: none;
             color: inherit;
@@ -78,21 +78,23 @@ $translationNamespaces = ['common', 'system'];
         }
 
         .system-card svg {
+            width: 30px;
+            height: 30px;
             color: #546e7a;
-            margin-bottom: 16px;
+            margin-bottom: 10px;
         }
 
         .system-card h3 {
-            margin: 0 0 8px 0;
-            font-size: 18px;
+            margin: 0 0 6px 0;
+            font-size: 16px;
             color: #333;
         }
 
         .system-card p {
             margin: 0;
-            font-size: 13px;
+            font-size: 12px;
             color: #888;
-            line-height: 1.5;
+            line-height: 1.45;
         }
     </style>
 </head>
