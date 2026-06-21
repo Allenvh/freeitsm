@@ -429,8 +429,10 @@ return [
         'add' => 'Add',
 
         'col_name'    => 'Name',
+        'col_domains' => 'Email domains',
         'col_status'  => 'Status',
         'col_actions' => 'Actions',
+        'domains_dash'  => '—',
 
         'loading'      => 'Loading…',
         'no_companies' => 'No companies yet. Click {add} to create one.',

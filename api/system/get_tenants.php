@@ -19,13 +19,27 @@ if (!isset($_SESSION['analyst_id'])) {
 try {
     $conn = connectToDatabase();
 
+    // The email domains registered to each company (one query, grouped in PHP),
+    // so the list can show them without a round-trip per company. Degrades to
+    // empty if the table isn't there yet.
+    $domainsByTenant = [];
+    try {
+        foreach ($conn->query("SELECT tenant_id, domain FROM tenant_domains ORDER BY domain") as $row) {
+            $domainsByTenant[(int)$row['tenant_id']][] = $row['domain'];
+        }
+    } catch (Exception $e) {
+        $domainsByTenant = [];
+    }
+
     $companies = [];
     foreach (getAllTenants($conn) as $t) {
+        $id = (int)$t['id'];
         $companies[] = [
-            'id'         => (int)$t['id'],
+            'id'         => $id,
             'name'       => $t['name'],
             'is_default' => (bool)$t['is_default'],
             'is_active'  => (bool)$t['is_active'],
+            'domains'    => $domainsByTenant[$id] ?? [],
         ];
     }
 

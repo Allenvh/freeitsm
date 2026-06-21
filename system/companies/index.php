@@ -48,6 +48,8 @@ $translationNamespaces = ['common', 'system'];
         .status-badge.on { background: #e8f5e9; color: #2e7d32; }
         .status-badge.off { background: #f0f0f0; color: #999; }
         .badge-default { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #e3f2fd; color: #1565c0; margin-left: 8px; }
+        .domain-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #ede7f6; color: #5e35b1; margin: 2px 4px 2px 0; }
+        .domains-none { color: #bbb; }
         .table-action-btn { background: none; border: none; cursor: pointer; color: #607d8b; padding: 4px 8px; font-size: 13px; border-radius: 4px; }
         .table-action-btn:hover { background: #eceff1; }
         .empty-row td { text-align: center; color: #aaa; padding: 24px; font-style: italic; }
@@ -88,12 +90,13 @@ $translationNamespaces = ['common', 'system'];
                 <thead>
                     <tr>
                         <th><?php echo htmlspecialchars(t('system.companies.col_name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('system.companies.col_domains')); ?></th>
                         <th><?php echo htmlspecialchars(t('system.companies.col_status')); ?></th>
                         <th style="text-align:right;"><?php echo htmlspecialchars(t('system.companies.col_actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="companiesBody">
-                    <tr class="empty-row"><td colspan="3"><?php echo htmlspecialchars(t('system.companies.loading')); ?></td></tr>
+                    <tr class="empty-row"><td colspan="4"><?php echo htmlspecialchars(t('system.companies.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
@@ -152,15 +155,23 @@ $translationNamespaces = ['common', 'system'];
         renderCompanies();
     }
 
+    function renderDomainCell(domains) {
+        if (!domains || !domains.length) {
+            return '<span class="domains-none">' + esc(window.t('system.companies.domains_dash')) + '</span>';
+        }
+        return domains.map(d => '<span class="domain-chip">' + esc(d) + '</span>').join('');
+    }
+
     function renderCompanies() {
         const body = document.getElementById('companiesBody');
         if (!companies.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="3">' + window.t('system.companies.no_companies', { add: '<strong>' + window.t('system.companies.add_strong') + '</strong>' }) + '</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="4">' + window.t('system.companies.no_companies', { add: '<strong>' + window.t('system.companies.add_strong') + '</strong>' }) + '</td></tr>';
             return;
         }
         body.innerHTML = companies.map(c => `
             <tr>
                 <td><strong>${esc(c.name)}</strong>${c.is_default ? '<span class="badge-default">' + window.t('system.companies.default') + '</span>' : ''}</td>
+                <td>${renderDomainCell(c.domains)}</td>
                 <td><span class="status-badge ${c.is_active ? 'on' : 'off'}">${c.is_active ? window.t('system.companies.active') : window.t('system.companies.inactive')}</span></td>
                 <td style="text-align:right;">
                     <button class="table-action-btn" data-edit="${c.id}">${window.t('system.companies.edit')}</button>
@@ -236,6 +247,7 @@ $translationNamespaces = ['common', 'system'];
                 input.value = '';
                 showToast(window.t('system.companies.domain_added'), 'success');
                 loadDomains(tenantId);
+                loadCompanies(); // keep the list's domain chips in sync
             } else {
                 showToast(d.error || window.t('system.companies.domain_add_failed'), 'error');
             }
@@ -252,6 +264,7 @@ $translationNamespaces = ['common', 'system'];
             if (d.success) {
                 showToast(window.t('system.companies.domain_removed'), 'success');
                 loadDomains(document.getElementById('companyId').value);
+                loadCompanies(); // keep the list's domain chips in sync
             } else {
                 showToast(d.error || window.t('system.companies.domain_remove_failed'), 'error');
             }
