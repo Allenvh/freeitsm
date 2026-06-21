@@ -155,6 +155,43 @@ function analystCanAccessTenant(PDO $conn, int $analystId, int $tenantId): bool 
 }
 
 /**
+ * May this analyst access this *ticket* (by its owning company)?
+ *
+ * The isolation gate for detail-by-id and mutation-by-id endpoints: a ticket
+ * belongs to a company, and an analyst may only see/act on a ticket whose
+ * company is in their accessible set (all-access analysts see every company).
+ * A ticket with tenant_id NULL is treated as Default-owned (an un-routed ticket
+ * that surfaces under Default), so access follows Default.
+ *
+ * Deliberately defensive:
+ *   - Single-company install → always true (nothing to isolate).
+ *   - Unknown ticket id → false (don't reveal another company's row).
+ *   - Part-migrated table (no tenant_id column) → true, so it never blocks an
+ *     install mid-rollout (isMultiTenant is false there anyway).
+ */
+function analystCanAccessTicket(PDO $conn, int $analystId, $ticketId): bool {
+    if (!isMultiTenant($conn)) {
+        return true;
+    }
+    $ticketId = (int) $ticketId;
+    if ($ticketId <= 0) {
+        return false;
+    }
+    try {
+        $stmt = $conn->prepare("SELECT tenant_id FROM tickets WHERE id = ?");
+        $stmt->execute([$ticketId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return false;
+        }
+        $tid = ($row['tenant_id'] === null) ? getDefaultTenantId($conn) : (int) $row['tenant_id'];
+        return analystCanAccessTenant($conn, $analystId, $tid);
+    } catch (Exception $e) {
+        return true; // tenant_id column missing on a part-migrated install.
+    }
+}
+
+/**
  * The analyst's current working company context.
  *
  * - Single-company install → always the Default tenant.

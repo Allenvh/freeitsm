@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 require_once dirname(dirname(__DIR__)) . '/workflow/includes/engine.php';
 
 header('Content-Type: application/json');
@@ -41,6 +42,11 @@ try {
     }
 
     $conn = connectToDatabase();
+
+    // Multi-tenancy: only act on a ticket in a company this analyst can access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticket_id)) {
+        throw new Exception('Ticket not found');
+    }
 
     // Fetch current ticket state for change detection
     $currentStmt = $conn->prepare(

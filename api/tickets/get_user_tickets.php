@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -42,11 +43,16 @@ try {
             LEFT JOIN ticket_priorities tp ON tp.id = t.priority_id
             LEFT JOIN departments d ON t.department_id = d.id
             LEFT JOIN analysts a ON t.assigned_analyst_id = a.id
-            WHERE t.user_id = ?
-            ORDER BY t.created_datetime DESC";
+            WHERE t.user_id = ?";
+
+    // Multi-tenancy: scope to the active company (no-op at N=1). Also upholds the
+    // §9 guardrail — an analyst sees a requester's tickets only within the company
+    // they're working in, never that person's tickets in other companies.
+    list($ttSql, $ttParams) = ticketTenantFilter($conn, (int)$_SESSION['analyst_id'], 't');
+    $sql .= $ttSql . " ORDER BY t.created_datetime DESC";
 
     $stmt = $conn->prepare($sql);
-    $stmt->execute([$userId]);
+    $stmt->execute(array_merge([$userId], $ttParams));
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode([

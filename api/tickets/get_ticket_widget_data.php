@@ -7,6 +7,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -71,6 +72,16 @@ try {
             $whereClauses[] = $dateWhere;
             $params[] = $dateParam;
         }
+    }
+
+    // Multi-tenancy: scope every dashboard aggregate to the analyst's active
+    // company by adding one shared condition here — all widget queries (the
+    // categorical, time-series and created-vs-closed paths) derive from $where /
+    // $params, so this covers them at once. No-op at N=1.
+    list($ttSql, $ttParams) = ticketTenantFilter($conn, (int)$_SESSION['analyst_id'], 't');
+    if ($ttSql !== '') {
+        $whereClauses[] = preg_replace('/^\s*AND\s+/', '', $ttSql); // drop the leading "AND" — joined with AND below
+        $params = array_merge($params, $ttParams);
     }
 
     $where = count($whereClauses) > 0 ? ' WHERE ' . implode(' AND ', $whereClauses) : '';

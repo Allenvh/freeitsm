@@ -70,6 +70,12 @@ try {
             echo json_encode(['success' => false, 'error' => 'Company not found']);
             exit;
         }
+        // Multi-tenancy write-auth: don't let an analyst file a ticket into a
+        // company they have no access to.
+        if (!analystCanAccessTenant($conn, (int)$_SESSION['analyst_id'], $tenantId)) {
+            echo json_encode(['success' => false, 'error' => 'You do not have access to that company']);
+            exit;
+        }
         $createdCompany = false;
     }
 

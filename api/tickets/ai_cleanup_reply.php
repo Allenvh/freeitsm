@@ -17,6 +17,7 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/tenancy.php';
 require_once '../../includes/rfp_ai.php';
 require_once '../../includes/ai_settings.php';
 require_once '../../includes/reply_cleanup_prompt.php';
@@ -66,6 +67,13 @@ if (mb_strlen($draftText) > 5000) {
 
 try {
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't process a draft for a ticket in a company this analyst
+    // can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        sse_send('error', ['message' => 'Ticket not found']);
+        exit;
+    }
 
     // Provider / model / key / verify_ssl come from the shared AI block
     // (ns=tickets_reply_cleanup) so this feature keeps its own key + billing

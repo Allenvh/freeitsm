@@ -7,6 +7,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -24,6 +25,11 @@ try {
     }
 
     $conn = connectToDatabase();
+
+    // Multi-tenancy: only link CMDB objects to a ticket this analyst can access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        throw new Exception('Ticket not found');
+    }
 
     // Verify both rows exist before inserting (cleaner errors than FK failures)
     $check = $conn->prepare("SELECT 1 FROM tickets WHERE id = ?");

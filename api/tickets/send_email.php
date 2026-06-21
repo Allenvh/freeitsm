@@ -17,6 +17,7 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -55,6 +56,12 @@ try {
 
     // Get database connection
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't send from / act on a ticket in a company this analyst
+    // can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        throw new Exception('Ticket not found');
+    }
 
     // Get the mailbox for this ticket
     $mailbox = getMailboxForTicket($conn, $ticketId);

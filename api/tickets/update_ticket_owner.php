@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -27,6 +28,12 @@ $ownerId = isset($data['owner_id']) && $data['owner_id'] !== '' ? (int)$data['ow
 
 try {
     $conn = connectToDatabase();
+
+    // Multi-tenancy: block a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
 
     // Check if ticket exists
     $checkSql = "SELECT id FROM tickets WHERE id = ?";

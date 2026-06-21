@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -81,6 +82,12 @@ try {
     $email = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$email) {
+        echo json_encode(['success' => false, 'error' => 'Email not found']);
+        exit;
+    }
+
+    // Multi-tenancy: don't reveal a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], (int)$email['ticket_id'])) {
         echo json_encode(['success' => false, 'error' => 'Email not found']);
         exit;
     }

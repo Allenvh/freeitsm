@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -51,11 +52,14 @@ try {
             WHERE t.work_start_datetime IS NOT NULL
               AND t.work_start_datetime >= ?
               AND t.work_start_datetime < ?
-              AND ts.is_closed = 0
-            ORDER BY t.work_start_datetime ASC";
+              AND ts.is_closed = 0";
+
+    // Multi-tenancy: scope the calendar to the active company (no-op at N=1).
+    list($ttSql, $ttParams) = ticketTenantFilter($conn, (int)$_SESSION['analyst_id'], 't');
+    $sql .= $ttSql . " ORDER BY t.work_start_datetime ASC";
 
     $stmt = $conn->prepare($sql);
-    $stmt->execute([$startDate, $endDate]);
+    $stmt->execute(array_merge([$startDate, $endDate], $ttParams));
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Format datetime for JavaScript

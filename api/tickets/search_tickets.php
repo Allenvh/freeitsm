@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -71,8 +72,12 @@ try {
             FROM tickets t
             INNER JOIN emails e ON e.ticket_id = t.id AND e.is_initial = 1
             LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
-            WHERE ({$whereClause})
-            ORDER BY e.received_datetime DESC";
+            WHERE ({$whereClause})";
+
+    // Multi-tenancy: scope search to the analyst's active company (no-op at N=1).
+    list($ttSql, $ttParams) = ticketTenantFilter($conn, (int)$_SESSION['analyst_id'], 't');
+    $sql .= $ttSql . " ORDER BY e.received_datetime DESC";
+    $params = array_merge($params, $ttParams);
 
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
