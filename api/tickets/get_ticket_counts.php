@@ -7,6 +7,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -28,6 +29,14 @@ try {
     $teamCheckStmt->closeCursor();
 
     $hasTeamFilter = ($teamCount > 0);
+
+    // Multi-tenancy: a single shared predicate scoping every ticket query below
+    // to the analyst's active company. It's a no-op (empty fragment) at N=1, so
+    // single-company installs are unaffected. The fragment is identical whether
+    // it lands in a WHERE clause or a (LEFT JOIN) ON clause; only the ordering of
+    // $ttParams within each execute() differs, because positional placeholders
+    // bind in order of appearance — ON-clause placeholders precede WHERE ones.
+    list($ttSql, $ttParams) = ticketTenantFilter($conn, $analystId, 't');
 
     if ($hasTeamFilter) {
         // User has team assignments - filter to only their departments
@@ -53,9 +62,9 @@ try {
 
             // Get total counts for accessible departments only
             $totalSql = "SELECT COUNT(*) as total FROM tickets t
-                         WHERE t.department_id IN ($deptIdPlaceholders) OR t.department_id IS NULL";
+                         WHERE (t.department_id IN ($deptIdPlaceholders) OR t.department_id IS NULL)$ttSql";
             $totalStmt = $conn->prepare($totalSql);
-            $totalStmt->execute($accessibleDepts);
+            $totalStmt->execute(array_merge($accessibleDepts, $ttParams));
             $totalResult = $totalStmt->fetch(PDO::FETCH_ASSOC);
             $totalCount = $totalResult['total'];
             $totalStmt->closeCursor();
@@ -67,12 +76,12 @@ try {
                             d.display_order,
                             COUNT(t.id) as count
                         FROM departments d
-                        LEFT JOIN tickets t ON t.department_id = d.id
+                        LEFT JOIN tickets t ON t.department_id = d.id$ttSql
                         WHERE d.is_active = 1 AND d.id IN ($deptIdPlaceholders)
                         GROUP BY d.id, d.name, d.display_order
                         ORDER BY d.display_order, d.name";
             $deptStmt = $conn->prepare($deptSql);
-            $deptStmt->execute($accessibleDepts);
+            $deptStmt->execute(array_merge($ttParams, $accessibleDepts));
             $departments = $deptStmt->fetchAll(PDO::FETCH_ASSOC);
             $deptStmt->closeCursor();
 
@@ -82,12 +91,12 @@ try {
                                 ts.name AS status,
                                 COUNT(t.id) as count
                               FROM departments d
-                              LEFT JOIN tickets t ON t.department_id = d.id
+                              LEFT JOIN tickets t ON t.department_id = d.id$ttSql
                               LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
                               WHERE d.is_active = 1 AND d.id IN ($deptIdPlaceholders)
                               GROUP BY d.id, ts.name";
             $deptStatusStmt = $conn->prepare($deptStatusSql);
-            $deptStatusStmt->execute($accessibleDepts);
+            $deptStatusStmt->execute(array_merge($ttParams, $accessibleDepts));
             $deptStatusCounts = $deptStatusStmt->fetchAll(PDO::FETCH_ASSOC);
             $deptStatusStmt->closeCursor();
 
@@ -97,19 +106,19 @@ try {
                             COUNT(*) as count
                           FROM tickets t
                           LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
-                          WHERE t.department_id IN ($deptIdPlaceholders) OR t.department_id IS NULL
+                          WHERE (t.department_id IN ($deptIdPlaceholders) OR t.department_id IS NULL)$ttSql
                           GROUP BY ts.name";
             $statusStmt = $conn->prepare($statusSql);
-            $statusStmt->execute($accessibleDepts);
+            $statusStmt->execute(array_merge($accessibleDepts, $ttParams));
             $statusCounts = $statusStmt->fetchAll(PDO::FETCH_ASSOC);
             $statusStmt->closeCursor();
         }
     } else {
         // No team assignments - show all departments
         // Get total counts
-        $totalSql = "SELECT COUNT(*) as total FROM tickets";
+        $totalSql = "SELECT COUNT(*) as total FROM tickets t WHERE 1=1$ttSql";
         $totalStmt = $conn->prepare($totalSql);
-        $totalStmt->execute();
+        $totalStmt->execute($ttParams);
         $totalResult = $totalStmt->fetch(PDO::FETCH_ASSOC);
         $totalCount = $totalResult['total'];
         $totalStmt->closeCursor();
@@ -121,12 +130,12 @@ try {
                         d.display_order,
                         COUNT(t.id) as count
                     FROM departments d
-                    LEFT JOIN tickets t ON t.department_id = d.id
+                    LEFT JOIN tickets t ON t.department_id = d.id$ttSql
                     WHERE d.is_active = 1
                     GROUP BY d.id, d.name, d.display_order
                     ORDER BY d.display_order, d.name";
         $deptStmt = $conn->prepare($deptSql);
-        $deptStmt->execute();
+        $deptStmt->execute($ttParams);
         $departments = $deptStmt->fetchAll(PDO::FETCH_ASSOC);
         $deptStmt->closeCursor();
 
@@ -136,12 +145,12 @@ try {
                             ts.name AS status,
                             COUNT(t.id) as count
                           FROM departments d
-                          LEFT JOIN tickets t ON t.department_id = d.id
+                          LEFT JOIN tickets t ON t.department_id = d.id$ttSql
                           LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
                           WHERE d.is_active = 1
                           GROUP BY d.id, ts.name";
         $deptStatusStmt = $conn->prepare($deptStatusSql);
-        $deptStatusStmt->execute();
+        $deptStatusStmt->execute($ttParams);
         $deptStatusCounts = $deptStatusStmt->fetchAll(PDO::FETCH_ASSOC);
         $deptStatusStmt->closeCursor();
 
@@ -151,17 +160,18 @@ try {
                         COUNT(*) as count
                       FROM tickets t
                       LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
+                      WHERE 1=1$ttSql
                       GROUP BY ts.name";
         $statusStmt = $conn->prepare($statusSql);
-        $statusStmt->execute();
+        $statusStmt->execute($ttParams);
         $statusCounts = $statusStmt->fetchAll(PDO::FETCH_ASSOC);
         $statusStmt->closeCursor();
     }
 
     // Get unassigned count (always visible to users regardless of teams)
-    $unassignedSql = "SELECT COUNT(*) as count FROM tickets WHERE department_id IS NULL";
+    $unassignedSql = "SELECT COUNT(*) as count FROM tickets t WHERE t.department_id IS NULL$ttSql";
     $unassignedStmt = $conn->prepare($unassignedSql);
-    $unassignedStmt->execute();
+    $unassignedStmt->execute($ttParams);
     $unassignedResult = $unassignedStmt->fetch(PDO::FETCH_ASSOC);
     $unassignedStmt->closeCursor();
 
@@ -171,16 +181,19 @@ try {
             $unassignedAnalystCount = 0;
         } else {
             $deptIdPlaceholdersUA = implode(',', array_fill(0, count($accessibleDepts), '?'));
-            $uaSql = "SELECT COUNT(*) FROM tickets
-                      WHERE assigned_analyst_id IS NULL
-                        AND (department_id IN ($deptIdPlaceholdersUA) OR department_id IS NULL)";
+            $uaSql = "SELECT COUNT(*) FROM tickets t
+                      WHERE t.assigned_analyst_id IS NULL
+                        AND (t.department_id IN ($deptIdPlaceholdersUA) OR t.department_id IS NULL)$ttSql";
             $uaStmt = $conn->prepare($uaSql);
-            $uaStmt->execute($accessibleDepts);
+            $uaStmt->execute(array_merge($accessibleDepts, $ttParams));
             $unassignedAnalystCount = (int)$uaStmt->fetchColumn();
             $uaStmt->closeCursor();
         }
     } else {
-        $unassignedAnalystCount = (int)$conn->query("SELECT COUNT(*) FROM tickets WHERE assigned_analyst_id IS NULL")->fetchColumn();
+        $uaStmt = $conn->prepare("SELECT COUNT(*) FROM tickets t WHERE t.assigned_analyst_id IS NULL$ttSql");
+        $uaStmt->execute($ttParams);
+        $unassignedAnalystCount = (int)$uaStmt->fetchColumn();
+        $uaStmt->closeCursor();
     }
 
     // Counts by analyst, and by analyst+status — bounded by accessible depts when team-filtered.
@@ -213,23 +226,23 @@ try {
     } else {
         $analystCountSql = "SELECT a.id, a.full_name, COUNT(t.id) as count
                             FROM analysts a
-                            LEFT JOIN tickets t ON t.assigned_analyst_id = a.id $deptJoinFilter
+                            LEFT JOIN tickets t ON t.assigned_analyst_id = a.id $deptJoinFilter$ttSql
                             WHERE a.is_active = 1
                             GROUP BY a.id, a.full_name
                             ORDER BY a.full_name";
         $analystCountStmt = $conn->prepare($analystCountSql);
-        $analystCountStmt->execute($analystParams);
+        $analystCountStmt->execute(array_merge($analystParams, $ttParams));
         $analystCounts = $analystCountStmt->fetchAll(PDO::FETCH_ASSOC);
         $analystCountStmt->closeCursor();
 
         $analystStatusSql = "SELECT a.id as analyst_id, ts.name AS status, COUNT(t.id) as count
                              FROM analysts a
-                             LEFT JOIN tickets t ON t.assigned_analyst_id = a.id $deptJoinFilter
+                             LEFT JOIN tickets t ON t.assigned_analyst_id = a.id $deptJoinFilter$ttSql
                              LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
                              WHERE a.is_active = 1
                              GROUP BY a.id, ts.name";
         $analystStatusStmt = $conn->prepare($analystStatusSql);
-        $analystStatusStmt->execute($analystParams);
+        $analystStatusStmt->execute(array_merge($analystParams, $ttParams));
         $analystStatusCounts = $analystStatusStmt->fetchAll(PDO::FETCH_ASSOC);
         $analystStatusStmt->closeCursor();
     }
