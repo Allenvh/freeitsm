@@ -238,6 +238,27 @@ The platform is organised into 16 modules, accessible from a landing page (`inde
 
 ---
 
+## Multi-Tenancy (in development)
+
+FreeITSM can host **multiple client companies in one install** — aimed at MSPs (managed service providers) supporting many clients from a single deployment, with each client's tickets walled off from the others.
+
+**Opt-in and invisible at N=1.** Every install starts with a single silent **Default** company that owns everything. While there is only one company, *nothing changes* — no company switcher, no domain mapping, no triage queue, no settings split; the app behaves exactly as a single-company helpdesk. The multi-tenant machinery only wakes up when you create a **second** company (System → Companies).
+
+**What's built today** (the feature is **dormant until you add a second company**, so single-company installs are unaffected):
+
+- **Company model & switcher** — a per-analyst company context in the header; cross-company access is permission-gated.
+- **Tickets scoped by company** — the ticket list and folder counts show only the active company's tickets.
+- **Email routing** — each mailbox is either *pinned* to a company (its mail always goes there) or a *shared intake* that routes by the sender's domain; an exact sender address can be mapped too (for personal/webmail clients). Anything unmatched lands safely in a **triage queue** — nothing is ever lost. A read-only **routing test** and per-company "how email reaches this company" summary help you configure it.
+- **Per-company settings** — settings are *global defaults a company can tailor* (add its own / hide an inherited one). Built for **ticket types** and **ticket origins**; statuses, priorities, teams and mailboxes stay global by design.
+
+**Status:** active development. Deeper cross-company isolation on the remaining ticket endpoints (search, ticket detail, dashboards) and per-company **departments / SLAs / self-service** are still being rolled out, so a real multi-company go-live isn't recommended yet. Single-company use is unaffected and production-safe.
+
+> ⚠️ **After updating, run Database Verify** (System → Database Verify) before creating tickets. This release adds a `tenant_id` column used by ticket creation; Database Verify creates it (idempotently). This is the usual post-update step, but its scope now includes core ticket creation.
+
+See the [Multi-Tenancy wiki](https://github.com/edmozley/freeitsm/wiki/Multi-Tenancy) for the full design, the email-routing model, and the rationale for which settings are/aren't per-company.
+
+---
+
 ## Directory Structure
 
 ```
