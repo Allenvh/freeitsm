@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -29,6 +30,11 @@ try {
     }
 
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't attach a note to a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticket_id)) {
+        throw new Exception('Ticket not found');
+    }
 
     $sql = "INSERT INTO ticket_notes (ticket_id, analyst_id, note_text, is_internal)
             VALUES (?, ?, ?, ?)";

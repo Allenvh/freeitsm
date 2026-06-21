@@ -14,6 +14,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -35,6 +36,12 @@ $ticketId = (int)$data['ticket_id'];
 
 try {
     $conn = connectToDatabase();
+
+    // Multi-tenancy: never delete a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
 
     // Check if ticket exists
     $checkStmt = $conn->prepare("SELECT id FROM tickets WHERE id = ?");

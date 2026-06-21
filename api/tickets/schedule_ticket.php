@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -25,6 +26,12 @@ $workStart = isset($input['work_start_datetime']) ? $input['work_start_datetime'
 
 try {
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't schedule a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
 
     if ($workStart === null) {
         // Clear the schedule

@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -22,10 +23,21 @@ try {
 
     $conn = connectToDatabase();
 
+    $analystId = (int)$_SESSION['analyst_id'];
     if ($linkId > 0) {
+        // Multi-tenancy: resolve the link's ticket and gate on access.
+        $own = $conn->prepare("SELECT ticket_id FROM ticket_cmdb_objects WHERE id = ?");
+        $own->execute([$linkId]);
+        $linkTicketId = $own->fetchColumn();
+        if ($linkTicketId === false || !analystCanAccessTicket($conn, $analystId, (int)$linkTicketId)) {
+            throw new Exception('Ticket not found');
+        }
         $stmt = $conn->prepare("DELETE FROM ticket_cmdb_objects WHERE id = ?");
         $stmt->execute([$linkId]);
     } elseif ($ticketId > 0 && $objectId > 0) {
+        if (!analystCanAccessTicket($conn, $analystId, $ticketId)) {
+            throw new Exception('Ticket not found');
+        }
         $stmt = $conn->prepare("DELETE FROM ticket_cmdb_objects WHERE ticket_id = ? AND cmdb_object_id = ?");
         $stmt->execute([$ticketId, $objectId]);
     } else {

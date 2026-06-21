@@ -14,6 +14,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -51,6 +52,11 @@ try {
     }
 
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't log time on a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticket_id)) {
+        throw new Exception('Ticket not found');
+    }
 
     if ($entry_id) {
         // Update — gate on analyst owning the entry so people don't edit each other's

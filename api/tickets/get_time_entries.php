@@ -8,6 +8,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -25,6 +26,12 @@ if (!$ticket_id) {
 
 try {
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't reveal a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticket_id)) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
 
     $sql = "SELECT
                 te.id,

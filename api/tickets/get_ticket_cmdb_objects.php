@@ -7,6 +7,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -20,6 +21,11 @@ try {
     if ($ticketId <= 0) throw new Exception('ticket_id is required');
 
     $conn = connectToDatabase();
+
+    // Multi-tenancy: don't reveal a ticket in a company this analyst can't access.
+    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
+        throw new Exception('Ticket not found');
+    }
 
     $stmt = $conn->prepare(
         "SELECT tco.id AS link_id,
