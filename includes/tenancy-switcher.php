@@ -39,6 +39,11 @@ function renderTenantSwitcher(PDO $conn, int $analystId): void {
         $activeId   = getActiveTenantId($conn, $analystId);
         $active     = getTenantById($conn, $activeId);
         $activeName = $active['name'] ?? '';
+        // Count of un-routed inbound email waiting in triage (tenant_id IS NULL).
+        $triageCount = 0;
+        try {
+            $triageCount = (int)$conn->query("SELECT COUNT(*) FROM tickets WHERE tenant_id IS NULL")->fetchColumn();
+        } catch (Exception $e) {}
     } catch (Exception $e) {
         return; // never break the header
     }
@@ -85,6 +90,18 @@ function renderTenantSwitcher(PDO $conn, int $analystId): void {
         .tenant-switcher-item:hover { background: #f5f5f5; }
         .tenant-switcher-item.current { background: #e8f4fd; font-weight: 600; }
         .tenant-switcher-item .ts-check { color: #0078d4; flex-shrink: 0; }
+        .tenant-switcher-sep { height: 1px; background: #eee; margin: 6px 4px; }
+        .tenant-switcher-link {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            width: 100%; text-align: left; text-decoration: none;
+            padding: 9px 10px; border-radius: 6px; font-size: 13px; color: #333;
+        }
+        .tenant-switcher-link:hover { background: #f5f5f5; }
+        .tenant-switcher-link .ts-triage-count {
+            min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+            border-radius: 9px; background: #ef6c00; color: #fff;
+            font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+        }
     </style>
 
     <div class="tenant-switcher">
@@ -105,6 +122,16 @@ function renderTenantSwitcher(PDO $conn, int $analystId): void {
                 <?php endif; ?>
             </button>
             <?php endforeach; ?>
+            <div class="tenant-switcher-sep"></div>
+            <a class="tenant-switcher-link" href="<?php echo BASE_URL; ?>tickets/triage/" title="Triage queue">
+                <span style="display:flex; align-items:center; gap:8px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+                    <span>Triage queue</span>
+                </span>
+                <?php if ($triageCount > 0): ?>
+                <span class="ts-triage-count"><?php echo $triageCount; ?></span>
+                <?php endif; ?>
+            </a>
         </div>
     </div>
 

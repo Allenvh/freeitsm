@@ -2029,6 +2029,18 @@ try {
         $mailboxTenantColWasMissing = ((int)$mbProbe->fetchColumn() === 0);
     } catch (Exception $e) {}
 
+    // Same one-time logic for tickets.tenant_id: backfill existing tickets to the
+    // Default company only when the column is first added. After that a NULL
+    // tenant_id is meaningful — it marks an inbound email that matched no company
+    // and is waiting in the TRIAGE queue — so a repeated sweep would wrongly file
+    // every triaged ticket under Default and empty the queue.
+    $ticketsTenantColWasMissing = false;
+    try {
+        $tkProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'tickets' AND column_name = 'tenant_id'");
+        $tkProbe->execute([$dbName]);
+        $ticketsTenantColWasMissing = ((int)$tkProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
     foreach ($schema as $tableName => $columns) {
         $tableResult = ['table' => $tableName, 'status' => 'ok', 'details' => []];
 
@@ -2328,9 +2340,11 @@ try {
             try { $conn->exec("ALTER TABLE analyst_tenant_access ADD CONSTRAINT fk_ata_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
         }
     }
-    // tickets.tenant_id — index + FK + backfill existing rows to the Default tenant.
-    // (Inert: no query filters on tenant_id yet; this just makes every ticket
-    // belong to the silent Default tenant on single-company installs.)
+    // tickets.tenant_id — index + FK + a ONE-TIME backfill of existing tickets to
+    // the Default company. Like target_mailboxes (and unlike a naive sweep), we
+    // backfill ONLY when the column was just added ($ticketsTenantColWasMissing):
+    // afterwards a NULL tenant_id marks an un-routed inbound email sitting in the
+    // TRIAGE queue, so re-sweeping it to Default would empty that queue.
     if ($tableExists('tickets') && $tableExists('tenants') && $colExists('tickets', 'tenant_id')) {
         if (!$idxExists('tickets', 'ix_tickets_tenant_id')) {
             try { $conn->exec("ALTER TABLE tickets ADD KEY ix_tickets_tenant_id (tenant_id)"); } catch (Exception $e) {}
@@ -2338,11 +2352,13 @@ try {
         if (!$fkExists('tickets', 'fk_tickets_tenant')) {
             try { $conn->exec("ALTER TABLE tickets ADD CONSTRAINT fk_tickets_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)"); } catch (Exception $e) {}
         }
-        $defaultTenantId = (int) ($conn->query("SELECT id FROM tenants WHERE is_default = 1 ORDER BY id LIMIT 1")->fetchColumn() ?: 0);
-        if ($defaultTenantId > 0) {
-            $backfilled = $conn->exec("UPDATE tickets SET tenant_id = $defaultTenantId WHERE tenant_id IS NULL");
-            if ($backfilled > 0) {
-                $results[] = ['table' => 'tickets', 'status' => 'updated', 'details' => ["Backfilled tenant_id on $backfilled ticket(s) to the Default tenant"]];
+        if ($ticketsTenantColWasMissing) {
+            $defaultTenantId = (int) ($conn->query("SELECT id FROM tenants WHERE is_default = 1 ORDER BY id LIMIT 1")->fetchColumn() ?: 0);
+            if ($defaultTenantId > 0) {
+                $backfilled = $conn->exec("UPDATE tickets SET tenant_id = $defaultTenantId WHERE tenant_id IS NULL");
+                if ($backfilled > 0) {
+                    $results[] = ['table' => 'tickets', 'status' => 'updated', 'details' => ["Backfilled tenant_id on $backfilled ticket(s) to the Default company (multi-tenancy migration)"]];
+                }
             }
         }
     }
