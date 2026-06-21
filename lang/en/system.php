@@ -56,6 +56,8 @@ return [
         'debug_tools_desc'  => 'Library of diagnostics for troubleshooting failed flows. Run on request and send the output back to support.',
         'companies_title'   => 'Companies',
         'companies_desc'    => 'Manage the client companies this install serves.',
+        'routing_test_title' => 'Email routing test',
+        'routing_test_desc'  => 'Dry-run an inbound email to see which company it would be filed to, and why.',
     ],
 
     // Branding page (system/branding/index.php)
@@ -486,5 +488,46 @@ return [
         'routing_warn_domains_no_shared' => 'Domains are registered, but there\'s no active shared-intake mailbox to match them against. Add one, or pin a mailbox to this company.',
         'routing_warn_unauth'     => 'A mailbox on a route above is not authenticated, so mail won\'t flow until it\'s reconnected in Settings.',
         'routing_failed'       => 'Couldn\'t load the routing summary.',
+    ],
+
+    // Email routing test — dry-run diagnostic (system/email-routing-test/).
+    'routing_test' => [
+        'title'    => 'Email routing test',
+        'subtitle' => 'Pretend an email arrived, and see where a new ticket would be filed — which company, or the triage queue — and which rule decided it. Nothing is created; this only reads your mailbox and domain settings.',
+        'single_company_note' => 'This install has just one company, so every email is filed to it. Add a second company for routing to have anything to decide.',
+
+        'from_label'       => 'Sender address',
+        'from_hint'        => 'The address the email is from. Shared-intake routing matches on its domain.',
+        'from_placeholder' => 'jane@acme.com',
+        'mailbox_label'    => 'Arriving at mailbox',
+        'mailbox_hint'     => 'The mailbox that received the email. A pinned mailbox decides the company outright; a shared-intake one routes by the sender\'s domain.',
+        'mailbox_loading'  => 'Loading…',
+        'mailbox_choose'   => 'Choose a mailbox…',
+        'no_mailboxes'     => 'No mailboxes configured',
+        'opt_pinned'       => 'Pinned to {company}',
+        'opt_shared'       => 'Shared intake',
+        'run'              => 'Test',
+        'pick_mailbox'     => 'Choose a mailbox first',
+        'failed'           => 'Routing test failed',
+
+        'result_company_label' => 'Filed to company',
+        'result_triage_label'  => 'Sent to',
+        'result_triage_value'  => 'Triage queue (unassigned)',
+        'steps_title'          => 'How it was decided',
+
+        'step_reply'          => 'Reply to an existing ticket?',
+        'step_reply_detail'   => 'Checked first in reality (a reply inherits its ticket\'s company), but it depends on the subject carrying a ticket reference — so it can\'t be tested from a sender and mailbox alone.',
+        'step_single'         => 'Single-company install',
+        'step_single_detail'  => 'Only one company exists, so all mail is filed to {company}.',
+        'step_pinned'         => 'Pinned mailbox?',
+        'step_pinned_fired'   => '{mailbox} is pinned to {company}, so the email is filed there. The sender is ignored.',
+        'step_pinned_skipped' => '{mailbox} is a shared-intake mailbox, so routing falls through to the sender\'s domain.',
+        'step_domain'         => 'Sender domain matches a company?',
+        'step_domain_fired'   => 'Domain {domain} is registered to {company}.',
+        'step_domain_freemail'=> '{domain} is a public email provider, which is never registered to a company — so it can\'t match here and goes to triage.',
+        'step_domain_nomatch' => 'No company has registered {domain}.',
+        'step_domain_nodomain'=> 'No sender domain was given, so there\'s nothing to match.',
+        'step_triage'         => 'Triage queue',
+        'step_triage_detail'  => 'Nothing matched, so the ticket is left un-companied and waits in the triage queue to be filed by hand. Nothing is lost.',
     ],
 ];

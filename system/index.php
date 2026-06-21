@@ -5,7 +5,14 @@
 session_start();
 require_once '../config.php';
 require_once '../includes/i18n.php';
+require_once '../includes/functions.php';
+require_once '../includes/tenancy.php';
 I18n::initFromSession();
+
+// The email routing test only has anything to decide once a second company
+// exists — keep it invisible at N=1 (defensive: never let it break the page).
+$showRoutingTest = false;
+try { $showRoutingTest = isMultiTenant(connectToDatabase()); } catch (Exception $e) { $showRoutingTest = false; }
 
 $current_page = 'system';
 $path_prefix = '../';
@@ -213,6 +220,17 @@ $translationNamespaces = ['common', 'system'];
                     <h3><?php echo htmlspecialchars(t('system.landing.companies_title')); ?></h3>
                     <p><?php echo htmlspecialchars(t('system.landing.companies_desc')); ?></p>
                 </a>
+
+                <?php if ($showRoutingTest): ?>
+                <a href="email-routing-test/" class="system-card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+                    </svg>
+                    <h3><?php echo htmlspecialchars(t('system.landing.routing_test_title')); ?></h3>
+                    <p><?php echo htmlspecialchars(t('system.landing.routing_test_desc')); ?></p>
+                </a>
+                <?php endif; ?>
             </div>
         </div>
     </div>
