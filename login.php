@@ -493,6 +493,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-left: 4px solid #c33;
             display: none;
         }
+
+        /* Local-account sign-in modal (shown when SSO is leading) */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            z-index: 1000;
+        }
+
+        .modal-overlay.open { display: flex; }
+
+        .modal-box {
+            background: #fff;
+            padding: 32px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 360px;
+            position: relative;
+        }
+
+        .modal-box h2 {
+            color: #333;
+            font-size: 20px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            line-height: 1;
+            color: #999;
+            cursor: pointer;
+        }
+
+        .modal-close:hover { color: #333; }
     </style>
 </head>
 <body>
@@ -572,9 +617,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </script>
         <?php else: ?>
             <!-- Standard Login Form -->
-            <?php if ($error): ?>
-                <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
-            <?php endif; ?>
             <?php if (!empty($sso_error)): ?>
                 <div class="error-message"><?php echo htmlspecialchars($sso_error); ?></div>
             <?php endif; ?>
@@ -600,9 +642,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $forceLocal = isset($_GET['local']);
             // Is local login permitted at all (for the reveal link / email-first fallback)?
             $localAllowed = $localOn || $forceLocal;
-            // When SSO is leading, tuck the local form away behind a link by default;
-            // only show it up-front when SSO isn't active, or via break-glass.
-            $localVisible = !$ssoActive || $forceLocal;
             $divider = 'display:flex;align-items:center;gap:10px;margin:20px 0 14px;color:#9aa;font-size:12px;';
             ?>
 
@@ -623,76 +662,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php echo htmlspecialchars($p['display_name']); ?>
                     </a>
                 <?php endforeach; ?>
-            <?php endif; ?>
 
-            <!-- Local username/password form -->
-            <form method="POST" action="" autocomplete="off" id="localLoginForm" style="<?php echo $localVisible ? '' : 'display:none;'; ?>">
-                <?php if ($ssoActive): ?>
-                    <div style="<?php echo $divider; ?>"><span style="flex:1;height:1px;background:#ddd;"></span>local account<span style="flex:1;height:1px;background:#ddd;"></span></div>
+                <?php if ($localAllowed): ?>
+                    <a href="#" id="showLocalLink" class="forgot-link" style="display:block;margin-top:14px;">Sign in with a local account</a>
                 <?php endif; ?>
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" required<?php echo $ssoActive ? '' : ' autofocus'; ?> autocomplete="off">
+
+                <!-- Local account sign-in lives in its own modal when SSO is leading -->
+                <div class="modal-overlay" id="localModal">
+                    <div class="modal-box">
+                        <button type="button" class="modal-close" id="localModalClose" aria-label="Close">&times;</button>
+                        <h2>Local account</h2>
+                        <?php if ($error): ?>
+                            <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
+                        <?php endif; ?>
+                        <form method="POST" action="" autocomplete="off" id="localLoginForm">
+                            <div class="form-group">
+                                <label for="username">Username</label>
+                                <input type="text" id="username" name="username" required autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label for="password">Password</label>
+                                <input type="password" id="password" name="password" required autocomplete="off">
+                            </div>
+                            <button type="submit" class="login-button">Sign In</button>
+                        </form>
+                        <a href="forgot-password.php" class="forgot-link">Forgot password?</a>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required autocomplete="off">
-                </div>
-                <button type="submit" class="login-button">Sign In</button>
-            </form>
-            <a href="forgot-password.php" class="forgot-link">Forgot password?</a>
 
-            <?php if ($ssoActive && !$localVisible && $localAllowed): ?>
-                <a href="#" id="showLocalLink" class="forgot-link" style="display:block;margin-top:10px;">Sign in with a local account</a>
-            <?php endif; ?>
+                <script>
+                (function () {
+                    var BASE = <?php echo json_encode(BASE_URL); ?>;
+                    var localAllowed = <?php echo $localAllowed ? 'true' : 'false'; ?>;
+                    var contBtn = document.getElementById('continueBtn');
+                    var emailEl = document.getElementById('ssoEmail');
+                    var routerErr = document.getElementById('routerError');
+                    var modal = document.getElementById('localModal');
+                    var showLocalLink = document.getElementById('showLocalLink');
+                    var modalClose = document.getElementById('localModalClose');
 
-            <?php if ($ssoActive): ?>
-            <script>
-            (function () {
-                var BASE = <?php echo json_encode(BASE_URL); ?>;
-                var localAllowed = <?php echo $localAllowed ? 'true' : 'false'; ?>;
-                var contBtn = document.getElementById('continueBtn');
-                var emailEl = document.getElementById('ssoEmail');
-                var routerErr = document.getElementById('routerError');
-                var localForm = document.getElementById('localLoginForm');
-                var showLocalLink = document.getElementById('showLocalLink');
-
-                function revealLocal(focus) {
-                    if (localForm) localForm.style.display = '';
-                    if (showLocalLink) showLocalLink.style.display = 'none';
-                    if (focus) { var u = document.getElementById('username'); if (u) u.focus(); }
-                }
-                if (showLocalLink) showLocalLink.addEventListener('click', function (e) { e.preventDefault(); revealLocal(true); });
-
-                async function resolve() {
-                    var email = (emailEl.value || '').trim();
-                    if (!email) { routerErr.textContent = 'Please enter your email.'; routerErr.style.display = 'block'; return; }
-                    routerErr.style.display = 'none';
-                    contBtn.disabled = true;
-                    try {
-                        var r = await fetch(BASE + 'api/auth/resolve_login.php', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: email })
-                        });
-                        var d = await r.json();
-                        if (d && d.mode === 'sso' && d.provider_id) {
-                            window.location = BASE + 'api/auth/oidc_login.php?provider=' + d.provider_id;
-                            return;
-                        }
-                    } catch (e) { /* fall through to local */ }
-                    // local or unknown email
-                    if (localAllowed) {
-                        revealLocal(true);
-                    } else {
-                        routerErr.textContent = 'No single sign-on provider is set up for that email. Please contact your administrator.';
-                        routerErr.style.display = 'block';
+                    function openModal(focus) {
+                        if (modal) modal.classList.add('open');
+                        if (focus) { var u = document.getElementById('username'); if (u) u.focus(); }
                     }
-                    contBtn.disabled = false;
-                }
-                if (contBtn) contBtn.addEventListener('click', resolve);
-                if (emailEl) emailEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); resolve(); } });
-            })();
-            </script>
+                    function closeModal() { if (modal) modal.classList.remove('open'); }
+
+                    if (showLocalLink) showLocalLink.addEventListener('click', function (e) { e.preventDefault(); openModal(true); });
+                    if (modalClose) modalClose.addEventListener('click', closeModal);
+                    if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+                    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+                    <?php if ($error || $forceLocal): ?>
+                    // A failed local login (or break-glass ?local=1) — open straight to the local form.
+                    openModal(true);
+                    <?php endif; ?>
+
+                    async function resolve() {
+                        var email = (emailEl.value || '').trim();
+                        if (!email) { routerErr.textContent = 'Please enter your email.'; routerErr.style.display = 'block'; return; }
+                        routerErr.style.display = 'none';
+                        contBtn.disabled = true;
+                        try {
+                            var r = await fetch(BASE + 'api/auth/resolve_login.php', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: email })
+                            });
+                            var d = await r.json();
+                            if (d && d.mode === 'sso' && d.provider_id) {
+                                window.location = BASE + 'api/auth/oidc_login.php?provider=' + d.provider_id;
+                                return;
+                            }
+                        } catch (e) { /* fall through to local */ }
+                        // local or unknown email
+                        if (localAllowed) {
+                            openModal(true);
+                        } else {
+                            routerErr.textContent = 'No single sign-on provider is set up for that email. Please contact your administrator.';
+                            routerErr.style.display = 'block';
+                        }
+                        contBtn.disabled = false;
+                    }
+                    if (contBtn) contBtn.addEventListener('click', resolve);
+                    if (emailEl) emailEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); resolve(); } });
+                })();
+                </script>
+            <?php else: ?>
+                <!-- No SSO active: plain local username/password form inline -->
+                <?php if ($error): ?>
+                    <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
+                <?php endif; ?>
+                <form method="POST" action="" autocomplete="off" id="localLoginForm">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required autofocus autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required autocomplete="off">
+                    </div>
+                    <button type="submit" class="login-button">Sign In</button>
+                </form>
+                <a href="forgot-password.php" class="forgot-link">Forgot password?</a>
             <?php endif; ?>
         <?php endif; ?>
     </div>
