@@ -856,7 +856,7 @@ function renderEmailList() {
         // once the batch endpoint responds. Stays empty (and invisible) for tickets without SLA.
         return `
             <div class="email-item ${email.id === selectedEmailId ? 'selected' : ''} ${!email.is_read ? 'unread' : ''}"
-                 draggable="true" data-ticket-id="${ticketId}" data-ticket-number="${escapeHtml(email.ticket_number || '')}"
+                 draggable="true" data-email-id="${email.id}" data-ticket-id="${ticketId}" data-ticket-number="${escapeHtml(email.ticket_number || '')}"
                  onclick="selectEmail(${email.id})" ondblclick="selectEmailFullScreen(${email.id})"
                  oncontextmenu="openTicketContextMenu(event, ${ticketId}, '${escapeHtml(email.ticket_number || '')}')">
                 <div class="email-from">${escapeHtml(email.ticket_number || '')} - ${escapeHtml(email.from_name || email.from_address)} ${countBadge}</div>
@@ -950,17 +950,42 @@ function renderInboxSlaIndicator(row) {
             </span>`;
 }
 
+// Move the "selected" highlight to one row without rebuilding the whole list.
+// Rebuilding (renderEmailList) on every click also re-fired the batch SLA fetch,
+// which made the SLA pills flash off and back on — this just toggles a class.
+function setSelectedEmailRow(emailId) {
+    document.querySelectorAll('#emailList .email-item.selected')
+        .forEach(el => el.classList.remove('selected'));
+    const row = document.querySelector(`#emailList .email-item[data-email-id="${emailId}"]`);
+    if (row) row.classList.add('selected');
+}
+
 // Select and display email by email ID
 async function selectEmail(emailId) {
     selectedEmailId = emailId;
-    renderEmailList();
+    setSelectedEmailRow(emailId);
 
     const readingPane = document.getElementById('readingPane');
-    readingPane.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+    // Avoid the blank-pane flicker when switching between tickets: keep the
+    // current ticket on screen during the (usually instant) fetch and swap
+    // straight to the new one. Only blank to a spinner when the pane is empty
+    // (first open), or if the fetch is actually slow — a delayed timer covers
+    // that so a slow network still gives feedback.
+    const hadTicket = !!currentEmail;
+    let spinnerTimer = null;
+    if (!hadTicket) {
+        readingPane.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    } else {
+        spinnerTimer = setTimeout(() => {
+            readingPane.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        }, 250);
+    }
 
     try {
         const response = await fetch(`${API_BASE}get_email_detail.php?id=${emailId}`);
         const data = await response.json();
+        if (spinnerTimer) clearTimeout(spinnerTimer);
 
         if (data.success) {
             displayEmail(data.email, data.recordings || []);
@@ -969,6 +994,7 @@ async function selectEmail(emailId) {
             syncPopoutToTicketState(false);
         }
     } catch (error) {
+        if (spinnerTimer) clearTimeout(spinnerTimer);
         console.error('Error:', error);
         readingPane.innerHTML = '<div class="reading-pane-empty">Failed to load email</div>';
         syncPopoutToTicketState(false);
