@@ -37,6 +37,7 @@ $translationNamespaces = ['common', 'system'];
             flex: 1;
             display: flex;
             justify-content: center;
+            align-items: flex-start;
             background: #f5f7fa;
             overflow-y: auto;
         }
@@ -44,8 +45,8 @@ $translationNamespaces = ['common', 'system'];
         .landing-content {
             text-align: center;
             width: 100%;
-            margin: auto 0;
-            padding: 30px 40px;
+            margin: 0 auto;
+            padding: 40px 40px;
             box-sizing: border-box;
         }
 
