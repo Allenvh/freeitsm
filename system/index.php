@@ -7,12 +7,19 @@ require_once '../config.php';
 require_once '../includes/i18n.php';
 require_once '../includes/functions.php';
 require_once '../includes/tenancy.php';
+require_once 'includes/areas.php';
 I18n::initFromSession();
 
-// The email routing test only has anything to decide once a second company
-// exists — keep it invisible at N=1 (defensive: never let it break the page).
-$showRoutingTest = false;
-try { $showRoutingTest = isMultiTenant(connectToDatabase()); } catch (Exception $e) { $showRoutingTest = false; }
+// Some areas are gated on a runtime condition the registry can't evaluate.
+// 'multitenant' (e.g. the email routing test) stays invisible at N=1.
+$isMultiTenant = false;
+try { $isMultiTenant = isMultiTenant(connectToDatabase()); } catch (Exception $e) { $isMultiTenant = false; }
+
+// Filter the registry down to the areas this install should show.
+$systemAreas = array_filter(getSystemAreas(), function ($area) use ($isMultiTenant) {
+    if (($area['requires'] ?? '') === 'multitenant') return $isMultiTenant;
+    return true;
+});
 
 $current_page = 'system';
 $path_prefix = '../';
@@ -51,7 +58,52 @@ $translationNamespaces = ['common', 'system'];
         .landing-content .subtitle {
             font-size: 14px;
             color: #888;
-            margin: 0 0 32px 0;
+            margin: 0 0 24px 0;
+        }
+
+        .system-search {
+            position: relative;
+            max-width: 420px;
+            margin: 0 auto 32px;
+        }
+
+        .system-search input {
+            width: 100%;
+            padding: 11px 14px 11px 40px;
+            border: 1px solid #d6dde3;
+            border-radius: 8px;
+            font-size: 14px;
+            background: #fff;
+            box-sizing: border-box;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .system-search input:focus {
+            outline: none;
+            border-color: #546e7a;
+            box-shadow: 0 0 0 3px rgba(84,110,122,0.12);
+        }
+
+        .system-search svg {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            color: #9aa7b0;
+            pointer-events: none;
+        }
+
+        .system-no-results {
+            display: none;
+            color: #888;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .system-card.is-hidden {
+            display: none;
         }
 
         .system-cards {
@@ -106,135 +158,67 @@ $translationNamespaces = ['common', 'system'];
             <h2><?php echo htmlspecialchars(t('system.landing.heading')); ?></h2>
             <p class="subtitle"><?php echo htmlspecialchars(t('system.landing.subtitle')); ?></p>
 
-            <div class="system-cards">
-                <a href="encryption/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.encryption_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.encryption_desc')); ?></p>
-                </a>
-
-                <a href="modules/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="9" cy="7" r="4"></circle>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.modules_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.modules_desc')); ?></p>
-                </a>
-
-                <a href="db-verify/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.db_verify_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.db_verify_desc')); ?></p>
-                </a>
-
-                <a href="colours/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="13.5" cy="6.5" r="2.5"></circle>
-                        <circle cx="17.5" cy="10.5" r="2.5"></circle>
-                        <circle cx="8.5" cy="7.5" r="2.5"></circle>
-                        <circle cx="6.5" cy="12.5" r="2.5"></circle>
-                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.colours_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.colours_desc')); ?></p>
-                </a>
-
-                <a href="branding/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
-                        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
-                        <path d="M2 2l7.586 7.586"></path>
-                        <circle cx="11" cy="11" r="2"></circle>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.branding_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.branding_desc')); ?></p>
-                </a>
-
-                <a href="security/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.security_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.security_desc')); ?></p>
-                </a>
-
-                <a href="sso/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path>
-                        <line x1="8" y1="12" x2="16" y2="12"></line>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.sso_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.sso_desc')); ?></p>
-                </a>
-
-                <a href="preferences/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.preferences_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.preferences_desc')); ?></p>
-                </a>
-
-                <a href="demo-data/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.demo_data_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.demo_data_desc')); ?></p>
-                </a>
-
-                <a href="debug-tools/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M8 2v4"></path>
-                        <path d="M16 2v4"></path>
-                        <rect x="3" y="6" width="18" height="15" rx="2"></rect>
-                        <path d="M3 13h18"></path>
-                        <path d="M9 17l2 2 4-4"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.debug_tools_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.debug_tools_desc')); ?></p>
-                </a>
-
-                <a href="companies/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 21h18"></path>
-                        <path d="M9 8h1"></path>
-                        <path d="M9 12h1"></path>
-                        <path d="M9 16h1"></path>
-                        <path d="M14 8h1"></path>
-                        <path d="M14 12h1"></path>
-                        <path d="M14 16h1"></path>
-                        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.companies_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.companies_desc')); ?></p>
-                </a>
-
-                <?php if ($showRoutingTest): ?>
-                <a href="email-routing-test/" class="system-card">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
-                    </svg>
-                    <h3><?php echo htmlspecialchars(t('system.landing.routing_test_title')); ?></h3>
-                    <p><?php echo htmlspecialchars(t('system.landing.routing_test_desc')); ?></p>
-                </a>
-                <?php endif; ?>
+            <div class="system-search">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="systemSearch" autocomplete="off" autofocus
+                       placeholder="<?php echo htmlspecialchars(t('system.landing.search_placeholder')); ?>"
+                       aria-label="<?php echo htmlspecialchars(t('system.landing.search_placeholder')); ?>">
             </div>
+
+            <div class="system-cards" id="systemCards">
+                <?php foreach ($systemAreas as $area): ?>
+                    <?php
+                    $title = t($area['title']);
+                    $desc  = t($area['desc']);
+                    // Keywords are i18n keys; if a synonym key isn't defined the
+                    // resolver returns the key itself — strip that so it never
+                    // pollutes the search haystack.
+                    $kw = t($area['keywords']);
+                    if ($kw === $area['keywords']) $kw = '';
+                    $haystack = mb_strtolower(trim($title . ' ' . $desc . ' ' . $kw));
+                    ?>
+                    <a href="<?php echo htmlspecialchars($area['url']); ?>" class="system-card"
+                       data-search="<?php echo htmlspecialchars($haystack); ?>">
+                        <?php echo systemAreaIcon($area['icon']); ?>
+                        <h3><?php echo htmlspecialchars($title); ?></h3>
+                        <p><?php echo htmlspecialchars($desc); ?></p>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+
+            <p class="system-no-results" id="systemNoResults"><?php echo htmlspecialchars(t('system.landing.no_results')); ?></p>
         </div>
     </div>
+
+    <script>
+    (function () {
+        var input = document.getElementById('systemSearch');
+        var cards = Array.prototype.slice.call(document.querySelectorAll('#systemCards .system-card'));
+        var noResults = document.getElementById('systemNoResults');
+        if (!input) return;
+
+        function filter() {
+            var q = input.value.trim().toLowerCase();
+            var shown = 0;
+            cards.forEach(function (card) {
+                var match = q === '' || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
+                card.classList.toggle('is-hidden', !match);
+                if (match) shown++;
+            });
+            noResults.style.display = shown === 0 ? 'block' : 'none';
+        }
+
+        input.addEventListener('input', filter);
+        // Pressing Enter on a single remaining match jumps straight into it.
+        input.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') return;
+            var visible = cards.filter(function (c) { return !c.classList.contains('is-hidden'); });
+            if (visible.length === 1) window.location.href = visible[0].getAttribute('href');
+        });
+    })();
+    </script>
 </body>
 </html>

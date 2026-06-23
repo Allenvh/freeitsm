@@ -686,6 +686,7 @@ Software inventory tracking across the estate.
 ### System (`system/`)
 System administration and configuration.
 
+- **Landing page** (`system/index.php`): A searchable grid of cards, one per system area — the single way in to everything below. Unlike other modules, System has too many areas to fit the header navbar, so navigation lives entirely in these cards; the header "System" title links back here from any sub-page. A search box filters the cards live by title, description, and hidden keyword synonyms (e.g. typing *oidc*, *saml* or *idp* surfaces the Single Sign-On card). The areas come from one registry (`system/includes/areas.php`) that drives both the cards and the search, and stays fully i18n (titles/descriptions/keywords are translation keys).
 - **Encryption** (`system/encryption/`): Guided interface for managing the AES-256-GCM encryption key
   - Shows key status (configured/missing/invalid) with colour-coded status card
   - One-click key generation — writes directly to `c:\wamp64\encryption_keys\sdtickets.key`
