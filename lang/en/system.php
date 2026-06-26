@@ -182,6 +182,8 @@ return [
         'output_running' => 'Running diagnostic…',
         'fetch_failed'   => 'Failed to fetch diagnostic: {message}',
         'input_required' => 'Please enter a value before running this tool.',
+        'search_placeholder' => 'Search debug tools…',
+        'no_results'         => 'No debug tools match your search.',
     ],
 
     // Demo data page (system/demo-data/index.php)
