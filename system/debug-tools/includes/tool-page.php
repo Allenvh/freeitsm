@@ -41,7 +41,7 @@ if (!$tool) {
         .debug-container { height: calc(100vh - 48px); overflow-y: auto; padding: 0 20px 40px; }
         .debug-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #546e7a; text-decoration: none; margin: 18px 0 14px; }
         .debug-back:hover { text-decoration: underline; }
-        .diag-card { background: #fff; border-radius: 10px; padding: 24px 26px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); border: 1px solid #eee; max-width: 900px; }
+        .diag-card { background: #fff; border-radius: 10px; padding: 24px 26px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); border: 1px solid #eee; }
         .diag-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
         .diag-id { background: #546e7a; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 4px 10px; border-radius: 4px; font-family: 'Consolas', monospace; }
         .diag-title { font-size: 19px; color: #333; margin: 0; flex: 1; }
@@ -63,7 +63,7 @@ if (!$tool) {
         .copy-btn { background: #f5f5f5; color: #333; border: 1px solid #ddd; padding: 8px 16px; border-radius: 5px; font-size: 12px; font-weight: 500; cursor: pointer; display: none; }
         .copy-btn:hover { background: #eee; }
         .copy-btn.copied { background: #2e7d32; color: #fff; border-color: #2e7d32; }
-        .output-panel { display: none; margin-top: 16px; background: #1e1e1e; border-radius: 6px; padding: 14px 16px; color: #d4d4d4; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; line-height: 1.5; max-height: 520px; overflow: auto; white-space: pre-wrap; word-break: break-word; max-width: 900px; }
+        .output-panel { display: none; margin-top: 16px; background: #1e1e1e; border-radius: 6px; padding: 14px 16px; color: #d4d4d4; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; line-height: 1.5; max-height: 520px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
         .spinner-inline { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
