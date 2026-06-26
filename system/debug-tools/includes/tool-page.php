@@ -29,6 +29,12 @@ if (!$tool) {
     header('Location: ' . $path_prefix . 'system/debug-tools/');
     exit;
 }
+
+// A tool declares either a single `input` (legacy, GET) or an `inputs` list
+// (text / password / select fields). A tool with sensitive fields (passwords)
+// sets 'method' => 'POST' so values never land in the URL / server logs.
+$toolFields = !empty($tool['inputs']) ? $tool['inputs'] : (!empty($tool['input']) ? [$tool['input']] : []);
+$toolMethod = strtoupper($tool['method'] ?? 'GET');
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -52,9 +58,12 @@ if (!$tool) {
         .diag-meta { font-size: 12px; color: #777; display: flex; gap: 22px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid #f0f0f0; margin-top: 14px; }
         .diag-meta strong { color: #333; }
         .diag-destructive { font-size: 12.5px; color: #b71c1c; background: #fdecea; border: 1px solid #f5c6cb; border-radius: 6px; padding: 10px 14px; margin: 14px 0 0; }
-        .diag-input-row { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; padding-top: 14px; border-top: 1px solid #f0f0f0; }
-        .diag-input-label { font-size: 13px; color: #444; font-weight: 500; white-space: nowrap; }
+        .diag-fields { margin-top: 14px; padding-top: 14px; border-top: 1px solid #f0f0f0; }
+        .diag-input-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+        .diag-input-row:last-child { margin-bottom: 0; }
+        .diag-input-label { font-size: 13px; color: #444; font-weight: 500; white-space: nowrap; min-width: 150px; }
         .diag-input { flex: 1; max-width: 360px; padding: 8px 11px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; font-family: 'Consolas', monospace; }
+        select.diag-input { font-family: inherit; }
         .diag-input:focus { outline: none; border-color: #546e7a; }
         .diag-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; }
         .run-btn { background: #546e7a; color: #fff; border: none; padding: 9px 22px; border-radius: 5px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; gap: 8px; }
@@ -75,7 +84,7 @@ if (!$tool) {
         <div class="debug-container">
             <a href="<?php echo $path_prefix; ?>system/debug-tools/" class="debug-back">&larr; <?php echo htmlspecialchars(t('system.debug.heading')); ?></a>
 
-            <div class="diag-card" data-diag-file="<?php echo htmlspecialchars($tool['file']); ?>">
+            <div class="diag-card" data-diag-file="<?php echo htmlspecialchars($tool['file']); ?>" data-method="<?php echo htmlspecialchars($toolMethod); ?>">
                 <div class="diag-head">
                     <span class="diag-id"><?php echo htmlspecialchars($tool['id']); ?></span>
                     <h2 class="diag-title"><?php echo htmlspecialchars($tool['title']); ?></h2>
@@ -100,12 +109,29 @@ if (!$tool) {
                     <div class="diag-destructive">⚠ <?php echo htmlspecialchars($tool['persists']); ?></div>
                 <?php endif; ?>
 
-                <?php if (!empty($tool['input'])): ?>
-                    <div class="diag-input-row">
-                        <label class="diag-input-label" for="diagInput"><?php echo htmlspecialchars($tool['input']['label']); ?></label>
-                        <input type="text" class="diag-input" id="diagInput"
-                               data-input-name="<?php echo htmlspecialchars($tool['input']['name']); ?>"
-                               placeholder="<?php echo htmlspecialchars($tool['input']['placeholder'] ?? ''); ?>">
+                <?php if ($toolFields): ?>
+                    <div class="diag-fields">
+                        <?php foreach ($toolFields as $f):
+                            $ftype = $f['type'] ?? 'text';
+                            $fid = 'diag_' . preg_replace('/[^a-z0-9_]/i', '', $f['name']);
+                            $optAttr = !empty($f['optional']) ? ' data-optional="1"' : '';
+                        ?>
+                            <div class="diag-input-row">
+                                <label class="diag-input-label" for="<?php echo $fid; ?>"><?php echo htmlspecialchars($f['label']); ?></label>
+                                <?php if ($ftype === 'select'): ?>
+                                    <select class="diag-input" id="<?php echo $fid; ?>" data-input-name="<?php echo htmlspecialchars($f['name']); ?>"<?php echo $optAttr; ?>>
+                                        <?php foreach (($f['options'] ?? []) as $opt): ?>
+                                            <option value="<?php echo htmlspecialchars($opt['value']); ?>"><?php echo htmlspecialchars($opt['label']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                <?php else: ?>
+                                    <input type="<?php echo $ftype === 'password' ? 'password' : 'text'; ?>" class="diag-input" id="<?php echo $fid; ?>"
+                                           data-input-name="<?php echo htmlspecialchars($f['name']); ?>"<?php echo $optAttr; ?>
+                                           autocomplete="<?php echo $ftype === 'password' ? 'new-password' : 'off'; ?>"
+                                           placeholder="<?php echo htmlspecialchars($f['placeholder'] ?? ''); ?>">
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
 
@@ -128,29 +154,47 @@ if (!$tool) {
         var copyBtn = card.querySelector('.copy-btn');
         var panel   = card.querySelector('.output-panel');
         var file    = card.getAttribute('data-diag-file');
-        var input   = card.querySelector('.diag-input');
+        var method  = (card.getAttribute('data-method') || 'GET').toUpperCase();
+        var fields  = Array.prototype.slice.call(card.querySelectorAll('[data-input-name]'));
         var API     = <?php echo json_encode($path_prefix . 'api/system/debug-tools/'); ?>;
 
+        function enc(o) { return Object.keys(o).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(o[k]); }).join('&'); }
+
         runBtn.addEventListener('click', async function () {
-            var query = '';
-            if (input) {
-                var val = input.value.trim();
-                if (!val) {
-                    panel.style.display = 'block';
-                    panel.textContent = window.t('system.debug.input_required');
-                    input.focus();
-                    return;
-                }
-                query = '?' + encodeURIComponent(input.getAttribute('data-input-name')) + '=' + encodeURIComponent(val);
+            // Collect every field; required (non-optional) ones must be filled.
+            var params = {}, firstEmpty = null;
+            for (var i = 0; i < fields.length; i++) {
+                var f = fields[i], name = f.getAttribute('data-input-name'), val = (f.value || '').trim();
+                if (!val && f.getAttribute('data-optional') !== '1' && !firstEmpty) firstEmpty = f;
+                params[name] = val;
             }
+            if (firstEmpty) {
+                panel.style.display = 'block';
+                panel.textContent = window.t('system.debug.input_required');
+                firstEmpty.focus();
+                return;
+            }
+
             runBtn.disabled = true;
             var original = runBtn.innerHTML;
             runBtn.innerHTML = '<span class="spinner-inline"></span> ' + window.t('system.debug.running');
             panel.style.display = 'block';
             panel.textContent = window.t('system.debug.output_running');
             copyBtn.style.display = 'none';
+
+            var url = API + file, opts = { method: method, credentials: 'same-origin', headers: { 'Cache-Control': 'no-cache' } };
+            if (method === 'POST') {
+                // POST keeps sensitive fields (passwords) out of the URL / logs.
+                opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                opts.body = enc(params);
+            } else {
+                var get = {};
+                Object.keys(params).forEach(function (k) { if (params[k] !== '') get[k] = params[k]; });
+                var qs = enc(get);
+                if (qs) url += '?' + qs;
+            }
             try {
-                var res = await fetch(API + file + query, { method: 'GET', credentials: 'same-origin', headers: { 'Cache-Control': 'no-cache' } });
+                var res = await fetch(url, opts);
                 panel.textContent = await res.text();
                 copyBtn.style.display = 'inline-block';
             } catch (e) {

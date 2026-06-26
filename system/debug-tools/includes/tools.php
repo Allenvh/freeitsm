@@ -90,6 +90,37 @@ function getDebugTools() {
             'duration' => '~1–5 seconds (depends on how quickly the identity provider answers discovery)',
             'persists' => 'None. Read-only — it performs a live OIDC discovery fetch (an unauthenticated metadata request to the provider) but writes nothing, and never prints secrets (client secrets, TOTP secrets and password hashes are reported only as present/absent).',
         ],
+        [
+            'id'       => 'D004',
+            'slug'     => 'd004',
+            'file'     => 'D004_local_login.php',
+            'title'    => 'Local login check (password / hash)',
+            'category' => 'Login',
+            'icon'     => 'key',
+            'desc'     => 'Diagnose why a username/email + password login fails — including imported password hashes in the wrong format.',
+            'keywords' => 'login password hash bcrypt md5 sha1 import migrate users analyst password_verify lockout mfa totp local d004',
+            'when'     => 'Run this when someone can\'t sign in with their password — especially after a bulk import of accounts with password hashes. Pick the account type, enter the username (analyst) or email (self-service user), and optionally the password. It checks the hash format (bcrypt vs an imported MD5/SHA/phpass/Django hash that password_verify can never read), account lockout / expiry / active state, TOTP, SSO pin, and — if you supply the password — verifies it and pinpoints a wrong-hash-type import.',
+            'method'   => 'POST',
+            'inputs'   => [
+                ['name' => 'account_type', 'label' => 'Account type', 'type' => 'select', 'options' => [
+                    ['value' => 'user',    'label' => 'Self-service user (signs in by email)'],
+                    ['value' => 'analyst', 'label' => 'Analyst (signs in by username)'],
+                ]],
+                ['name' => 'identifier', 'label' => 'Username or email', 'type' => 'text', 'placeholder' => 'e.g. jbloggs  or  jane@company.com'],
+                ['name' => 'password', 'label' => 'Password (optional)', 'type' => 'password', 'placeholder' => 'leave blank to skip the password check', 'optional' => true],
+            ],
+            'checks'   => [
+                'Schema readiness for the chosen account type (analysts or users + the relevant login columns)',
+                'Global login config — allow-local-login, SSO enabled, and (analysts) lockout / expiry / IP-ban thresholds',
+                'Account lookup by username (analyst, exact) or email (user, case-insensitive)',
+                'Password hash forensics — detects bcrypt/argon vs an imported MD5 / SHA-1 / SHA-256 / phpass / Django / LDAP hash that password_verify() can never read, plus whitespace/length anomalies',
+                'Optional password verification — runs password_verify(), and if it fails on a raw digest, identifies whether the stored hash is e.g. MD5(password) (the classic wrong-hash-type import)',
+                'Account state blockers — inactive, locked, password expired, SSO-pinned (local disabled), TOTP required, active IP bans',
+                'A plain-English verdict naming the most likely reason and the fix',
+            ],
+            'duration' => '~1 second',
+            'persists' => 'None. Read-only — writes nothing. POST-only so the password never lands in a URL or log; the password is never echoed and the stored hash is never printed (only its format / cost / length).',
+        ],
     ];
 }
 
@@ -109,6 +140,8 @@ function debugToolIcon($key) {
     $icons = [
         'demo'   => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>',
         'ticket' => '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line>',
+        'sso'    => '<path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path><line x1="8" y1="12" x2="16" y2="12"></line>',
+        'key'    => '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"></path>',
     ];
     $inner = $icons[$key] ?? '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>';
     return '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' . $inner . '</svg>';
