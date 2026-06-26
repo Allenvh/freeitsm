@@ -116,6 +116,7 @@ function getDebugTools() {
                 'Password hash forensics — detects bcrypt/argon vs an imported MD5 / SHA-1 / SHA-256 / phpass / Django / LDAP hash that password_verify() can never read, plus whitespace/length anomalies',
                 'Optional password verification — runs password_verify(), and if it fails on a raw digest, identifies whether the stored hash is e.g. MD5(password) (the classic wrong-hash-type import)',
                 'Account state blockers — inactive, locked, password expired, SSO-pinned (local disabled), TOTP required, active IP bans',
+                'Encryption key (for MFA users) — whether the key can actually decrypt this account\'s TOTP secret, since a wrong/missing key fails login after a correct password (password hashes themselves aren\'t encrypted)',
                 'A plain-English verdict naming the most likely reason and the fix',
             ],
             'duration' => '~1 second',

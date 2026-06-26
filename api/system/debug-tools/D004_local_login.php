@@ -302,6 +302,42 @@ if ($type === 'analyst') {
 
 addSection($sections, "ACCOUNT STATE", $stateLines);
 
+// ---- 9b. ENCRYPTION KEY (only matters for the MFA/TOTP step) -----------
+// Password hashes are NOT encrypted, so the key never affects password login.
+// But totp_secret IS encrypted (decrypted at the 6-digit-code step), so a
+// missing/wrong key fails login for MFA users AFTER a correct password.
+$encLines = [];
+$encReq = realpath(__DIR__ . '/../../../includes/encryption.php');
+$encLoaded = false;
+if ($encReq) { try { require_once $encReq; $encLoaded = function_exists('decryptValue') && function_exists('getEncryptionKey'); } catch (Throwable $e) {} }
+if (!$encLoaded) {
+    $encLines[] = "Encryption helper not loadable — skipped.";
+} else {
+    $keyPath = defined('ENCRYPTION_KEY_PATH') ? ENCRYPTION_KEY_PATH : '(unknown)';
+    $keyFileOk = @file_exists($keyPath);
+    $keyValid = false; $keyErr = '';
+    if ($keyFileOk) { try { getEncryptionKey(); $keyValid = true; } catch (Throwable $e) { $keyErr = $e->getMessage(); } }
+    $encLines[] = "Key file path        : " . $keyPath;
+    $encLines[] = "Key file present     : " . yn($keyFileOk);
+    $encLines[] = "Key valid (64 hex)   : " . yn($keyValid) . ($keyErr ? "  ({$keyErr})" : '');
+
+    $totpSecret = (string)($row['totp_secret'] ?? '');
+    if (!empty($row['totp_enabled']) && $totpSecret !== '') {
+        if (strpos($totpSecret, 'ENC:') === 0) {
+            $decOk = false; $decErr = '';
+            try { $plain = decryptValue($totpSecret); $decOk = ($plain !== false && $plain !== null && $plain !== ''); }
+            catch (Throwable $e) { $decErr = $e->getMessage(); }
+            $encLines[] = "This user's TOTP secret: encrypted (ENC:) — decrypts with current key: " . yn($decOk) . ($decErr ? "  ({$decErr})" : '');
+            if (!$decOk) $blockers[] = "MFA is on but this user's TOTP secret can't be decrypted with the current encryption key — a correct password will still FAIL at the 6-digit code step. Restore the correct key file (System → Encryption), then re-run. (Password login itself doesn't use the key.)";
+        } else {
+            $encLines[] = "This user's TOTP secret: stored in the clear (pre-encryption) — the key isn't needed for it.";
+        }
+    } else {
+        $encLines[] = "Relevant to this account: NO — no encrypted MFA secret to decrypt, so the key doesn't affect this login.";
+    }
+}
+addSection($sections, "ENCRYPTION KEY (MFA step only)", $encLines);
+
 // ---- 10. VERDICT -------------------------------------------------------
 
 $verdict = [];
