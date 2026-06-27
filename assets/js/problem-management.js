@@ -294,15 +294,58 @@ async function pmUnlinkIncident(ticketId) {
         if (data.success) { pmToast('Unlinked', 'success'); pmOpenDetail(pmCurrentId); } else pmToast(data.error || 'Failed', 'error');
     } catch (e) { pmToast('Failed', 'error'); }
 }
-async function pmLinkChange() {
-    const cid = prompt('Link the change that fixes this — enter the Change ID (the number in its URL):');
-    if (!cid) return;
+let pmLinkChangeSearchTimer = null;
+function pmLinkChange() {
+    if (!pmCurrentId) return;
+    const search = document.getElementById('pmLinkChangeSearch'); if (search) search.value = '';
+    const all = document.getElementById('pmLinkChangeAll'); if (all) all.checked = false;
+    document.getElementById('pmLinkChangeModal').classList.add('active');
+    pmLoadLinkableChanges();
+}
+function pmLinkChangeSearchDebounced() {
+    clearTimeout(pmLinkChangeSearchTimer);
+    pmLinkChangeSearchTimer = setTimeout(pmLoadLinkableChanges, 250);
+}
+async function pmLoadLinkableChanges() {
+    const list = document.getElementById('pmLinkChangeList');
+    const q = (document.getElementById('pmLinkChangeSearch') || {}).value || '';
+    list.innerHTML = '<div class="pm-empty">Loading…</div>';
     try {
-        const res = await fetch(PM_API + 'link_change.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ problem_id: pmCurrentId, change_id: parseInt(cid, 10) }) });
+        const res = await fetch(PM_API + 'list_linkable_changes.php?problem_id=' + pmCurrentId + '&q=' + encodeURIComponent(q.trim()));
         const data = await res.json();
-        if (!data.success) { pmToast(data.error || 'Link failed', 'error'); return; }
-        pmToast('Change linked', 'success'); pmOpenDetail(pmCurrentId);
-    } catch (e) { pmToast('Link failed', 'error'); }
+        if (!data.success) { list.innerHTML = '<div class="pm-empty">' + pmEsc(data.error || 'Failed to load') + '</div>'; return; }
+        if (!data.changes.length) { list.innerHTML = '<div class="pm-empty">' + (q.trim() ? 'No matching changes.' : 'No changes available to link.') + '</div>'; return; }
+        list.innerHTML = data.changes.map(c => `
+            <label class="pm-pick-row">
+                <input type="checkbox" class="pm-pick-cb" value="${c.id}">
+                <span class="pm-pick-main">
+                    <span class="pm-pick-title">${pmEsc(c.title || '(no title)')}</span>
+                    <span class="pm-pick-meta"><span class="pm-pick-num">#${c.id}</span>${c.status ? ' · ' + pmEsc(c.status) : ''}${c.priority ? ' · ' + pmEsc(c.priority) : ''}</span>
+                </span>
+            </label>`).join('');
+    } catch (e) { list.innerHTML = '<div class="pm-empty">Failed to load changes</div>'; }
+}
+function pmToggleAllLinkableChanges(checked) {
+    document.querySelectorAll('#pmLinkChangeList .pm-pick-cb').forEach(cb => cb.checked = checked);
+}
+async function pmLinkChangeSelected() {
+    const ids = Array.from(document.querySelectorAll('#pmLinkChangeList .pm-pick-cb:checked')).map(cb => cb.value);
+    if (!ids.length) { pmToast('Select at least one change', 'warning'); return; }
+    const btn = document.getElementById('pmLinkChangeSelBtn');
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Linking…';
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+        try {
+            const res = await fetch(PM_API + 'link_change.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ problem_id: pmCurrentId, change_id: parseInt(id, 10) }) });
+            const data = await res.json();
+            if (data.success) ok++; else fail++;
+        } catch (e) { fail++; }
+    }
+    btn.disabled = false; btn.textContent = orig;
+    document.getElementById('pmLinkChangeModal').classList.remove('active');
+    if (ok) pmToast(ok + (ok === 1 ? ' change linked' : ' changes linked') + (fail ? ', ' + fail + ' failed' : ''), fail ? 'warning' : 'success');
+    else pmToast('Link failed', 'error');
+    pmOpenDetail(pmCurrentId);
 }
 async function pmUnlinkChange(changeId) {
     try {

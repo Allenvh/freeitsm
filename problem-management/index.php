@@ -140,6 +140,22 @@ $path_prefix = '../';
         </div>
     </div>
 
+    <!-- Link-change picker modal -->
+    <div class="pm-modal" id="pmLinkChangeModal">
+        <div class="pm-modal-content" style="max-width: 780px;">
+            <div class="pm-modal-head">Link the change that fixes this problem</div>
+            <div class="pm-modal-body">
+                <input type="text" id="pmLinkChangeSearch" class="pm-search" placeholder="Search changes by title or ID…" oninput="pmLinkChangeSearchDebounced()" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #cfd8dc;border-radius:6px;">
+                <div id="pmLinkChangeList" style="margin-top:12px; max-height:52vh; overflow-y:auto; border:1px solid #eee; border-radius:8px;"><div class="pm-empty">Loading…</div></div>
+            </div>
+            <div class="pm-modal-foot">
+                <label style="margin-right:auto; font-size:13px; color:#555; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pmLinkChangeAll" onchange="pmToggleAllLinkableChanges(this.checked)"> Select all</label>
+                <button class="pm-btn" onclick="document.getElementById('pmLinkChangeModal').classList.remove('active')">Cancel</button>
+                <button class="pm-btn pm-btn-primary" id="pmLinkChangeSelBtn" onclick="pmLinkChangeSelected()">Link selected</button>
+            </div>
+        </div>
+    </div>
+
     <!-- AI suggestions modal -->
     <div class="pm-modal" id="pmSuggestModal">
         <div class="pm-modal-content">
@@ -151,6 +167,6 @@ $path_prefix = '../';
 
     <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
     <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
-    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=4"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=5"></script>
 </body>
 </html>
