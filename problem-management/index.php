@@ -180,6 +180,6 @@ $path_prefix = '../';
 
     <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
     <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
-    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=9"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=10"></script>
 </body>
 </html>

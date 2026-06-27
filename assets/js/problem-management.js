@@ -88,13 +88,19 @@ function pmRenderList(problems) {
         </div>`).join('');
 }
 
-function pmFilter(statusId) { pmFilterStatus = statusId; pmLoadList(); }
-function pmDebouncedSearch() { clearTimeout(pmSearchTimer); pmSearchTimer = setTimeout(pmLoadList, 300); }
+// Sidebar actions must return to the list view — otherwise, when a problem is
+// open (e.g. deep-linked via ?id=), they'd update the list while it's hidden
+// behind the detail and appear to do nothing.
+function pmFilter(statusId) { pmFilterStatus = statusId; pmShowListView(); pmLoadList(); }
+function pmDebouncedSearch() { clearTimeout(pmSearchTimer); pmSearchTimer = setTimeout(() => { pmShowListView(); pmLoadList(); }, 300); }
 
-function pmBackToList() {
+function pmShowListView() {
     pmCurrentId = null;
     document.getElementById('pmDetailView').style.display = 'none';
     document.getElementById('pmListView').style.display = '';
+}
+function pmBackToList() {
+    pmShowListView();
     pmLoadList();
 }
 
@@ -231,7 +237,10 @@ async function pmSave() {
         if (!data.success) { pmToast(data.error || 'Save failed', 'error'); return; }
         pmToast(data.message || 'Saved', 'success');
         pmCloseEditor();
-        if (pmCurrentId) pmOpenDetail(pmCurrentId); else pmOpenDetail(data.id);
+        // Open the problem we just saved — the edited one (payload.id) or, for a
+        // new problem, the id the server returns. Keying off pmCurrentId was wrong:
+        // creating a problem while another was open reopened the old one.
+        pmOpenDetail((payload.id && payload.id != 0) ? payload.id : data.id);
     } catch (e) { pmToast('Save failed', 'error'); }
 }
 
