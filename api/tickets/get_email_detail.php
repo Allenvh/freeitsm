@@ -61,7 +61,8 @@ try {
                 t.owner_id,
                 t.work_start_datetime,
                 t.created_datetime as ticket_created,
-                t.updated_datetime as ticket_updated
+                t.updated_datetime as ticket_updated,
+                t.deleted_datetime
             FROM emails e
             INNER JOIN tickets t ON e.ticket_id = t.id
             LEFT JOIN ticket_statuses ts ON ts.id = t.status_id

@@ -1105,7 +1105,18 @@ function displayEmail(email, recordings) {
     const summaryStatus = email.status || 'Open';
     const summaryOwner = getDisplayName('owner', email.owner_id) || 'Unassigned';
 
-    readingPane.innerHTML = `
+    // When the open ticket is in the trash, lead with a banner offering Restore /
+    // Delete forever instead of the usual workflow actions.
+    const isTrashed = !!email.deleted_datetime;
+    const trashBanner = isTrashed ? `
+        <div style="background:#fdeceb;border:1px solid #e6c4c4;border-radius:8px;padding:12px 16px;margin:0 0 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <span style="font-size:18px;">🗑️</span>
+            <span style="color:#b71c1c;font-weight:600;flex:1;min-width:180px;">This ticket is in the trash — its actions are disabled until you restore it.</span>
+            <button onclick="restoreTicketFromTrash(${email.ticket_id})" style="font-size:12.5px;padding:6px 14px;border:1px solid #c8d6cf;background:#eefaf2;color:#1b7a43;border-radius:5px;cursor:pointer;font-weight:600;">↩ Restore</button>
+            <button onclick="permanentlyDeleteFromTrash(${email.ticket_id}, '${escapeHtml(email.ticket_number || '')}')" style="font-size:12.5px;padding:6px 14px;border:1px solid #e6c4c4;background:#fff;color:#b71c1c;border-radius:5px;cursor:pointer;font-weight:600;">✕ Delete forever</button>
+        </div>` : '';
+
+    readingPane.innerHTML = trashBanner + (isTrashed ? '<div style="pointer-events:none;opacity:0.55;">' : '') + `
         <div class="ticket-properties-container" id="ticketPropertiesContainer">
             <div class="ticket-properties-header" onclick="toggleTicketProperties(event)">
                 <div class="ticket-properties-title">
@@ -1262,7 +1273,7 @@ function displayEmail(email, recordings) {
             <div id="timeEntriesContainer"></div>
             <div id="notesContainer"></div>
         </div>
-    `;
+    ` + (isTrashed ? '</div>' : '');
 
     // Load full correspondence thread, notes, attachments and linked CMDB objects after rendering
     loadCorrespondenceThread(email.ticket_id);
@@ -1660,12 +1671,22 @@ async function restoreTicketFromTrash(ticketId) {
         const data = await res.json();
         if (data.success) {
             showToast('Ticket restored', 'success');
+            clearReadingPaneIfTicket(ticketId);
             loadFolderCounts();
             loadEmails();
         } else {
             showToast('Restore failed: ' + data.error, 'error');
         }
     } catch (e) { showToast('Restore failed', 'error'); }
+}
+
+// Clear the reading pane if it's showing the given ticket (it just left the trash).
+function clearReadingPaneIfTicket(ticketId) {
+    if (currentEmail && currentEmail.ticket_id == ticketId) {
+        currentEmail = null;
+        selectedEmailId = null;
+        document.getElementById('readingPane').innerHTML = '<div class="reading-pane-empty">Select an email to read</div>';
+    }
 }
 
 // Permanently delete a ticket from the Trash folder (irreversible).
@@ -1683,6 +1704,7 @@ async function permanentlyDeleteFromTrash(ticketId, ticketNumber) {
         const data = await res.json();
         if (data.success) {
             showToast('Ticket permanently deleted', 'success');
+            clearReadingPaneIfTicket(ticketId);
             loadFolderCounts();
             loadEmails();
         } else {

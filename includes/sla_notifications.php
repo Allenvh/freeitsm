@@ -41,6 +41,7 @@ function sla_run_breach_check(PDO $conn): array {
      LEFT JOIN ticket_statuses s ON s.id = t.status_id
          WHERE COALESCE(s.is_closed, 0) = 0
            AND t.closed_datetime IS NULL
+           AND t.deleted_datetime IS NULL
          ORDER BY t.id DESC
          LIMIT 2000
     ");
