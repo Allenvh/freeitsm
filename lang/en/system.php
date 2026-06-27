@@ -42,6 +42,10 @@ return [
         'help_title' => 'Help & guides',
         'help_desc'  => 'Step-by-step guides for every system area, including single sign-on setup.',
 
+        'topology_title'    => 'Topology',
+        'topology_desc'     => 'See how companies, mailboxes, domains, sign-in and analysts fit together',
+        'topology_keywords' => 'topology map overview tree relationships companies mailboxes domains analysts structure diagram graph',
+
         'encryption_title'  => 'Encryption',
         'encryption_desc'   => 'Generate and manage the encryption key used to protect sensitive data such as API keys and credentials.',
         'encryption_keywords' => 'encryption key master key crypto secrets credentials api keys cipher',
