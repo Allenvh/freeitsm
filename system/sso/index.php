@@ -25,6 +25,7 @@ try {
         $ssoTenants = $ssoAdminConn->query("SELECT id, name FROM tenants WHERE is_active = 1 ORDER BY is_default DESC, name")->fetchAll(PDO::FETCH_ASSOC);
     }
 } catch (Exception $e) { $ssoTenants = []; $ssoMultiTenant = false; }
+$ssoColspan = $ssoMultiTenant ? 6 : 5; // providers table column count (Company col only at N>1)
 
 // The redirect URI the admin must register in their IdP. Built from the
 // deployment's BASE_URL so it's correct whatever path the app is served at.
@@ -167,10 +168,10 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
             </div>
             <table class="providers">
                 <thead>
-                    <tr><th><?php echo htmlspecialchars(t('system.sso.col_name')); ?></th><th><?php echo htmlspecialchars(t('system.sso.col_issuer')); ?></th><th><?php echo htmlspecialchars(t('system.sso.col_status')); ?></th><th><?php echo htmlspecialchars(t('system.sso.col_auto_create')); ?></th><th style="text-align:right;"><?php echo htmlspecialchars(t('system.sso.col_actions')); ?></th></tr>
+                    <tr><th><?php echo htmlspecialchars(t('system.sso.col_name')); ?></th><?php if ($ssoMultiTenant): ?><th><?php echo htmlspecialchars(t('system.sso.col_company')); ?></th><?php endif; ?><th><?php echo htmlspecialchars(t('system.sso.col_issuer')); ?></th><th><?php echo htmlspecialchars(t('system.sso.col_status')); ?></th><th><?php echo htmlspecialchars(t('system.sso.col_auto_create')); ?></th><th style="text-align:right;"><?php echo htmlspecialchars(t('system.sso.col_actions')); ?></th></tr>
                 </thead>
                 <tbody id="providersBody">
-                    <tr class="empty-row"><td colspan="5"><?php echo htmlspecialchars(t('system.sso.loading')); ?></td></tr>
+                    <tr class="empty-row"><td colspan="<?php echo $ssoColspan; ?>"><?php echo htmlspecialchars(t('system.sso.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
@@ -252,6 +253,8 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
     <script src="../../assets/js/i18n.js"></script>
     <script>
     const API = '<?php echo $path_prefix; ?>api/';
+    const MULTI_TENANT = <?php echo $ssoMultiTenant ? 'true' : 'false'; ?>;
+    const SSO_COLSPAN = <?php echo $ssoColspan; ?>;
     let providers = [];
 
     // ---------- Global switches ----------
@@ -303,12 +306,13 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
     function renderProviders() {
         const body = document.getElementById('providersBody');
         if (!providers.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="5">' + window.t('system.sso.no_providers', { add: '<strong>' + window.t('system.sso.add_strong') + '</strong>' }) + '</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="' + SSO_COLSPAN + '">' + window.t('system.sso.no_providers', { add: '<strong>' + window.t('system.sso.add_strong') + '</strong>' }) + '</td></tr>';
             return;
         }
         body.innerHTML = providers.map(p => `
             <tr>
                 <td><strong>${esc(p.display_name)}</strong></td>
+                ${MULTI_TENANT ? `<td>${p.tenant_name ? esc(p.tenant_name) : '<span style="color:#999;">' + window.t('system.sso.global_badge') + '</span>'}</td>` : ''}
                 <td class="issuer-cell" title="${esc(p.issuer_url)}">${esc(p.issuer_url)}</td>
                 <td><span class="status-badge ${p.enabled ? 'on' : 'off'}">${p.enabled ? window.t('system.sso.enabled') : window.t('system.sso.disabled')}</span></td>
                 <td>${p.auto_create_users ? '<span class="badge-jit">' + window.t('system.sso.jit_on') + '</span>' : '<span style="color:#bbb;">' + window.t('system.sso.jit_off') + '</span>'}</td>

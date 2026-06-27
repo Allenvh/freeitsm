@@ -384,10 +384,12 @@ return [
         'add'               => '+ Add',
 
         'col_name'        => 'Name',
+        'col_company'     => 'Company',
         'col_issuer'      => 'Issuer',
         'col_status'      => 'Status',
         'col_auto_create' => 'Auto-create',
         'col_actions'     => 'Actions',
+        'global_badge'    => 'Global',
 
         'loading'        => 'Loading…',
         'no_providers'   => 'No providers yet. Click {add} to configure one.',

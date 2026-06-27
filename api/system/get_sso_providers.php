@@ -19,11 +19,12 @@ try {
     $conn = connectToDatabase();
 
     $stmt = $conn->query(
-        "SELECT id, display_name, protocol, issuer_url, client_id, client_secret,
-                scopes, enabled, auto_create_users, require_verified_email,
-                default_modules, sort_order, tenant_id
-           FROM auth_providers
-          ORDER BY sort_order, display_name"
+        "SELECT p.id, p.display_name, p.protocol, p.issuer_url, p.client_id, p.client_secret,
+                p.scopes, p.enabled, p.auto_create_users, p.require_verified_email,
+                p.default_modules, p.sort_order, p.tenant_id, t.name AS tenant_name
+           FROM auth_providers p
+           LEFT JOIN tenants t ON t.id = p.tenant_id
+          ORDER BY p.sort_order, p.display_name"
     );
 
     $providers = [];
@@ -42,6 +43,7 @@ try {
             'sort_order'        => (int)$r['sort_order'],
             // Which client company owns this IdP (null = global / MSP-internal).
             'tenant_id'         => isset($r['tenant_id']) ? (int)$r['tenant_id'] : null,
+            'tenant_name'       => $r['tenant_name'] ?? null,
             // Boolean flag only — the encrypted secret itself never leaves the server.
             'has_secret'        => ($r['client_secret'] !== null && $r['client_secret'] !== ''),
         ];
