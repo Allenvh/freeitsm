@@ -44,8 +44,10 @@ document.addEventListener('DOMContentLoaded', function() {
     //   window.openCreateOnLoad   — set by /change-management/new/index.php
     //                               (a thin include wrapper). Opens the
     //                               editor in create mode straight away.
+    // Deep link: ?change_id=N is canonical (matches tickets' ?ticket_id=).
+    // open/change/id are kept as backward-compat aliases for old shared links.
     const urlParams = new URLSearchParams(window.location.search);
-    const openId = urlParams.get('open') || urlParams.get('id');
+    const openId = urlParams.get('change_id') || urlParams.get('open') || urlParams.get('change') || urlParams.get('id');
     if (openId) {
         viewChange(parseInt(openId, 10));
     } else if (window.openCreateOnLoad) {
@@ -1780,7 +1782,7 @@ function getChangeRef() {
 }
 
 function getChangeUrl() {
-    return window.location.origin + window.location.pathname + '?change=' + currentChange.id;
+    return window.location.origin + window.location.pathname + '?change_id=' + currentChange.id;
 }
 
 function shareChangeLink() {
@@ -2005,19 +2007,5 @@ function buildPdfContent() {
     return container;
 }
 
-// Check for change ID in URL on page load (for shared links)
-(function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const changeId = urlParams.get('change');
-    if (changeId) {
-        // Wait for changes to load, then open the specific change
-        const checkAndLoad = setInterval(() => {
-            if (changes.length > 0 || document.getElementById('changeList').innerHTML.includes('No changes')) {
-                clearInterval(checkAndLoad);
-                viewChange(changeId);
-            }
-        }, 100);
-        // Timeout after 5 seconds
-        setTimeout(() => clearInterval(checkAndLoad), 5000);
-    }
-})();
+// Deep-link handling (?change_id= and legacy aliases) lives in the
+// DOMContentLoaded handler near the top of this file.

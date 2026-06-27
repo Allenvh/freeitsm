@@ -459,6 +459,6 @@ $translationNamespaces = ['common', 'change-management'];
         window.openCreateOnLoad = true;
         <?php endif; ?>
     </script>
-    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=10"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=11"></script>
 </body>
 </html>
