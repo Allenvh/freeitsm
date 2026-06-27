@@ -1625,6 +1625,18 @@ CREATE TABLE IF NOT EXISTS `problem_audit` (
     CONSTRAINT `fk_paudit_problem` FOREIGN KEY (`problem_id`) REFERENCES `problems` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Free-text journal notes on a problem (who / when / the note).
+CREATE TABLE IF NOT EXISTS `problem_notes` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `problem_id`       INT NOT NULL,
+    `analyst_id`       INT NULL,
+    `note`             LONGTEXT NOT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_pnotes_problem` (`problem_id`),
+    CONSTRAINT `fk_pnotes_problem` FOREIGN KEY (`problem_id`) REFERENCES `problems` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ----------------------------------------------------------
 -- Calendar
 -- ----------------------------------------------------------

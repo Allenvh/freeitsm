@@ -67,7 +67,19 @@ try {
     $au->execute([$id]);
     $audit = $au->fetchAll(PDO::FETCH_ASSOC);
 
-    echo json_encode(['success' => true, 'problem' => $problem, 'incidents' => $incidents, 'changes' => $changes, 'audit' => $audit]);
+    // Free-text journal notes (newest first).
+    $notes = [];
+    try {
+        $nt = $conn->prepare(
+            "SELECT pn.id, pn.note, pn.created_datetime, a.full_name AS analyst_name
+             FROM problem_notes pn LEFT JOIN analysts a ON a.id = pn.analyst_id
+             WHERE pn.problem_id = ? ORDER BY pn.created_datetime DESC, pn.id DESC"
+        );
+        $nt->execute([$id]);
+        $notes = $nt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) { /* problem_notes may be absent before db_verify */ }
+
+    echo json_encode(['success' => true, 'problem' => $problem, 'incidents' => $incidents, 'changes' => $changes, 'audit' => $audit, 'notes' => $notes]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

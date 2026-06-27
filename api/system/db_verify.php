@@ -1135,6 +1135,16 @@ $schema = [
         'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
     ],
 
+    // Free-text journal notes on a problem (who / when / the note). Distinct from
+    // problem_audit, which logs structured field changes.
+    'problem_notes' => [
+        'id'               => 'INT NOT NULL AUTO_INCREMENT',
+        'problem_id'       => 'INT NOT NULL',
+        'analyst_id'       => 'INT NULL',
+        'note'             => 'LONGTEXT NOT NULL',
+        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    ],
+
     'calendar_categories' => [
         'id'            => 'INT NOT NULL AUTO_INCREMENT',
         'name'          => 'VARCHAR(100) NOT NULL',
@@ -3290,6 +3300,7 @@ try {
         ['problem_tickets', 'fk_ptickets_problem',  "ALTER TABLE problem_tickets ADD CONSTRAINT fk_ptickets_problem FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
         ['problem_tickets', 'fk_ptickets_ticket',   "ALTER TABLE problem_tickets ADD CONSTRAINT fk_ptickets_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
         ['problem_audit',   'fk_paudit_problem',    "ALTER TABLE problem_audit ADD CONSTRAINT fk_paudit_problem FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
+        ['problem_notes',   'fk_pnotes_problem',    "ALTER TABLE problem_notes ADD CONSTRAINT fk_pnotes_problem FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
     ];
     foreach ($problemFks as [$tbl, $name, $sql]) {
         if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
@@ -3299,6 +3310,7 @@ try {
         ['problems', 'ix_problems_status_id',  'status_id'],
         ['problems', 'ix_problems_tenant_id',  'tenant_id'],
         ['problem_tickets', 'ix_ptickets_ticket', 'ticket_id'],
+        ['problem_notes', 'ix_pnotes_problem', 'problem_id'],
     ];
     foreach ($problemIndexes as [$tbl, $name, $col]) {
         if (!$tableExists($tbl) || $idxExists($tbl, $name)) continue;

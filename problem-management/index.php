@@ -60,6 +60,15 @@ $path_prefix = '../';
         .pm-table .pm-actions { white-space: nowrap; text-align: right; width: 1%; }
         .pm-table .pm-when { white-space: nowrap; color: #6b7280; }
         .pm-empty-row td { color: #9ca3af; }
+        /* Notes */
+        .pm-note-add { display: flex; gap: 10px; margin-bottom: 14px; align-items: flex-start; }
+        .pm-note-add textarea { flex: 1; box-sizing: border-box; padding: 8px 10px; border: 1px solid #cfd8dc; border-radius: 6px; font: inherit; resize: vertical; }
+        .pm-note { border-bottom: 1px solid #f0f0f0; padding: 9px 0; }
+        .pm-note:last-child { border-bottom: none; }
+        .pm-note-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 3px; }
+        .pm-note-who { font-weight: 600; color: #1a1a1a; font-size: 13px; }
+        .pm-note-when { color: #6b7280; font-size: 12px; }
+        .pm-note-body { white-space: pre-wrap; font-size: 13px; color: #374151; }
         .pm-audit { font-size: 12px; color: #555; padding: 4px 0; border-bottom: 1px solid #f4f4f4; }
         /* Editor modal */
         .pm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000; align-items: flex-start; justify-content: center; overflow-y: auto; }
@@ -180,6 +189,6 @@ $path_prefix = '../';
 
     <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
     <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
-    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=10"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=11"></script>
 </body>
 </html>

@@ -150,6 +150,13 @@ function pmRenderDetail(data) {
     }).join('');
     const audit = `<table class="pm-table"><thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead>
         <tbody>${auditRows || '<tr class="pm-empty-row"><td colspan="3">No history.</td></tr>'}</tbody></table>`;
+    const notes = (data.notes || []).map(n => {
+        const when = n.created_datetime ? new Date(n.created_datetime.replace(' ', 'T') + 'Z').toLocaleString() : '';
+        return `<div class="pm-note">
+            <div class="pm-note-head"><span class="pm-note-who">${pmEsc(n.analyst_name || 'Someone')}</span><span class="pm-note-when">${when}</span></div>
+            <div class="pm-note-body">${pmEsc(n.note)}</div>
+        </div>`;
+    }).join('') || '<div style="color:#9ca3af;font-size:13px;">No notes yet.</div>';
 
     document.getElementById('pmDetailView').innerHTML = `
         <div class="pm-detail">
@@ -187,6 +194,14 @@ function pmRenderDetail(data) {
             <div class="pm-section">
                 <h3>Fix (linked change)</h3>
                 ${changes}
+            </div>
+            <div class="pm-section">
+                <h3>Notes</h3>
+                <div class="pm-note-add">
+                    <textarea id="pmNoteInput" rows="2" placeholder="Add a note…"></textarea>
+                    <button class="pm-btn pm-btn-primary" onclick="pmAddNote()">Add</button>
+                </div>
+                <div class="pm-notes">${notes}</div>
             </div>
             <div class="pm-section">
                 <h3>History</h3>
@@ -382,6 +397,18 @@ async function pmUnlinkChange(changeId) {
         const data = await res.json();
         if (data.success) { pmToast('Unlinked', 'success'); pmOpenDetail(pmCurrentId); } else pmToast(data.error || 'Failed', 'error');
     } catch (e) { pmToast('Failed', 'error'); }
+}
+
+async function pmAddNote() {
+    const ta = document.getElementById('pmNoteInput');
+    const note = ((ta && ta.value) || '').trim();
+    if (!note) { pmToast('Enter a note first', 'warning'); return; }
+    try {
+        const res = await fetch(PM_API + 'add_note.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ problem_id: pmCurrentId, note }) });
+        const data = await res.json();
+        if (!data.success) { pmToast(data.error || 'Failed to add note', 'error'); return; }
+        pmToast('Note added', 'success'); pmOpenDetail(pmCurrentId);
+    } catch (e) { pmToast('Failed to add note', 'error'); }
 }
 
 // ----- AI (endpoint added in phase D) -----

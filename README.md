@@ -638,6 +638,7 @@ ITIL Problem Management — track the root cause behind one or more incidents.
 - A **Problem** carries a root cause, a workaround and a **known-error** flag, with a settings-managed lifecycle (New → Investigating → Root Cause Identified → Known Error → Resolved → Closed) and priorities
 - **Incident linking** from either side: a **Problem** strip in the ticket reading pane (link an existing problem, or raise a new one from the incident) and a *Link incident* action on the problem; the linked incidents are listed on the problem. Same-company enforced on multi-company installs
 - **Change linking**: connect the Change that permanently fixes the problem, so the whole chain — incidents → problem → change — is visible (uses the shared `change_relations` table)
+- **Notes**: a free-text journal on each problem recording who wrote each note and when, alongside the structured change History
 - **AI** (bring-your-own `problem_ai` key): *Draft root cause* proposes a root cause + workaround from the linked incidents; *Detect problems* scans recent open incidents for recurring patterns and proposes problems to create
 - **Company-scoped** like tickets (`problems.tenant_id`, access-gated); entirely invisible on a single-company install
 - List / detail / editor SPA, settings (statuses, priorities, Problem AI) and a help guide
