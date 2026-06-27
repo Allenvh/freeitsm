@@ -1974,7 +1974,7 @@ body.ticket-popout .ticket-toolbar {
 
 /* Attachment List Modal */
 .attachment-list-modal {
-    max-width: 800px;
+    max-width: 880px;
     position: relative;
 }
 
