@@ -29,7 +29,7 @@ $path_prefix = '../';
         .tk-help-hero { background: linear-gradient(135deg, #6a1b9a 0%, #4a148c 50%, #311b92 100%); color: #fff; padding: 40px 48px 36px; text-align: center; }
         .tk-help-hero h2 { margin: 0 0 8px; font-size: 26px; font-weight: 700; }
         .tk-help-hero p { margin: 0; font-size: 15px; opacity: .85; }
-        .tk-help-content { max-width: 1120px; margin: 0 auto; padding: 10px 48px 48px; }
+        .tk-help-content { padding: 10px 48px 48px; }
         .tk-help-section { padding: 28px 0; border-bottom: 1px solid #eee; scroll-margin-top: 20px; }
         .tk-help-section:last-child { border-bottom: none; padding-bottom: 0; }
         .tk-help-section-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
