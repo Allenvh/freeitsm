@@ -12,7 +12,8 @@ function pmEsc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function pmToast(msg, type) {
-    // Lightweight toast (the module loads inbox.css; reuse its toast if present, else alert-lite).
+    // Use the shared toaster (assets/js/toast.js); fall back to a minimal toast.
+    if (window.showToast) { window.showToast(msg, type || 'info'); return; }
     let el = document.getElementById('pmToast');
     if (!el) { el = document.createElement('div'); el.id = 'pmToast'; el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:6px;color:#fff;z-index:2000;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,.2);'; document.body.appendChild(el); }
     el.style.background = type === 'error' ? '#c62828' : (type === 'success' ? '#2e7d32' : '#374151');
@@ -219,7 +220,11 @@ async function pmSave() {
 }
 
 async function pmDelete() {
-    if (!pmCurrentId || !confirm('Delete this problem? Linked incidents are not deleted; they just lose the link.')) return;
+    if (!pmCurrentId) return;
+    const ok = window.showConfirm
+        ? await showConfirm({ title: 'Delete problem?', message: 'Linked incidents are not deleted; they just lose the link. This cannot be undone.', okLabel: 'Delete', okClass: 'danger' })
+        : confirm('Delete this problem? Linked incidents are not deleted; they just lose the link.');
+    if (!ok) return;
     try {
         const res = await fetch(PM_API + 'delete.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pmCurrentId }) });
         const data = await res.json();

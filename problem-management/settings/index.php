@@ -13,31 +13,21 @@ $path_prefix = '../../';
     <title>Service Desk - Problem Management Settings</title>
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css">
     <style>
-        .pms-page { height: calc(100vh - 48px); overflow-y: auto; box-sizing: border-box; padding: 24px 32px 60px; }
-        .pms-page h1 { font-size: 1.5rem; margin: 0 0 18px; }
-        .pms-icon-btn { background: none; border: 1px solid #d0d0d0; border-radius: 5px; padding: 5px; cursor: pointer; color: #555; vertical-align: middle; }
-        .pms-icon-btn:hover { background: #f0f0f0; color: #0078d4; border-color: #0078d4; }
-        .pms-icon-btn.delete:hover { color: #d13438; border-color: #d13438; background: #fdf3f3; }
-        .pms-icon-btn svg { width: 15px; height: 15px; display: block; }
-        table.pms { width: 100%; border-collapse: collapse; }
-        table.pms th, table.pms td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-        table.pms th { font-size: 12px; text-transform: uppercase; color: #6b7280; }
+        /* Same shell pattern as tickets/settings: header pinned, .container scrolls,
+           full width (no max-width cap). */
+        .settings-shell { display: flex; flex-direction: column; height: 100vh; }
+        .container { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-width: none; padding: 24px 32px 40px; }
+        .container > h1 { font-size: 1.5rem; margin: 0 0 18px; }
+        .tab-content > p { margin-bottom: 14px; }
         .pms-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
-        .pms-btn { padding: 7px 14px; border: 1px solid #cfd8dc; border-radius: 6px; background: #fff; cursor: pointer; font-weight: 600; }
-        .pms-btn-primary { background: #6a1b9a; color: #fff; border-color: #6a1b9a; }
-        .pms-link { color: #6a1b9a; cursor: pointer; }
-        .pms-del { color: #c62828; cursor: pointer; }
-        .pms-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); align-items: center; justify-content: center; z-index: 1000; }
-        .pms-modal.active { display: flex; }
-        .pms-modal-content { background: #fff; border-radius: 10px; width: 420px; max-width: 92%; padding: 20px; }
-        .pms-modal-content .row { margin-bottom: 12px; }
-        .pms-modal-content label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-        .pms-modal-content input[type=text], .pms-modal-content input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #cfd8dc; border-radius: 6px; }
+        .tab-content .table-action-btn svg { width: 15px; height: 15px; }
     </style>
 </head>
 <body>
+    <div class="settings-shell">
     <?php include __DIR__ . '/../includes/header.php'; ?>
-    <div class="pms-page">
+
+    <div class="container">
         <h1>Problem Management settings</h1>
 
         <div class="tabs">
@@ -47,50 +37,58 @@ $path_prefix = '../../';
         </div>
 
         <div class="tab-content active" id="tab-statuses">
-            <div class="section-header"><h2>Statuses</h2><button class="pms-btn pms-btn-primary" onclick="pmsOpen('status')">Add</button></div>
-            <table class="pms"><thead><tr><th>Name</th><th>Closed?</th><th>Default</th><th>Active</th><th></th></tr></thead>
+            <div class="section-header"><h2>Statuses</h2><button class="add-btn" onclick="pmsOpen('status')">Add</button></div>
+            <table><thead><tr><th>Name</th><th>Closed?</th><th>Default</th><th>Active</th><th>Actions</th></tr></thead>
             <tbody id="pmsStatusRows"><tr><td colspan="5">Loading…</td></tr></tbody></table>
         </div>
 
         <div class="tab-content" id="tab-priorities">
-            <div class="section-header"><h2>Priorities</h2><button class="pms-btn pms-btn-primary" onclick="pmsOpen('priority')">Add</button></div>
-            <table class="pms"><thead><tr><th>Name</th><th>Default</th><th>Active</th><th></th></tr></thead>
+            <div class="section-header"><h2>Priorities</h2><button class="add-btn" onclick="pmsOpen('priority')">Add</button></div>
+            <table><thead><tr><th>Name</th><th>Default</th><th>Active</th><th>Actions</th></tr></thead>
             <tbody id="pmsPriorityRows"><tr><td colspan="4">Loading…</td></tr></tbody></table>
         </div>
 
         <div class="tab-content" id="tab-ai">
             <h2 style="margin-top:0;">Problem AI</h2>
-            <p style="color:#555;font-size:14px;">Used by “Draft root cause” and “Detect problems”. Bring your own provider and key.</p>
+            <p style="color:#555;">Used by “Draft root cause” and “Detect problems”. Bring your own provider and key.</p>
             <?php renderAiSettingsPanel('problem_ai'); ?>
         </div>
     </div>
+    </div><!-- /.settings-shell -->
 
-    <div class="pms-modal" id="pmsModal">
-        <div class="pms-modal-content">
-            <h2 id="pmsModalTitle" style="margin-top:0;color:#6a1b9a;">Add</h2>
-            <input type="hidden" id="pmsId"><input type="hidden" id="pmsKind">
-            <div class="row"><label>Name</label><input type="text" id="pmsName"></div>
-            <div class="row"><label>Colour</label><input type="text" id="pmsColour" placeholder="#6a1b9a"></div>
-            <div class="row" id="pmsClosedRow"><label><input type="checkbox" id="pmsClosed"> Counts as closed</label></div>
-            <div class="row"><label><input type="checkbox" id="pmsDefault"> Default</label></div>
-            <div class="row"><label><input type="checkbox" id="pmsActive" checked> Active</label></div>
-            <div class="row"><label>Display order</label><input type="number" id="pmsOrder" value="0"></div>
-            <div style="display:flex;justify-content:flex-end;gap:10px;">
-                <button class="pms-btn" onclick="pmsClose()">Cancel</button>
-                <button class="pms-btn pms-btn-primary" onclick="pmsSave()">Save</button>
+    <!-- Add/edit modal (shared .modal primitives) -->
+    <div class="modal" id="pmsModal">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header" id="pmsModalTitle">Add</div>
+            <div class="modal-body">
+                <input type="hidden" id="pmsId"><input type="hidden" id="pmsKind">
+                <div class="form-group"><label>Name *</label><input type="text" id="pmsName"></div>
+                <div class="form-group"><label>Colour</label><input type="text" id="pmsColour" placeholder="#6a1b9a"></div>
+                <div class="form-group" id="pmsClosedRow"><label><input type="checkbox" id="pmsClosed"> Counts as closed</label></div>
+                <div class="form-group"><label><input type="checkbox" id="pmsDefault"> Default</label></div>
+                <div class="form-group"><label><input type="checkbox" id="pmsActive" checked> Active</label></div>
+                <div class="form-group"><label>Display order</label><input type="number" id="pmsOrder" value="0"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="pmsClose()">Cancel</button>
+                <button class="btn btn-primary" onclick="pmsSave()">Save</button>
             </div>
         </div>
     </div>
 
+    <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/ai-settings.js"></script>
     <script>
     const PMS_API = '../../api/problem-management/';
     function pmsEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     const PMS_EDIT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
     const PMS_DEL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
     function pmsActions(kind, id){
-        return `<button class="pms-icon-btn" title="Edit" onclick='pmsEdit("${kind}",${id})'>${PMS_EDIT_SVG}</button>
-                <button class="pms-icon-btn delete" title="Delete" onclick="pmsDel('${kind}',${id})">${PMS_DEL_SVG}</button>`;
+        return `<button class="table-action-btn" title="Edit" onclick='pmsEdit("${kind}",${id})'>${PMS_EDIT_SVG}</button>
+                <button class="table-action-btn delete" title="Delete" onclick="pmsDel('${kind}',${id})">${PMS_DEL_SVG}</button>`;
     }
+    function pmsBadge(active){ return active==1 ? '<span class="status-badge status-active">Active</span>' : '<span class="status-badge status-inactive">Inactive</span>'; }
     function pmsTab(name){
         document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
         document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
@@ -102,14 +100,14 @@ $path_prefix = '../../';
         pmsStatuses = s.success? s.statuses:[];
         document.getElementById('pmsStatusRows').innerHTML = pmsStatuses.map(x=>`<tr>
             <td><span class="pms-swatch" style="background:${pmsEsc(x.colour||'#ccc')}"></span>${pmsEsc(x.name)}</td>
-            <td>${x.is_closed==1?'Yes':'—'}</td><td>${x.is_default==1?'★':''}</td><td>${x.is_active==1?'Yes':'No'}</td>
-            <td style="text-align:right;">${pmsActions('status',x.id)}</td></tr>`).join('') || '<tr><td colspan="5">None</td></tr>';
+            <td>${x.is_closed==1?'Yes':'—'}</td><td>${x.is_default==1?'★':''}</td><td>${pmsBadge(x.is_active)}</td>
+            <td>${pmsActions('status',x.id)}</td></tr>`).join('') || '<tr><td colspan="5">None yet.</td></tr>';
         const p=await fetch(PMS_API+'get_problem_priorities.php?manage=1').then(r=>r.json());
         pmsPriorities = p.success? p.priorities:[];
         document.getElementById('pmsPriorityRows').innerHTML = pmsPriorities.map(x=>`<tr>
             <td><span class="pms-swatch" style="background:${pmsEsc(x.colour||'#ccc')}"></span>${pmsEsc(x.name)}</td>
-            <td>${x.is_default==1?'★':''}</td><td>${x.is_active==1?'Yes':'No'}</td>
-            <td style="text-align:right;">${pmsActions('priority',x.id)}</td></tr>`).join('') || '<tr><td colspan="4">None</td></tr>';
+            <td>${x.is_default==1?'★':''}</td><td>${pmsBadge(x.is_active)}</td>
+            <td>${pmsActions('priority',x.id)}</td></tr>`).join('') || '<tr><td colspan="4">None yet.</td></tr>';
     }
     function pmsOpen(kind, row){
         document.getElementById('pmsKind').value=kind;
@@ -132,16 +130,17 @@ $path_prefix = '../../';
             colour:document.getElementById('pmsColour').value.trim(), is_default:document.getElementById('pmsDefault').checked?1:0,
             is_active:document.getElementById('pmsActive').checked?1:0, display_order:parseInt(document.getElementById('pmsOrder').value||'0',10) };
         if(kind==='status') payload.is_closed=document.getElementById('pmsClosed').checked?1:0;
-        if(!payload.name){ alert('Name is required'); return; }
+        if(!payload.name){ showToast('Name is required','error'); return; }
         const url=kind==='status'?'save_problem_status.php':'save_problem_priority.php';
         const r=await fetch(PMS_API+url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-        if(r.success){ pmsClose(); pmsLoad(); } else alert(r.error||'Save failed');
+        if(r.success){ pmsClose(); showToast(kind.charAt(0).toUpperCase()+kind.slice(1)+' saved','success'); pmsLoad(); } else showToast(r.error||'Save failed','error');
     }
     async function pmsDel(kind,id){
-        if(!confirm('Delete this '+kind+'?')) return;
+        const ok = await showConfirm({ title: 'Delete '+kind+'?', message: 'This cannot be undone.', okLabel: 'Delete', okClass: 'danger' });
+        if(!ok) return;
         const url=kind==='status'?'delete_problem_status.php':'delete_problem_priority.php';
         const r=await fetch(PMS_API+url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json());
-        if(r.success) pmsLoad(); else alert(r.error||'Delete failed');
+        if(r.success){ showToast(kind.charAt(0).toUpperCase()+kind.slice(1)+' deleted','success'); pmsLoad(); } else showToast(r.error||'Delete failed','error');
     }
     pmsLoad();
     </script>

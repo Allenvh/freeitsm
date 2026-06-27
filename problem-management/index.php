@@ -125,6 +125,8 @@ $path_prefix = '../';
         </div>
     </div>
 
-    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=2"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/problem-management.js?v=3"></script>
 </body>
 </html>
