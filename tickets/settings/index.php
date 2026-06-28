@@ -1561,7 +1561,7 @@ $translationNamespaces = ['common', 'tickets'];
 
                 <p style="margin-bottom: 15px; color: var(--text-muted, #666);" id="teamAssignmentDesc"><?php echo htmlspecialchars(t('tickets.settings.modals.team_assignment.description')); ?></p>
 
-                <div id="teamAssignmentList" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;">
+                <div id="teamAssignmentList" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border, #ddd); border-radius: 4px;">
                     <div style="padding: 15px; text-align: center; color: var(--text-faint, #999);"><?php echo htmlspecialchars(t('tickets.settings.modals.team_assignment.loading')); ?></div>
                 </div>
 
@@ -2511,8 +2511,8 @@ $translationNamespaces = ['common', 'tickets'];
                 listContainer.innerHTML = '<div style="padding: 15px; text-align: center; color: var(--text-faint, #999);">No active teams available. Create teams first.</div>';
             } else {
                 listContainer.innerHTML = activeTeams.map(team => `
-                    <label style="display: flex; align-items: center; padding: 12px 15px; border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.2s;"
-                           onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'">
+                    <label style="display: flex; align-items: center; padding: 12px 15px; border-bottom: 1px solid var(--border-soft, #eee); cursor: pointer; transition: background 0.2s;"
+                           onmouseover="this.style.background='var(--surface-hover, #f5f5f5)'" onmouseout="this.style.background=''">
                         <input type="checkbox" name="team_ids" value="${team.id}" ${currentTeamIds.includes(team.id) ? 'checked' : ''}
                                style="margin-right: 12px; width: 18px; height: 18px;">
                         <div>
