@@ -6,6 +6,7 @@ session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
 I18n::initFromSession();
 
 $current_page = 'users';
@@ -14,12 +15,13 @@ $current_page = 'users';
 $translationNamespaces = ['common', 'tickets'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('tickets.users.page_title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <link rel="stylesheet" href="../assets/css/theme.css?v=4">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=34">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../assets/js/i18n.js"></script>
     <style>
@@ -28,13 +30,13 @@ $translationNamespaces = ['common', 'tickets'];
             flex: 1;
             overflow: hidden;
             gap: 1px;
-            background-color: #e0e0e0;
+            background-color: var(--border, #e0e0e0);
         }
 
         .users-list-container {
             width: 400px;
             min-width: 300px;
-            background-color: #fff;
+            background-color: var(--surface, #fff);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -42,20 +44,20 @@ $translationNamespaces = ['common', 'tickets'];
 
         .users-list-header {
             padding: 15px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
         }
 
         .users-list-header h3 {
             margin: 0 0 10px 0;
             font-size: 16px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .search-box {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 14px;
             box-sizing: border-box;
@@ -63,7 +65,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         .search-box:focus {
             outline: none;
-            border-color: #0078d4;
+            border-color: var(--accent, #0078d4);
             box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.1);
         }
 
@@ -74,42 +76,42 @@ $translationNamespaces = ['common', 'tickets'];
 
         .user-item {
             padding: 12px 15px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             cursor: pointer;
             transition: background-color 0.15s;
         }
 
         .user-item:hover {
-            background-color: #f5f5f5;
+            background-color: var(--surface-2, #f5f5f5);
         }
 
         .user-item.selected {
-            background-color: #e8f4fc;
-            border-left: 3px solid #0078d4;
+            background-color: var(--accent-soft, #e8f4fc);
+            border-left: 3px solid var(--accent, #0078d4);
         }
 
         .user-name {
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 4px;
         }
 
         .user-email {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
             margin-bottom: 4px;
         }
 
         .user-meta {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             display: flex;
             gap: 15px;
         }
 
         .user-detail-container {
             flex: 1;
-            background-color: #fff;
+            background-color: var(--surface, #fff);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -117,20 +119,20 @@ $translationNamespaces = ['common', 'tickets'];
 
         .user-detail-header {
             padding: 20px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
         }
 
         .user-detail-name {
             font-size: 20px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin: 0 0 5px 0;
         }
 
         .user-detail-email {
             font-size: 14px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .user-info-grid {
@@ -138,7 +140,7 @@ $translationNamespaces = ['common', 'tickets'];
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             padding: 20px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
         }
 
         .info-item {
@@ -148,14 +150,14 @@ $translationNamespaces = ['common', 'tickets'];
 
         .info-label {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-bottom: 4px;
             text-transform: uppercase;
         }
 
         .info-value {
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .tickets-section {
@@ -167,10 +169,10 @@ $translationNamespaces = ['common', 'tickets'];
 
         .tickets-header {
             padding: 15px 20px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .tickets-list {
@@ -182,31 +184,31 @@ $translationNamespaces = ['common', 'tickets'];
             display: grid;
             grid-template-columns: 130px 1fr 100px 80px 130px;
             padding: 12px 20px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             cursor: pointer;
             transition: background-color 0.15s;
             align-items: center;
         }
 
         .ticket-row:hover {
-            background-color: #f5f5f5;
+            background-color: var(--surface-2, #f5f5f5);
         }
 
         .ticket-row-header {
             font-weight: 600;
-            background-color: #f0f0f0;
+            background-color: var(--surface-hover, #f0f0f0);
             font-size: 12px;
-            color: #666;
+            color: var(--text-muted, #666);
             text-transform: uppercase;
         }
 
         .ticket-row-header:hover {
-            background-color: #f0f0f0;
+            background-color: var(--surface-hover, #f0f0f0);
             cursor: default;
         }
 
         .ticket-number {
-            color: #0078d4;
+            color: var(--accent, #0078d4);
             font-weight: 500;
             white-space: nowrap;
         }
@@ -236,7 +238,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         .ticket-date {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .empty-state {
@@ -244,7 +246,7 @@ $translationNamespaces = ['common', 'tickets'];
             align-items: center;
             justify-content: center;
             flex: 1;
-            color: #888;
+            color: var(--text-dim, #888);
             font-size: 14px;
             padding: 40px;
             text-align: center;
@@ -260,8 +262,8 @@ $translationNamespaces = ['common', 'tickets'];
         .spinner {
             width: 30px;
             height: 30px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #0078d4;
+            border: 3px solid var(--border, #f3f3f3);
+            border-top: 3px solid var(--accent, #0078d4);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -273,7 +275,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         .user-count {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-top: 8px;
         }
 
@@ -289,6 +291,8 @@ $translationNamespaces = ['common', 'tickets'];
             margin-bottom: 20px;
             border-bottom: none;
         }
+        /* Form fields follow the palette. */
+    input, select, textarea { background: var(--surface, #fff); color: var(--text, #333); }
     </style>
 </head>
 <body>
@@ -345,7 +349,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <div class="form-group">
                     <label for="userPassword"><?php echo htmlspecialchars(t('tickets.users.modal.password')); ?></label>
                     <input type="password" id="userPassword" autocomplete="new-password" placeholder="<?php echo htmlspecialchars(t('tickets.users.modal.password_placeholder')); ?>" minlength="8">
-                    <small style="color: #666;"><?php echo htmlspecialchars(t('tickets.users.modal.password_help')); ?></small>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.users.modal.password_help')); ?></small>
                 </div>
 
                 <div class="modal-actions">
