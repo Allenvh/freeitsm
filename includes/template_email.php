@@ -160,6 +160,8 @@ function buildTicketMergeData(PDO $conn, int $ticketId): ?array {
         'ticket_status' => $row['status'] ?? '',
         'ticket_priority' => $row['priority'] ?? '',
         'requester_name' => $row['requester_name'] ?? '',
+        // First word of the requester's name — for friendlier greetings ("Dear Ed").
+        'requester_first_name' => trim(explode(' ', trim($row['requester_name'] ?? ''))[0]),
         'requester_email' => $row['requester_email'] ?? '',
         'analyst_name' => $row['analyst_name'] ?? '',
         'analyst_email' => $row['analyst_email'] ?? '',
