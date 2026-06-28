@@ -39,6 +39,10 @@
 (function() {
     if (window.showConfirm) return; // already loaded
 
+    // Colours go through theme tokens with light-colour fallbacks: on pages
+    // without a palette (no theme.css) the fallbacks render the exact original
+    // light dialog (zero change app-wide); where a dark palette is active
+    // (data-theme set, e.g. Tickets) the dialog themes to match automatically.
     var style = document.createElement('style');
     style.textContent =
         '.fitsm-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);' +
@@ -46,23 +50,23 @@
             'opacity:0;visibility:hidden;transition:opacity 0.2s ease,visibility 0.2s ease;' +
             'font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif}' +
         '.fitsm-confirm-overlay.active{opacity:1;visibility:visible}' +
-        '.fitsm-confirm-modal{background:#fff;border-radius:8px;width:450px;max-width:90vw;' +
-            'box-shadow:0 10px 40px rgba(0,0,0,0.2);transform:scale(0.95) translateY(-10px);' +
+        '.fitsm-confirm-modal{background:var(--surface,#fff);border-radius:8px;width:450px;max-width:90vw;' +
+            'box-shadow:0 10px 40px var(--shadow,rgba(0,0,0,0.2));transform:scale(0.95) translateY(-10px);' +
             'transition:transform 0.2s ease}' +
         '.fitsm-confirm-overlay.active .fitsm-confirm-modal{transform:scale(1) translateY(0)}' +
-        '.fitsm-confirm-header{padding:20px;border-bottom:1px solid #e0e0e0}' +
-        '.fitsm-confirm-header h3{margin:0;font-size:18px;font-weight:600;color:#333}' +
-        '.fitsm-confirm-body{padding:20px;color:#555;font-size:14px;line-height:1.5}' +
+        '.fitsm-confirm-header{padding:20px;border-bottom:1px solid var(--border,#e0e0e0)}' +
+        '.fitsm-confirm-header h3{margin:0;font-size:18px;font-weight:600;color:var(--text,#333)}' +
+        '.fitsm-confirm-body{padding:20px;color:var(--text-muted,#555);font-size:14px;line-height:1.5}' +
         '.fitsm-confirm-body p{margin:0;white-space:pre-wrap}' +
-        '.fitsm-confirm-footer{padding:15px 20px;border-top:1px solid #e0e0e0;display:flex;' +
+        '.fitsm-confirm-footer{padding:15px 20px;border-top:1px solid var(--border,#e0e0e0);display:flex;' +
             'justify-content:flex-end;gap:10px}' +
         '.fitsm-confirm-btn{padding:8px 16px;border-radius:4px;font-size:13px;cursor:pointer;' +
             'border:none;transition:background 0.15s;font-family:inherit;font-weight:500}' +
-        '.fitsm-confirm-btn:focus-visible{outline:2px solid #0078d4;outline-offset:2px}' +
-        '.fitsm-confirm-btn-secondary{background:#f0f0f0;color:#333;border:1px solid #ddd}' +
-        '.fitsm-confirm-btn-secondary:hover{background:#e0e0e0}' +
-        '.fitsm-confirm-btn-primary{background:#0078d4;color:#fff}' +
-        '.fitsm-confirm-btn-primary:hover{background:#005ea5}' +
+        '.fitsm-confirm-btn:focus-visible{outline:2px solid var(--accent,#0078d4);outline-offset:2px}' +
+        '.fitsm-confirm-btn-secondary{background:var(--surface-hover,#f0f0f0);color:var(--text,#333);border:1px solid var(--border,#ddd)}' +
+        '.fitsm-confirm-btn-secondary:hover{background:var(--surface-2,#e0e0e0)}' +
+        '.fitsm-confirm-btn-primary{background:var(--accent,#0078d4);color:#fff}' +
+        '.fitsm-confirm-btn-primary:hover{background:var(--accent-hover,#005ea5)}' +
         '.fitsm-confirm-btn-danger{background:#c62828;color:#fff}' +
         '.fitsm-confirm-btn-danger:hover{background:#a02020}';
     document.head.appendChild(style);

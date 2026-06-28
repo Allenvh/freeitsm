@@ -156,7 +156,7 @@ return [
         'title' => 'Adicionar nota',
         'note_label' => 'Nota',
         'placeholder' => 'Digite sua nota aqui…',
-        'save_btn' => 'Salvar nota',
+        'save_btn' => 'Salvar',
     ],
     'reply_modal' => [
         'to' => 'Para',

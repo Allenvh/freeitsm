@@ -298,11 +298,21 @@ function formatFileSize(bytes) {
 
 // Initialize TinyMCE editor
 function initTinyMCE() {
+    // Match the editor chrome + content area to the active palette. TinyMCE ships
+    // its own skins (the editor renders in an iframe), so we use the bundled
+    // oxide-dark UI skin + dark content CSS rather than CSS overrides. Switching
+    // palette reloads the page, so this runs fresh with the right data-theme.
+    const theme = document.documentElement.getAttribute('data-theme') || 'default';
+    const DARK_THEMES = ['dark']; // extend as dark palettes are added
+    const isDark = DARK_THEMES.includes(theme);
+
     tinymce.init({
         selector: '#emailBody',
         license_key: 'gpl',
         height: 350,
         menubar: false,
+        skin: isDark ? 'oxide-dark' : 'oxide',
+        content_css: isDark ? 'dark' : 'default',
         plugins: [
             'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
             'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',

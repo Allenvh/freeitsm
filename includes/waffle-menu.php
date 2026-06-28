@@ -300,6 +300,14 @@ $modules = [
     <?php foreach (getModuleColors() as $key => $c): ?>
     .header.<?php echo $key; ?>-header { background: linear-gradient(135deg, <?php echo $c[0]; ?>, <?php echo $c[1]; ?>); }
     <?php endforeach; ?>
+
+    /* Dark palettes: lay a translucent black wash over the (per-module) coloured
+       header via an inset box-shadow, so it reads as dark while keeping a hint of
+       the module's colour. One rule covers every module's header; the nav content
+       sits above the wash, so labels/icons stay crisp. */
+    [data-theme="dark"] .header {
+        box-shadow: inset 0 0 0 2000px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.4);
+    }
 </style>
 
 <div class="waffle-overlay" id="waffleOverlay" onclick="closeWaffleMenu()"></div>
@@ -379,7 +387,7 @@ function renderWaffleMenuJS() {
          analyst-facing module page). Individual pages no longer need their
          own <script src="toast.js"> tag. -->
     <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
-    <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/confirm.js?v=2"></script>
     <script>
     // Per-analyst toast preferences pushed from PHP — toast.js reads
     // these before falling back to localStorage / default.

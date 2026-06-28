@@ -170,10 +170,10 @@ return [
     ],
 
     'note_modal' => [
-        'title'       => 'Add Note',
+        'title'       => 'Add note',
         'note_label'  => 'Note',
         'placeholder' => 'Enter your note here...',
-        'save_btn'    => 'Save Note',
+        'save_btn'    => 'Save',
     ],
 
     'reply_modal' => [
@@ -241,7 +241,7 @@ return [
 
     // Action buttons in the reading-pane action toolbar (above the email body).
     'actions' => [
-        'add_note'             => 'Add Note',
+        'add_note'             => 'Add note',
         'reply'                => 'Reply',
         'forward'              => 'Forward',
         'schedule'             => 'Schedule',
