@@ -76,6 +76,15 @@ class I18n {
      * Safe to call without a database — fails silently if config/DB aren't loaded yet.
      */
     public static function initFromSession() {
+        // The saved interface_language preference is read from the DB via
+        // connectToDatabase() (defined in functions.php). Many module pages load
+        // config.php + i18n.php but NOT functions.php before calling this, which
+        // silently dropped the preference and fell back to Accept-Language → en.
+        // Self-load the helper here so the user's language is honoured everywhere.
+        if (!function_exists('connectToDatabase') && is_file(__DIR__ . '/functions.php')) {
+            require_once __DIR__ . '/functions.php';
+        }
+
         // 1. User preference (if logged in and DB is reachable)
         if (!empty($_SESSION['analyst_id']) && function_exists('connectToDatabase')) {
             try {
