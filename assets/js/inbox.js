@@ -302,9 +302,11 @@ function initTinyMCE() {
     // its own skins (the editor renders in an iframe), so we use the bundled
     // oxide-dark UI skin + dark content CSS rather than CSS overrides. Switching
     // palette reloads the page, so this runs fresh with the right data-theme.
-    const theme = document.documentElement.getAttribute('data-theme') || 'default';
-    const DARK_THEMES = ['dark']; // extend as dark palettes are added
-    const isDark = DARK_THEMES.includes(theme);
+    // The palette declares its own light/dark mode (Theme::THEMES in
+    // includes/theme.php), surfaced as data-theme-mode on <html>. TinyMCE ships
+    // only a light + a dark skin, so we pick by mode — any new palette (e.g.
+    // "Miami Techno") works with no change here, just its registry mode.
+    const isDark = (document.documentElement.getAttribute('data-theme-mode') || 'light') === 'dark';
 
     tinymce.init({
         selector: '#emailBody',

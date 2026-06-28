@@ -16,9 +16,13 @@
  */
 class Theme
 {
+    // 'mode' is the palette's light/dark base. It drives anything that can't read
+    // our CSS tokens directly — e.g. the TinyMCE editor (iframe + its own skin
+    // files), which picks oxide vs oxide-dark by mode. A new palette just declares
+    // its mode here and everything downstream adapts; no per-component code change.
     const THEMES = [
-        'default' => ['label' => 'Light'],
-        'dark'    => ['label' => 'Dark'],
+        'default' => ['label' => 'Light', 'mode' => 'light'],
+        'dark'    => ['label' => 'Dark',  'mode' => 'dark'],
     ];
     const DEFAULT_THEME = 'default';
 
@@ -30,6 +34,13 @@ class Theme
     public static function isValid($id) { return is_string($id) && array_key_exists($id, self::THEMES); }
 
     public static function label($id) { return self::THEMES[$id]['label'] ?? $id; }
+
+    /** The light/dark base of the active palette for $module. Drives the TinyMCE skin. */
+    public static function mode($module = null)
+    {
+        $id = self::active($module);
+        return self::THEMES[$id]['mode'] ?? 'light';
+    }
 
     /**
      * The active palette id for $module (null = global only). Reads the analyst's
