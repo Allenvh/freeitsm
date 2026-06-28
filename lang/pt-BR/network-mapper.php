@@ -1,0 +1,422 @@
+<?php
+/**
+ * Português (Brasil) (pt-BR) — Network Mapper module.
+ * Falls back per-key to lang/en/network-mapper.php for anything missing here.
+ */
+return [
+    'title' => 'Network Mapper',
+
+    // Shared header nav (includes/header.php)
+    'nav' => [
+        'diagrams' => 'Diagramas',
+        'help'     => 'Ajuda',
+    ],
+
+    // Diagrams landing page (index.php)
+    'index' => [
+        'browser_title'    => 'FreeITSM — Network Mapper',
+        'heading'          => 'Diagramas de rede',
+        'filter_placeholder' => 'Filtrar por título…',
+        'new'              => 'Novo diagrama',
+        'loading'          => 'Carregando diagramas…',
+        'load_failed'      => 'Falha ao carregar: {message}',
+        'empty_heading'    => 'Ainda não há diagramas',
+        'empty_body'       => 'Os diagramas de rede ficam sobre o CMDB — arraste uma classe para a tela, vincule-a a um objeto do CMDB e deixe os objetos relacionados serem incluídos automaticamente.',
+        'empty_create'     => 'Crie seu primeiro diagrama',
+        'no_description'   => 'Sem descrição',
+        'version_unknown'  => 'v?',
+        'versions_suffix'  => ' · {count} versões',
+        'nodes'            => 'nós',
+        'connectors'       => 'conectores',
+        'author_unknown'   => 'Desconhecido',
+        'meta_by'          => 'Por {author} · atualizado em {date}',
+        // New diagram modal
+        'modal_title'      => 'Novo diagrama de rede',
+        'field_title'      => 'Título *',
+        'field_title_ph'   => 'ex. Rede central — Matriz andar 2',
+        'field_description'=> 'Descrição',
+        'field_description_ph' => 'O que este diagrama mostra? (opcional)',
+        'field_version'    => 'Rótulo da versão inicial',
+        'field_version_ph' => 'v1',
+        'field_version_help' => 'Texto livre — ex. “v1”, “Rascunho”, “Linha de base T1”. Você pode salvar novas versões depois pelo editor.',
+        'create'           => 'Criar e abrir',
+        // toasts / validation
+        'title_required'   => 'O título é obrigatório',
+        'create_failed'    => 'Falha: {message}',
+        'delete_title'     => 'Excluir',
+        'delete_confirm'   => 'Excluir "{title}"? Isso remove apenas a versão atual. Versões mais antigas na cadeia são preservadas.',
+        'deleted'          => 'Diagrama excluído',
+        'delete_failed'    => 'Falha ao excluir: {message}',
+    ],
+
+    // Diagram editor shell (diagram.php)
+    'editor' => [
+        'browser_title'    => 'FreeITSM — Diagrama de rede',
+        'browser_title_named' => 'FreeITSM — {title}',
+        'back'             => '← Todos os diagramas',
+        'loading'          => 'Carregando…',
+        'load_failed'      => 'Falha ao carregar o diagrama',
+        'untitled'         => '(sem título)',
+
+        // Toolbar
+        'autosave'         => 'Salvamento automático',
+        'autosave_title'   => 'Salva alterações automaticamente ~2s após a última edição',
+        'page_off'         => 'Página: Desativada',
+        'page_label'       => 'Página: {label} {orient}',
+        'page_btn_title'   => 'Mostrar um contorno de tamanho de papel na tela — útil antes de exportar para PNG/PDF',
+        'zoom_out'         => 'Reduzir zoom',
+        'zoom_in'          => 'Ampliar zoom',
+        'zoom_reset_title' => 'Clique para redefinir para 100%',
+        'zoom_fit'         => 'Ajustar',
+        'zoom_fit_title'   => 'Ajustar a página (ou todos os nós) à tela visível',
+        'branding'         => 'Identidade visual',
+        'branding_title'   => 'Sobrescrever o cabeçalho/rodapé da organização para este diagrama (defina um tamanho de página primeiro)',
+        'centre'           => 'Centralizar',
+        'centre_title'     => 'Mover todos os nós para que o diagrama fique centralizado no tamanho de papel selecionado (requer um tamanho de página definido)',
+        'export_png'       => 'PNG',
+        'export_png_title' => 'Exportar o diagrama como imagem PNG (recortado ao contorno da página, se definido)',
+        'export_pdf'       => 'PDF',
+        'export_pdf_title' => 'Exportar o diagrama como PDF (usa o tamanho de papel + orientação escolhidos)',
+        'present'          => 'Apresentar',
+        'present_title'    => 'Ocultar a barra de ferramentas e os painéis para mostrar apenas o diagrama (Esc para sair, depois F11 para tela cheia)',
+        'versions'         => 'Versões',
+        'versions_title'   => 'Navegar pelo histórico de versões deste diagrama',
+        'save_version'     => 'Salvar como nova versão',
+        'save_version_title' => 'Clonar a versão atual em uma nova versão editável',
+        'save'             => 'Salvar',
+        'save_title'       => 'Salvar (Ctrl+S)',
+
+        // Version pill
+        'pill_current'     => '{label} (atual)',
+        'pill_readonly'    => '{label} (somente leitura)',
+        'version_unknown'  => 'v?',
+
+        // Meta row
+        'meta_author'      => 'Autor:',
+        'meta_created'     => 'Criado:',
+        'meta_updated'     => 'Atualizado:',
+        'author_unknown'   => 'Desconhecido',
+
+        // Read-only banner
+        'readonly_banner'  => 'Versão somente leitura.',
+        'readonly_banner_rest' => ' Esta é uma versão histórica do diagrama. Para fazer alterações, ramifique-a em uma nova versão a partir da versão atual (folha).',
+        'readonly_back'    => '← Voltar aos diagramas',
+
+        // Palette
+        'palette_title'    => 'Classes do CMDB',
+        'palette_hint'     => 'arraste para a tela',
+        'palette_loading'  => 'Carregando classes…',
+        'palette_load_failed' => 'Falha ao carregar classes: {message}',
+        'palette_empty'    => 'Nenhuma classe do CMDB definida ainda. <a href="../cmdb/settings/">Crie uma</a> para começar a arrastar objetos para o diagrama.',
+        'palette_tile_title' => 'Arraste para a tela',
+        'palette_object'   => '{count} objeto',
+        'palette_objects'  => '{count} objetos',
+
+        // Canvas empty state
+        'canvas_empty_heading' => 'Diagrama vazio',
+        'canvas_empty_body'    => 'Arraste uma classe da paleta para a tela para começar a posicionar nós. Você será perguntado a qual objeto do CMDB vinculá-lo.',
+
+        // Present mode
+        'present_exit'     => 'Sair da apresentação',
+        'present_exit_title' => 'Sair do modo Apresentação (Esc)',
+
+        // Read-only titles applied to gated buttons
+        'readonly_save_title'    => 'Esta é uma versão histórica — somente leitura',
+        'readonly_fork_title'    => 'Apenas a versão atual pode ser ramificada em uma nova versão',
+        'readonly_generic_title' => 'Versões históricas são somente leitura',
+    ],
+
+    // Node detail panel
+    'detail' => [
+        'node'             => 'Nó',
+        'class'            => 'Classe',
+        'class_value_dash' => '—',
+        'status'           => 'Status',
+        'planned_pill'     => 'PLANEJADO',
+        'planned_future'   => 'Estado futuro',
+        'cmdb'             => 'CMDB',
+        'cmdb_open'        => 'Abrir no CMDB →',
+        'icon'             => 'Ícone',
+        'icon_change'      => 'Alterar',
+        'icon_change_title'=> 'Escolher um ícone diferente para este nó',
+        'icon_reset'       => 'Redefinir',
+        'icon_reset_title' => 'Usar o ícone padrão da classe',
+        'properties'       => 'Propriedades',
+        'properties_from'  => 'do CMDB',
+        'properties_loading' => 'Carregando propriedades…',
+        'properties_load_failed' => 'Não foi possível carregar as propriedades: {message}',
+        'properties_empty' => 'Nenhum valor de propriedade definido neste objeto.',
+        'add_related'      => 'Adicionar objetos relacionados',
+        'add_related_title'=> 'Incluir vizinhos do CMDB deste objeto',
+        'value_dash'       => '—',
+        'bool_yes'         => 'Sim',
+        'bool_no'          => 'Não',
+        'ref_open_title'   => 'Abrir no CMDB',
+    ],
+
+    // CMDB object picker (opened on drop)
+    'picker' => [
+        'title_prefix'     => 'Escolha um ',
+        'title_default'    => 'objeto do CMDB',
+        'title_suffix'     => ' para posicionar',
+        'search_ph'        => 'Digite para filtrar…',
+        'search_failed'    => 'Falha: {message}',
+        'all_in_use'       => 'Todos os objetos desta classe já estão no diagrama.',
+        'none_yet'         => 'Nenhum objeto nesta classe ainda. <a href="../cmdb/" target="_blank">Crie um no CMDB →</a>',
+        'planned'          => 'PLANEJADO',
+        'in_parent'        => 'em {parent}',
+        'cancel'           => 'Cancelar',
+    ],
+
+    // Icon picker modal
+    'iconpicker' => [
+        'title'            => 'Escolha um ícone para {name}',
+        'search_ph'        => 'Filtrar por nome (ex. ‘banco de dados’, ‘firewall’)…',
+        'no_match'         => 'Nenhum ícone corresponde a “{query}”.',
+        'cancel'           => 'Cancelar',
+    ],
+
+    // Related-objects modal
+    'related' => [
+        'title'            => 'Adicionar objetos relacionados a {name}',
+        'intro'            => 'Marque qualquer um para adicioná-lo ao diagrama. Cada marcação posiciona o objeto como um novo nó (organizado automaticamente em torno da origem) e desenha um conector que espelha o relacionamento.',
+        'loading'          => 'Carregando objetos relacionados…',
+        'load_failed'      => 'Falha ao carregar: {message}',
+        'empty'            => 'Ainda não há objetos relacionados no CMDB. Adicione relacionamentos ou propriedades de referência a objeto no objeto de origem no CMDB e volte aqui.',
+        'group_outgoing'   => 'Este objeto → outros',
+        'group_incoming'   => 'Outros → este objeto',
+        'group_property'   => 'Referenciado por propriedades',
+        'planned'          => 'PLANEJADO',
+        'on_canvas'        => 'na tela',
+        'cancel'           => 'Cancelar',
+        'add'              => 'Adicionar',
+        'add_one'          => 'Adicionar {count} objeto',
+        'add_many'         => 'Adicionar {count} objetos',
+        'save_first'       => 'Salve o diagrama primeiro para que este nó tenha um id estável',
+        'placed_one'       => '{count} objeto adicionado',
+        'placed_many'      => '{count} objetos adicionados',
+        'placed_none'      => 'Nenhum objeto novo posicionado',
+        'connector_one'    => '{count} conector',
+        'connector_many'   => '{count} conectores',
+        'result_combined'  => '{placed} · {connectors}',
+    ],
+
+    // Versions dropdown
+    'versions' => [
+        'loading'          => 'Carregando histórico de versões…',
+        'load_failed'      => 'Falha ao carregar: {message}',
+        'empty'            => 'Ainda não há histórico de versões.',
+        'viewing_current'  => 'Visualizando · atual',
+        'viewing'          => 'Visualizando',
+        'current'          => 'Atual',
+        'readonly'         => 'Somente leitura',
+        'author_unknown'   => 'Desconhecido',
+    ],
+
+    // Page-size dropdown
+    'page' => [
+        'off'              => 'Desativada',
+        'off_meta'         => 'Nenhum contorno de página exibido',
+        'current'          => 'Atual',
+        'row_label'        => '{label} {orient}',
+        'orient_landscape' => 'paisagem',
+        'orient_portrait'  => 'retrato',
+        'readonly'         => 'Versões históricas são somente leitura',
+    ],
+
+    // Branding modal
+    'branding' => [
+        'title'            => 'Identidade visual do diagrama — cabeçalho e rodapé',
+        'intro'            => 'Sobrescreva o cabeçalho/rodapé de toda a organização apenas para este diagrama. Os espaços reservados mostram os valores padrão que seriam herdados — limpe um campo e Salve para deixá-lo <em>explicitamente</em> em branco, ou clique em <strong>Redefinir</strong> para limpar todas as substituições e herdar os padrões de toda a organização configurados em <a href="../system/branding/" target="_blank">Sistema › Identidade visual</a>.',
+        'col_left'         => 'Esquerda',
+        'col_center'       => 'Centro',
+        'col_right'        => 'Direita',
+        'row_header'       => 'Cabeçalho',
+        'row_footer'       => 'Rodapé',
+        'tokens_label'     => 'Tokens',
+        'tokens_intro'     => ' resolvidos no momento da renderização:',
+        'tokens_note'      => 'O cabeçalho/rodapé só é renderizado quando um contorno de página está definido — use o menu <strong>Página</strong> para escolher um.',
+        'reset'            => 'Redefinir',
+        'reset_title'      => 'Limpar todas as substituições — os campos herdarão os padrões de toda a organização',
+        'cancel'           => 'Cancelar',
+        'save'             => 'Salvar',
+        'blank_default'    => '(em branco por padrão)',
+        'readonly'         => 'Versões históricas são somente leitura',
+    ],
+
+    // Save-as-new-version modal
+    'newversion' => [
+        'title'            => 'Salvar como nova versão',
+        'intro'            => 'Clona o diagrama atual (nós, conectores, metadados) em uma nova versão editável. A versão atual torna-se um registro histórico somente leitura.',
+        'field_title'      => 'Título *',
+        'field_description' => 'Descrição',
+        'field_version'    => 'Rótulo da versão',
+        'field_version_ph' => 'v2',
+        'field_version_help' => 'Texto livre — ex. “v2”, “Linha de base T2”, “Pós-migração”.',
+        'cancel'           => 'Cancelar',
+        'create'           => 'Criar versão',
+        'only_current'     => 'Apenas a versão atual pode ser ramificada',
+        'saving_first'     => 'Salvando alterações pendentes primeiro…',
+        'title_required'   => 'O título é obrigatório',
+        'create_failed'    => 'Falha: {message}',
+    ],
+
+    // Save status indicator + save toasts
+    'status' => [
+        'unsaved'          => 'Não salvo',
+        'unsaved_changes'  => 'Alterações não salvas',
+        'saving'           => 'Salvando…',
+        'saved'            => 'Salvo',
+        'save_failed'      => 'Falha ao salvar —',
+        'retry'            => 'tentar novamente',
+        'autosave_off'     => 'Salvamento automático desativado',
+    ],
+
+    // Toasts (save / export / centre / fit)
+    'toast' => [
+        'saved'            => 'Salvo',
+        'save_failed'      => 'Falha ao salvar: {message}',
+        'png_exported'     => 'PNG exportado',
+        'pdf_exported'     => 'PDF exportado',
+        'export_lib_failed'=> 'Falha ao carregar a biblioteca de exportação — verifique sua rede e atualize',
+        'pdf_lib_failed'   => 'Falha ao carregar a biblioteca de PDF — verifique sua rede e atualize',
+        'nothing_to_export'=> 'Nada para exportar — posicione alguns nós ou defina um tamanho de página primeiro',
+        'export_failed'    => 'Falha na exportação: {message}',
+        'export_failed_unknown' => 'erro desconhecido',
+        'nothing_to_fit'   => 'Nada para ajustar — defina um tamanho de página ou posicione alguns nós',
+        'centre_no_nodes'  => 'Nada para centralizar — posicione alguns nós primeiro',
+        'centre_no_page'   => 'Defina um tamanho de página primeiro (menu Página)',
+        'centre_too_large' => 'O diagrama é grande demais para centralizar neste tamanho de página — tente um papel maior ou use Ajustar + zoom',
+        'centre_already'   => 'O diagrama já está centralizado',
+        'centred'          => 'Diagrama centralizado na página',
+        'readonly'         => 'Versões históricas são somente leitura',
+    ],
+
+    // Inline connector label editor
+    'connector' => [
+        'label_ph'         => 'Rótulo (Enter para salvar, Esc para cancelar)',
+    ],
+
+    // Help guide (help.php)
+    'help' => [
+        'browser_title'    => 'FreeITSM — Guia do Network Mapper',
+        'sidebar_title'    => 'Guia',
+        'hero_title'       => 'Guia do Network Mapper',
+        'hero_subtitle'    => 'Desenhe seus diagramas de rede e arquitetura sobre o CMDB — cada caixa que você posiciona é um objeto real que o restante da plataforma conhece.',
+
+        'nav_overview'     => 'Visão geral',
+        'nav_creating'     => 'Criando um diagrama',
+        'nav_placing'      => 'Posicionando nós',
+        'nav_connectors'   => 'Desenhando conectores',
+        'nav_related'      => 'Adicionando objetos relacionados',
+        'nav_planned'      => 'Objetos planejados',
+        'nav_paper'        => 'Guia de tamanho de página',
+        'nav_branding'     => 'Cabeçalho e rodapé',
+        'nav_versioning'   => 'Versionamento',
+        'nav_saving'       => 'Salvando',
+        'nav_tips'         => 'Dicas rápidas',
+
+        // 1. Overview
+        'overview_title'   => 'Visão geral',
+        'overview_body'    => "O Network Mapper é uma camada visual sobre o CMDB. Cada nó na tela é um vínculo a uma linha real de <code>cmdb_objects</code>, então o diagrama não diverge do que o restante da plataforma sabe sobre seu ambiente. Mova um nó, o vínculo permanece. Exclua um objeto no CMDB, o diagrama é atualizado. Quer um diagrama de arquitetura de estado futuro? Marque os objetos como planejados no CMDB — eles serão renderizados com uma borda âmbar tracejada no diagrama automaticamente.",
+        'flow_create'      => 'Crie um diagrama',
+        'flow_drag'        => 'Arraste objetos',
+        'flow_connect'     => 'Desenhe conectores',
+        'flow_save'        => 'Salve',
+        'feat_bound_title' => 'Nós vinculados ao CMDB',
+        'feat_bound_body'  => 'Cada nó referencia um objeto real do CMDB — clique para abrir sua página de detalhes a partir do painel lateral.',
+        'feat_prov_title'  => 'Conectores com proveniência vinculada',
+        'feat_prov_body'   => 'Desenhar um conector via Adicionar objetos relacionados grava o id do relacionamento do CMDB, então a linha rastreia de volta um vínculo real.',
+        'feat_autosave_title' => 'Salvamento automático + manual',
+        'feat_autosave_body'  => 'Ative o salvamento automático para salvamentos em segundo plano com atraso de ~2 segundos, ou use {ctrl}+{s} a qualquer momento.',
+        'feat_history_title'  => 'Histórico de versões linear',
+        'feat_history_body'   => 'Salvar como nova versão ramifica o diagrama atual adiante; versões mais antigas tornam-se registros históricos somente leitura.',
+
+        // 2. Creating
+        'creating_title'   => 'Criando um diagrama',
+        'creating_body'    => 'Na página inicial de Diagramas, clique em <strong>+ Novo diagrama</strong>. Dê a ele um título (ex. <em>Pilha de produção — camada web</em>), uma descrição opcional e um rótulo de versão inicial (padrão <code>v1</code>). Você será levado direto ao editor.',
+        'creating_tip'     => '<strong>Dica:</strong> Os diagramas devem ser visões focadas, não mapas exaustivos. Um diagrama por sistema, ambiente ou mudança costuma ser a granularidade certa. Você sempre pode incluir objetos relacionados extras depois.',
+
+        // 3. Placing nodes
+        'placing_title'    => 'Posicionando nós',
+        'placing_body'     => 'A paleta à esquerda lista todas as classes ativas do CMDB com seu ícone e contagem de objetos. Arraste um bloco de classe para a tela; ao soltar abre-se um seletor restrito a essa classe — digite para filtrar, use as setas para navegar, Enter para escolher. O nó é posicionado nas coordenadas onde foi solto, alinhado à grade de 20 pixels, com o nome do objeto escolhido como rótulo.',
+        'placing_step1'    => 'Arraste um bloco de classe da paleta à esquerda para a tela.',
+        'placing_step2'    => 'Digite no seletor para filtrar por nome (Para cima/Para baixo + Enter também funcionam).',
+        'placing_step3'    => 'Clique em um objeto para posicioná-lo — o nó aparece no ponto onde foi solto.',
+        'placing_step4'    => 'Clique para selecionar, arraste para mover, {del} para remover.',
+        'placing_tip1'     => '<strong>Já está na tela?</strong> Objetos que você já posicionou são filtrados do seletor para que você não posicione acidentalmente o mesmo objeto duas vezes em um diagrama.',
+        'placing_tip2'     => '<strong>Substituição de ícone por nó:</strong> por padrão, cada nó usa o ícone da sua classe do CMDB. Se você quiser distinguir visualmente dois objetos da mesma classe (ex. "MS SQL de produção" vs "Oracle de relatórios", ambos Servidor de banco de dados), selecione o nó, abra o painel de detalhes e clique em <strong>Alterar</strong> ao lado da linha Ícone — escolha entre ~65 ícones agrupados em 12 categorias. Redefinir remove a substituição e volta ao padrão da classe.',
+
+        // 4. Connectors
+        'connectors_title' => 'Desenhando conectores',
+        'connectors_body'  => 'Passe o cursor ou selecione um nó — quatro pequenos pontos ciano aparecem nas bordas do ícone. Pressione o botão do mouse sobre um ponto, arraste até outro nó e solte para criar o conector. Uma linha ciano tracejada acompanha o cursor enquanto você arrasta, para que você veja onde ela vai chegar.',
+        'connectors_step1' => '<strong>Desenhar:</strong> pressione o mouse sobre um ponto de borda → arraste até o nó de destino → solte para criar uma seta.',
+        'connectors_step2' => '<strong>Selecionar:</strong> clique em qualquer conector — ele fica ciano com um traço mais grosso.',
+        'connectors_step3' => '<strong>Rótulo:</strong> dê um duplo clique em um conector — um campo de texto embutido abre no ponto médio (Enter salva, Esc cancela).',
+        'connectors_step4' => '<strong>Excluir:</strong> selecione um conector e pressione {del}.',
+        'connectors_tip'   => '<strong>A direção importa:</strong> as setas apontam da <em>origem</em> para o <em>destino</em> na ordem em que você as desenhou. Se quiser inverter uma seta, exclua-a e redesenhe a partir da outra extremidade.',
+
+        // 5. Related
+        'related_title'    => 'Adicionando objetos relacionados',
+        'related_body'     => 'Este é o recurso essencial. Clique em um nó posicionado — o painel de detalhes desliza ao lado da tela. Clique em <strong>Adicionar objetos relacionados</strong> e o modal lista todos os objetos do CMDB conectados a este, em três grupos:',
+        'related_out_title'  => 'Este objeto → outros',
+        'related_out_body'   => 'Relacionamentos de saída — do que este objeto depende, o que ele hospeda, possui, etc.',
+        'related_in_title'   => 'Outros → este objeto',
+        'related_in_body'    => 'Relacionamentos de entrada — o que depende dele, do que ele faz parte, o que o hospeda.',
+        'related_ref_title'  => 'Referenciado por propriedades',
+        'related_ref_body'   => 'Outros objetos que apontam para este por meio de uma propriedade de referência a objeto (ex. "Proprietário = Jane").',
+        'related_commit'   => 'Marque as linhas desejadas, clique em <strong>Adicionar</strong> e os objetos selecionados são posicionados em um anel ao redor do nó de origem, cada um com um conector. O verbo do relacionamento torna-se o rótulo do conector, e o conector tem sua proveniência vinculada de volta à linha real do relacionamento do CMDB quando aplicável.',
+        'related_tip1'     => '<strong>Por que isso importa:</strong> o CMDB geralmente tem muito mais informações do que cabem em um diagrama. Adicionar objetos relacionados oferece <em>exploração guiada</em> — comece por um objeto que lhe interessa e inclua apenas os vizinhos que você realmente quer mostrar.',
+        'related_tip2'     => '<strong>As propriedades também ficam visíveis:</strong> o painel de detalhes mostra todas as propriedades do CMDB que têm um valor no objeto selecionado — renderização ciente do tipo para datas, números, listas suspensas (com sua cor), valores booleanos (Sim/Não), referências a objetos (links em pílula rosa direto para o CMDB) e detecção de URL em campos de texto. Propriedades vazias são ocultadas para manter o painel compacto.',
+
+        // 6. Planned
+        'planned_title'    => 'Objetos planejados (arquitetura de estado futuro)',
+        'planned_pill'     => 'PLANEJADO',
+        'planned_body_before' => 'Se um objeto está marcado como ',
+        'planned_body_after'  => ' no CMDB (ou seja, faz parte da sua arquitetura de estado futuro, mas ainda não é real), ele é renderizado no diagrama com uma borda âmbar tracejada, um rótulo âmbar em itálico e uma pequena pílula PLANEJADO acima do ícone. Isso transforma qualquer diagrama em um mapa visual de estado atual/futuro sem precisar de dois diagramas separados.',
+        'planned_tip'      => '<strong>Fluxo de trabalho:</strong> marque os objetos do CMDB como planejados durante o design, desenhe-os no diagrama junto com seu ambiente real e, em seguida, desative o sinalizador de planejado no CMDB quando entrarem em produção — o estilo do diagrama é atualizado no próximo carregamento. Nenhuma edição no diagrama é necessária.',
+
+        // 7. Paper
+        'paper_title'      => 'Guia de tamanho de página',
+        'paper_body'       => 'Use o menu <strong>Página</strong> na barra de ferramentas do editor para sobrepor um contorno de papel na tela (A4, A3, A2, Carta ou Tabloide — retrato ou paisagem). Qualquer coisa dentro da caixa ciano tracejada será impressa ou exportada corretamente; qualquer coisa fora será cortada ou ficará fora da rolagem. Útil como guia de layout antes de compartilhar ou tirar uma captura de tela do diagrama. O padrão é <strong>Desativada</strong> — nenhuma sobreposição exibida.',
+        'paper_tip1'       => '<strong>Configuração por diagrama:</strong> cada diagrama lembra seu próprio tamanho de papel, então um mapa de serviço pode usar A3 paisagem enquanto um pequeno diagrama de fluxo usa A4 retrato, sem nenhuma configuração a cada vez. A configuração também é mantida quando você salva como nova versão — você não precisa escolher novamente.',
+        'paper_tip2'       => '<strong>Por que não exportar no tamanho certo?</strong> Escolhê-lo antecipadamente significa que você pode compor o diagrama dentro da área imprimível conforme avança — sem cortes inesperados depois. A exportação PNG / PDF usará este contorno como limite quando adicionado em uma versão futura.',
+
+        // 8. Branding
+        'branding_title'   => 'Cabeçalho e rodapé',
+        'branding_body'    => 'Renderize o logotipo da empresa, o título do documento, o autor, a versão e a data de modificação no topo e na base do contorno da página — os mesmos seis espaços que você configuraria no cabeçalho e rodapé do Word (esquerda / centro / direita, no topo e na base). Cada espaço é um texto livre que pode misturar tokens de modelo que são resolvidos no momento da renderização.',
+        'branding_step1'   => 'Configure os padrões de toda a organização uma vez em <strong>Sistema › Identidade visual</strong> — envie o logotipo da sua empresa e decida o que cada um dos 6 espaços deve conter. Todo diagrama herda esses padrões.',
+        'branding_step2'   => 'Em qualquer diagrama individual, clique em <strong>Identidade visual</strong> na barra de ferramentas do editor para substituir um ou mais espaços apenas para aquele diagrama. Os espaços reservados dos campos do modal mostram o que cada espaço herdaria do padrão da organização, para que você veja o que está substituindo.',
+        'branding_step3'   => '<strong>Redefinir</strong> no modal limpa todas as substituições deste diagrama e volta a herdar os padrões de toda a organização.',
+        'branding_tip1'    => '<strong>Tokens disponíveis:</strong> <code>{{logo}}</code> (o logotipo da empresa enviado), <code>{{title}}</code>, <code>{{author}}</code>, <code>{{version}}</code> e <code>{{modified}}</code>. Misture tokens com texto simples — ex. <code>Autor: {{author}}</code> é renderizado como <em>Autor: Ed Mozley</em>.',
+        'branding_tip2'    => '<strong>Contorno de página obrigatório:</strong> o cabeçalho/rodapé só é renderizado quando um tamanho de papel está definido via o menu <strong>Página</strong> — o contorno fornece os pontos de ancoragem da sobreposição. Desative a página e a identidade visual também fica oculta.',
+        'branding_tip3'    => '<strong>Vazio vs herdar:</strong> um espaço em branco no modal é um branco <em>explícito</em> (substitui o padrão da organização por nada). Para voltar a herdar, clique em Redefinir.',
+
+        // 9. Versioning
+        'versioning_title' => 'Versionamento',
+        'versioning_body_before' => 'Cada diagrama faz parte de uma cadeia de versões linear. A folha (sem filhos) é a versão editável ',
+        'versioning_pill_current' => 'v? (atual)',
+        'versioning_body_mid'     => '; os nós mais antigos na cadeia são histórico somente leitura ',
+        'versioning_pill_readonly'=> 'v? (somente leitura)',
+        'versioning_body_after'   => '. Salvar como nova versão clona o estado atual adiante em uma nova folha editável e rebaixa a folha antiga para histórica.',
+        'versioning_step1' => 'Edite a versão atual livremente — as alterações são salvas no local pelo botão Salvar ou pelo salvamento automático.',
+        'versioning_step2' => 'Quando quiser um instantâneo, clique em <strong>Salvar como nova versão</strong> — o estado antigo torna-se o registro histórico e você continua na nova folha.',
+        'versioning_step3' => 'Versões históricas abrem em somente leitura — clique em qualquer nó ou conector para inspecionar, mas você não pode modificá-los.',
+        'versioning_warn'  => '<strong>Sem ramificação:</strong> um pai pode ter no máximo um filho na cadeia — o histórico é estritamente linear. Se você precisar explorar uma arquitetura alternativa, crie um diagrama separado em vez de ramificar a cadeia.',
+
+        // 10. Saving
+        'saving_title'     => 'Salvando',
+        'saving_body'      => 'Dois modos. O <strong>Salvamento automático</strong> (alternar na barra de ferramentas) salva cerca de 2 segundos após sua última edição — o indicador de status no estilo do Word ao lado do botão mostra <em>Não salvo</em>, <em>Salvando…</em> e, em seguida, <em>Salvo</em>. O estado do botão é lembrado por analista. O <strong>Salvamento manual</strong> pelo botão Salvar ou {ctrl}+{s} funciona em qualquer modo.',
+        'saving_tip'       => '<strong>É seguro no meio de um arraste:</strong> o salvamento automático é adiado se você estiver arrastando um nó, então o diagrama não volta para sua última posição salva por baixo de você.',
+        'saving_warn'      => '<strong>Alterações não salvas:</strong> se você tentar sair da página com edições não salvas, o navegador exibirá um aviso. Não ignore esse aviso, a menos que realmente queira descartar.',
+
+        // 11. Quick tips
+        'tips_title'       => 'Dicas rápidas',
+        'tip_ctrls'        => '<strong>Ctrl+S</strong> salva independentemente do estado do salvamento automático.',
+        'tip_esc'          => '<strong>Esc</strong> fecha qualquer modal aberto (seletor, objetos relacionados, salvar como versão) e o painel de detalhes.',
+        'tip_deselect'     => 'Clique na tela vazia para desmarcar — também fecha o painel de detalhes.',
+        'tip_track'        => 'Mova o nó de origem e os conectores acompanham sua nova posição em tempo real.',
+        'tip_dedupe'       => 'O seletor filtra os objetos já presentes na tela para que você não os posicione duas vezes.',
+        'tip_cmdblink'     => 'Clique no link do CMDB no painel de detalhes para abrir a página completa do objeto em uma nova aba.',
+    ],
+];
