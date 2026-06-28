@@ -903,7 +903,7 @@ $translationNamespaces = ['common', 'tickets'];
                     <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.timezone_help')); ?></small>
                 </div>
 
-                <div class="modal-actions" style="justify-content: flex-start; margin-top: 30px;">
+                <div style="display: flex; gap: 10px; justify-content: flex-start; margin-top: 30px;">
                     <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
@@ -949,7 +949,7 @@ $translationNamespaces = ['common', 'tickets'];
                             </small>
                         </div>
 
-                        <div class="modal-actions" style="justify-content: flex-start; margin-top: 24px;">
+                        <div style="display: flex; gap: 10px; justify-content: flex-start; margin-top: 24px;">
                             <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                         </div>
                     </form>
@@ -1031,7 +1031,7 @@ $translationNamespaces = ['common', 'tickets'];
                     <small style="display: block; color: var(--text-muted, #666); margin-top: 4px;"><?php echo t('tickets.settings.csat_tab.scale_help'); ?></small>
                 </div>
 
-                <div class="modal-actions" style="justify-content: flex-start; margin-top: 30px;">
+                <div style="display: flex; gap: 10px; justify-content: flex-start; margin-top: 30px;">
                     <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
                 </div>
             </form>
