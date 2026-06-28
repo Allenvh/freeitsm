@@ -68,11 +68,39 @@ if (!function_exists('mailboxAppOnlyToken')) {
     }
 
     /**
-     * Who does a (delegated) access token belong to? Graph /me → lowercased email.
-     * Returns '' if it can't be determined. Used to back-fill authenticated_as for
+     * Pull the signed-in user's address straight out of a Graph access token. The
+     * token is a JWT whose payload carries the user's UPN / email — so we can read
+     * it offline, with NO Graph permission. This matters because the usual mailbox
+     * scopes (Mail.*) do NOT include User.Read, so a /me call 403s and can't tell us
+     * who signed in. Returns a lowercased email, or '' if the token has no usable claim.
+     */
+    function mailboxIdentityFromToken($jwt) {
+        $parts = explode('.', (string) $jwt);
+        if (count($parts) < 2) return '';
+        $payload = strtr($parts[1], '-_', '+/');
+        $pad = strlen($payload) % 4;
+        if ($pad) $payload .= str_repeat('=', 4 - $pad);
+        $json = base64_decode($payload, true);
+        if ($json === false) return '';
+        $claims = json_decode($json, true);
+        if (!is_array($claims)) return '';
+        // upn / preferred_username are the email-like identity claims; unique_name/email are fallbacks.
+        $email = $claims['upn'] ?? $claims['preferred_username'] ?? $claims['email'] ?? $claims['unique_name'] ?? '';
+        return ($email && strpos($email, '@') !== false) ? strtolower(trim($email)) : '';
+    }
+
+    /**
+     * Who does a (delegated) access token belong to? Returns the lowercased email,
+     * or '' if it can't be determined. Used to back-fill authenticated_as for
      * mailboxes that signed in before we started recording it.
+     *
+     * Reads the token's own JWT claims first (offline, no permission needed); only
+     * falls back to Graph /me if the token isn't a readable JWT (needs User.Read).
      */
     function mailboxDelegatedIdentity($accessToken) {
+        $fromToken = mailboxIdentityFromToken($accessToken);
+        if ($fromToken !== '') return $fromToken;
+
         $ch = curl_init('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName');
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

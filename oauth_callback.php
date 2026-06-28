@@ -10,6 +10,7 @@
 
 require_once 'config.php';
 require_once 'includes/encryption.php';
+require_once 'includes/mailbox_graph.php';
 
 // Check if we received an authorization code
 if (!isset($_GET['code'])) {
@@ -144,25 +145,14 @@ function getTokensFromAuthCodeForMailbox($authCode, $mailbox) {
 }
 
 /**
- * Ask Graph who the freshly-issued token belongs to (the account the user signed
- * in as). Returns the lowercased email, or null if it can't be determined.
+ * Who does the freshly-issued token belong to (the account the user signed in as)?
+ * Returns the lowercased email, or null if it can't be determined. Reads the token's
+ * own JWT claims first (offline, no permission needed) and only falls back to Graph
+ * /me — the mailbox scopes don't include User.Read, so /me usually 403s.
  */
 function getGraphSignedInEmail($accessToken) {
-    $ch = curl_init('https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName');
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $accessToken]);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, SSL_VERIFY_PEER ? 2 : 0);
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($httpCode !== 200) {
-        return null;
-    }
-    $data = json_decode($response, true);
-    $email = $data['mail'] ?? $data['userPrincipalName'] ?? null;
-    return $email ? strtolower(trim($email)) : null;
+    $identity = mailboxDelegatedIdentity($accessToken);
+    return $identity !== '' ? $identity : null;
 }
 
 /**
