@@ -1016,11 +1016,12 @@ body.ticket-popout .ticket-toolbar {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 8px 12px;
-    margin-bottom: 10px;
+    /* Flush info-bar aligned with the email header / attachment bar (30px gutter)
+       so "Problem:" lines up with From/To and the attachment line above it. */
+    padding: 10px 30px;
     background: var(--problem-bg, #faf7fd);
-    border: 1px solid var(--problem-border, #e6d8f2);
-    border-radius: 8px;
+    border-bottom: 1px solid var(--problem-border, #e6d8f2);
+    border-left: 3px solid var(--problem-text, #6a1b9a);
     font-size: 13px;
 }
 .problem-strip-label { font-weight: 600; color: var(--problem-text, #6a1b9a); }

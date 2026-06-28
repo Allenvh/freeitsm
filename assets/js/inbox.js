@@ -1348,7 +1348,6 @@ function displayEmail(email, recordings) {
             </div>
         </div>
         <div class="attachment-info-bar" id="attachmentInfoBar" onclick="showAttachmentList()" style="display: none;">
-            <span class="attachment-info-icon">📎</span>
             <span>${escapeHtml(t('tickets.actions.loading_attachments'))}</span>
         </div>
         ${buildProblemStrip(email)}
@@ -2565,7 +2564,6 @@ function renderAttachmentInfoBar() {
 
         infoBar.style.display = 'block';
         infoBar.innerHTML = `
-            <span class="attachment-info-icon">📎</span>
             <span>${escapeHtml(t('tickets.reading_pane.attach_bar', { message: message }))}</span>
         `;
     } else {
