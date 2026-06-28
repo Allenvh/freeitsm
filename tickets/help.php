@@ -958,6 +958,18 @@ try {
                         <div style="flex-shrink:0;font-size:24px;opacity:0.7;">&rarr;</div>
                     </a>
 
+                    <!-- Prominent Mailbox Authentication callout -->
+                    <a href="help-mailbox-auth.php" style="display:flex;align-items:center;gap:18px;padding:20px 24px;margin-bottom:24px;background:linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);color:white;border-radius:12px;text-decoration:none;box-shadow:0 4px 12px rgba(79,70,229,0.25);transition:transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(79,70,229,0.35)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 12px rgba(79,70,229,0.25)';">
+                        <div style="flex-shrink:0;width:56px;height:56px;border-radius:12px;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:30px;height:30px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                        </div>
+                        <div style="flex:1;">
+                            <div style="font-size:18px;font-weight:700;margin-bottom:4px;">Mailbox Authentication — Admin Guide</div>
+                            <div style="font-size:13px;opacity:0.9;line-height:1.5;">Connect a Microsoft 365 or Google mailbox: delegated vs app-only, the "reading from the right inbox" safeguards, email aliases, OAuth scopes &amp; Azure setup, and troubleshooting.</div>
+                        </div>
+                        <div style="flex-shrink:0;font-size:24px;opacity:0.7;">&rarr;</div>
+                    </a>
+
                     <div class="tk-help-data-grid">
                         <div class="tk-help-data-card">
                             <strong><?php echo t('tickets.help.settings.card_dept_title'); ?></strong>
