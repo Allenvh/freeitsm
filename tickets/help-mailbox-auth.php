@@ -8,6 +8,7 @@
 session_start();
 require_once '../config.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
 I18n::initFromSession();
 
 if (!isset($_SESSION['analyst_id'])) {
@@ -20,22 +21,23 @@ $path_prefix = '../';
 $translationNamespaces = ['common', 'tickets'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mailbox Authentication — Admin Guide</title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=4">
     <link rel="stylesheet" href="../assets/css/inbox.css">
     <style>
         .tk-help-container {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--surface-2, #f5f5f5);
         }
         .tk-help-sidebar {
             width: 280px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface, white);
+            border-right: 1px solid var(--border, #ddd);
             padding: 20px;
             display: flex;
             flex-direction: column;
@@ -46,14 +48,14 @@ $translationNamespaces = ['common', 'tickets'];
         .tk-help-sidebar h3 {
             font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: var(--text-dim, #888);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin: 0 0 12px;
         }
         .tk-help-back-link {
             font-size: 12px;
-            color: #0078d4;
+            color: var(--accent, #0078d4);
             text-decoration: none;
             margin-bottom: 14px;
             display: inline-flex;
@@ -69,12 +71,12 @@ $translationNamespaces = ['common', 'tickets'];
             padding: 10px 12px;
             border-radius: 6px;
             font-size: 13px;
-            color: #555;
+            color: var(--text-muted, #555);
             text-decoration: none;
             transition: background 0.15s, color 0.15s;
         }
-        .tk-help-nav-link:hover { background: #f5f5f5; color: #333; }
-        .tk-help-nav-link.active { background: #e3f2fd; color: #005a9e; font-weight: 600; }
+        .tk-help-nav-link:hover { background: var(--surface-2, #f5f5f5); color: var(--text, #333); }
+        .tk-help-nav-link.active { background: var(--accent-soft, #e3f2fd); color: var(--accent-hover, #005a9e); font-weight: 600; }
         .tk-help-nav-num {
             display: flex;
             align-items: center;
@@ -82,21 +84,24 @@ $translationNamespaces = ['common', 'tickets'];
             min-width: 24px;
             height: 24px;
             border-radius: 50%;
-            background: #eee;
-            color: #888;
+            background: var(--border-soft, #eee);
+            color: var(--text-dim, #888);
             font-weight: 700;
             font-size: 11px;
             flex-shrink: 0;
         }
-        .tk-help-nav-link.active .tk-help-nav-num { background: #0078d4; color: white; }
+        .tk-help-nav-link.active .tk-help-nav-num { background: var(--accent, #0078d4); color: var(--on-accent, white); }
 
         .tk-help-main { flex: 1; overflow-y: auto; }
 
         .tk-help-hero {
-            background: linear-gradient(135deg, #0078d4 0%, #005a9e 50%, #003d6b 100%);
-            color: white;
+            background: linear-gradient(135deg, var(--accent, #0078d4) 0%, var(--accent-hover, #005a9e) 50%, #003d6b 100%);
+            color: var(--on-accent, white);
             padding: 40px 48px 36px;
             text-align: center;
+        }
+        [data-theme-mode="dark"] .tk-help-hero {
+            background: linear-gradient(135deg, #1f3f63 0%, #15304c 50%, #0c2031 100%);
         }
         .tk-help-hero h2 { margin: 0 0 8px; font-size: 26px; font-weight: 700; }
         .tk-help-hero p { margin: 0; font-size: 15px; opacity: 0.85; }
@@ -105,7 +110,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         .tk-help-section {
             padding: 28px 0;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             scroll-margin-top: 20px;
         }
         .tk-help-section:last-child { border-bottom: none; padding-bottom: 0; }
@@ -115,11 +120,11 @@ $translationNamespaces = ['common', 'tickets'];
             gap: 14px;
             margin-bottom: 16px;
         }
-        .tk-help-section-header h3 { margin: 0; font-size: 18px; color: #333; }
-        .tk-help-section-header p { margin: 6px 0 0; font-size: 14px; color: #666; line-height: 1.6; }
+        .tk-help-section-header h3 { margin: 0; font-size: 18px; color: var(--text, #333); }
+        .tk-help-section-header p { margin: 6px 0 0; font-size: 14px; color: var(--text-muted, #666); line-height: 1.6; }
         .tk-help-section > p {
             font-size: 14px;
-            color: #555;
+            color: var(--text-muted, #555);
             line-height: 1.7;
             margin: 0 0 14px;
         }
@@ -130,57 +135,57 @@ $translationNamespaces = ['common', 'tickets'];
             min-width: 32px;
             height: 32px;
             border-radius: 50%;
-            background: #e3f2fd;
-            color: #005a9e;
+            background: var(--accent-soft, #e3f2fd);
+            color: var(--accent-hover, #005a9e);
             font-weight: 700;
             font-size: 14px;
             flex-shrink: 0;
         }
 
-        .tk-help-section h4 { font-size: 15px; color: #333; margin: 22px 0 10px; }
-        .tk-help-section h5 { font-size: 14px; color: #444; margin: 16px 0 8px; }
+        .tk-help-section h4 { font-size: 15px; color: var(--text, #333); margin: 22px 0 10px; }
+        .tk-help-section h5 { font-size: 14px; color: var(--text-muted, #444); margin: 16px 0 8px; }
         .tk-help-section ul, .tk-help-section ol {
-            font-size: 14px; color: #555; line-height: 1.7; margin: 8px 0 8px 22px;
+            font-size: 14px; color: var(--text-muted, #555); line-height: 1.7; margin: 8px 0 8px 22px;
         }
         .tk-help-section ul li, .tk-help-section ol li { margin-bottom: 6px; }
 
         .tk-help-fields { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
         .tk-help-fields div {
             padding: 10px 14px;
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
             border-radius: 6px;
             font-size: 13px;
-            color: #555;
+            color: var(--text-muted, #555);
             line-height: 1.5;
         }
-        .tk-help-fields div strong { color: #333; }
+        .tk-help-fields div strong { color: var(--text, #333); }
 
         .tk-help-tip {
             font-size: 13px !important;
-            color: #005a9e !important;
-            background: #e3f2fd;
+            color: var(--accent-hover, #005a9e) !important;
+            background: var(--accent-soft, #e3f2fd);
             padding: 10px 14px;
             border-radius: 8px;
-            border-left: 3px solid #0078d4;
+            border-left: 3px solid var(--accent, #0078d4);
             margin: 14px 0;
         }
         .tk-help-warn {
             font-size: 13px;
-            color: #92400e;
-            background: #fef3c7;
+            color: var(--warning-text, #92400e);
+            background: var(--warning-bg, #fef3c7);
             padding: 10px 14px;
             border-radius: 8px;
-            border-left: 3px solid #f59e0b;
+            border-left: 3px solid var(--warning-border, #f59e0b);
             margin: 14px 0;
             line-height: 1.5;
         }
 
         .tk-help-option-card {
-            border: 1px solid #e0e0e0;
+            border: 1px solid var(--border, #e0e0e0);
             border-radius: 8px;
             padding: 14px 16px;
             margin: 10px 0;
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
         }
         .tk-help-option-card .label {
             display: inline-block;
@@ -192,18 +197,18 @@ $translationNamespaces = ['common', 'tickets'];
             letter-spacing: 0.4px;
             margin-bottom: 6px;
         }
-        .tk-help-option-card .label.delegated { background: #e3f2fd; color: #005a9e; }
+        .tk-help-option-card .label.delegated { background: var(--accent-soft, #e3f2fd); color: var(--accent-hover, #005a9e); }
         .tk-help-option-card .label.apponly   { background: #ede7f6; color: #5e35b1; }
-        .tk-help-option-card strong { color: #333; }
-        .tk-help-option-card p { font-size: 13px; color: #555; line-height: 1.55; margin: 6px 0 0; }
+        .tk-help-option-card strong { color: var(--text, #333); }
+        .tk-help-option-card p { font-size: 13px; color: var(--text-muted, #555); line-height: 1.55; margin: 6px 0 0; }
 
         .tk-help-code {
             font-family: ui-monospace, "Cascadia Mono", "Source Code Pro", Menlo, Consolas, monospace;
-            background: #f5f5f5;
+            background: var(--surface-2, #f5f5f5);
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 12.5px;
-            color: #333;
+            color: var(--text, #333);
         }
         .tk-help-code-block {
             font-family: ui-monospace, "Cascadia Mono", "Source Code Pro", Menlo, Consolas, monospace;
@@ -221,16 +226,16 @@ $translationNamespaces = ['common', 'tickets'];
         table.tk-help-table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
         table.tk-help-table th {
             text-align: left;
-            background: #f5f5f5;
-            color: #444;
+            background: var(--surface-2, #f5f5f5);
+            color: var(--text-muted, #444);
             padding: 10px 12px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid var(--border, #e0e0e0);
             font-weight: 600;
         }
         table.tk-help-table td {
             padding: 10px 12px;
-            border-bottom: 1px solid #eee;
-            color: #555;
+            border-bottom: 1px solid var(--border-soft, #eee);
+            color: var(--text-muted, #555);
             vertical-align: top;
             line-height: 1.5;
         }
@@ -238,10 +243,10 @@ $translationNamespaces = ['common', 'tickets'];
             display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap;
         }
         .badge.green { background: #e8f5e9; color: #2e7d32; }
-        .badge.amber { background: #fef3c7; color: #92400e; }
+        .badge.amber { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
         .badge.red   { background: #fee2e2; color: #991b1b; }
-        .badge.blue  { background: #e3f2fd; color: #1565c0; }
-        .badge.grey  { background: #eee; color: #666; }
+        .badge.blue  { background: var(--accent-soft, #e3f2fd); color: #1565c0; }
+        .badge.grey  { background: var(--border-soft, #eee); color: var(--text-muted, #666); }
 
         @media (max-width: 900px) {
             .tk-help-sidebar { display: none; }

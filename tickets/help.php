@@ -7,6 +7,7 @@ require_once '../config.php';
 require_once '../includes/i18n.php';
 require_once '../includes/functions.php';
 require_once '../includes/tenancy.php';
+require_once '../includes/theme.php';
 I18n::initFromSession();
 
 if (!isset($_SESSION['analyst_id'])) {
@@ -30,24 +31,25 @@ try {
 }
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('tickets.help.page_title')); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=4">
     <link rel="stylesheet" href="../assets/css/inbox.css">
     <style>
         .tk-help-container {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
         }
 
         /* Left sidebar navigation */
         .tk-help-sidebar {
             width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface, white);
+            border-right: 1px solid var(--border, #ddd);
             padding: 20px;
             display: flex;
             flex-direction: column;
@@ -58,7 +60,7 @@ try {
         .tk-help-sidebar h3 {
             font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: var(--text-dim, #888);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin: 0 0 12px;
@@ -71,19 +73,19 @@ try {
             padding: 10px 12px;
             border-radius: 6px;
             font-size: 13px;
-            color: #555;
+            color: var(--text-muted, #555);
             text-decoration: none;
             transition: background 0.15s, color 0.15s;
         }
 
         .tk-help-nav-link:hover {
-            background: #f5f5f5;
-            color: #333;
+            background: var(--surface-hover, #f5f5f5);
+            color: var(--text, #333);
         }
 
         .tk-help-nav-link.active {
-            background: #e3f2fd;
-            color: #005a9e;
+            background: var(--accent-soft, #e3f2fd);
+            color: var(--accent-hover, #005a9e);
             font-weight: 600;
         }
 
@@ -94,16 +96,16 @@ try {
             min-width: 24px;
             height: 24px;
             border-radius: 50%;
-            background: #eee;
-            color: #888;
+            background: var(--border-soft, #eee);
+            color: var(--text-dim, #888);
             font-weight: 700;
             font-size: 11px;
             flex-shrink: 0;
         }
 
         .tk-help-nav-link.active .tk-help-nav-num {
-            background: #0078d4;
-            color: white;
+            background: var(--accent, #0078d4);
+            color: var(--on-accent, white);
         }
 
 
@@ -119,6 +121,10 @@ try {
             color: white;
             padding: 40px 48px 36px;
             text-align: center;
+        }
+        /* Darken the hero in dark mode so it recedes instead of glowing bright blue. */
+        [data-theme-mode="dark"] .tk-help-hero {
+            background: linear-gradient(135deg, #1f3f63 0%, #15304c 50%, #0c2031 100%);
         }
 
         .tk-help-hero h2 {
@@ -143,7 +149,7 @@ try {
         /* Sections */
         .tk-help-section {
             padding: 28px 0;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             scroll-margin-top: 20px;
         }
 
@@ -162,19 +168,19 @@ try {
         .tk-help-section-header h3 {
             margin: 0;
             font-size: 18px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .tk-help-section-header p {
             margin: 6px 0 0;
             font-size: 14px;
-            color: #666;
+            color: var(--text-muted, #666);
             line-height: 1.6;
         }
 
         .tk-help-section > p {
             font-size: 14px;
-            color: #555;
+            color: var(--text-muted, #555);
             line-height: 1.7;
             margin: 0 0 14px;
         }
@@ -186,16 +192,16 @@ try {
             min-width: 32px;
             height: 32px;
             border-radius: 50%;
-            background: #e3f2fd;
-            color: #005a9e;
+            background: var(--accent-soft, #e3f2fd);
+            color: var(--accent-hover, #005a9e);
             font-weight: 700;
             font-size: 14px;
             flex-shrink: 0;
         }
 
         .tk-help-section-num.highlight {
-            background: #0078d4;
-            color: white;
+            background: var(--accent, #0078d4);
+            color: var(--on-accent, white);
         }
 
         /* Feature cards grid */
@@ -208,14 +214,14 @@ try {
         .tk-help-feature-card {
             padding: 20px;
             border-radius: 10px;
-            border: 1px solid #e0e0e0;
-            background: white;
+            border: 1px solid var(--border, #e0e0e0);
+            background: var(--surface, white);
             transition: transform 0.15s, box-shadow 0.15s;
         }
 
         .tk-help-feature-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 15px var(--shadow, rgba(0,0,0,0.08));
         }
 
         .tk-help-feature-icon {
@@ -238,13 +244,13 @@ try {
         .tk-help-feature-card h4 {
             margin: 0 0 6px;
             font-size: 15px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .tk-help-feature-card p {
             margin: 0;
             font-size: 12.5px;
-            color: #666;
+            color: var(--text-muted, #666);
             line-height: 1.5;
         }
 
@@ -262,9 +268,9 @@ try {
             gap: 14px;
             padding: 10px 14px;
             border-radius: 8px;
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
             font-size: 14px;
-            color: #444;
+            color: var(--text-muted, #444);
             line-height: 1.5;
         }
 
@@ -275,8 +281,8 @@ try {
             min-width: 28px;
             height: 28px;
             border-radius: 50%;
-            background: #0078d4;
-            color: white;
+            background: var(--accent, #0078d4);
+            color: var(--on-accent, white);
             font-weight: 700;
             font-size: 13px;
             flex-shrink: 0;
@@ -284,16 +290,16 @@ try {
 
         /* Highlighted section */
         .tk-help-section-highlight {
-            background: #e3f2fd;
+            background: var(--accent-soft, #e3f2fd);
             margin: 0 -48px;
             padding: 28px 48px !important;
             border-bottom: none !important;
-            border-top: 2px solid #90caf9;
+            border-top: 2px solid var(--accent, #90caf9);
         }
 
         .tk-help-intro {
             font-size: 14px;
-            color: #555;
+            color: var(--text-muted, #555);
             line-height: 1.7;
             margin-bottom: 20px !important;
         }
@@ -308,10 +314,10 @@ try {
 
         .tk-help-fields div {
             padding: 8px 14px;
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
             border-radius: 6px;
             font-size: 13px;
-            color: #555;
+            color: var(--text-muted, #555);
         }
 
         /* Data cards grid */
@@ -324,21 +330,21 @@ try {
 
         .tk-help-data-card {
             padding: 12px 14px;
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
             border-radius: 8px;
-            border-left: 3px solid #0078d4;
+            border-left: 3px solid var(--accent, #0078d4);
         }
 
         .tk-help-data-card strong {
             display: block;
             font-size: 13px;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 4px;
         }
 
         .tk-help-data-card span {
             font-size: 12px;
-            color: #777;
+            color: var(--text-dim, #777);
             line-height: 1.4;
         }
 
@@ -370,18 +376,18 @@ try {
 
         .tk-help-flow-arrow {
             padding: 0 8px;
-            color: #bbb;
+            color: var(--text-faint, #bbb);
             font-size: 18px;
         }
 
         /* Tip callout */
         .tk-help-tip {
             font-size: 13px !important;
-            color: #005a9e !important;
-            background: #e3f2fd;
+            color: var(--accent-hover, #005a9e) !important;
+            background: var(--accent-soft, #e3f2fd);
             padding: 10px 14px;
             border-radius: 8px;
-            border-left: 3px solid #0078d4;
+            border-left: 3px solid var(--accent, #0078d4);
             margin-top: 10px;
         }
 
@@ -396,10 +402,10 @@ try {
             display: flex;
             gap: 12px;
             padding: 14px;
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
             border-radius: 8px;
             font-size: 13px;
-            color: #555;
+            color: var(--text-muted, #555);
             line-height: 1.5;
         }
 
@@ -409,7 +415,7 @@ try {
         }
 
         .tk-help-tip-card strong {
-            color: #333;
+            color: var(--text, #333);
         }
 
         /* Responsive */
