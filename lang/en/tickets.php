@@ -516,9 +516,13 @@ return [
                 'subject_help'        => '[SDREF:...] is added automatically for reply threading.',
                 'body'                => 'Body',
                 'body_placeholder'    => "Dear [requester_name],\n\nThank you for contacting us...",
-                'body_help'           => 'Merge codes: [ticket_reference], [ticket_subject], [ticket_status], [ticket_priority], [requester_name], [requester_email], [analyst_name], [analyst_email], [department_name], [created_date], [closed_date]',
+                'body_help'           => 'Merge codes: [ticket_reference], [ticket_subject], [ticket_status], [ticket_priority], [requester_name], [requester_first_name], [requester_email], [analyst_name], [analyst_email], [department_name], [created_date], [closed_date]. HTML is supported (e.g. styled buttons).',
                 'display_order'       => 'Display order',
                 'active'              => 'Active',
+                'tab_edit'            => 'Edit',
+                'tab_preview'         => 'Preview',
+                'preview_note'        => 'Merge codes are shown with sample values.',
+                'body_required'       => 'Please enter a message body.',
             ],
 
             // Rota shift modal

@@ -219,6 +219,37 @@ $translationNamespaces = ['common', 'tickets'];
         }
         /* Toggle switch — base styles in inbox.css; just pin the accent. */
         body { --accent: #0078d4; }
+
+        /* Email-template body: Edit / Preview tabs */
+        .tpl-body-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+        .tpl-body-tab {
+            padding: 6px 16px;
+            border: 1px solid var(--border, #ddd);
+            border-bottom: none;
+            background: var(--surface-2, #f5f5f5);
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-muted, #666);
+        }
+        .tpl-body-tab.active {
+            background: var(--surface, #fff);
+            color: var(--text, #333);
+            font-weight: 600;
+        }
+        /* Faithful render of how the email will look (always on white, like an inbox). */
+        .tpl-preview-frame {
+            border: 1px solid var(--border, #ddd);
+            border-radius: 6px;
+            padding: 22px;
+            min-height: 200px;
+            max-height: 360px;
+            overflow: auto;
+            background: #ffffff;
+            color: #333333;
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+        }
     </style>
 </head>
 <body>
@@ -1553,10 +1584,20 @@ $translationNamespaces = ['common', 'tickets'];
 
                     <div class="form-group" style="grid-column: span 2;">
                         <label for="templateBody"><?php echo htmlspecialchars(t('tickets.settings.modals.template.body')); ?> *</label>
-                        <textarea id="templateBody" rows="10" required placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.template.body_placeholder')); ?>"></textarea>
-                        <small style="color: #666;">
-                            <?php echo htmlspecialchars(t('tickets.settings.modals.template.body_help')); ?>
-                        </small>
+                        <div class="tpl-body-tabs">
+                            <button type="button" class="tpl-body-tab active" data-tpltab="edit" onclick="switchTemplateBodyTab('edit')"><?php echo htmlspecialchars(t('tickets.settings.modals.template.tab_edit')); ?></button>
+                            <button type="button" class="tpl-body-tab" data-tpltab="preview" onclick="switchTemplateBodyTab('preview')"><?php echo htmlspecialchars(t('tickets.settings.modals.template.tab_preview')); ?></button>
+                        </div>
+                        <div id="tplBodyEdit">
+                            <textarea id="templateBody" rows="10" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.template.body_placeholder')); ?>"></textarea>
+                            <small style="color: #666;">
+                                <?php echo htmlspecialchars(t('tickets.settings.modals.template.body_help')); ?>
+                            </small>
+                        </div>
+                        <div id="tplBodyPreview" style="display: none;">
+                            <div class="tpl-preview-frame" id="templatePreview"></div>
+                            <small style="color: #666;"><?php echo htmlspecialchars(t('tickets.settings.modals.template.preview_note')); ?></small>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -4250,7 +4291,53 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('templateOrder').value = template ? template.display_order : 0;
             document.getElementById('templateActive').checked = template ? template.is_active == 1 : true;
             document.getElementById('templateModalTitle').textContent = template ? t('tickets.settings.modals.template.edit_title') : t('tickets.settings.modals.template.add_title');
+            switchTemplateBodyTab('edit'); // always open on the editor, not a stale preview
             document.getElementById('templateModal').classList.add('active');
+        }
+
+        // Sample values for the body preview — mirrors the merge codes resolved in
+        // includes/template_email.php so "what you preview" matches "what's sent".
+        const TPL_PREVIEW_SAMPLES = {
+            ticket_reference: 'ABC-123-4567',
+            ticket_subject: "Laptop won't turn on",
+            ticket_status: 'Resolved',
+            ticket_priority: 'High',
+            requester_name: 'Ed Mozley',
+            requester_first_name: 'Ed',
+            requester_email: 'ed.mozley@example.com',
+            analyst_name: 'Sam Carter',
+            analyst_email: 'sam.carter@example.com',
+            department_name: 'IT Support',
+            created_date: '14 Feb 2026 09:15',
+            closed_date: '14 Feb 2026 16:40',
+            csat_link: '#'
+        };
+
+        function buildTemplatePreviewHtml(body) {
+            let html = body || '';
+            for (const code in TPL_PREVIEW_SAMPLES) {
+                html = html.split('[' + code + ']').join(TPL_PREVIEW_SAMPLES[code]);
+            }
+            // Mirror buildTemplateEmailBody(): plain text (no tags) is escaped + line-broken;
+            // anything with HTML tags is rendered as-is (so styled buttons show).
+            if (!/<[a-z][\s\S]*>/i.test(html)) {
+                const d = document.createElement('div');
+                d.textContent = html;
+                html = d.innerHTML.replace(/\n/g, '<br>');
+            }
+            return html;
+        }
+
+        function switchTemplateBodyTab(tab) {
+            document.querySelectorAll('.tpl-body-tab').forEach(b =>
+                b.classList.toggle('active', b.dataset.tpltab === tab));
+            const isPreview = tab === 'preview';
+            if (isPreview) {
+                document.getElementById('templatePreview').innerHTML =
+                    buildTemplatePreviewHtml(document.getElementById('templateBody').value);
+            }
+            document.getElementById('tplBodyEdit').style.display = isPreview ? 'none' : '';
+            document.getElementById('tplBodyPreview').style.display = isPreview ? '' : 'none';
         }
 
         function editTemplate(id) {
@@ -4301,6 +4388,16 @@ $translationNamespaces = ['common', 'tickets'];
                 display_order: parseInt(document.getElementById('templateOrder').value) || 0,
                 is_active: document.getElementById('templateActive').checked ? 1 : 0
             };
+
+            // Body is validated here (not via the `required` attribute) because the
+            // textarea is hidden on the Preview tab, which would otherwise break
+            // native form validation.
+            if (!templateData.body_template.trim()) {
+                switchTemplateBodyTab('edit');
+                document.getElementById('templateBody').focus();
+                showToast(t('tickets.settings.modals.template.body_required'), 'error');
+                return;
+            }
 
             try {
                 const response = await fetch(API_BASE + 'save_email_template.php', {

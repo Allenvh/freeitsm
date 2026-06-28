@@ -570,7 +570,7 @@ The primary module. Three-panel Outlook-style interface.
 - **Settings**: Departments, ticket types, origins, mailboxes (Microsoft 365 + Google Workspace), messaging channels (WhatsApp), email templates, analysts, teams
 - **Mailbox whitelist**: Per-mailbox domain and email address whitelisting — non-whitelisted senders are rejected
 - **Email actions**: Configurable per-mailbox actions for rejected emails (delete, move to Deleted Items, mark as read) and imported emails (delete, move to folder) with folder verification
-- **Email templates**: Automated email responses triggered by ticket events (new ticket from email, ticket assigned, ticket closed) with merge codes for ticket reference, requester name, analyst name, and more
+- **Email templates**: Automated email responses triggered by ticket events (new ticket from email, ticket assigned, ticket closed) with merge codes for ticket reference, requester name/first name, analyst name, and more. The editor has an **Edit / Preview** tab so you can see the rendered email (with sample merge values) — HTML bodies are supported, so you can include styled buttons
 - **Ask AI**: Button in ticket detail view opens a slide-in chat panel that searches the knowledge base for relevant articles using ticket context
 - **Staff rota**: Weekly grid showing analyst shift patterns, WFH/office location, and on-call status with per-day entry management and configurable shift definitions
 - **Activity log**: Searchable, paginated log of imported and rejected emails per mailbox with clickable processing log details

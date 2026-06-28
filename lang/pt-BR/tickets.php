@@ -456,9 +456,13 @@ return [
                 'body_placeholder' => 'Prezado(a) [requester_name],
 
 Obrigado por entrar em contato conosco…',
-                'body_help' => 'Códigos de mesclagem: [ticket_reference], [ticket_subject], [ticket_status], [ticket_priority], [requester_name], [requester_email], [analyst_name], [analyst_email], [department_name], [created_date], [closed_date]',
+                'body_help' => 'Códigos de mesclagem: [ticket_reference], [ticket_subject], [ticket_status], [ticket_priority], [requester_name], [requester_first_name], [requester_email], [analyst_name], [analyst_email], [department_name], [created_date], [closed_date]. HTML é suportado (ex.: botões estilizados).',
                 'display_order' => 'Ordem de exibição',
                 'active' => 'Ativo',
+                'tab_edit' => 'Editar',
+                'tab_preview' => 'Visualizar',
+                'preview_note' => 'Os códigos de mesclagem são mostrados com valores de exemplo.',
+                'body_required' => 'Informe o corpo da mensagem.',
             ],
             'rota_shift' => [
                 'add_title' => 'Adicionar turno',
