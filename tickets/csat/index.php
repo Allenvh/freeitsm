@@ -12,6 +12,7 @@ session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
 I18n::initFromSession();
 
 if (!isset($_SESSION['analyst_id'])) {
@@ -87,64 +88,66 @@ $recent = $recentStmt->fetchAll(PDO::FETCH_ASSOC);
 $emojis = ['', '😡', '🙁', '😐', '🙂', '😀'];
 ?>
 <!DOCTYPE html>
-<html lang="<?= htmlspecialchars(I18n::getLocale()) ?>">
+<html lang="<?= htmlspecialchars(I18n::getLocale()) ?>" data-theme="<?= htmlspecialchars(Theme::active()) ?>" data-theme-mode="<?= htmlspecialchars(Theme::mode()) ?>">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= htmlspecialchars(t('tickets.csat.page_title')) ?></title>
+<link rel="stylesheet" href="../../assets/css/theme.css?v=4">
 <link rel="stylesheet" href="../../assets/css/inbox.css">
 <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
 <script src="../../assets/js/i18n.js"></script>
 <style>
-body { background: #f5f5f5; }
+/* Theming: colours use var(--token, #original-light) so light mode is unchanged. */
+body { background: var(--app-bg, #f5f5f5); }
 .csat-page { height: calc(100vh - 48px); overflow-y: auto; padding: 24px; }
 .csat-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-.csat-header h1 { font-size: 22px; margin: 0; color: #333; }
+.csat-header h1 { font-size: 22px; margin: 0; color: var(--text, #333); }
 .range-picker { display: flex; gap: 4px; }
 .range-picker a {
-    padding: 6px 12px; border: 1px solid #ddd; background: white;
-    border-radius: 4px; color: #555; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border: 1px solid var(--border, #ddd); background: var(--surface, white);
+    border-radius: 4px; color: var(--text-muted, #555); text-decoration: none; font-size: 13px;
 }
-.range-picker a.active { background: #0078d4; color: white; border-color: #0078d4; }
+.range-picker a.active { background: var(--accent, #0078d4); color: var(--on-accent, white); border-color: var(--accent, #0078d4); }
 
 .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
 .kpi-card {
-    background: white; border-radius: 8px; padding: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    background: var(--surface, white); border-radius: 8px; padding: 20px;
+    box-shadow: 0 1px 3px var(--shadow, rgba(0,0,0,0.06));
 }
-.kpi-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.04em; }
-.kpi-value { font-size: 32px; font-weight: 600; color: #333; margin-top: 6px; }
-.kpi-sub { font-size: 12px; color: #888; margin-top: 4px; }
+.kpi-label { font-size: 12px; color: var(--text-dim, #888); text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi-value { font-size: 32px; font-weight: 600; color: var(--text, #333); margin-top: 6px; }
+.kpi-sub { font-size: 12px; color: var(--text-dim, #888); margin-top: 4px; }
 
 .panel {
-    background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    background: var(--surface, white); border-radius: 8px; padding: 20px; margin-bottom: 20px;
+    box-shadow: 0 1px 3px var(--shadow, rgba(0,0,0,0.06));
 }
-.panel h2 { font-size: 16px; margin: 0 0 16px 0; color: #333; }
+.panel h2 { font-size: 16px; margin: 0 0 16px 0; color: var(--text, #333); }
 
 .dist-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .dist-label { width: 60px; text-align: right; font-size: 20px; }
-.dist-bar { flex: 1; background: #f0f0f0; border-radius: 4px; height: 24px; overflow: hidden; }
+.dist-bar { flex: 1; background: var(--surface-hover, #f0f0f0); border-radius: 4px; height: 24px; overflow: hidden; }
 .dist-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 4px; transition: width 0.3s; }
-.dist-count { width: 60px; font-size: 13px; color: #666; }
+.dist-count { width: 60px; font-size: 13px; color: var(--text-muted, #666); }
 
 table.analyst-table { width: 100%; border-collapse: collapse; }
-table.analyst-table th, table.analyst-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
-table.analyst-table th { color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+table.analyst-table th, table.analyst-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border-soft, #eee); font-size: 14px; }
+table.analyst-table th { color: var(--text-dim, #888); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 table.analyst-table td.score { font-weight: 600; }
 
 .recent-row {
-    border-bottom: 1px solid #eee; padding: 14px 0;
+    border-bottom: 1px solid var(--border-soft, #eee); padding: 14px 0;
     display: grid; grid-template-columns: 60px 1fr 160px; gap: 14px; align-items: start;
 }
 .recent-row:last-child { border-bottom: none; }
 .recent-rating { font-size: 28px; text-align: center; }
-.recent-subject { font-weight: 500; color: #333; }
-.recent-subject a { color: #0078d4; text-decoration: none; }
-.recent-comment { color: #555; margin-top: 4px; font-size: 13px; font-style: italic; }
-.recent-meta { font-size: 12px; color: #888; text-align: right; }
+.recent-subject { font-weight: 500; color: var(--text, #333); }
+.recent-subject a { color: var(--accent, #0078d4); text-decoration: none; }
+.recent-comment { color: var(--text-muted, #555); margin-top: 4px; font-size: 13px; font-style: italic; }
+.recent-meta { font-size: 12px; color: var(--text-dim, #888); text-align: right; }
 
-.empty { color: #999; font-style: italic; padding: 20px 0; text-align: center; }
+.empty { color: var(--text-faint, #999); font-style: italic; padding: 20px 0; text-align: center; }
 </style>
 </head>
 <body>
