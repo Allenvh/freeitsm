@@ -659,7 +659,14 @@ return [
         // within) the various tabs. Values that contain intended HTML are echoed
         // raw (no htmlspecialchars) so the markup renders.
         'intros' => [
+            'departments'     => 'Departments group and route tickets to the right area of your organisation — create the ones your service desk uses to categorise and assign work.',
             'teams'           => 'Teams determine which departments analysts can access. Assign departments to teams, then assign analysts to teams to control their access.',
+            'ticket_types'    => 'Ticket types classify what a request is (e.g. Incident, Service Request) — define the types analysts can set on a ticket.',
+            'ticket_origins'  => 'Ticket origins record how a ticket came in (e.g. Email, Phone, Portal) — define the origins analysts can choose from.',
+            'mailboxes'       => 'Mailboxes connect FreeITSM to email accounts so incoming messages become tickets and replies go back out — add and authenticate the ones your service desk monitors.',
+            'rota_shifts'     => 'Shifts are the working-pattern templates (e.g. Early, Late, On-call) that analysts are assigned on the staff rota — define them here before building the rota.',
+            'analysts'        => 'Analysts are the staff who log in and work tickets — add them, reset passwords, and assign them to teams to control their access.',
+            'general'         => 'General settings control system-wide options such as the service desk name and defaults — adjust them to match your organisation.',
             'statuses'        => 'Workflow states a ticket can be in. Statuses flagged as <em>Closed</em> count as terminal — used by reports, watchtower counters and the closed-datetime auto-set on assign. Exactly one status is the default for new tickets.',
             'priorities'      => 'Priority bands shown on tickets. Exactly one priority is the default for new tickets.',
             'rota_locations'  => 'Where each analyst is working on a given day — used by the staff rota and shown as a coloured badge on every entry. Exactly one location is the default for new rota entries.',

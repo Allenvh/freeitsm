@@ -285,6 +285,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.departments')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('department')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.departments'); ?></p>
             <table>
                 <thead>
                     <tr>
@@ -333,6 +334,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.ticket_types')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('ticket-type')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.ticket_types'); ?></p>
             <table>
                 <thead>
                     <tr>
@@ -355,6 +357,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.ticket_origins')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('ticket-origin')"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.ticket_origins'); ?></p>
             <table>
                 <thead>
                     <tr>
@@ -708,6 +711,7 @@ $translationNamespaces = ['common', 'tickets'];
                     <button class="add-btn" onclick="openMailboxModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
                 </div>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.mailboxes'); ?></p>
 
             <?php if ($oauthSuccess && $oauthMailboxId && !$oauthMismatch): ?>
             <div class="exchange-status authenticated" id="oauth-success-msg">
@@ -835,6 +839,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.rota_shifts')); ?></h2>
                 <button class="add-btn" onclick="openRotaShiftModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.rota_shifts'); ?></p>
             <table>
                 <thead>
                     <tr>
@@ -865,6 +870,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.analysts')); ?></h2>
                 <button class="add-btn" onclick="openAnalystModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.analysts'); ?></p>
             <table>
                 <thead>
                     <tr>
@@ -888,6 +894,7 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.general_settings')); ?></h2>
             </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.general'); ?></p>
             <form id="generalSettingsForm" style="max-width: 600px;">
                 <div class="form-group">
                     <label for="systemName"><?php echo htmlspecialchars(t('tickets.settings.general.system_name')); ?></label>
