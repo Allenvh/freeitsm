@@ -1325,6 +1325,7 @@ function displayEmail(email, recordings) {
                 <div class="email-meta-row">
                     <div class="email-meta-label">${escapeHtml(t('tickets.reading_pane.meta_to'))}</div>
                     <div class="email-meta-value">${escapeHtml(email.to_recipients)}</div>
+                    <div class="email-meta-date"><span class="email-meta-date-label">${escapeHtml(t('tickets.reading_pane.meta_date'))}</span> ${formatFullDateTime(email.received_datetime)}</div>
                 </div>
                 ${email.cc_recipients ? `
                 <div class="email-meta-row">
@@ -1332,10 +1333,6 @@ function displayEmail(email, recordings) {
                     <div class="email-meta-value">${escapeHtml(email.cc_recipients)}</div>
                 </div>
                 ` : ''}
-                <div class="email-meta-row">
-                    <div class="email-meta-label">${escapeHtml(t('tickets.reading_pane.meta_date'))}</div>
-                    <div class="email-meta-value">${formatFullDateTime(email.received_datetime)}</div>
-                </div>
             </div>
         </div>
         <div class="attachment-info-bar" id="attachmentInfoBar" onclick="showAttachmentList()" style="display: none;">

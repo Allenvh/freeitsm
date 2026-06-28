@@ -644,6 +644,19 @@ body.ticket-popout .ticket-toolbar {
     color: #333;
 }
 
+/* Date sits on the To: row, pushed to the right edge */
+.email-meta-date {
+    margin-left: auto;
+    padding-left: 16px;
+    color: #333;
+    white-space: nowrap;
+}
+
+.email-meta-date-label {
+    font-weight: 600;
+    color: #666;
+}
+
 .email-body {
     flex: 1;
     padding: 30px;
