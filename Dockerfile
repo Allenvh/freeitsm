@@ -5,10 +5,12 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Enable required PHP extensions and tools for Composer package installation
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        ca-certificates \
         git \
         unzip \
         libonig-dev \
         libzip-dev \
+    && update-ca-certificates \
     && docker-php-ext-install pdo pdo_mysql mbstring zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
