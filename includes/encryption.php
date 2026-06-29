@@ -100,6 +100,13 @@ define('ENCRYPTED_MAILBOX_COLUMNS', [
     'oauth_redirect_uri',
     'imap_server',
     'target_mailbox',
+    'imap_host',
+    'imap_username',
+    'imap_password_encrypted',
+    'smtp_host',
+    'smtp_username',
+    'smtp_password_encrypted',
+    'smtp_from_address',
 ]);
 
 /**

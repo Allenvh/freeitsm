@@ -25,14 +25,15 @@ if (!$data) {
 
 // Validate required fields — tenant ID only required for Microsoft.
 $provider = $data['provider'] ?? 'microsoft';
+$provider_type = $data['provider_type'] ?? (($provider === 'imap_smtp') ? 'imap_smtp' : (($provider === 'google') ? 'gmail' : 'graph'));
 // App-only (client credentials) doesn't use the interactive sign-in flow, so it
 // needs no redirect URI / OAuth scopes — only the client id/secret + target mailbox.
 $isAppOnly = ($provider === 'microsoft') && (($data['auth_mode'] ?? 'delegated') === 'app_only');
-$requiredFields = ['name', 'azure_client_id', 'target_mailbox'];
-if (!$isAppOnly) {
+$requiredFields = ($provider_type === 'imap_smtp') ? ['name', 'target_mailbox', 'imap_host', 'imap_username'] : ['name', 'azure_client_id', 'target_mailbox'];
+if (!$isAppOnly && $provider_type !== 'imap_smtp') {
     $requiredFields[] = 'oauth_redirect_uri';
 }
-if ($provider === 'microsoft') {
+if ($provider === 'microsoft' && $provider_type !== 'imap_smtp') {
     $requiredFields[] = 'azure_tenant_id';
 }
 foreach ($requiredFields as $field) {
@@ -52,7 +53,7 @@ try {
     $redirectPath = parse_url($oauth_redirect_uri_plain, PHP_URL_PATH) ?: '';
     // The redirect URI only matters for the interactive sign-in flow — skip the
     // callback checks for app-only mailboxes (they never redirect anywhere).
-    if (!$isAppOnly) {
+    if (!$isAppOnly && $provider_type !== 'imap_smtp') {
         if ($provider === 'google' && !preg_match('#(^|/)google_oauth_callback\.php$#i', $redirectPath)) {
             echo json_encode([
                 'success' => false,
@@ -70,14 +71,27 @@ try {
     }
 
     $azure_tenant_id = encryptValue($data['azure_tenant_id'] ?? '');
-    $azure_client_id = encryptValue($data['azure_client_id']);
+    $azure_client_id = encryptValue($data['azure_client_id'] ?? '');
     $azure_client_secret = $data['azure_client_secret'] ?? '';
     $oauth_redirect_uri = encryptValue($oauth_redirect_uri_plain);
     $oauth_scopes = $data['oauth_scopes'] ?? 'openid email offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send';
-    $imap_server = encryptValue($data['imap_server'] ?? 'outlook.office365.com');
+    $imap_server = encryptValue($data['imap_server'] ?? ($data['imap_host'] ?? 'outlook.office365.com'));
+    $imap_host = encryptValue($data['imap_host'] ?? ($data['imap_server'] ?? ''));
+    $imap_username = encryptValue($data['imap_username'] ?? '');
+    $imap_password_encrypted = empty($data['imap_password']) || preg_match('/^\*+/', $data['imap_password']) ? null : encryptValue($data['imap_password']);
     $imap_port = $data['imap_port'] ?? 993;
     $imap_encryption = $data['imap_encryption'] ?? 'ssl';
     $target_mailbox = encryptValue($data['target_mailbox']);
+    $smtp_host = encryptValue($data['smtp_host'] ?? '');
+    $smtp_username = encryptValue($data['smtp_username'] ?? '');
+    $smtp_password_encrypted = empty($data['smtp_password']) || preg_match('/^\*+/', $data['smtp_password']) ? null : encryptValue($data['smtp_password']);
+    $smtp_from_address = encryptValue($data['smtp_from_address'] ?? ($data['target_mailbox'] ?? ''));
+    $smtp_from_name = $data['smtp_from_name'] ?? $name;
+    $imap_folder = $data['imap_folder'] ?? ($data['email_folder'] ?? 'INBOX');
+    $smtp_port = (int)($data['smtp_port'] ?? 587);
+    $smtp_encryption = $data['smtp_encryption'] ?? 'tls';
+    $intake_enabled = isset($data['intake_enabled']) ? ($data['intake_enabled'] ? 1 : 0) : 1;
+    $outbound_enabled = isset($data['outbound_enabled']) ? ($data['outbound_enabled'] ? 1 : 0) : 1;
     $email_folder = $data['email_folder'] ?? 'INBOX';
     $max_emails_per_check = $data['max_emails_per_check'] ?? 10;
     $mark_as_read = isset($data['mark_as_read']) ? ($data['mark_as_read'] ? 1 : 0) : 0;
@@ -111,6 +125,7 @@ try {
     // Authentication mode: 'delegated' (interactive sign-in, reads /me) or 'app_only'
     // (client credentials, reads /users/<target_mailbox>). App-only is Microsoft only.
     $auth_mode = (($data['auth_mode'] ?? 'delegated') === 'app_only' && $provider === 'microsoft') ? 'app_only' : 'delegated';
+    if ($provider_type === 'imap_smtp') { $auth_mode = 'delegated'; }
 
     // On edit: if the target address OR auth mode changed, the previously-authenticated
     // identity no longer applies. We clear it so a stale token can't keep reading the OLD
@@ -171,6 +186,7 @@ try {
 
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
+        saveImapSmtpMailboxFields($conn, (int)$id, compact('provider_type','imap_host','imap_username','imap_password_encrypted','imap_folder','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password_encrypted','smtp_from_address','smtp_from_name','intake_enabled','outbound_enabled'), false);
 
         // Drop the stale authenticated identity if the address / auth mode changed.
         if ($invalidateAuth) {
@@ -185,7 +201,7 @@ try {
         ]);
     } else {
         // Insert new mailbox
-        if (empty($azure_client_secret)) {
+        if ($provider_type !== 'imap_smtp' && empty($azure_client_secret)) {
             echo json_encode(['success' => false, 'error' => 'Client secret is required for new mailboxes']);
             exit;
         }
@@ -209,7 +225,8 @@ try {
             $is_active, $tenant_id, $auth_mode
         ]);
 
-        $newId = $conn->lastInsertId();
+        $newId = (int)$conn->lastInsertId();
+        saveImapSmtpMailboxFields($conn, $newId, compact('provider_type','imap_host','imap_username','imap_password_encrypted','imap_folder','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password_encrypted','smtp_from_address','smtp_from_name','intake_enabled','outbound_enabled'), true);
 
         echo json_encode([
             'success' => true,
@@ -223,6 +240,16 @@ try {
         'success' => false,
         'error' => $e->getMessage()
     ]);
+}
+
+
+function saveImapSmtpMailboxFields(PDO $conn, int $id, array $fields, bool $new): void {
+    $sets = "provider_type=?, imap_host=?, imap_username=?, imap_folder=?, smtp_host=?, smtp_port=?, smtp_encryption=?, smtp_username=?, smtp_from_address=?, smtp_from_name=?, intake_enabled=?, outbound_enabled=?";
+    $params = [$fields['provider_type'], $fields['imap_host'], $fields['imap_username'], $fields['imap_folder'], $fields['smtp_host'], $fields['smtp_port'], $fields['smtp_encryption'], $fields['smtp_username'], $fields['smtp_from_address'], $fields['smtp_from_name'], $fields['intake_enabled'], $fields['outbound_enabled']];
+    if ($new || $fields['imap_password_encrypted'] !== null) { $sets .= ", imap_password_encrypted=?"; $params[] = $fields['imap_password_encrypted']; }
+    if ($new || $fields['smtp_password_encrypted'] !== null) { $sets .= ", smtp_password_encrypted=?"; $params[] = $fields['smtp_password_encrypted']; }
+    $params[] = $id;
+    $conn->prepare("UPDATE target_mailboxes SET $sets WHERE id=?")->execute($params);
 }
 
 ?>
