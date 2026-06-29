@@ -3167,7 +3167,7 @@ $translationNamespaces = ['common', 'tickets'];
                     </button>`;
                 // App-only mailboxes never use the interactive sign-in flow — they read the
                 // target directly via client credentials, so no Authenticate / Logout buttons.
-                if (mb.auth_mode === 'app_only') {
+                if (mb.provider_type === 'imap_smtp' || mb.auth_mode === 'basic' || mb.auth_mode === 'app_only') {
                     actions += checkEmailsBtn;
                 } else if (mb.is_authenticated) {
                     actions += checkEmailsBtn;
@@ -3185,9 +3185,11 @@ $translationNamespaces = ['common', 'tickets'];
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>`;
 
-                const providerBadge = (mb.provider === 'google')
-                    ? ' <span class="status-badge" style="background:#e8f5e9;color:#2e7d32;">Google</span>'
-                    : ' <span class="status-badge" style="background:#e3f2fd;color:#1565c0;">Microsoft</span>';
+                const providerBadge = (mb.provider_type === 'imap_smtp' || mb.auth_mode === 'basic')
+                    ? ' <span class="status-badge" style="background:#fff3e0;color:#ef6c00;">IMAP/SMTP</span>'
+                    : ((mb.provider === 'google')
+                        ? ' <span class="status-badge" style="background:#e8f5e9;color:#2e7d32;">Google</span>'
+                        : ' <span class="status-badge" style="background:#e3f2fd;color:#1565c0;">Microsoft</span>');
 
                 // Multi-tenancy: show the routing target — pinned company, or shared intake.
                 let companyBadge = '';
@@ -3202,7 +3204,9 @@ $translationNamespaces = ['common', 'tickets'];
                 // Plain-language "where is this reading from?" line so it's crystal clear
                 // which inbox is actually being pulled — and flags a wrong/unverified account.
                 let authLine = '';
-                if (mb.auth_status === 'ok') {
+                if (mb.auth_status === 'basic') {
+                    authLine = `<div style="font-size:12px;color:#ef6c00;margin-top:3px;">✓ IMAP/SMTP basic authentication</div>`;
+                } else if (mb.auth_status === 'ok') {
                     authLine = `<div style="font-size:12px;color:#2e7d32;margin-top:3px;">✓ ${escapeHtml(t('tickets.settings.modals.mailbox.reading_from', {addr: mb.target_mailbox}))}</div>`;
                 } else if (mb.auth_status === 'app_only') {
                     authLine = `<div style="font-size:12px;color:#1565c0;margin-top:3px;">✓ ${escapeHtml(t('tickets.settings.modals.mailbox.status_app_only', {addr: mb.target_mailbox}))}</div>`;
@@ -3591,11 +3595,11 @@ $translationNamespaces = ['common', 'tickets'];
 
         async function checkAllMailboxes() {
             const result = document.getElementById('mailboxesResult');
-            const authenticatedMailboxes = mailboxes.filter(m => m.is_authenticated && m.is_active);
+            const authenticatedMailboxes = mailboxes.filter(m => m.is_active && (m.is_authenticated || m.provider_type === 'imap_smtp' || m.auth_mode === 'basic' || m.auth_mode === 'app_only'));
 
             if (authenticatedMailboxes.length === 0) {
                 result.className = 'exchange-result error';
-                result.innerHTML = 'No authenticated and active mailboxes to check.';
+                result.innerHTML = 'No active mailboxes are ready to check.';
                 return;
             }
 
@@ -3659,7 +3663,7 @@ $translationNamespaces = ['common', 'tickets'];
                 provider_type: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'imap_smtp' : (document.getElementById('mailboxProvider').value === 'google' ? 'gmail' : 'graph'),
                 name: document.getElementById('mailboxName').value,
                 target_mailbox: document.getElementById('mailboxEmail').value,
-                auth_mode: document.getElementById('mailboxAuthMode').value,
+                auth_mode: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'basic' : document.getElementById('mailboxAuthMode').value,
                 azure_tenant_id: document.getElementById('mailboxTenantId').value,
                 azure_client_id: document.getElementById('mailboxClientId').value,
                 azure_client_secret: document.getElementById('mailboxClientSecret').value,
