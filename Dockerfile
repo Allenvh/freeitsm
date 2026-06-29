@@ -1,10 +1,13 @@
-FROM php:8.4-apache
+FROM php:8.4-apache-bookworm
 
 # Enable required PHP extensions, including IMAP for generic mailbox intake
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libc-client-dev libkrb5-dev libssl-dev \
-    && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
-    && docker-php-ext-install pdo pdo_mysql imap \
+    && apt-get install -y --no-install-recommends \
+        git \
+        unzip \
+        libzip-dev \
+    && docker-php-ext-install pdo pdo_mysql zip \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Enable Apache mod_rewrite
