@@ -95,19 +95,40 @@ INSERT IGNORE INTO `access_groups` (`group_key`, `display_name`, `description`) 
 ('sysadmin', 'FreeITSM SysAdmin', 'System administration access.'),
 ('devops', 'FreeITSM DevOps', 'DevOps and operational module access.');
 
-ALTER TABLE `target_mailboxes`
-    ADD COLUMN IF NOT EXISTS `provider_type` VARCHAR(20) NOT NULL DEFAULT 'graph' AFTER `provider`,
-    ADD COLUMN IF NOT EXISTS `imap_host` TEXT NULL AFTER `imap_encryption`,
-    ADD COLUMN IF NOT EXISTS `imap_username` TEXT NULL AFTER `imap_host`,
-    ADD COLUMN IF NOT EXISTS `imap_password_encrypted` TEXT NULL AFTER `imap_username`,
-    ADD COLUMN IF NOT EXISTS `imap_folder` VARCHAR(100) NOT NULL DEFAULT 'INBOX' AFTER `imap_password_encrypted`,
-    ADD COLUMN IF NOT EXISTS `smtp_host` TEXT NULL AFTER `imap_folder`,
-    ADD COLUMN IF NOT EXISTS `smtp_port` INT NOT NULL DEFAULT 587 AFTER `smtp_host`,
-    ADD COLUMN IF NOT EXISTS `smtp_encryption` VARCHAR(10) NOT NULL DEFAULT 'tls' AFTER `smtp_port`,
-    ADD COLUMN IF NOT EXISTS `smtp_username` TEXT NULL AFTER `smtp_encryption`,
-    ADD COLUMN IF NOT EXISTS `smtp_password_encrypted` TEXT NULL AFTER `smtp_username`,
-    ADD COLUMN IF NOT EXISTS `smtp_from_address` TEXT NULL AFTER `smtp_password_encrypted`,
-    ADD COLUMN IF NOT EXISTS `smtp_from_name` VARCHAR(255) NULL AFTER `smtp_from_address`,
-    ADD COLUMN IF NOT EXISTS `intake_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `smtp_from_name`,
-    ADD COLUMN IF NOT EXISTS `outbound_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `intake_enabled`,
-    ADD COLUMN IF NOT EXISTS `last_checked_at` DATETIME NULL AFTER `last_checked_datetime`;
+DROP PROCEDURE IF EXISTS add_target_mailbox_column_if_missing;
+DELIMITER //
+CREATE PROCEDURE add_target_mailbox_column_if_missing(IN p_column VARCHAR(64), IN p_definition TEXT, IN p_after_column VARCHAR(64))
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'target_mailboxes')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'target_mailboxes' AND column_name = p_column) THEN
+        SET @ddl = CONCAT('ALTER TABLE `target_mailboxes` ADD `', p_column, '` ', p_definition, ' AFTER `', p_after_column, '`');
+        PREPARE stmt FROM @ddl;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END//
+DELIMITER ;
+
+CALL add_target_mailbox_column_if_missing('provider_type', "VARCHAR(20) NOT NULL DEFAULT 'graph'", 'provider');
+CALL add_target_mailbox_column_if_missing('auth_mode', "VARCHAR(20) NOT NULL DEFAULT 'delegated'", 'target_mailbox');
+CALL add_target_mailbox_column_if_missing('imap_host', "TEXT NULL", 'imap_encryption');
+CALL add_target_mailbox_column_if_missing('imap_username', "TEXT NULL", 'imap_host');
+CALL add_target_mailbox_column_if_missing('imap_password_encrypted', "TEXT NULL", 'imap_username');
+CALL add_target_mailbox_column_if_missing('imap_folder', "VARCHAR(100) NOT NULL DEFAULT 'INBOX'", 'imap_password_encrypted');
+CALL add_target_mailbox_column_if_missing('smtp_host', "TEXT NULL", 'imap_folder');
+CALL add_target_mailbox_column_if_missing('smtp_port', "INT NOT NULL DEFAULT 587", 'smtp_host');
+CALL add_target_mailbox_column_if_missing('smtp_encryption', "VARCHAR(10) NOT NULL DEFAULT 'tls'", 'smtp_port');
+CALL add_target_mailbox_column_if_missing('smtp_username', "TEXT NULL", 'smtp_encryption');
+CALL add_target_mailbox_column_if_missing('smtp_password_encrypted', "TEXT NULL", 'smtp_username');
+CALL add_target_mailbox_column_if_missing('smtp_from_address', "TEXT NULL", 'smtp_password_encrypted');
+CALL add_target_mailbox_column_if_missing('smtp_from_name', "VARCHAR(255) NULL", 'smtp_from_address');
+CALL add_target_mailbox_column_if_missing('intake_enabled', "TINYINT(1) NOT NULL DEFAULT 1", 'smtp_from_name');
+CALL add_target_mailbox_column_if_missing('outbound_enabled', "TINYINT(1) NOT NULL DEFAULT 1", 'intake_enabled');
+CALL add_target_mailbox_column_if_missing('last_checked_at', "DATETIME NULL", 'last_checked_datetime');
+DROP PROCEDURE add_target_mailbox_column_if_missing;
+
+UPDATE `target_mailboxes`
+   SET `provider_type` = CASE WHEN `provider` = 'google' THEN 'gmail' WHEN `provider` = 'imap_smtp' THEN 'imap_smtp' ELSE 'graph' END
+ WHERE (`provider_type` IS NULL OR `provider_type` = '');
+UPDATE `target_mailboxes` SET `auth_mode` = 'delegated' WHERE `auth_mode` IS NULL OR `auth_mode` = '' OR `auth_mode` = 'oauth';
+UPDATE `target_mailboxes` SET `imap_folder` = COALESCE(NULLIF(`imap_folder`, ''), `email_folder`, 'INBOX') WHERE `imap_folder` IS NULL OR `imap_folder` = '';
