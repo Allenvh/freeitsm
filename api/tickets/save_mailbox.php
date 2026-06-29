@@ -49,6 +49,10 @@ try {
     ensureTargetMailboxSchema($conn);
 
     $id = $data['id'] ?? null;
+    if ($provider_type === 'imap_smtp' && !$id && empty($data['imap_password'])) {
+        echo json_encode(['success' => false, 'error' => 'IMAP password is required for new IMAP/SMTP mailboxes']);
+        exit;
+    }
     $name = $data['name'];
     $provider = $data['provider'] ?? 'microsoft';
     $oauth_redirect_uri_plain = trim($data['oauth_redirect_uri'] ?? '');
@@ -82,7 +86,7 @@ try {
     $imap_username = encryptValue($data['imap_username'] ?? '');
     $imap_password_encrypted = empty($data['imap_password']) || preg_match('/^\*+/', $data['imap_password']) ? null : encryptValue($data['imap_password']);
     $imap_port = $data['imap_port'] ?? 993;
-    $imap_encryption = $data['imap_encryption'] ?? 'ssl';
+    $imap_encryption = normalizeImapEncryption($data['imap_encryption'] ?? null);
     $target_mailbox = encryptValue($data['target_mailbox']);
     $smtp_host = encryptValue($data['smtp_host'] ?? '');
     $smtp_username = encryptValue($data['smtp_username'] ?? '');
@@ -244,6 +248,15 @@ try {
     ]);
 }
 
+
+function normalizeImapEncryption($value): string {
+    if ($value === false || $value === null) return 'none';
+    $value = strtolower(trim((string)$value));
+    if ($value === '' || $value === 'none' || $value === 'false') return 'none';
+    if ($value === 'ssl') return 'ssl';
+    if ($value === 'tls' || $value === 'starttls') return 'tls';
+    return 'none';
+}
 
 function saveImapSmtpMailboxFields(PDO $conn, int $id, array $fields, bool $new): void {
     $sets = "provider_type=?, imap_host=?, imap_username=?, imap_folder=?, smtp_host=?, smtp_port=?, smtp_encryption=?, smtp_username=?, smtp_from_address=?, smtp_from_name=?, intake_enabled=?, outbound_enabled=?";

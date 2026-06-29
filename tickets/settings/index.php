@@ -1195,6 +1195,10 @@ $translationNamespaces = ['common', 'tickets'];
                         <input type="number" id="mailboxImapPort" value="993">
                     </div>
 
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxImapEncryption">IMAP encryption</label>
+                        <select id="mailboxImapEncryption"><option value="none">None</option><option value="ssl">SSL</option><option value="tls">TLS/STARTTLS</option></select>
+                    </div>
 
                     <div class="form-group provider-imap-smtp">
                         <label for="mailboxImapUsername">IMAP username *</label>
@@ -3142,6 +3146,9 @@ $translationNamespaces = ['common', 'tickets'];
                     case 'ok':
                         statusBadge = '<span class="status-badge status-active">Authenticated</span>';
                         break;
+                    case 'basic':
+                        statusBadge = '<span class="status-badge status-active">Connected</span>';
+                        break;
                     default:
                         statusBadge = '<span class="status-badge status-inactive">Not authenticated</span>';
                 }
@@ -3281,6 +3288,7 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('mailboxSmtpFromAddress').value = mailbox ? (mailbox.smtp_from_address || mailbox.target_mailbox || '') : '';
             document.getElementById('mailboxSmtpFromName').value = mailbox ? (mailbox.smtp_from_name || mailbox.name || '') : '';
             document.getElementById('mailboxImapPort').value = mailbox ? mailbox.imap_port : 993;
+            document.getElementById('mailboxImapEncryption').value = mailbox ? (mailbox.imap_encryption || 'none') : 'none';
             toggleProviderFields();
             toggleAuthModeFields();
             document.getElementById('mailboxFolder').value = mailbox ? mailbox.email_folder : 'INBOX';
@@ -3673,6 +3681,7 @@ $translationNamespaces = ['common', 'tickets'];
                 imap_host: document.getElementById('mailboxImapServer').value,
                 imap_username: document.getElementById('mailboxImapUsername').value,
                 imap_password: document.getElementById('mailboxImapPassword').value,
+                imap_encryption: document.getElementById('mailboxImapEncryption').value,
                 imap_folder: document.getElementById('mailboxFolder').value,
                 smtp_host: document.getElementById('mailboxSmtpHost').value,
                 smtp_port: parseInt(document.getElementById('mailboxSmtpPort').value || '587'),
