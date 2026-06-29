@@ -1,0 +1,12 @@
+{
+  "name": "freeitsm/freeitsm",
+  "description": "FreeITSM application dependencies.",
+  "type": "project",
+  "require": {
+    "php": ">=8.4",
+    "webklex/php-imap": "^6.2"
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

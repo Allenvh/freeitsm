@@ -1,12 +1,15 @@
 FROM php:8.4-apache-bookworm
 
-# Enable required PHP extensions, including IMAP for generic mailbox intake
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Enable required PHP extensions and tools for Composer package installation
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
         unzip \
+        libonig-dev \
         libzip-dev \
-    && docker-php-ext-install pdo pdo_mysql zip \
+    && docker-php-ext-install pdo pdo_mysql mbstring zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,6 +30,9 @@ COPY . /var/www/html/
 # Copy Docker-specific config files into place
 COPY docker/config.php /var/www/html/config.php
 COPY docker/db_config.php /var/www/html/db_config.php
+
+# Install PHP dependencies, including the userland IMAP client.
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
 # Create directories for uploads, attachments, and encryption keys
 RUN mkdir -p /var/www/html/tickets/attachments \
