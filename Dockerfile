@@ -33,6 +33,15 @@ COPY . /var/www/html/
 COPY docker/config.php /var/www/html/config.php
 COPY docker/db_config.php /var/www/html/db_config.php
 
+# Optional local corporate/root CAs for development builds. The repository only
+# tracks certs/.gitkeep; actual *.crt files are ignored and must remain local.
+COPY certs/ /tmp/certs/
+RUN set -eux; \
+    if find /tmp/certs -type f -name '*.crt' | grep -q .; then \
+        find /tmp/certs -type f -name '*.crt' -exec cp {} /usr/local/share/ca-certificates/ \; ; \
+        update-ca-certificates; \
+    fi
+
 # Install PHP dependencies, including the userland IMAP client.
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
