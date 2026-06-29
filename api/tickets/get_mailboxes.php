@@ -6,6 +6,7 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/mailbox_schema.php';
 require_once '../../includes/mailbox_graph.php';
 
 header('Content-Type: application/json');
@@ -18,6 +19,7 @@ if (!isset($_SESSION['analyst_id'])) {
 
 try {
     $conn = connectToDatabase();
+    ensureTargetMailboxSchema($conn);
 
     $sql = "SELECT id, name, provider, provider_type, azure_tenant_id, azure_client_id, azure_client_secret,
                    oauth_redirect_uri, oauth_scopes, imap_server, imap_port, imap_encryption,
