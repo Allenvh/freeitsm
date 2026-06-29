@@ -127,7 +127,7 @@ try {
     // Authentication mode: 'delegated' (interactive sign-in, reads /me) or 'app_only'
     // (client credentials, reads /users/<target_mailbox>). App-only is Microsoft only.
     $auth_mode = (($data['auth_mode'] ?? 'delegated') === 'app_only' && $provider === 'microsoft') ? 'app_only' : 'delegated';
-    if ($provider_type === 'imap_smtp') { $auth_mode = 'delegated'; }
+    if ($provider_type === 'imap_smtp') { $auth_mode = 'basic'; }
 
     // On edit: if the target address OR auth mode changed, the previously-authenticated
     // identity no longer applies. We clear it so a stale token can't keep reading the OLD

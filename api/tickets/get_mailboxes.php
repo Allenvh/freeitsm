@@ -77,14 +77,23 @@ try {
         if (empty($mailbox['provider_type'])) {
             $mailbox['provider_type'] = ($mailbox['provider'] ?? '') === 'google' ? 'gmail' : 'graph';
         }
-        $mailbox['auth_mode'] = ($mailbox['auth_mode'] ?? 'delegated') === 'app_only' ? 'app_only' : 'delegated';
+        if ($mailbox['provider_type'] === 'imap_smtp' || ($mailbox['auth_mode'] ?? '') === 'basic') {
+            $mailbox['provider'] = 'imap_smtp';
+            $mailbox['provider_type'] = 'imap_smtp';
+            $mailbox['auth_mode'] = 'basic';
+            $mailbox['is_authenticated'] = true;
+        } else {
+            $mailbox['auth_mode'] = ($mailbox['auth_mode'] ?? 'delegated') === 'app_only' ? 'app_only' : 'delegated';
+        }
 
         // Compute a clear "where is this reading from?" status for the UI so it's
         // obvious which inbox a mailbox actually pulls — and flags a wrong account.
         // A target that matches the signed-in mailbox's primary OR any alias is "ok".
         $target  = strtolower(trim((string) ($mailbox['target_mailbox'] ?? '')));
         $acceptedSet = mailboxAcceptedSet($mailbox);
-        if ($mailbox['provider'] === 'google') {
+        if ($mailbox['provider_type'] === 'imap_smtp' || $mailbox['auth_mode'] === 'basic') {
+            $mailbox['auth_status'] = 'basic';
+        } elseif ($mailbox['provider'] === 'google') {
             $mailbox['auth_status'] = $mailbox['is_authenticated'] ? 'ok' : 'unauthenticated';
         } elseif ($mailbox['auth_mode'] === 'app_only') {
             $mailbox['auth_status'] = 'app_only';            // always reads the target directly
