@@ -1,45 +1,168 @@
 <?php
+
 class ImapMailboxClient {
     private array $mailbox;
-    private $stream = null;
+    private $client = null;
+    private $folder = null;
+
     public function __construct(array $mailbox) { $this->mailbox = $mailbox; }
-    private function mailboxString(): string {
-        $enc = $this->mailbox['imap_encryption'] ?? 'ssl';
-        $flags = $enc === 'ssl' ? '/imap/ssl' : ($enc === 'tls' ? '/imap/tls' : '/imap/notls');
-        $folder = $this->mailbox['imap_folder'] ?? $this->mailbox['email_folder'] ?? 'INBOX';
-        return sprintf('{%s:%d%s}%s', $this->mailbox['imap_host'] ?: $this->mailbox['imap_server'], (int)($this->mailbox['imap_port'] ?? 993), $flags, $folder);
+
+    private function ensureDependencies(): void {
+        if (!class_exists('Webklex\\PHPIMAP\\ClientManager')) {
+            $autoload = dirname(__DIR__, 2) . '/vendor/autoload.php';
+            if (is_readable($autoload)) {
+                require_once $autoload;
+            }
+        }
+
+        if (!class_exists('Webklex\\PHPIMAP\\ClientManager')) {
+            throw new RuntimeException('IMAP intake requires Composer dependencies. Run composer install to install webklex/php-imap.');
+        }
     }
+
+    private function host(): string {
+        return (string)($this->mailbox['imap_host'] ?? $this->mailbox['imap_server'] ?? '');
+    }
+
+    private function username(): string {
+        return (string)($this->mailbox['imap_username'] ?? $this->mailbox['target_mailbox'] ?? '');
+    }
+
+    private function password(): string {
+        return (string)($this->mailbox['imap_password_encrypted'] ?? '');
+    }
+
+    private function encryption(): string|false {
+        $encryption = strtolower((string)($this->mailbox['imap_encryption'] ?? 'ssl'));
+        return in_array($encryption, ['ssl', 'tls'], true) ? $encryption : false;
+    }
+
+    private function folderName(): string {
+        return (string)($this->mailbox['imap_folder'] ?? $this->mailbox['email_folder'] ?? 'INBOX');
+    }
+
     public function connect(): void {
-        $this->stream = @imap_open($this->mailboxString(), $this->mailbox['imap_username'] ?? $this->mailbox['target_mailbox'], $this->mailbox['imap_password_encrypted'] ?? '', 0, 1);
-        if (!$this->stream) throw new Exception('IMAP connection failed: ' . imap_last_error());
+        $this->ensureDependencies();
+
+        if ($this->host() === '' || $this->username() === '') {
+            throw new InvalidArgumentException('IMAP host and username are required.');
+        }
+
+        $manager = new Webklex\PHPIMAP\ClientManager();
+        $this->client = $manager->make([
+            'host' => $this->host(),
+            'port' => (int)($this->mailbox['imap_port'] ?? 993),
+            'encryption' => $this->encryption(),
+            'validate_cert' => true,
+            'username' => $this->username(),
+            'password' => $this->password(),
+            'protocol' => 'imap',
+        ]);
+
+        try {
+            $this->client->connect();
+            $this->folder = $this->client->getFolder($this->folderName());
+        } catch (Throwable $e) {
+            $this->close();
+            throw new RuntimeException('IMAP connection failed: ' . $e->getMessage(), 0, $e);
+        }
     }
+
     public function test(): bool { $this->connect(); $this->close(); return true; }
+
     public function fetchUnseen(int $limit = 10): array {
-        if (!$this->stream) $this->connect();
-        $ids = imap_search($this->stream, 'UNSEEN') ?: [];
+        if (!$this->client || !$this->folder) $this->connect();
+
+        try {
+            $messages = $this->folder->messages()->unseen()->limit($limit)->get();
+        } catch (Throwable $e) {
+            throw new RuntimeException('IMAP fetch failed: ' . $e->getMessage(), 0, $e);
+        }
+
         $out = [];
-        foreach (array_slice($ids, 0, $limit) as $msgNo) {
-            $header = imap_headerinfo($this->stream, $msgNo);
-            $messageId = trim($header->message_id ?? ('imap-' . imap_uid($this->stream, $msgNo)));
-            $from = $header->from[0] ?? null;
-            $body = imap_fetchbody($this->stream, $msgNo, '1.1') ?: imap_fetchbody($this->stream, $msgNo, '1') ?: imap_body($this->stream, $msgNo);
+        foreach ($messages as $message) {
+            $uid = $this->messageUid($message);
+            $body = $this->messageBody($message);
+            $from = $this->messageFrom($message);
+            $subject = $this->attributeString($message->getSubject() ?? null, '(No Subject)');
+            $date = $message->getDate() ?? null;
+            $received = $date && method_exists($date, 'toDate') ? $date->toDate()->format('c') : date('c');
+
             $out[] = [
-                'id' => $messageId,
-                'imap_msgno' => $msgNo,
-                'subject' => isset($header->subject) ? imap_utf8($header->subject) : '(No Subject)',
-                'from' => ['emailAddress' => ['address' => strtolower($from->mailbox . '@' . $from->host), 'name' => isset($from->personal) ? imap_utf8($from->personal) : '']],
-                'receivedDateTime' => isset($header->date) ? date('c', strtotime($header->date)) : date('c'),
+                'id' => $this->messageId($message, $uid),
+                'imap_msgno' => $uid,
+                'subject' => $subject,
+                'from' => ['emailAddress' => ['address' => $from['address'], 'name' => $from['name']]],
+                'receivedDateTime' => $received,
                 'bodyPreview' => mb_substr(strip_tags($body), 0, 500),
                 'body' => ['content' => $body, 'contentType' => 'text'],
-                'hasAttachments' => false,
+                'hasAttachments' => method_exists($message, 'hasAttachments') ? (bool)$message->hasAttachments() : false,
                 'importance' => 'normal',
                 'isRead' => false,
                 'toRecipients' => [], 'ccRecipients' => [],
-                'metadata' => ['uid' => imap_uid($this->stream, $msgNo), 'message_id' => $messageId]
+                'metadata' => ['uid' => $uid, 'message_id' => $this->messageId($message, $uid)]
             ];
         }
         return $out;
     }
-    public function markSeen(int $msgNo): void { if ($this->stream) imap_setflag_full($this->stream, (string)$msgNo, '\\Seen'); }
-    public function close(): void { if ($this->stream) { imap_close($this->stream); $this->stream = null; } }
+
+    public function markSeen(int $msgNo): void {
+        if (!$this->client || !$this->folder) return;
+
+        try {
+            $message = $this->folder->messages()->getMessageByUid($msgNo);
+            if ($message && method_exists($message, 'setFlag')) {
+                $message->setFlag('Seen');
+            }
+        } catch (Throwable $e) {
+            error_log('IMAP mark seen failed: ' . $e->getMessage());
+        }
+    }
+
+    public function close(): void {
+        if ($this->client && method_exists($this->client, 'disconnect')) {
+            $this->client->disconnect();
+        }
+        $this->client = null;
+        $this->folder = null;
+    }
+
+    private function messageUid($message): int {
+        return (int)(method_exists($message, 'getUid') ? $message->getUid() : 0);
+    }
+
+    private function messageId($message, int $uid): string {
+        $messageId = method_exists($message, 'getMessageId') ? $this->attributeString($message->getMessageId() ?? null, '') : '';
+        return trim($messageId) !== '' ? trim($messageId) : 'imap-' . $uid;
+    }
+
+    private function messageBody($message): string {
+        if (method_exists($message, 'getHTMLBody')) {
+            $body = $message->getHTMLBody();
+            if (is_string($body) && $body !== '') return $body;
+        }
+        if (method_exists($message, 'getTextBody')) {
+            $body = $message->getTextBody();
+            if (is_string($body)) return $body;
+        }
+        return '';
+    }
+
+    private function messageFrom($message): array {
+        $from = method_exists($message, 'getFrom') ? $message->getFrom() : null;
+        $first = $from && method_exists($from, 'first') ? $from->first() : null;
+
+        return [
+            'address' => $first && isset($first->mail) ? strtolower((string)$first->mail) : '',
+            'name' => $first && isset($first->personal) ? (string)$first->personal : '',
+        ];
+    }
+
+    private function attributeString($value, string $default = ''): string {
+        if ($value === null) return $default;
+        if (is_scalar($value)) return (string)$value;
+        if (is_object($value) && method_exists($value, 'toString')) return (string)$value->toString();
+        if (is_object($value) && method_exists($value, '__toString')) return (string)$value;
+        return $default;
+    }
 }
