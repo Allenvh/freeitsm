@@ -49,6 +49,12 @@ try {
     if (MailboxProviderFactory::isImapSmtp($mailbox)) {
         $client = MailboxProviderFactory::imap($mailbox);
         $emails = $client->fetchUnseen((int)($mailbox['max_emails_per_check'] ?? 10));
+        $connectedAs = $mailbox['imap_username'] ?: ($mailbox['target_mailbox'] ?? 'IMAP/SMTP');
+        $conn->prepare("UPDATE target_mailboxes
+            SET provider = 'imap_smtp', provider_type = 'imap_smtp', auth_mode = 'basic',
+                authenticated_as = ?, authenticated_addresses = ?
+            WHERE id = ?")
+            ->execute([$connectedAs, json_encode([$connectedAs]), $mailboxId]);
         $savedCount = 0; $errors = [];
         $channelId = IntakeMessageService::ensureEmailChannel($conn, 'mailbox-' . $mailboxId, $mailbox['name'] ?? ('Mailbox ' . $mailboxId), ['provider_type' => 'imap_smtp']);
         foreach ($emails as $email) {

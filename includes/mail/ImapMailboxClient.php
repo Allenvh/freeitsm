@@ -33,8 +33,28 @@ class ImapMailboxClient {
     }
 
     private function encryption(): string|false {
-        $encryption = strtolower((string)($this->mailbox['imap_encryption'] ?? 'ssl'));
-        return in_array($encryption, ['ssl', 'tls'], true) ? $encryption : false;
+        $raw = $this->mailbox['imap_encryption'] ?? false;
+        if ($raw === false || $raw === null) return false;
+        $encryption = strtolower(trim((string)$raw));
+        if ($encryption === '' || $encryption === 'none' || $encryption === 'false') return false;
+        if ($encryption === 'ssl') return 'ssl';
+        if ($encryption === 'tls' || $encryption === 'starttls') return 'tls';
+        return false;
+    }
+
+    private function resolvedConfig(bool $includePassword = true): array {
+        $config = [
+            'host' => $this->host(),
+            'port' => (int)($this->mailbox['imap_port'] ?? 993),
+            'protocol' => 'imap',
+            'encryption' => $this->encryption(),
+            'validate_cert' => false,
+            'username' => $this->username(),
+            'password' => $this->password(),
+            'folder' => $this->folderName(),
+        ];
+        if (!$includePassword) unset($config['password']);
+        return $config;
     }
 
     private function folderName(): string {
@@ -47,17 +67,15 @@ class ImapMailboxClient {
         if ($this->host() === '' || $this->username() === '') {
             throw new InvalidArgumentException('IMAP host and username are required.');
         }
+        if ($this->password() === '') {
+            throw new InvalidArgumentException('IMAP password is required.');
+        }
+
+        $config = $this->resolvedConfig(true);
+        error_log('IMAP resolved config before connect: ' . json_encode($this->resolvedConfig(false)));
 
         $manager = new Webklex\PHPIMAP\ClientManager();
-        $this->client = $manager->make([
-            'host' => $this->host(),
-            'port' => (int)($this->mailbox['imap_port'] ?? 993),
-            'encryption' => $this->encryption(),
-            'validate_cert' => true,
-            'username' => $this->username(),
-            'password' => $this->password(),
-            'protocol' => 'imap',
-        ]);
+        $this->client = $manager->make($config);
 
         try {
             $this->client->connect();
