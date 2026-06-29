@@ -430,6 +430,11 @@ $schema = [
         'id'                      => 'INT NOT NULL AUTO_INCREMENT',
         'name'                    => 'VARCHAR(100) NOT NULL',
         'provider'                => "VARCHAR(20) NOT NULL DEFAULT 'microsoft'",
+        // Canonical mailbox storage is target_mailboxes. These IMAP/SMTP
+        // columns are listed here (rather than relying on ad-hoc ALTERs) so
+        // db-verify repairs existing installs before the Mailboxes UI selects
+        // provider_type/auth_mode or the intake workers read connection data.
+        'provider_type'           => "VARCHAR(20) NOT NULL DEFAULT 'graph'",
         'azure_tenant_id'         => 'TEXT NOT NULL',
         'azure_client_id'         => 'TEXT NOT NULL',
         'azure_client_secret'     => 'TEXT NOT NULL',
@@ -438,6 +443,19 @@ $schema = [
         'imap_server'             => 'TEXT NOT NULL',
         'imap_port'               => 'INT NOT NULL DEFAULT 993',
         'imap_encryption'         => 'VARCHAR(10) NOT NULL DEFAULT \'ssl\'',
+        'imap_host'               => 'TEXT NULL',
+        'imap_username'           => 'TEXT NULL',
+        'imap_password_encrypted' => 'TEXT NULL',
+        'imap_folder'             => 'VARCHAR(100) NOT NULL DEFAULT \'INBOX\'',
+        'smtp_host'               => 'TEXT NULL',
+        'smtp_port'               => 'INT NOT NULL DEFAULT 587',
+        'smtp_encryption'         => 'VARCHAR(10) NOT NULL DEFAULT \'tls\'',
+        'smtp_username'           => 'TEXT NULL',
+        'smtp_password_encrypted' => 'TEXT NULL',
+        'smtp_from_address'       => 'TEXT NULL',
+        'smtp_from_name'          => 'VARCHAR(255) NULL',
+        'intake_enabled'          => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'outbound_enabled'        => 'TINYINT(1) NOT NULL DEFAULT 1',
         'target_mailbox'          => 'TEXT NOT NULL',
         // 'delegated' = OAuth sign-in (acts as the signed-in user, /me); 'app_only' =
         // client-credentials (the app reads the specific /users/<target_mailbox>).
@@ -461,6 +479,7 @@ $schema = [
         'tenant_id'               => 'INT NULL',
         'created_datetime'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
         'last_checked_datetime'   => 'DATETIME NULL',
+        'last_checked_at'         => 'DATETIME NULL',
     ],
 
     'emails' => [
@@ -2360,6 +2379,48 @@ try {
             'status' => 'updated',
             'details' => ['Widened encrypted mailbox columns: ' . implode(', ', $modifiedMailboxColumns)]
         ];
+    }
+
+    // Diagnostic/repair for the canonical mailbox schema. FreeITSM stores mailbox
+    // configuration in target_mailboxes (not a separate `mailboxes` table). Make
+    // legacy OAuth rows explicit so newer UI/API/intake code can read provider_type
+    // without breaking existing Graph/Gmail/Exchange records.
+    try {
+        $requiredMailboxColumns = [
+            'provider_type', 'auth_mode', 'imap_host', 'imap_port', 'imap_encryption',
+            'imap_username', 'imap_password_encrypted', 'imap_folder', 'smtp_host',
+            'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_password_encrypted',
+            'smtp_from_address', 'smtp_from_name', 'intake_enabled', 'outbound_enabled',
+            'last_checked_at'
+        ];
+        $missingMailboxColumns = [];
+        foreach ($requiredMailboxColumns as $columnName) {
+            $colProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'target_mailboxes' AND column_name = ?");
+            $colProbe->execute([$dbName, $columnName]);
+            if ((int)$colProbe->fetchColumn() === 0) {
+                $missingMailboxColumns[] = $columnName;
+            }
+        }
+        if (!empty($missingMailboxColumns)) {
+            $results[] = [
+                'table' => 'target_mailboxes',
+                'status' => 'error',
+                'details' => ['Canonical mailbox table is missing required columns after repair attempt: ' . implode(', ', $missingMailboxColumns)]
+            ];
+        } else {
+            $updatedProviderTypes = $conn->exec("UPDATE target_mailboxes SET provider_type = CASE WHEN provider = 'google' THEN 'gmail' WHEN provider = 'imap_smtp' THEN 'imap_smtp' ELSE 'graph' END WHERE provider_type IS NULL OR provider_type = ''");
+            $updatedAuthModes = $conn->exec("UPDATE target_mailboxes SET auth_mode = 'delegated' WHERE auth_mode IS NULL OR auth_mode = '' OR auth_mode = 'oauth'");
+            $updatedFolders = $conn->exec("UPDATE target_mailboxes SET imap_folder = COALESCE(NULLIF(imap_folder, ''), email_folder, 'INBOX') WHERE imap_folder IS NULL OR imap_folder = ''");
+            $details = [];
+            if ($updatedProviderTypes) $details[] = "Backfilled provider_type on $updatedProviderTypes mailbox(es)";
+            if ($updatedAuthModes) $details[] = "Normalised OAuth auth_mode on $updatedAuthModes mailbox(es)";
+            if ($updatedFolders) $details[] = "Backfilled imap_folder on $updatedFolders mailbox(es)";
+            if (!empty($details)) {
+                $results[] = ['table' => 'target_mailboxes', 'status' => 'updated', 'details' => $details];
+            }
+        }
+    } catch (Exception $e) {
+        $results[] = ['table' => 'target_mailboxes', 'status' => 'error', 'details' => ['Mailbox schema diagnostic failed: ' . $e->getMessage()]];
     }
 
     // Seed default admin account if no analysts exist
