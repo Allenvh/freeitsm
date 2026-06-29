@@ -1129,6 +1129,7 @@ $translationNamespaces = ['common', 'tickets'];
                         <select id="mailboxProvider" onchange="toggleProviderFields()">
                             <option value="microsoft"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.provider_microsoft')); ?></option>
                             <option value="google"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.provider_google')); ?></option>
+                            <option value="imap_smtp">Generic IMAP/SMTP</option>
                         </select>
                     </div>
 
@@ -1194,6 +1195,43 @@ $translationNamespaces = ['common', 'tickets'];
                         <input type="number" id="mailboxImapPort" value="993">
                     </div>
 
+
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxImapUsername">IMAP username *</label>
+                        <input type="text" id="mailboxImapUsername" autocomplete="off">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxImapPassword">IMAP password</label>
+                        <input type="password" id="mailboxImapPassword" autocomplete="new-password" placeholder="Leave blank to keep existing">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpHost">SMTP host</label>
+                        <input type="text" id="mailboxSmtpHost">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpPort">SMTP port</label>
+                        <input type="number" id="mailboxSmtpPort" value="587">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpEncryption">SMTP encryption</label>
+                        <select id="mailboxSmtpEncryption"><option value="tls">TLS</option><option value="ssl">SSL</option><option value="none">None</option></select>
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpUsername">SMTP username</label>
+                        <input type="text" id="mailboxSmtpUsername" autocomplete="off">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpPassword">SMTP password</label>
+                        <input type="password" id="mailboxSmtpPassword" autocomplete="new-password" placeholder="Leave blank to keep existing">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpFromAddress">SMTP from address</label>
+                        <input type="email" id="mailboxSmtpFromAddress">
+                    </div>
+                    <div class="form-group provider-imap-smtp">
+                        <label for="mailboxSmtpFromName">SMTP from name</label>
+                        <input type="text" id="mailboxSmtpFromName">
+                    </div>
                     <div class="form-group">
                         <label for="mailboxFolder"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.email_folder')); ?></label>
                         <input type="text" id="mailboxFolder" value="INBOX">
@@ -3219,7 +3257,7 @@ $translationNamespaces = ['common', 'tickets'];
         async function openMailboxModal(mailbox = null) {
             document.getElementById('mailboxModalTitle').textContent = mailbox ? t('tickets.settings.modals.mailbox.edit_title') : t('tickets.settings.modals.mailbox.add_title');
             document.getElementById('mailboxId').value = mailbox ? mailbox.id : '';
-            document.getElementById('mailboxProvider').value = mailbox ? (mailbox.provider || 'microsoft') : 'microsoft';
+            document.getElementById('mailboxProvider').value = mailbox ? ((mailbox.provider_type === 'imap_smtp') ? 'imap_smtp' : (mailbox.provider || 'microsoft')) : 'microsoft';
             document.getElementById('mailboxName').value = mailbox ? mailbox.name : '';
             document.getElementById('mailboxEmail').value = mailbox ? mailbox.target_mailbox : '';
             document.getElementById('mailboxAuthMode').value = mailbox ? (mailbox.auth_mode || 'delegated') : 'delegated';
@@ -3228,7 +3266,16 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('mailboxClientSecret').value = '';
             document.getElementById('mailboxRedirectUri').value = mailbox ? mailbox.oauth_redirect_uri : getDefaultOAuthRedirectUri(document.getElementById('mailboxProvider').value);
             document.getElementById('mailboxScopes').value = mailbox ? mailbox.oauth_scopes : 'openid email offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send';
-            document.getElementById('mailboxImapServer').value = mailbox ? mailbox.imap_server : 'outlook.office365.com';
+            document.getElementById('mailboxImapServer').value = mailbox ? (mailbox.imap_host || mailbox.imap_server) : 'outlook.office365.com';
+            document.getElementById('mailboxImapUsername').value = mailbox ? (mailbox.imap_username || '') : '';
+            document.getElementById('mailboxImapPassword').value = '';
+            document.getElementById('mailboxSmtpHost').value = mailbox ? (mailbox.smtp_host || '') : '';
+            document.getElementById('mailboxSmtpPort').value = mailbox ? (mailbox.smtp_port || 587) : 587;
+            document.getElementById('mailboxSmtpEncryption').value = mailbox ? (mailbox.smtp_encryption || 'tls') : 'tls';
+            document.getElementById('mailboxSmtpUsername').value = mailbox ? (mailbox.smtp_username || '') : '';
+            document.getElementById('mailboxSmtpPassword').value = '';
+            document.getElementById('mailboxSmtpFromAddress').value = mailbox ? (mailbox.smtp_from_address || mailbox.target_mailbox || '') : '';
+            document.getElementById('mailboxSmtpFromName').value = mailbox ? (mailbox.smtp_from_name || mailbox.name || '') : '';
             document.getElementById('mailboxImapPort').value = mailbox ? mailbox.imap_port : 993;
             toggleProviderFields();
             toggleAuthModeFields();
@@ -3291,12 +3338,20 @@ $translationNamespaces = ['common', 'tickets'];
         function toggleProviderFields() {
             const provider = document.getElementById('mailboxProvider').value;
             const isMicrosoft = provider === 'microsoft';
+            const isImapSmtp = provider === 'imap_smtp';
             const mailboxId = document.getElementById('mailboxId').value;
 
             // Show/hide Microsoft-only fields
             document.querySelectorAll('.provider-microsoft').forEach(el => {
                 el.style.display = isMicrosoft ? '' : 'none';
             });
+
+            document.querySelectorAll('.provider-imap-smtp').forEach(el => { el.style.display = isImapSmtp ? '' : 'none'; });
+            document.getElementById('clientIdGroup').style.display = isImapSmtp ? 'none' : '';
+            document.getElementById('mailboxClientSecret').closest('.form-group').style.display = isImapSmtp ? 'none' : '';
+            document.getElementById('mailboxRedirectUri').closest('.form-group').style.display = isImapSmtp ? 'none' : '';
+            document.getElementById('mailboxClientId').required = !isImapSmtp;
+            document.getElementById('mailboxRedirectUri').required = !isImapSmtp;
 
             // Update labels
             document.getElementById('clientIdLabel').textContent = isMicrosoft ? 'Azure Client ID *' : 'Google Client ID *';
@@ -3600,7 +3655,8 @@ $translationNamespaces = ['common', 'tickets'];
 
             const formData = {
                 id: document.getElementById('mailboxId').value || null,
-                provider: document.getElementById('mailboxProvider').value,
+                provider: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'imap_smtp' : document.getElementById('mailboxProvider').value,
+                provider_type: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'imap_smtp' : (document.getElementById('mailboxProvider').value === 'google' ? 'gmail' : 'graph'),
                 name: document.getElementById('mailboxName').value,
                 target_mailbox: document.getElementById('mailboxEmail').value,
                 auth_mode: document.getElementById('mailboxAuthMode').value,
@@ -3610,6 +3666,17 @@ $translationNamespaces = ['common', 'tickets'];
                 oauth_redirect_uri: document.getElementById('mailboxRedirectUri').value,
                 oauth_scopes: document.getElementById('mailboxScopes').value,
                 imap_server: document.getElementById('mailboxImapServer').value,
+                imap_host: document.getElementById('mailboxImapServer').value,
+                imap_username: document.getElementById('mailboxImapUsername').value,
+                imap_password: document.getElementById('mailboxImapPassword').value,
+                imap_folder: document.getElementById('mailboxFolder').value,
+                smtp_host: document.getElementById('mailboxSmtpHost').value,
+                smtp_port: parseInt(document.getElementById('mailboxSmtpPort').value || '587'),
+                smtp_encryption: document.getElementById('mailboxSmtpEncryption').value,
+                smtp_username: document.getElementById('mailboxSmtpUsername').value,
+                smtp_password: document.getElementById('mailboxSmtpPassword').value,
+                smtp_from_address: document.getElementById('mailboxSmtpFromAddress').value,
+                smtp_from_name: document.getElementById('mailboxSmtpFromName').value,
                 imap_port: parseInt(document.getElementById('mailboxImapPort').value),
                 email_folder: document.getElementById('mailboxFolder').value,
                 max_emails_per_check: parseInt(document.getElementById('mailboxMaxEmails').value),

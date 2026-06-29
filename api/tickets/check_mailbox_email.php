@@ -10,6 +10,8 @@ require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
 require_once '../../includes/tenancy.php';
 require_once '../../includes/mailbox_graph.php';
+require_once '../../includes/mail/MailboxProviderFactory.php';
+require_once '../../includes/intake/IntakeMessageService.php';
 
 header('Content-Type: application/json');
 
@@ -41,6 +43,33 @@ try {
 
     if (!$mailbox['is_active']) {
         echo json_encode(['success' => false, 'error' => 'Mailbox is inactive']);
+        exit;
+    }
+
+    if (MailboxProviderFactory::isImapSmtp($mailbox)) {
+        $client = MailboxProviderFactory::imap($mailbox);
+        $emails = $client->fetchUnseen((int)($mailbox['max_emails_per_check'] ?? 10));
+        $savedCount = 0; $errors = [];
+        $channelId = IntakeMessageService::ensureEmailChannel($conn, 'mailbox-' . $mailboxId, $mailbox['name'] ?? ('Mailbox ' . $mailboxId), ['provider_type' => 'imap_smtp']);
+        foreach ($emails as $email) {
+            try {
+                IntakeMessageService::record($conn, $channelId, $email);
+                $result = saveEmailToDatabase($conn, $email, null, $mailboxId);
+                if ($result !== false) {
+                    $ticketId = is_array($result) ? (int)($result['ticket_id'] ?? 0) : (int)$result;
+                    if ($ticketId) IntakeMessageService::markTicketCreated($conn, $channelId, $email['id'], $ticketId);
+                    $client->markSeen((int)$email['imap_msgno']);
+                    error_log('audit: intake_ticket_creation mailbox_id=' . $mailboxId . ' ticket_id=' . $ticketId);
+                    $savedCount++;
+                }
+            } catch (Exception $e) {
+                error_log('audit: failed_intake_processing mailbox_id=' . $mailboxId);
+                $errors[] = $e->getMessage();
+            }
+        }
+        $client->close();
+        updateLastChecked($conn, $mailboxId);
+        echo json_encode(['success' => true, 'message' => "Processed {$savedCount} IMAP message(s)", 'details' => ['emails_found' => count($emails), 'emails_saved' => $savedCount, 'errors' => $errors]]);
         exit;
     }
 

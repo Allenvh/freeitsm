@@ -153,6 +153,9 @@ try {
         )->execute([$analystId, $providerId, $sub, $email ?: null]);
     }
 
+    // Sync SSO group/role claims after ID token validation and before session module calculation.
+    oidcSyncAnalystAccessGroups($conn, $providerId, $analystId, $claims, $provider);
+
     // --- Success: set the session directly (SSO bypasses local MFA) ---
     $conn->prepare("UPDATE analysts SET last_login_datetime = UTC_TIMESTAMP(), failed_login_count = 0 WHERE id = ?")
          ->execute([$analystId]);
@@ -161,7 +164,7 @@ try {
     $_SESSION['analyst_username'] = $analyst['username'];
     $_SESSION['analyst_name']     = $analyst['full_name'];
     $_SESSION['analyst_email']    = $analyst['email'];
-    $_SESSION['allowed_modules']  = getAnalystAllowedModules($conn, $analystId);
+    $_SESSION['allowed_modules']  = getAnalystEffectiveModules($conn, $analystId);
     // Remember the SSO context so logout can also end the session at the IdP.
     $_SESSION['sso_provider_id']  = $providerId;
     $_SESSION['sso_id_token']     = $tokens['id_token'];
@@ -175,6 +178,55 @@ try {
 }
 
 // --------------------------------------------------------------------------
+
+
+function oidcClaimValues(array $claims, array $provider): array {
+    $values = [];
+    foreach (['groups', 'roles'] as $key) {
+        if (isset($claims[$key])) {
+            $values = array_merge($values, is_array($claims[$key]) ? $claims[$key] : [$claims[$key]]);
+        }
+    }
+    if (isset($claims['realm_access']['roles']) && is_array($claims['realm_access']['roles'])) {
+        $values = array_merge($values, $claims['realm_access']['roles']);
+    }
+    if (isset($claims['resource_access']) && is_array($claims['resource_access'])) {
+        $clientIds = array_filter([$provider['client_id'] ?? null, $provider['name'] ?? null]);
+        foreach ($claims['resource_access'] as $client => $access) {
+            if (!empty($clientIds) && !in_array($client, $clientIds, true)) continue;
+            if (isset($access['roles']) && is_array($access['roles'])) {
+                $values = array_merge($values, $access['roles']);
+            }
+        }
+    }
+    return array_values(array_unique(array_filter(array_map('strval', $values))));
+}
+
+function oidcSyncAnalystAccessGroups(PDO $conn, int $providerId, int $analystId, array $claims, array $provider): void {
+    $claimValues = oidcClaimValues($claims, $provider);
+    try {
+        $conn->beginTransaction();
+        $conn->prepare("DELETE aag FROM analyst_access_groups aag
+                        JOIN auth_provider_group_mappings apgm ON apgm.access_group_id = aag.access_group_id
+                        WHERE aag.analyst_id = ? AND aag.source = 'sso' AND apgm.provider_id = ?")
+             ->execute([$analystId, $providerId]);
+        if ($claimValues) {
+            $placeholders = implode(',', array_fill(0, count($claimValues), '?'));
+            $stmt = $conn->prepare("SELECT access_group_id FROM auth_provider_group_mappings
+                                    WHERE provider_id = ? AND is_active = 1 AND external_group_value IN ($placeholders)");
+            $stmt->execute(array_merge([$providerId], $claimValues));
+            $insert = $conn->prepare("INSERT IGNORE INTO analyst_access_groups (analyst_id, access_group_id, source) VALUES (?, ?, 'sso')");
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $groupId) {
+                $insert->execute([$analystId, (int)$groupId]);
+            }
+        }
+        $conn->commit();
+        error_log('audit: sso_login_group_sync analyst_id=' . $analystId . ' provider_id=' . $providerId . ' groups=' . count($claimValues));
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        error_log('audit: sso_login_group_sync_failed analyst_id=' . $analystId . ' provider_id=' . $providerId);
+    }
+}
 
 function oidcLoadAnalyst(PDO $conn, int $id): ?array {
     $stmt = $conn->prepare("SELECT * FROM analysts WHERE id = ?");
