@@ -6,6 +6,7 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/mailbox_schema.php';
 require_once '../../includes/mailbox_graph.php';
 
 header('Content-Type: application/json');
@@ -18,9 +19,13 @@ if (!isset($_SESSION['analyst_id'])) {
 
 try {
     $conn = connectToDatabase();
+    ensureTargetMailboxSchema($conn);
 
-    $sql = "SELECT id, name, provider, azure_tenant_id, azure_client_id, azure_client_secret,
+    $sql = "SELECT id, name, provider, provider_type, azure_tenant_id, azure_client_id, azure_client_secret,
                    oauth_redirect_uri, oauth_scopes, imap_server, imap_port, imap_encryption,
+                   imap_host, imap_username, imap_password_encrypted, imap_folder,
+                   smtp_host, smtp_port, smtp_encryption, smtp_username, smtp_password_encrypted,
+                   smtp_from_address, smtp_from_name, intake_enabled, outbound_enabled,
                    target_mailbox, auth_mode, authenticated_as, authenticated_addresses, email_folder, max_emails_per_check, mark_as_read,
                    rejected_action, imported_action, imported_folder,
                    is_active, tenant_id, created_datetime, last_checked_datetime,
@@ -48,6 +53,7 @@ try {
         // Convert numeric fields to integers
         $mailbox['id'] = (int)$mailbox['id'];
         $mailbox['imap_port'] = (int)$mailbox['imap_port'];
+        $mailbox['smtp_port'] = (int)($mailbox['smtp_port'] ?? 587);
         $mailbox['max_emails_per_check'] = (int)$mailbox['max_emails_per_check'];
         // Multi-tenancy: the company this mailbox is pinned to (null = shared intake).
         $mailbox['tenant_id'] = ($mailbox['tenant_id'] === null) ? null : (int)$mailbox['tenant_id'];
@@ -55,6 +61,8 @@ try {
         // Convert bit fields to booleans
         $mailbox['is_active'] = (bool)$mailbox['is_active'];
         $mailbox['mark_as_read'] = (bool)$mailbox['mark_as_read'];
+        $mailbox['intake_enabled'] = (bool)($mailbox['intake_enabled'] ?? true);
+        $mailbox['outbound_enabled'] = (bool)($mailbox['outbound_enabled'] ?? true);
         $mailbox['is_authenticated'] = (bool)$mailbox['is_authenticated'];
 
         // Mask client secret for display (show only last 4 chars)
@@ -64,7 +72,11 @@ try {
             $mailbox['azure_client_secret_masked'] = '';
         }
 
-        // Default + normalise the auth mode.
+        // Default + normalise provider/auth mode for legacy rows. Graph/Gmail are
+        // OAuth-backed; IMAP/SMTP keeps the separate provider_type value.
+        if (empty($mailbox['provider_type'])) {
+            $mailbox['provider_type'] = ($mailbox['provider'] ?? '') === 'google' ? 'gmail' : 'graph';
+        }
         $mailbox['auth_mode'] = ($mailbox['auth_mode'] ?? 'delegated') === 'app_only' ? 'app_only' : 'delegated';
 
         // Compute a clear "where is this reading from?" status for the UI so it's

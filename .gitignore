@@ -122,3 +122,7 @@ yarn-error.log
 *.backup
 *.old
 *.orig
+
+# Local corporate CA certificates for Docker builds (never commit actual certs)
+certs/*.crt
+!certs/.gitkeep

@@ -6,6 +6,7 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/mailbox_schema.php';
 
 header('Content-Type: application/json');
 
@@ -45,6 +46,7 @@ foreach ($requiredFields as $field) {
 
 try {
     $conn = connectToDatabase();
+    ensureTargetMailboxSchema($conn);
 
     $id = $data['id'] ?? null;
     $name = $data['name'];

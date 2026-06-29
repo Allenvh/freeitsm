@@ -569,6 +569,7 @@ CREATE TABLE IF NOT EXISTS `target_mailboxes` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `name`                  VARCHAR(100) NOT NULL,
     `provider`              VARCHAR(20) NOT NULL DEFAULT 'microsoft',
+    `provider_type`         VARCHAR(20) NOT NULL DEFAULT 'graph',
     `azure_tenant_id`       TEXT NOT NULL,
     `azure_client_id`       TEXT NOT NULL,
     `azure_client_secret`   TEXT NOT NULL,
@@ -577,6 +578,19 @@ CREATE TABLE IF NOT EXISTS `target_mailboxes` (
     `imap_server`           TEXT NOT NULL,
     `imap_port`             INT NOT NULL DEFAULT 993,
     `imap_encryption`       VARCHAR(10) NOT NULL DEFAULT 'ssl',
+    `imap_host`             TEXT NULL,
+    `imap_username`         TEXT NULL,
+    `imap_password_encrypted` TEXT NULL,
+    `imap_folder`           VARCHAR(100) NOT NULL DEFAULT 'INBOX',
+    `smtp_host`             TEXT NULL,
+    `smtp_port`             INT NOT NULL DEFAULT 587,
+    `smtp_encryption`       VARCHAR(10) NOT NULL DEFAULT 'tls',
+    `smtp_username`         TEXT NULL,
+    `smtp_password_encrypted` TEXT NULL,
+    `smtp_from_address`     TEXT NULL,
+    `smtp_from_name`        VARCHAR(255) NULL,
+    `intake_enabled`        TINYINT(1) NOT NULL DEFAULT 1,
+    `outbound_enabled`      TINYINT(1) NOT NULL DEFAULT 1,
     `target_mailbox`        TEXT NOT NULL,
     -- 'delegated' = OAuth sign-in (acts as the signed-in user, Graph /me);
     -- 'app_only'  = client-credentials (the app reads the specific /users/<target_mailbox>).
@@ -598,6 +612,7 @@ CREATE TABLE IF NOT EXISTS `target_mailboxes` (
     `tenant_id`             INT NULL,
     `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `last_checked_datetime` DATETIME NULL,
+    `last_checked_at`       DATETIME NULL,
     PRIMARY KEY (`id`),
     KEY `ix_target_mailboxes_tenant_id` (`tenant_id`),
     CONSTRAINT `fk_target_mailboxes_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
@@ -3277,20 +3292,3 @@ INSERT IGNORE INTO `access_groups` (`group_key`, `display_name`, `description`) 
 ('admin', 'FreeITSM Admin', 'Administrative FreeITSM access.'),
 ('sysadmin', 'FreeITSM SysAdmin', 'System administration access.'),
 ('devops', 'FreeITSM DevOps', 'DevOps and operational module access.');
-
-ALTER TABLE `target_mailboxes`
-    ADD COLUMN IF NOT EXISTS `provider_type` VARCHAR(20) NOT NULL DEFAULT 'graph' AFTER `provider`,
-    ADD COLUMN IF NOT EXISTS `imap_host` TEXT NULL AFTER `imap_encryption`,
-    ADD COLUMN IF NOT EXISTS `imap_username` TEXT NULL AFTER `imap_host`,
-    ADD COLUMN IF NOT EXISTS `imap_password_encrypted` TEXT NULL AFTER `imap_username`,
-    ADD COLUMN IF NOT EXISTS `imap_folder` VARCHAR(100) NOT NULL DEFAULT 'INBOX' AFTER `imap_password_encrypted`,
-    ADD COLUMN IF NOT EXISTS `smtp_host` TEXT NULL AFTER `imap_folder`,
-    ADD COLUMN IF NOT EXISTS `smtp_port` INT NOT NULL DEFAULT 587 AFTER `smtp_host`,
-    ADD COLUMN IF NOT EXISTS `smtp_encryption` VARCHAR(10) NOT NULL DEFAULT 'tls' AFTER `smtp_port`,
-    ADD COLUMN IF NOT EXISTS `smtp_username` TEXT NULL AFTER `smtp_encryption`,
-    ADD COLUMN IF NOT EXISTS `smtp_password_encrypted` TEXT NULL AFTER `smtp_username`,
-    ADD COLUMN IF NOT EXISTS `smtp_from_address` TEXT NULL AFTER `smtp_password_encrypted`,
-    ADD COLUMN IF NOT EXISTS `smtp_from_name` VARCHAR(255) NULL AFTER `smtp_from_address`,
-    ADD COLUMN IF NOT EXISTS `intake_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `smtp_from_name`,
-    ADD COLUMN IF NOT EXISTS `outbound_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `intake_enabled`,
-    ADD COLUMN IF NOT EXISTS `last_checked_at` DATETIME NULL AFTER `last_checked_datetime`;
