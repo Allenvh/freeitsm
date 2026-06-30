@@ -10,6 +10,7 @@
  */
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__ . '/../../../config.php';
+require_once __DIR__ . '/../../../includes/functions.php';
 require_once __DIR__ . '/../../../includes/i18n.php';
 require_once __DIR__ . '/tools.php';
 I18n::initFromSession();
@@ -35,6 +36,21 @@ if (!$tool) {
 // sets 'method' => 'POST' so values never land in the URL / server logs.
 $toolFields = !empty($tool['inputs']) ? $tool['inputs'] : (!empty($tool['input']) ? [$tool['input']] : []);
 $toolMethod = strtoupper($tool['method'] ?? 'GET');
+
+$mailboxOptions = [];
+if (array_filter($toolFields, fn($f) => (($f['type'] ?? '') === 'mailbox_select'))) {
+    try {
+        $connForMailboxes = connectToDatabase();
+        $stmtForMailboxes = $connForMailboxes->query("SELECT id, name, target_mailbox, provider_type, provider FROM target_mailboxes ORDER BY name, id");
+        foreach ($stmtForMailboxes->fetchAll(PDO::FETCH_ASSOC) as $mbOpt) {
+            $label = '#' . $mbOpt['id'] . ' — ' . (($mbOpt['name'] ?? '') ?: ($mbOpt['target_mailbox'] ?? 'Mailbox'));
+            $label .= ' (' . (($mbOpt['provider_type'] ?? '') ?: ($mbOpt['provider'] ?? 'unknown')) . ')';
+            $mailboxOptions[] = ['value' => (string)$mbOpt['id'], 'label' => $label];
+        }
+    } catch (Throwable $e) {
+        $mailboxOptions[] = ['value' => '', 'label' => 'Unable to load mailboxes: ' . $e->getMessage()];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -105,6 +121,10 @@ $toolMethod = strtoupper($tool['method'] ?? 'GET');
                     <span><strong><?php echo htmlspecialchars(t('system.debug.side_effects_label')); ?></strong> <?php echo htmlspecialchars($tool['persists']); ?></span>
                 </div>
 
+                <?php if (!empty($tool['warning'])): ?>
+                    <div class="diag-destructive">⚠ <?php echo htmlspecialchars($tool['warning']); ?></div>
+                <?php endif; ?>
+
                 <?php if (!empty($tool['destructive'])): ?>
                     <div class="diag-destructive">⚠ <?php echo htmlspecialchars($tool['persists']); ?></div>
                 <?php endif; ?>
@@ -118,7 +138,14 @@ $toolMethod = strtoupper($tool['method'] ?? 'GET');
                         ?>
                             <div class="diag-input-row">
                                 <label class="diag-input-label" for="<?php echo $fid; ?>"><?php echo htmlspecialchars($f['label']); ?></label>
-                                <?php if ($ftype === 'select'): ?>
+                                <?php if ($ftype === 'mailbox_select'): ?>
+                                    <select class="diag-input" id="<?php echo $fid; ?>" data-input-name="<?php echo htmlspecialchars($f['name']); ?>"<?php echo $optAttr; ?>>
+                                        <option value="">Choose a mailbox…</option>
+                                        <?php foreach ($mailboxOptions as $opt): ?>
+                                            <option value="<?php echo htmlspecialchars($opt['value']); ?>"><?php echo htmlspecialchars($opt['label']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                <?php elseif ($ftype === 'select'): ?>
                                     <select class="diag-input" id="<?php echo $fid; ?>" data-input-name="<?php echo htmlspecialchars($f['name']); ?>"<?php echo $optAttr; ?>>
                                         <?php foreach (($f['options'] ?? []) as $opt): ?>
                                             <option value="<?php echo htmlspecialchars($opt['value']); ?>"><?php echo htmlspecialchars($opt['label']); ?></option>
