@@ -15,16 +15,25 @@
  *   3. Create system/debug-tools/<slug>/index.php (two lines — see d001/index.php).
  */
 
+function mailboxDebugTruthy($value) {
+    return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on', 'enabled'], true);
+}
+
 function mailboxDebugToolEnabled() {
-    $env = getenv('MAILBOX_DEBUG_ENABLED');
-    if ($env !== false && $env !== '') return in_array(strtolower($env), ['1','true','yes','on'], true);
+    foreach (['MAILBOX_DEBUG_ENABLED', 'mailbox_debug_enabled'] as $key) {
+        $env = getenv($key);
+        if ($env !== false && $env !== '') return mailboxDebugTruthy($env);
+        if (isset($_ENV[$key]) && $_ENV[$key] !== '') return mailboxDebugTruthy($_ENV[$key]);
+        if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') return mailboxDebugTruthy($_SERVER[$key]);
+    }
+    if (defined('MAILBOX_DEBUG_ENABLED')) return mailboxDebugTruthy(constant('MAILBOX_DEBUG_ENABLED'));
     try {
         if (function_exists('connectToDatabase')) {
             $conn = connectToDatabase();
-            $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
-            $stmt->execute(['MAILBOX_DEBUG_ENABLED']);
+            $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key IN (?, ?) ORDER BY FIELD(setting_key, ?, ?) LIMIT 1");
+            $stmt->execute(['MAILBOX_DEBUG_ENABLED', 'mailbox_debug_enabled', 'MAILBOX_DEBUG_ENABLED', 'mailbox_debug_enabled']);
             $v = $stmt->fetchColumn();
-            return in_array(strtolower((string)$v), ['1','true','yes','on'], true);
+            return $v !== false && mailboxDebugTruthy($v);
         }
     } catch (Throwable $e) {}
     return false;
