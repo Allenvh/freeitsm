@@ -15,9 +15,24 @@
  *   3. Create system/debug-tools/<slug>/index.php (two lines — see d001/index.php).
  */
 
+function mailboxDebugToolEnabled() {
+    $env = getenv('MAILBOX_DEBUG_ENABLED');
+    if ($env !== false && $env !== '') return in_array(strtolower($env), ['1','true','yes','on'], true);
+    try {
+        if (function_exists('connectToDatabase')) {
+            $conn = connectToDatabase();
+            $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
+            $stmt->execute(['MAILBOX_DEBUG_ENABLED']);
+            $v = $stmt->fetchColumn();
+            return in_array(strtolower((string)$v), ['1','true','yes','on'], true);
+        }
+    } catch (Throwable $e) {}
+    return false;
+}
+
 /** @return array<int,array<string,mixed>> Ordered list of debug tools. */
 function getDebugTools() {
-    return [
+    $tools = [
         [
             'id'       => 'D001',
             'slug'     => 'd001',
@@ -122,7 +137,50 @@ function getDebugTools() {
             'duration' => '~1 second',
             'persists' => 'None. Read-only — writes nothing. POST-only so the password never lands in a URL or log; the password is never echoed and the stored hash is never printed (only its format / cost / length).',
         ],
+
+        [
+            'id'       => 'D005',
+            'slug'     => 'd005',
+            'file'     => 'D005_mailbox_imap_smtp.php',
+            'title'    => 'Mailbox IMAP/SMTP diagnostics',
+            'category' => 'Mailboxes',
+            'icon'     => 'mail',
+            'desc'     => 'Safely troubleshoot Generic IMAP/SMTP mailbox connection, Webklex, folder, message, SMTP send, and intake dry-run failures.',
+            'keywords' => 'mailbox imap smtp webklex socket login select search folders messages intake dry run d005',
+            'when'     => 'Run this only during mailbox troubleshooting. It shows stored and resolved connection metadata, masks all secrets, and logs sanitized details to storage/logs/mailbox-debug.log.',
+            'method'   => 'POST',
+            'requires_mailbox_debug' => true,
+            'inputs'   => [
+                ['name' => 'mailbox_id', 'label' => 'Mailbox', 'type' => 'mailbox_select'],
+                ['name' => 'action', 'label' => 'Debug action', 'type' => 'select', 'options' => [
+                    ['value' => 'show_config', 'label' => '1. Show stored + resolved config'],
+                    ['value' => 'raw_smtp', 'label' => '3. Test raw SMTP socket'],
+                    ['value' => 'send_smtp', 'label' => '4. Send SMTP test message'],
+                    ['value' => 'raw_imap', 'label' => '5. Test raw IMAP socket'],
+                    ['value' => 'webklex_test', 'label' => '6. Test Webklex IMAP connection'],
+                    ['value' => 'list_folders', 'label' => '7. List IMAP folders'],
+                    ['value' => 'list_messages', 'label' => '8. List first 10 IMAP messages'],
+                    ['value' => 'intake_dry_run', 'label' => '9. Intake dry-run (no mutations)'],
+                ]],
+                ['name' => 'test_to', 'label' => 'SMTP test recipient', 'type' => 'text', 'placeholder' => 'optional; defaults to mailbox/from address', 'optional' => true],
+            ],
+            'checks'   => [
+                'Stored mailbox config and resolved runtime config with passwords/tokens/client secrets masked as present/absent only',
+                'Raw SMTP socket connect, EHLO, STARTTLS when configured, optional AUTH LOGIN, and optional test message send',
+                'Raw IMAP socket banner, LOGIN, SELECT and SEARCH transcript',
+                'Webklex IMAP connection with real exception class/message/short trace',
+                'Folder listing, first 10 unseen message summaries, and an intake dry-run that performs no ticket/message mutations',
+                'A sanitized JSON-line audit entry per action in storage/logs/mailbox-debug.log',
+            ],
+            'duration' => '~1–20 seconds depending on remote mailbox timeouts',
+            'persists' => 'Read-mostly. SMTP send action sends one test email. Intake dry-run creates no tickets and does not mark read, delete, or move messages.',
+            'warning'  => 'Debug mode exposes connection metadata. Do not enable in production except during troubleshooting.',
+        ],
     ];
+    if (!mailboxDebugToolEnabled()) {
+        $tools = array_values(array_filter($tools, fn($tool) => empty($tool['requires_mailbox_debug'])));
+    }
+    return $tools;
 }
 
 /** Find one tool by its slug (e.g. 'd001'). Returns null if not found. */
@@ -142,6 +200,7 @@ function debugToolIcon($key) {
         'demo'   => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>',
         'ticket' => '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line>',
         'sso'    => '<path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path><line x1="8" y1="12" x2="16" y2="12"></line>',
+        'mail'   => '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline>',
         'key'    => '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"></path>',
     ];
     $inner = $icons[$key] ?? '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>';
