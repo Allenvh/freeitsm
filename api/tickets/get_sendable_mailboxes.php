@@ -35,12 +35,26 @@ try {
         $tenantName = $ts->fetchColumn() ?: null;
     }
 
-    // Only mailboxes that can actually send: active + holding an OAuth token.
+    $sendableWhere = "is_active = 1 AND (
+        (token_data IS NOT NULL AND token_data <> '')
+        OR (
+            (provider_type = 'imap_smtp' OR provider = 'imap_smtp')
+            AND auth_mode = 'basic'
+            AND outbound_enabled = 1
+            AND smtp_host IS NOT NULL AND smtp_host <> ''
+            AND smtp_port IS NOT NULL AND smtp_port > 0
+            AND smtp_from_address IS NOT NULL AND smtp_from_address <> ''
+            AND (smtp_username IS NULL OR smtp_username = '' OR (smtp_password_encrypted IS NOT NULL AND smtp_password_encrypted <> ''))
+        )
+    )";
+
+    // Only mailboxes that can actually send: OAuth mailboxes with tokens, plus
+    // Generic IMAP/SMTP mailboxes with complete outbound SMTP configuration.
     if ($multi) {
         // Pinned to this company first, then shared intake.
         $sql = "SELECT id, name, tenant_id
                   FROM target_mailboxes
-                 WHERE is_active = 1 AND token_data IS NOT NULL AND token_data <> ''
+                 WHERE $sendableWhere
                    AND (tenant_id = ? OR tenant_id IS NULL)
                  ORDER BY (tenant_id IS NULL), name";
         $st = $conn->prepare($sql);
@@ -48,7 +62,7 @@ try {
     } else {
         $sql = "SELECT id, name, tenant_id
                   FROM target_mailboxes
-                 WHERE is_active = 1 AND token_data IS NOT NULL AND token_data <> ''
+                 WHERE $sendableWhere
                  ORDER BY name";
         $st = $conn->prepare($sql);
         $st->execute();

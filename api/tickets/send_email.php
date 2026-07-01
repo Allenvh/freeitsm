@@ -19,6 +19,7 @@ require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
 require_once '../../includes/tenancy.php';
 require_once '../../includes/mailbox_graph.php';
+require_once '../../includes/mail/MailboxProviderFactory.php';
 
 header('Content-Type: application/json');
 
@@ -75,9 +76,14 @@ try {
     // (delegated → /me; app-only → /users/<target_mailbox>).
     $provider = $mailbox['provider'] ?? 'microsoft';
     $authMode = $mailbox['auth_mode'] ?? 'delegated';
-    mailboxResolveGraphBase($mailbox);
+    $isImapSmtp = MailboxProviderFactory::isImapSmtp($mailbox);
+    if (!$isImapSmtp) {
+        mailboxResolveGraphBase($mailbox);
+    }
 
-    if ($provider === 'microsoft' && $authMode === 'app_only') {
+    if ($isImapSmtp) {
+        SmtpMailer::assertSendReady($mailbox);
+    } elseif ($provider === 'microsoft' && $authMode === 'app_only') {
         // App-only: the app authenticates itself; we send as /users/<target_mailbox>.
         $accessToken = mailboxAppOnlyToken($conn, $mailbox);
     } else {
@@ -110,7 +116,7 @@ try {
         }
     }
 
-    if (!$accessToken) {
+    if (!$isImapSmtp && !$accessToken) {
         throw new Exception('Failed to obtain valid access token. Please re-authenticate the mailbox.');
     }
 
@@ -121,7 +127,10 @@ try {
         $bodyForSending = buildFullEmailBody($conn, $ticketId, $body, $type);
     }
 
-    if ($provider === 'google') {
+    if ($isImapSmtp) {
+        $smtpProvider = MailboxProviderFactory::smtp($mailbox);
+        $smtpProvider::send($mailbox, $to, $subject, $bodyForSending, $cc);
+    } elseif ($provider === 'google') {
         // Send via Gmail API
         $fromAddress = $mailbox['target_mailbox'] ?? '';
         gmailSendEmail($accessToken, $to, $subject, $bodyForSending, $fromAddress);
@@ -621,6 +630,8 @@ function stripQuotedContent($body) {
  */
 function saveSentEmail($conn, $ticketId, $mailbox, $to, $cc, $subject, $body) {
     try {
+        $fromAddress = $mailbox['smtp_from_address'] ?? $mailbox['target_mailbox'];
+        $fromName = $mailbox['smtp_from_name'] ?? $mailbox['mailbox_name'] ?? 'Service Desk';
         $sql = "INSERT INTO emails (
             subject, from_address, from_name, to_recipients, cc_recipients,
             received_datetime, body_content, body_type, ticket_id, is_initial, direction, mailbox_id
@@ -629,8 +640,8 @@ function saveSentEmail($conn, $ticketId, $mailbox, $to, $cc, $subject, $body) {
         $stmt = $conn->prepare($sql);
         $stmt->execute([
             $subject,
-            $mailbox['target_mailbox'],
-            $mailbox['mailbox_name'] ?? 'Service Desk',
+            $fromAddress,
+            $fromName,
             $to,
             $cc,
             $body,
