@@ -86,7 +86,7 @@ try {
     $imap_username = encryptValue($data['imap_username'] ?? '');
     $imap_password_encrypted = empty($data['imap_password']) || preg_match('/^\*+/', $data['imap_password']) ? null : encryptValue($data['imap_password']);
     $imap_port = $data['imap_port'] ?? 993;
-    $imap_encryption = normalizeImapEncryption($data['imap_encryption'] ?? null);
+    $imap_encryption = normalizeMailboxEncryption($data['imap_encryption'] ?? null);
     $target_mailbox = encryptValue($data['target_mailbox']);
     $smtp_host = encryptValue($data['smtp_host'] ?? '');
     $smtp_username = encryptValue($data['smtp_username'] ?? '');
@@ -95,7 +95,7 @@ try {
     $smtp_from_name = $data['smtp_from_name'] ?? $name;
     $imap_folder = $data['imap_folder'] ?? ($data['email_folder'] ?? 'INBOX');
     $smtp_port = (int)($data['smtp_port'] ?? 587);
-    $smtp_encryption = $data['smtp_encryption'] ?? 'tls';
+    $smtp_encryption = normalizeMailboxEncryption($data['smtp_encryption'] ?? null);
     $intake_enabled = isset($data['intake_enabled']) ? ($data['intake_enabled'] ? 1 : 0) : 1;
     $outbound_enabled = isset($data['outbound_enabled']) ? ($data['outbound_enabled'] ? 1 : 0) : 1;
     $email_folder = $data['email_folder'] ?? 'INBOX';
@@ -160,7 +160,7 @@ try {
                         imap_port = ?, imap_encryption = ?, target_mailbox = ?,
                         email_folder = ?, max_emails_per_check = ?, mark_as_read = ?,
                         rejected_action = ?, imported_action = ?, imported_folder = ?,
-                        is_active = ?, tenant_id = ?, auth_mode = ?
+                        is_active = ?, tenant_id = ?, auth_mode = ?, smtp_encryption = ?
                     WHERE id = ?";
             $params = [
                 $name, $provider, $azure_tenant_id, $azure_client_id,
@@ -168,7 +168,7 @@ try {
                 $imap_port, $imap_encryption, $target_mailbox,
                 $email_folder, $max_emails_per_check, $mark_as_read,
                 $rejected_action, $imported_action, $imported_folder,
-                $is_active, $tenant_id, $auth_mode, $id
+                $is_active, $tenant_id, $auth_mode, $smtp_encryption, $id
             ];
         } else {
             $azure_client_secret = encryptValue($azure_client_secret);
@@ -178,7 +178,7 @@ try {
                         imap_server = ?, imap_port = ?, imap_encryption = ?,
                         target_mailbox = ?, email_folder = ?, max_emails_per_check = ?,
                         mark_as_read = ?, rejected_action = ?, imported_action = ?,
-                        imported_folder = ?, is_active = ?, tenant_id = ?, auth_mode = ?
+                        imported_folder = ?, is_active = ?, tenant_id = ?, auth_mode = ?, smtp_encryption = ?
                     WHERE id = ?";
             $params = [
                 $name, $provider, $azure_tenant_id, $azure_client_id,
@@ -186,13 +186,13 @@ try {
                 $imap_server, $imap_port, $imap_encryption,
                 $target_mailbox, $email_folder, $max_emails_per_check,
                 $mark_as_read, $rejected_action, $imported_action,
-                $imported_folder, $is_active, $tenant_id, $auth_mode, $id
+                $imported_folder, $is_active, $tenant_id, $auth_mode, $smtp_encryption, $id
             ];
         }
 
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
-        saveImapSmtpMailboxFields($conn, (int)$id, compact('provider_type','imap_host','imap_username','imap_password_encrypted','imap_folder','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password_encrypted','smtp_from_address','smtp_from_name','intake_enabled','outbound_enabled'), false);
+        saveImapSmtpMailboxFields($conn, (int)$id, compact('provider_type','imap_host','imap_encryption','imap_username','imap_password_encrypted','imap_folder','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password_encrypted','smtp_from_address','smtp_from_name','intake_enabled','outbound_enabled'), false);
 
         // Drop the stale authenticated identity if the address / auth mode changed.
         if ($invalidateAuth) {
@@ -219,8 +219,8 @@ try {
                     oauth_redirect_uri, oauth_scopes, imap_server, imap_port,
                     imap_encryption, target_mailbox, email_folder, max_emails_per_check,
                     mark_as_read, rejected_action, imported_action, imported_folder,
-                    is_active, tenant_id, auth_mode
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    is_active, tenant_id, auth_mode, smtp_encryption
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -228,11 +228,11 @@ try {
             $oauth_redirect_uri, $oauth_scopes, $imap_server, $imap_port,
             $imap_encryption, $target_mailbox, $email_folder, $max_emails_per_check,
             $mark_as_read, $rejected_action, $imported_action, $imported_folder,
-            $is_active, $tenant_id, $auth_mode
+            $is_active, $tenant_id, $auth_mode, $smtp_encryption
         ]);
 
         $newId = (int)$conn->lastInsertId();
-        saveImapSmtpMailboxFields($conn, $newId, compact('provider_type','imap_host','imap_username','imap_password_encrypted','imap_folder','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password_encrypted','smtp_from_address','smtp_from_name','intake_enabled','outbound_enabled'), true);
+        saveImapSmtpMailboxFields($conn, $newId, compact('provider_type','imap_host','imap_encryption','imap_username','imap_password_encrypted','imap_folder','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password_encrypted','smtp_from_address','smtp_from_name','intake_enabled','outbound_enabled'), true);
 
         echo json_encode([
             'success' => true,
@@ -249,18 +249,18 @@ try {
 }
 
 
-function normalizeImapEncryption($value): string {
+function normalizeMailboxEncryption($value): string {
     if ($value === false || $value === null) return 'none';
     $value = strtolower(trim((string)$value));
     if ($value === '' || $value === 'none' || $value === 'false') return 'none';
     if ($value === 'ssl') return 'ssl';
-    if ($value === 'tls' || $value === 'starttls') return 'tls';
-    return 'none';
+    if ($value === 'tls') return 'tls';
+    throw new InvalidArgumentException('Encryption must be one of: none, ssl, tls');
 }
 
 function saveImapSmtpMailboxFields(PDO $conn, int $id, array $fields, bool $new): void {
-    $sets = "provider_type=?, imap_host=?, imap_username=?, imap_folder=?, smtp_host=?, smtp_port=?, smtp_encryption=?, smtp_username=?, smtp_from_address=?, smtp_from_name=?, intake_enabled=?, outbound_enabled=?";
-    $params = [$fields['provider_type'], $fields['imap_host'], $fields['imap_username'], $fields['imap_folder'], $fields['smtp_host'], $fields['smtp_port'], $fields['smtp_encryption'], $fields['smtp_username'], $fields['smtp_from_address'], $fields['smtp_from_name'], $fields['intake_enabled'], $fields['outbound_enabled']];
+    $sets = "provider_type=?, imap_host=?, imap_encryption=?, imap_username=?, imap_folder=?, smtp_host=?, smtp_port=?, smtp_encryption=?, smtp_username=?, smtp_from_address=?, smtp_from_name=?, intake_enabled=?, outbound_enabled=?";
+    $params = [$fields['provider_type'], $fields['imap_host'], $fields['imap_encryption'], $fields['imap_username'], $fields['imap_folder'], $fields['smtp_host'], $fields['smtp_port'], $fields['smtp_encryption'], $fields['smtp_username'], $fields['smtp_from_address'], $fields['smtp_from_name'], $fields['intake_enabled'], $fields['outbound_enabled']];
     if ($new || $fields['imap_password_encrypted'] !== null) { $sets .= ", imap_password_encrypted=?"; $params[] = $fields['imap_password_encrypted']; }
     if ($new || $fields['smtp_password_encrypted'] !== null) { $sets .= ", smtp_password_encrypted=?"; $params[] = $fields['smtp_password_encrypted']; }
     $params[] = $id;
