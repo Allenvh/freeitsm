@@ -101,6 +101,7 @@ class ImapMailboxClient {
         foreach ($messages as $message) {
             $body = $this->messageBody($message);
             $from = $this->messageFrom($message);
+            $toRecipients = $this->messageRecipients($message, 'to');
             $subject = $this->attributeString($message->getSubject() ?? null, '(No Subject)');
             $date = $message->getDate() ?? null;
             $received = $date && method_exists($date, 'toDate') ? $date->toDate()->format('c') : date('c');
@@ -119,7 +120,7 @@ class ImapMailboxClient {
                 'hasAttachments' => method_exists($message, 'hasAttachments') ? (bool)$message->hasAttachments() : false,
                 'importance' => 'normal',
                 'isRead' => false,
-                'toRecipients' => [], 'ccRecipients' => [],
+                'toRecipients' => $toRecipients, 'ccRecipients' => [],
                 'metadata' => [
                     'uid' => $uid,
                     'message_id' => $messageId,
@@ -207,13 +208,119 @@ class ImapMailboxClient {
     }
 
     private function messageFrom($message): array {
-        $from = method_exists($message, 'getFrom') ? $message->getFrom() : null;
-        $first = $from && method_exists($from, 'first') ? $from->first() : null;
+        $from = $this->extractAddressList($message, 'from');
+        return $from[0] ?? ['address' => '', 'name' => ''];
+    }
 
-        return [
-            'address' => $first && isset($first->mail) ? strtolower((string)$first->mail) : '',
-            'name' => $first && isset($first->personal) ? (string)$first->personal : '',
-        ];
+    private function messageRecipients($message, string $field): array {
+        return array_map(
+            fn(array $recipient) => ['emailAddress' => ['address' => $recipient['address'], 'name' => $recipient['name']]],
+            $this->extractAddressList($message, $field)
+        );
+    }
+
+    private function extractAddressList($message, string $field): array {
+        $field = strtolower($field);
+        $method = 'get' . ucfirst($field);
+        $candidates = [];
+
+        if (method_exists($message, $method)) {
+            try {
+                $candidates[] = $message->{$method}();
+            } catch (Throwable $e) {
+                // Fall through to Webklex attributes below.
+            }
+        }
+
+        $attribute = $this->valueFromAttributes($message, $field);
+        if ($attribute !== null) $candidates[] = $attribute;
+
+        $addressAttribute = $this->valueFromAttributes($message, $field . 'address');
+        if ($addressAttribute !== null) $candidates[] = $addressAttribute;
+
+        $out = [];
+        foreach ($candidates as $candidate) {
+            foreach ($this->addressCandidates($candidate) as $addr) {
+                $normalized = $this->normalizeAddressObject($addr);
+                if ($normalized['address'] === '') continue;
+                $key = strtolower($normalized['address']);
+                if (!isset($out[$key])) $out[$key] = $normalized;
+            }
+            if ($out !== []) break;
+        }
+
+        return array_values($out);
+    }
+
+    private function addressCandidates($value): array {
+        if ($value === null) return [];
+        if (is_object($value)) {
+            if (method_exists($value, 'all')) {
+                $all = $value->all();
+                if (is_array($all)) return $all;
+            }
+            if ($value instanceof Traversable) return iterator_to_array($value);
+            if (method_exists($value, 'toArray')) {
+                $array = $value->toArray();
+                if (is_array($array)) return $array;
+            }
+            if (method_exists($value, 'first')) {
+                $first = $value->first();
+                if ($first !== null) return [$first];
+            }
+            return [$value];
+        }
+        if (is_array($value)) return array_values($value);
+        if (is_string($value)) return preg_split('/\s*,\s*/', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        return [$value];
+    }
+
+    private function normalizeAddressObject($addr): array {
+        $address = '';
+        $name = '';
+
+        if (is_array($addr)) {
+            $address = $this->firstString($addr, ['mail', 'address', 'email']);
+            $name = $this->firstString($addr, ['personal', 'name', 'full']);
+            if ($address === '' && isset($addr[0]) && is_string($addr[0])) $address = $addr[0];
+        } elseif (is_object($addr)) {
+            foreach (['mail', 'address', 'email'] as $key) {
+                if (isset($addr->{$key})) {
+                    $address = $this->attributeString($addr->{$key}, '');
+                    if ($address !== '') break;
+                }
+            }
+            foreach (['personal', 'name', 'full'] as $key) {
+                if (isset($addr->{$key})) {
+                    $name = $this->attributeString($addr->{$key}, '');
+                    if ($name !== '') break;
+                }
+            }
+            if ($address === '') $address = $this->attributeString($addr, '');
+        } else {
+            $address = $this->attributeString($addr, '');
+        }
+
+        if (preg_match('/^(.*?)<([^>]+)>$/', $address, $matches)) {
+            if ($name === '') $name = trim($matches[1], " \t\n\r\0\x0B\"'");
+            $address = $matches[2];
+        }
+
+        $address = trim(strtolower($address), " \t\n\r\0\x0B<>");
+        if (!filter_var($address, FILTER_VALIDATE_EMAIL)) $address = '';
+        if (strcasecmp($name, $address) === 0) $name = '';
+
+        return ['address' => $address, 'name' => $name];
+    }
+
+    private function firstString(array $values, array $keys): string {
+        foreach ($keys as $key) {
+            if (isset($values[$key])) {
+                $value = $this->attributeString($values[$key], '');
+                if ($value !== '') return $value;
+            }
+        }
+        return '';
     }
 
     private function attributeString($value, string $default = ''): string {
