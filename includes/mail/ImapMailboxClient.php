@@ -99,15 +99,17 @@ class ImapMailboxClient {
 
         $out = [];
         foreach ($messages as $message) {
-            $uid = $this->messageUid($message);
             $body = $this->messageBody($message);
             $from = $this->messageFrom($message);
             $subject = $this->attributeString($message->getSubject() ?? null, '(No Subject)');
             $date = $message->getDate() ?? null;
             $received = $date && method_exists($date, 'toDate') ? $date->toDate()->format('c') : date('c');
+            $uid = $this->messageUid($message);
+            $messageId = $this->messageId($message);
+            $externalMessageId = $this->externalMessageId($uid, $messageId, $subject, $from, $received, $body);
 
             $out[] = [
-                'id' => $this->messageId($message, $uid),
+                'id' => $externalMessageId,
                 'imap_msgno' => $uid,
                 'subject' => $subject,
                 'from' => ['emailAddress' => ['address' => $from['address'], 'name' => $from['name']]],
@@ -118,7 +120,12 @@ class ImapMailboxClient {
                 'importance' => 'normal',
                 'isRead' => false,
                 'toRecipients' => [], 'ccRecipients' => [],
-                'metadata' => ['uid' => $uid, 'message_id' => $this->messageId($message, $uid)]
+                'metadata' => [
+                    'uid' => $uid,
+                    'message_id' => $messageId,
+                    'external_message_id' => $externalMessageId,
+                    'webklex_attributes' => $this->messageDebugAttributes($message),
+                ]
             ];
         }
         return $out;
@@ -145,13 +152,46 @@ class ImapMailboxClient {
         $this->folder = null;
     }
 
-    private function messageUid($message): int {
-        return (int)(method_exists($message, 'getUid') ? $message->getUid() : 0);
+    private function messageUid($message): ?int {
+        foreach ([
+            fn() => method_exists($message, 'getUid') ? $message->getUid() : null,
+            fn() => method_exists($message, 'get') ? $message->get('uid') : null,
+            fn() => method_exists($message, 'getMessageId') ? $message->getMessageId() : null,
+            fn() => method_exists($message, 'getMessageNo') ? $message->getMessageNo() : null,
+            fn() => $this->valueFromAttributes($message, 'uid'),
+            fn() => $this->valueFromHeader($message, 'uid'),
+        ] as $reader) {
+            try {
+                $value = $reader();
+                $uid = $this->positiveInt($value);
+                if ($uid !== null) return $uid;
+            } catch (Throwable $e) {
+                continue;
+            }
+        }
+        return null;
     }
 
-    private function messageId($message, int $uid): string {
+    private function messageId($message): string {
         $messageId = method_exists($message, 'getMessageId') ? $this->attributeString($message->getMessageId() ?? null, '') : '';
-        return trim($messageId) !== '' ? trim($messageId) : 'imap-' . $uid;
+        return trim($messageId);
+    }
+
+    private function externalMessageId(?int $uid, string $messageId, string $subject, array $from, string $received, string $body): string {
+        if ($uid !== null) {
+            return 'imap:' . (int)($this->mailbox['id'] ?? 0) . ':' . $uid;
+        }
+        if ($messageId !== '') {
+            return $messageId;
+        }
+        $preview = mb_substr(strip_tags($body), 0, 500);
+        return 'imap-hash:' . hash('sha256', implode('|', [
+            (string)($this->mailbox['id'] ?? 0),
+            $subject,
+            $from['address'] ?? '',
+            $received,
+            $preview,
+        ]));
     }
 
     private function messageBody($message): string {
@@ -182,5 +222,51 @@ class ImapMailboxClient {
         if (is_object($value) && method_exists($value, 'toString')) return (string)$value->toString();
         if (is_object($value) && method_exists($value, '__toString')) return (string)$value;
         return $default;
+    }
+
+    private function positiveInt($value): ?int {
+        $text = trim($this->attributeString($value, ''));
+        if ($text === '' || !preg_match('/^\d+$/', $text)) return null;
+        $int = (int)$text;
+        return $int > 0 ? $int : null;
+    }
+
+    private function valueFromAttributes($message, string $key) {
+        if (!method_exists($message, 'getAttributes')) return null;
+        $attributes = $message->getAttributes();
+        if (is_array($attributes)) return $attributes[$key] ?? null;
+        if (is_object($attributes)) {
+            if (isset($attributes->{$key})) return $attributes->{$key};
+            if (method_exists($attributes, 'get')) return $attributes->get($key);
+            if (method_exists($attributes, 'toArray')) {
+                $array = $attributes->toArray();
+                return is_array($array) ? ($array[$key] ?? null) : null;
+            }
+        }
+        return null;
+    }
+
+    private function valueFromHeader($message, string $key) {
+        if (!method_exists($message, 'getHeader')) return null;
+        $header = $message->getHeader();
+        return $header && method_exists($header, 'get') ? $header->get($key) : null;
+    }
+
+    private function messageDebugAttributes($message): array {
+        return [
+            'getUid' => method_exists($message, 'getUid') ? $this->attributeString($message->getUid(), '') : null,
+            'get_uid' => method_exists($message, 'get') ? $this->attributeString($message->get('uid'), '') : null,
+            'getMessageId' => method_exists($message, 'getMessageId') ? $this->attributeString($message->getMessageId(), '') : null,
+            'getMessageNo' => method_exists($message, 'getMessageNo') ? $this->attributeString($message->getMessageNo(), '') : null,
+            'attributes' => $this->debugValue(method_exists($message, 'getAttributes') ? $message->getAttributes() : null),
+            'header_uid' => $this->attributeString($this->valueFromHeader($message, 'uid'), ''),
+        ];
+    }
+
+    private function debugValue($value) {
+        if ($value === null || is_scalar($value)) return $value;
+        if (is_object($value) && method_exists($value, 'toArray')) $value = $value->toArray();
+        if (is_array($value)) return array_map(fn($item) => $this->debugValue($item), $value);
+        return $this->attributeString($value, get_debug_type($value));
     }
 }
