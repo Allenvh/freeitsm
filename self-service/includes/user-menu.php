@@ -256,6 +256,9 @@ if (count($_um_parts) > 1) {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
             <span><?php echo htmlspecialchars(t('self-service.menu.my_account')); ?></span>
         </button>
+        <?php if (!empty($_SESSION['ad_profile_id'])): ?>
+        <a class="ss-menu-item" href="<?php echo htmlspecialchars(BASE_URL); ?>ad-account.php">My permissions</a>
+        <?php endif; ?>
         <button class="ss-menu-item" onclick="ssOpenMfaModal()">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
             <span><?php echo htmlspecialchars(t('self-service.menu.mfa')); ?></span>

@@ -12,6 +12,7 @@ header('Content-Type: application/json');
 
 require_once '../../config.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/ad.php';
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -34,7 +35,7 @@ try {
     // Always show the same message whether the account exists or not (prevent enumeration)
     $genericMessage = 'If an account with that username or email exists, a password reset link has been sent.';
 
-    if (!$analyst || empty($analyst['email'])) {
+    if (!$analyst || empty($analyst['email']) || adManagedAccount($conn, 'analyst', (int)$analyst['id'])) {
         echo json_encode(['success' => true, 'message' => $genericMessage]);
         exit;
     }

@@ -5,6 +5,7 @@
 session_start();
 require_once 'config.php';
 require_once 'includes/functions.php';
+require_once 'includes/ad.php';
 
 // An SSO sign-in attempt that failed bounces back here with a message.
 $sso_error = $_SESSION['sso_error'] ?? null;
@@ -202,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            if (empty($error) && $analyst && password_verify($password, $analyst['password_hash'])) {
+            if (empty($error) && $analyst && !adManagedAccount($conn, 'analyst', (int)$analyst['id']) && password_verify($password, $analyst['password_hash'])) {
                 // Reset failed login counter on success
                 if (!empty($analyst['failed_login_count'])) {
                     try {
@@ -542,6 +543,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-container">
+        <?php if (adSignInEnabled()): ?>
+        <p><a href="<?php echo htmlspecialchars(BASE_URL); ?>ad-sign-in.php">Corporate Active Directory sign-in</a></p>
+        <?php endif; ?>
         <div class="login-header">
             <img src="assets/images/CompanyLogo.png" alt="Company Logo">
             <?php if ($mfa_required): ?>
@@ -637,7 +641,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Only GLOBAL providers (tenant_id IS NULL) belong on the analyst
                     // login — tenant-scoped providers are client companies' own IdPs
                     // for the self-service portal, not for MSP staff.
-                    $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
+                    $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND protocol = 'oidc' AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
                 }
             } catch (Exception $e) { $ssoProviders = []; }
             $ssoActive = $ssoOn && !empty($ssoProviders);

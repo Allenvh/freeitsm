@@ -42,4 +42,6 @@ if (!defined('BASE_URL')) {
     define('BASE_URL', $__rel);
     unset($__appRoot, $__docRoot, $__rel);
 }
-?>
+
+
+require_once __DIR__ . '/includes/ad_session.php';

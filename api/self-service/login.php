@@ -7,6 +7,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad.php';
 
 header('Content-Type: application/json');
 
@@ -31,7 +32,7 @@ try {
     $stmt->execute([$email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$user || empty($user['password_hash']) || !password_verify($password, $user['password_hash'])) {
+    if (!$user || adManagedAccount($conn, 'user', (int)$user['id']) || empty($user['password_hash']) || !password_verify($password, $user['password_hash'])) {
         echo json_encode(['success' => false, 'error' => 'Invalid email or password']);
         exit;
     }

@@ -6,6 +6,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad.php';
 
 header('Content-Type: application/json');
 
@@ -59,6 +60,9 @@ try {
     $existingUser = $userStmt->fetch(PDO::FETCH_ASSOC);
 
     if ($existingUser) {
+        if (adManagedAccount($conn, 'user', (int)$existingUser['id'])) {
+            throw new RuntimeException('Use corporate AD sign-in');
+        }
         if (!empty($existingUser['password_hash'])) {
             // Already has a password - can't register again
             echo json_encode(['success' => false, 'error' => 'An account with this email already exists. Please log in.']);

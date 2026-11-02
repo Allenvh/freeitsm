@@ -24,6 +24,7 @@ try {
                 p.default_modules, p.sort_order, p.tenant_id, t.name AS tenant_name
            FROM auth_providers p
            LEFT JOIN tenants t ON t.id = p.tenant_id
+          WHERE p.protocol = 'oidc'
           ORDER BY p.sort_order, p.display_name"
     );
 

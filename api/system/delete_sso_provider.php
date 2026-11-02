@@ -27,7 +27,7 @@ if ($id <= 0) {
 
 try {
     $conn = connectToDatabase();
-    $stmt = $conn->prepare("DELETE FROM auth_providers WHERE id = ?");
+    $stmt = $conn->prepare("DELETE FROM auth_providers WHERE id = ? AND protocol = 'oidc'");
     $stmt->execute([$id]);
     echo json_encode(['success' => true]);
 } catch (Exception $e) {

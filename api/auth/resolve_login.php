@@ -43,13 +43,13 @@ if ($email !== '') {
                 $sql = "SELECT u.auth_provider_id AS pid, p.display_name
                           FROM users u
                           JOIN auth_providers p ON p.id = u.auth_provider_id
-                         WHERE LOWER(u.email) = ? AND p.enabled = 1
+                         WHERE LOWER(u.email) = ? AND p.enabled = 1 AND p.protocol = 'oidc'
                          LIMIT 1";
             } else {
                 $sql = "SELECT a.auth_provider_id AS pid, p.display_name
                           FROM analysts a
                           JOIN auth_providers p ON p.id = a.auth_provider_id
-                         WHERE LOWER(a.email) = ? AND a.is_active = 1 AND p.enabled = 1
+                         WHERE LOWER(a.email) = ? AND a.is_active = 1 AND p.enabled = 1 AND p.protocol = 'oidc'
                          LIMIT 1";
             }
             $stmt = $conn->prepare($sql);
@@ -72,7 +72,7 @@ if ($email !== '') {
                     if ($tenantId !== null) {
                         $ps = $conn->prepare(
                             "SELECT id, display_name FROM auth_providers
-                              WHERE tenant_id = ? AND enabled = 1
+                              WHERE tenant_id = ? AND enabled = 1 AND protocol = 'oidc'
                               ORDER BY sort_order, display_name"
                         );
                         $ps->execute([$tenantId]);

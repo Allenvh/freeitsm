@@ -1,0 +1,175 @@
+<?php
+/** Integration tests use an isolated database loaded with database/freeitsm.sql. */
+if (PHP_SAPI !== 'cli' || !preg_match('/^freeitsm_ad_test[a-z0-9_]*$/D',getenv('AD_TEST_DB_NAME') ?: '')) {
+    fwrite(STDERR,"Set AD_TEST_DB_NAME to an isolated freeitsm_ad_test* database.\n"); exit(2);
+}
+session_start();
+require_once __DIR__.'/../../includes/functions.php';
+require_once __DIR__.'/../../includes/ad.php';
+require_once __DIR__.'/../../includes/ad/Admin.php';
+if (!defined('BASE_URL')) define('BASE_URL','/');
+$db=new PDO('mysql:host='.(getenv('DB_SERVER')?:'db').';dbname='.getenv('AD_TEST_DB_NAME').';charset=utf8mb4',getenv('DB_USERNAME'),getenv('DB_PASSWORD'),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+$passed=0;
+function check(bool $result,string $name): void { global $passed; if (!$result) throw new RuntimeException('FAILED: '.$name); $passed++; }
+function rejects(callable $fn,string $name): void { try { $fn(); } catch (Throwable $e) { check(true,$name); return; } check(false,$name); }
+class FakeDirectory implements AdDirectory {
+    public array $accounts=[]; public array $memberships=[]; public array $binds=[]; public array $searches=[]; public bool $outage=false; public bool $partial=false;
+    public function find(array $p,string $email): ?array { $this->searches[]=(int)$p['id']; if($this->outage)throw new RuntimeException('timeout'); return $this->accounts[$p['id']][$email]??null; }
+    public function authenticate(array $p,array $i,string $password): bool { $this->binds[]=(int)$p['id'];return $password===($i['password']??'correct'); }
+    public function groups(array $p,array $i): array { if($this->partial)throw new RuntimeException('partial group resolution');return $this->memberships[$p['id']][$i['guid']]??[]; }
+}
+$fake=new FakeDirectory();
+function identity(string $email,string $guid,string $password='correct'): array { return ['email'=>$email,'guid'=>$guid,'dn'=>'CN=Employee,DC=example','name'=>'Employee','password'=>$password,'disabled'=>false,'locked'=>false,'expired'=>false]; }
+function limitsReset(PDO $db): void { $db->exec('DELETE FROM ad_rate_limits'); }
+$connection=['host'=>'dc1.corp.example','user_base'=>'DC=corp,DC=example','group_base'=>'DC=corp,DC=example','bind_dn'=>'svc@corp.example'];
+check(adInvalidPasswordDiagnostic('80090308: data 52e, v2580'),'invalid-password diagnostic permits controlled fallback');
+foreach (['532','533','701','773','775'] as $code) check(!adInvalidPasswordDiagnostic('data '.$code.', v2580'),'account status '.$code.' stops fallback');
+check(!adInvalidPasswordDiagnostic('unknown response'),'unknown bind diagnostic fails closed');
+check(adNormalizeEmail(' Employee@Company.Example ')==='employee@company.example','email normalization');
+rejects(fn()=>adNormalizeEmail('a*()@invalid'),'invalid email');
+rejects(fn()=>adValidateProvider($connection+['transport'=>'ldap']),'plain LDAP rejected');
+rejects(fn()=>adValidateProvider(array_merge($connection,['host'=>'dc.example/path'])),'URL injection rejected');
+rejects(fn()=>adValidateProvider($connection+['email_attribute'=>'mail)(objectClass=*)']),'LDAP attribute injection rejected');
+rejects(fn()=>adValidateProvider($connection+['timeout'=>99]),'bounded timeout');
+check(adConfig($db)['authority_provider_id']===null,'authorization unset by default');
+check(!(bool)adConfig($db)['multi_domain'],'multi-domain disabled by default');
+check(!adManagedAccount($db,'analyst',1),'local admin unaffected');
+check(getAnalystEffectiveModules($db,1)===null,'legacy unrestricted permissions preserved');
+$_SESSION=['analyst_id'=>1];
+adRequireAdmin($db);
+$p1=adSaveProvider($db,['display_name'=>'Domain 1','enabled'=>1,'authentication_enabled'=>1,'trusted_linking'=>1,'config'=>$connection,'bind_password'=>'test-only-service-password']);
+$p2=adSaveProvider($db,['display_name'=>'Domain 2','enabled'=>1,'authentication_enabled'=>1,'trusted_linking'=>1,'sort_order'=>1,'config'=>array_merge($connection,['host'=>'dc2.corp.example']),'bind_password'=>'test-only-service-password']);
+$secret=adQuery($db,'SELECT bind_password FROM ad_provider_config WHERE provider_id=?',[$p1])->fetchColumn();
+check(str_starts_with($secret,'ENC:') && !str_contains($secret,'test-only'),'service password encrypted');
+$config=['enabled'=>1,'default_provider_id'=>$p1,'emergency_analyst_id'=>1,'allowed_email_domains'=>['company.example'],'public_url'=>'https://itsm.company.example','refresh_seconds'=>900,'verification_minutes'=>20];
+adSaveConfig($db,$config);
+check(count(adCandidates(adProviders($db),adConfig($db),$p2))===1,'single mode ignores alternate selection');
+rejects(fn()=>adSaveConfig($db,$config+['authority_provider_id'=>999999]),'invalid authority rejected');
+rejects(fn()=>adSaveConfig($db,array_merge($config,['emergency_analyst_id'=>999999])),'emergency admin required');
+$verifyUrl=null;
+adRequestVerification($db,'employee@company.example',function($email,$url)use(&$verifyUrl){$verifyUrl=$url;});
+check($verifyUrl!==null,'registration delivers verification');
+parse_str(parse_url($verifyUrl,PHP_URL_QUERY),$params);$token=$params['token'];
+check(adQuery($db,'SELECT COUNT(*) FROM users WHERE email=?',['employee@company.example'])->fetchColumn()==0,'registration does not provision before verification');
+check(adQuery($db,'SELECT token_hash FROM ad_verification_tokens WHERE email=?',['employee@company.example'])->fetchColumn()!==$token,'only token hash stored');
+adVerifyEmail($db,$token);
+check(empty($_SESSION['ss_user_id']),'verification does not authenticate');
+rejects(fn()=>adVerifyEmail($db,$token),'token replay rejected');
+$profile=adQuery($db,'SELECT p.*,u.email,u.display_name FROM ad_profiles p JOIN users u ON u.id=p.user_id WHERE u.email=?',['employee@company.example'])->fetch(PDO::FETCH_ASSOC);
+$uid=(int)$profile['user_id'];$profileId=(int)$profile['id'];
+adQuery($db,'INSERT INTO tickets (ticket_number,subject,user_id) VALUES (?,?,?)',['ADTEST-1','Existing employee history',$uid]);
+check(adManagedAccount($db,'user',$uid),'AD employee cannot claim local password');
+$blocked=false;limitsReset($db);
+adRequestVerification($db,'nobody@outside.example',function()use(&$blocked){$blocked=true;});check(!$blocked,'unauthorized registration domain rejected generically');
+$called=false;limitsReset($db);
+adRequestVerification($db,'employee@company.example',function()use(&$called){$called=true;});check(!$called,'no duplicate registration or existing-account claim');
+adQuery($db,'INSERT INTO ad_verification_tokens (token_hash,email,expires_at) VALUES (?,?,DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 MINUTE))',[hash('sha256',str_repeat('a',64)),'expired@company.example']);
+rejects(fn()=>adVerifyEmail($db,str_repeat('a',64)),'expired verification rejected');
+$guid1=str_repeat('1',32);$guid2=str_repeat('2',32);$group=str_repeat('3',32);
+$fake->accounts[$p1]['employee@company.example']=identity('employee@company.example',$guid1);
+$fake->accounts[$p2]['employee@company.example']=identity('employee@company.example',$guid2,'second-password');
+limitsReset($db);$fake->searches=[];
+adLogin($db,'employee@company.example','correct',null,$fake);
+check($_SESSION['ss_user_id']===$uid && !isset($_SESSION['analyst_id']),'default AD login gives portal access');
+check($fake->searches===[$p1],'no authorization query or second-domain lookup without opt-in');
+check(adModules($db,adProfile($db,$profileId))===[],'Guest never unrestricted');
+limitsReset($db);$fake->binds=[];
+rejects(fn()=>adLogin($db,'employee@company.example','second-password',$p2,$fake),'single-domain cannot use second password');
+check($fake->binds===[$p1],'single-domain credentials not sent to other provider');
+$_SESSION=['analyst_id'=>1];
+adSaveConfig($db,$config+['multi_domain'=>1,'max_attempts'=>2]);
+limitsReset($db);adLogin($db,'employee@company.example','second-password',null,$fake);
+check($_SESSION['ss_user_id']===$uid,'mirrored domain resolves same user');
+check((int)adQuery($db,'SELECT count(*) FROM ad_identities WHERE profile_id=?',[$profileId])->fetchColumn()===2,'both immutable identities linked');
+limitsReset($db);rejects(fn()=>adLogin($db,'employee@company.example','bad',null,$fake),'bad credentials rejected');
+limitsReset($db);$fake->accounts[$p1]['employee@company.example']['locked']=true;
+rejects(fn()=>adLogin($db,'employee@company.example','correct',null,$fake),'locked account prevents fallback');
+$fake->accounts[$p1]['employee@company.example']['locked']=false;
+limitsReset($db);$fake->accounts[$p1]['employee@company.example']['expired']=true;
+rejects(fn()=>adLogin($db,'employee@company.example','correct',null,$fake),'expired password rejected');
+$fake->accounts[$p1]['employee@company.example']['expired']=false;
+limitsReset($db);$fake->accounts[$p1]['employee@company.example']['disabled']=true;
+rejects(fn()=>adLogin($db,'employee@company.example','correct',null,$fake),'disabled account rejected');
+$fake->accounts[$p1]['employee@company.example']['disabled']=false;
+limitsReset($db);$fake->outage=true;
+rejects(fn()=>adLogin($db,'employee@company.example','correct',null,$fake),'directory outage fails closed');$fake->outage=false;
+$_SESSION=['analyst_id'=>1];
+$support=(int)adQuery($db,"SELECT id FROM access_groups WHERE group_key='support'")->fetchColumn();
+adQuery($db,'INSERT IGNORE INTO access_group_modules (access_group_id,module_key) VALUES (?,?)',[$support,'tickets']);
+adQuery($db,'INSERT INTO ad_role_mappings (provider_id,group_guid,access_group_id,priority) VALUES (?,?,?,?)',[$p1,$group,$support,10]);
+adSaveConfig($db,$config+['authority_provider_id'=>$p1]);
+$fake->memberships[$p1][$guid1]=[$group];
+limitsReset($db);adLogin($db,'employee@company.example','correct',null,$fake);
+$profile=adProfile($db,$profileId);$aid=(int)$profile['analyst_id'];
+check($aid>0 && $_SESSION['analyst_id']===$aid,'mapped AD user receives analyst session');
+adQuery($db,'UPDATE tickets SET assigned_analyst_id=? WHERE ticket_number=?',[$aid,'ADTEST-1']);
+check(adModules($db,$profile)===['tickets'],'only mapped modules apply; no implicit system access');
+check(adManagedAccount($db,'analyst',$aid),'generated analyst cannot use local authentication');
+rejects(fn()=>adRequireAdmin($db),'support cannot administer AD');
+check(adQuery($db,"SELECT count(*) FROM analyst_access_groups WHERE analyst_id=? AND source='ad'",[$aid])->fetchColumn()==1,'AD grant provenance');
+$fake->partial=true;
+rejects(fn()=>adRefresh($db,$profile,$fake),'partial resolution fails closed');$fake->partial=false;
+check(adProfile($db,$profileId)['authorization_status']==='unavailable','outage status persisted');
+check(adQuery($db,"SELECT count(*) FROM analyst_access_groups WHERE analyst_id=? AND source='ad'",[$aid])->fetchColumn()==1,'outage preserves last stored grant, not usable elevated state');
+$fake->memberships[$p1][$guid1]=[];
+$profile=adRefresh($db,adProfile($db,$profileId),$fake);
+check(adModules($db,$profile)===[],'group removal revokes permissions');
+$fake->memberships[$p1][$guid1]=[$group];$profile=adRefresh($db,$profile,$fake);
+adQuery($db,"INSERT INTO analyst_access_groups (analyst_id,access_group_id,source) VALUES (?,?,'manual')",[$aid,$support]);
+$_SESSION=['analyst_id'=>1];
+adSaveConfig($db,$config);
+check(adQuery($db,"SELECT count(*) FROM analyst_access_groups WHERE source='ad'")->fetchColumn()==0,'disabling authority removes AD grants');
+check(adQuery($db,"SELECT count(*) FROM analyst_access_groups WHERE analyst_id=? AND source='manual'",[$aid])->fetchColumn()==1,'manual grants preserved');
+check(adModules($db,adProfile($db,$profileId))===['tickets'],'local RBAC applies without authority');
+adSaveConfig($db,$config+['multi_domain'=>1,'max_attempts'=>2]);
+$fake->searches=[];limitsReset($db);adLogin($db,'employee@company.example','second-password',null,$fake);
+check($_SESSION['ss_user_id']===$uid,'multi-domain with local authorization');
+check($fake->searches===[$p1,$p2],'no authority lookup in multi-domain local mode');
+$_SESSION=['analyst_id'=>1];adSaveConfig($db,$config+['multi_domain'=>1,'max_attempts'=>2,'authority_provider_id'=>$p1]);
+limitsReset($db);adLogin($db,'employee@company.example','second-password',null,$fake);
+check($_SESSION['ss_user_id']===$uid && isset($_SESSION['analyst_id']),'multi-domain with authority');
+$fake->accounts[$p1]['employee@company.example']['guid']=str_repeat('f',32);
+rejects(fn()=>adRefresh($db,adProfile($db,$profileId),$fake),'authority email reassignment cannot inherit grants');
+$fake->accounts[$p1]['employee@company.example']['guid']=$guid1;
+check(adMappedGroups([['group_guid'=>'a','priority'=>1,'access_group_id'=>1],['group_guid'=>'b','priority'=>2,'access_group_id'=>2]],['a','b'])===[2],'role precedence highest priority');
+check(adMappedGroups([['group_guid'=>'a','priority'=>2,'access_group_id'=>1],['group_guid'=>'b','priority'=>2,'access_group_id'=>2]],['a','b'])===[1,2],'equal precedence combines mapped groups');
+limitsReset($db);adRateLimit($db,'test','key',1,60);rejects(fn()=>adRateLimit($db,'test','key',1,60),'rate limit enforced');
+$_SESSION=['analyst_id'=>1];$csrf=adCsrf();adCheckCsrf($csrf);rejects(fn()=>adCheckCsrf('bad'),'CSRF enforced');
+rejects(fn()=>adLinkExisting($db,['user_id'=>$uid,'analyst_id'=>1,'provider_id'=>$p1,'guid'=>$guid1],$fake),'emergency administrator cannot be linked');
+check(adQuery($db,'SELECT user_id FROM ad_profiles WHERE id=?',[$profileId])->fetchColumn()==$uid,'stable employee ownership retained');
+check(adQuery($db,'SELECT password_hash FROM analysts WHERE id=1')->fetchColumn()!==null,'local emergency password preserved');
+$ticket=adQuery($db,'SELECT user_id,assigned_analyst_id FROM tickets WHERE ticket_number=?',['ADTEST-1'])->fetch(PDO::FETCH_ASSOC);
+check((int)$ticket['user_id']===$uid && (int)$ticket['assigned_analyst_id']===$aid,'ticket ownership and analyst assignments preserved across modes');
+// Exercise the production session gate in fresh PHP processes, including read-and-close callers.
+$policy=['authority_provider_id'=>1,'refresh_seconds'=>900,'revision'=>1];
+$state=['authorization_checked_at'=>gmdate('Y-m-d H:i:s',1000),'authorization_revision'=>1,'authorization_status'=>'current'];
+check(!adAuthorizationRefreshDue($policy,$state,false,1899),'periodic refresh waits until interval');
+check(adAuthorizationRefreshDue($policy,$state,false,1900),'periodic refresh due at 15 minutes');
+check(adAuthorizationRefreshDue($policy,$state,true,1060),'sensitive operation requires recent authorization');
+check(!adAuthorizationRefreshDue($policy,$state,true,1059),'fresh sensitive authorization reused');
+check(adAuthorizationRefreshDue(array_merge($policy,['revision'=>2]),$state,false,1001),'configuration change invalidates authorization');
+check(!adAuthorizationRefreshDue(array_merge($policy,['authority_provider_id'=>null]),$state,true,999999),'no authorization refresh without optional authority');
+$_SESSION=['analyst_id'=>1];adSaveConfig($db,$config);
+$replacement=str_repeat('e',32);$fake->accounts[$p2]['employee@company.example']['guid']=$replacement;
+rejects(fn()=>adLinkExisting($db,['user_id'=>$uid,'provider_id'=>$p2,'guid'=>$replacement],$fake),'replacement requires old GUID confirmation');
+adLinkExisting($db,['user_id'=>$uid,'provider_id'=>$p2,'guid'=>$replacement,'previous_guid'=>$guid2],$fake);
+check(adQuery($db,'SELECT object_guid FROM ad_identities WHERE profile_id=? AND provider_id=?',[$profileId,$p2])->fetchColumn()===$replacement,'approved GUID reconciliation preserves existing profile');
+function probe(int $profile,int $provider,int $analyst,int $user,string $path,string $method='GET'): string {
+    $args=[PHP_BINARY,__DIR__.'/session_probe.php',(string)$profile,(string)$provider,(string)$analyst,(string)$user,$path,$method];
+    $pipes=[];$proc=proc_open($args,[1=>['pipe','w'],2=>['pipe','w']],$pipes);
+    $out=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);
+    $exit=proc_close($proc);if($exit!==0)throw new RuntimeException($err);return $out;
+}
+check(probe($profileId,$p1,$aid,$uid,'/api/tickets/get_ticket_statuses.php')==='ALLOWED','middleware permits assigned module');
+check(str_contains(probe($profileId,$p1,$aid,$uid,'/api/system/save_sso_provider.php','POST'),'Module access denied'),'middleware prevents system escalation');
+check(str_contains(probe($profileId,$p1,$aid,$uid,'/api/tickets/save_analyst.php','POST'),'Administrator access required'),'ticket module cannot create administrators');
+check(str_contains(probe($profileId,$p1,$aid,$uid,'/api/tickets/get_mailboxes.php'),'Administrator access required'),'ticket module cannot read directory/mail credentials');
+check(probe($profileId,$p1,$aid,$uid,'/api/self-service/get_tickets.php')==='ALLOWED','middleware retains employee ticket access');
+adQuery($db,"DELETE FROM analyst_access_groups WHERE analyst_id=?",[$aid]);
+check(str_contains(probe($profileId,$p1,$aid,$uid,'/api/tickets/get_ticket_statuses.php'),'Self-service access only'),'revocation invalidates stale analyst session');
+check(probe($profileId,$p1,$aid,$uid,'/api/self-service/get_tickets.php')==='ALLOWED','revoked analyst retains own portal identity');
+adQuery($db,'UPDATE auth_providers SET enabled=0 WHERE id=?',[$p1]);
+check(str_contains(probe($profileId,$p1,$aid,$uid,'/api/self-service/get_tickets.php'),'session revoked'),'disabled provider revokes sessions');
+adQuery($db,'UPDATE auth_providers SET enabled=1 WHERE id=?',[$p1]);
+rejects(fn()=>adProtectEmergency($db,1,true),'protected emergency access cannot be removed');
+echo "PASS: $passed AD checks (isolated MySQL; fake directory; all four modes).\n";

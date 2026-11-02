@@ -112,6 +112,13 @@ Then open [http://localhost:8080/setup/](http://localhost:8080/setup/) to verify
 
 ---
 
+### Native Active Directory (optional)
+
+Direct LDAPS/StartTLS sign-in supports a single domain by default, optional trusted
+multi-domain linking, and an independently optional AD authorization domain. See
+[AD setup, upgrades, security, and tests](docs/active-directory.md). Local and OIDC
+authentication remain available; Keycloak is not required.
+
 ### Manual Installation
 
 #### Prerequisites

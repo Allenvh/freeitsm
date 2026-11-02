@@ -12,6 +12,7 @@ if (isset($_SESSION['ss_user_id'])) {
 
 require_once '../config.php';
 require_once '../includes/functions.php';
+require_once '../includes/ad.php';
 require_once '../includes/tenancy.php';
 require_once '../includes/i18n.php';
 I18n::initFromSession();
@@ -38,7 +39,7 @@ try {
         // Only GLOBAL providers are shown up front (single-company installs).
         // On a multi-tenant install we never list providers up front — the
         // email-first router reveals only the requester's own company's IdP(s).
-        $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
+        $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND protocol = 'oidc' AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
     }
     $multiTenant = isMultiTenant($ssoConn);
 } catch (Exception $e) { $ssoProviders = []; }
@@ -205,6 +206,9 @@ $localAllowed = $localOn || $forceLocal;
 </head>
 <body>
     <div class="login-container">
+        <?php if (adSignInEnabled()): ?>
+        <p><a href="<?php echo htmlspecialchars(BASE_URL); ?>ad-sign-in.php">Corporate Active Directory sign-in</a></p>
+        <?php endif; ?>
         <div class="login-header">
             <img src="../assets/images/CompanyLogo.png" alt="Company Logo">
             <h1><?php echo htmlspecialchars(t('self-service.login.heading')); ?></h1>

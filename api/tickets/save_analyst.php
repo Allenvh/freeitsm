@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad.php';
 
 header('Content-Type: application/json');
 
@@ -50,6 +51,7 @@ if (empty($id) && empty($password)) {
 
 try {
     $conn = connectToDatabase();
+    adProtectEmergency($conn, (int)$id, !$isActive || $authProviderId !== null);
 
     // Check for duplicate username
     $checkSql = "SELECT id FROM analysts WHERE username = ? AND id != ?";

@@ -55,7 +55,7 @@ function oidcRandomToken(int $bytes = 32): string {
  * Returns null if not found.
  */
 function oidcGetProvider(PDO $conn, int $id): ?array {
-    $stmt = $conn->prepare("SELECT * FROM auth_providers WHERE id = ?");
+    $stmt = $conn->prepare("SELECT * FROM auth_providers WHERE id = ? AND protocol = 'oidc'");
     $stmt->execute([$id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) return null;

@@ -140,6 +140,7 @@ $translationNamespaces = ['common', 'system'];
     </style>
 </head>
 <body>
+<p><a href="../../system/active-directory/">Active Directory authentication and authorization</a></p>
     <?php include '../includes/header.php'; ?>
 
     <div class="security-container">

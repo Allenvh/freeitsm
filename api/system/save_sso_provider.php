@@ -69,7 +69,7 @@ try {
                         enabled = ?, auto_create_users = ?, require_verified_email = ?,
                         default_modules = ?, sort_order = ?, tenant_id = ?,
                         last_modified_datetime = UTC_TIMESTAMP()
-                  WHERE id = ?"
+                  WHERE id = ? AND protocol = 'oidc'"
             );
             $stmt->execute([$displayName, $issuerUrl, $clientId, $scopes,
                             $enabled, $autoCreate, $requireVerified, $defaultModules, $sortOrder, $tenantId, $id]);
@@ -81,7 +81,7 @@ try {
                         enabled = ?, auto_create_users = ?, require_verified_email = ?,
                         default_modules = ?, sort_order = ?, tenant_id = ?,
                         last_modified_datetime = UTC_TIMESTAMP()
-                  WHERE id = ?"
+                  WHERE id = ? AND protocol = 'oidc'"
             );
             $stmt->execute([$displayName, $issuerUrl, $clientId, $encSecret, $scopes,
                             $enabled, $autoCreate, $requireVerified, $defaultModules, $sortOrder, $tenantId, $id]);
