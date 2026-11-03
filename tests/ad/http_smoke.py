@@ -69,6 +69,22 @@ class HttpTests(unittest.TestCase):
         status, _, _ = self.request('/system/active-directory/?profile_id=1')
         self.assertEqual(status, 403)
 
+    def test_missing_ad_migration_shows_setup_instructions(self):
+        self.local_login()
+        fixture('$s->query("RENAME TABLE ad_settings TO ad_settings_before_migration_test");')
+        try:
+            status, body, _ = self.request('/system/active-directory/')
+            self.assertEqual(status, 503)
+            self.assertIn('Active Directory database setup required', body)
+            self.assertIn('DB Verify', body)
+            self.assertIn('20261103_active_directory.sql', body)
+            self.assertNotIn('SQLSTATE', body)
+        finally:
+            fixture('$s->query("RENAME TABLE ad_settings_before_migration_test TO ad_settings");')
+        status, body, _ = self.request('/system/active-directory/')
+        self.assertEqual(status, 200)
+        self.assertIn('User Authorization', body)
+
     def test_corporate_form_and_registration_response(self):
         token = self.csrf()
         status, body, _ = self.request('/ad-login.php', {'action': 'register', 'email': 'not-corporate@other.test', 'csrf': token})
