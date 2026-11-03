@@ -43,6 +43,18 @@ RUN set -eux; \
     fi
 
 # Install PHP dependencies, including the userland IMAP client.
+#RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+#------------------- SSL Diagnostics -------------------
+# Diagnose HTTPS certificate chain
+RUN echo | openssl s_client \
+    -connect repo.packagist.org:443 \
+    -servername repo.packagist.org \
+    -showcerts 2>&1 | \
+    grep -E 's:|i:|subject=|issuer=|verify error|Verify return code'
+# Test HTTPS certificate trust
+RUN curl -Iv https://repo.packagist.org/packages.json
+
+# Install PHP dependencies
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
 # Create directories for uploads, attachments, and encryption keys

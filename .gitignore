@@ -125,4 +125,5 @@ yarn-error.log
 
 # Local corporate CA certificates for Docker builds (never commit actual certs)
 certs/*.crt
+certs/*.cer
 !certs/.gitkeep
