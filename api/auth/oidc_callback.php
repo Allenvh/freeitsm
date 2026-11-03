@@ -15,6 +15,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad/bootstrap.php';
 require_once '../../includes/oidc.php';
 
 /** Bounce back to the originating portal's login page with an error message. */
@@ -87,6 +88,8 @@ try {
         ssoBail('The provider did not return a user identifier.');
     }
 
+    if ($email !== '' && adManaged($conn, 'email', $email)) ssoBail('Use corporate Active Directory sign in.');
+
     // --- Self-service portal branches off here (resolve against `users`) ---
     if (($_SESSION['oidc_portal'] ?? 'analyst') === 'self-service') {
         completeSelfServiceSso($conn, $provider, $providerId, $sub, $email, $emailVerified, $name, $tokens);
@@ -152,6 +155,9 @@ try {
              VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         )->execute([$analystId, $providerId, $sub, $email ?: null]);
     }
+
+    if (adManaged($conn, 'analyst_id', $analystId)) ssoBail('Use corporate Active Directory sign in.');
+    session_regenerate_id(true);
 
     // Sync SSO group/role claims after ID token validation and before session module calculation.
     oidcSyncAnalystAccessGroups($conn, $providerId, $analystId, $claims, $provider);
@@ -321,6 +327,9 @@ function completeSelfServiceSso(PDO $conn, array $provider, int $providerId, str
              VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
         )->execute([$userId, $providerId, $sub, $email ?: null]);
     }
+
+    if (adManaged($conn, 'user_id', $userId)) ssoBail('Use corporate Active Directory sign in.');
+    session_regenerate_id(true);
 
     // --- Success: set the self-service session (SSO bypasses local TOTP) ---
     $displayName = $user['preferred_name'] ?: $user['display_name'] ?: $user['email'];

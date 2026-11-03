@@ -36,6 +36,18 @@ function getAnalystAllowedModules($conn, $analyst_id) {
  * Null still means unrestricted/full access for backwards compatibility.
  */
 function getAnalystEffectiveModules($conn, $analyst_id) {
+    // AD-managed analysts use only the authoritative directory result. The legacy
+    // empty-means-all and automatic system access rules must never apply to AD.
+    try {
+        $ad = $conn->prepare("SELECT authorization_status, authorization_json FROM ad_profiles WHERE analyst_id = ?");
+        $ad->execute([$analyst_id]);
+        if ($profile = $ad->fetch(PDO::FETCH_ASSOC)) {
+            return $profile['authorization_status'] === 'current'
+                ? (json_decode($profile['authorization_json'] ?? '{}', true)['modules'] ?? []) : [];
+        }
+    } catch (PDOException $e) {
+        if ($e->getCode() !== '42S02') throw $e; // unmigrated legacy installs only
+    }
     $sql = "SELECT module_key FROM analyst_modules WHERE analyst_id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->execute([$analyst_id]);

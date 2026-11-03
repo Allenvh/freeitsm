@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad/bootstrap.php';
 
 header('Content-Type: application/json');
 
@@ -33,6 +34,7 @@ if (strlen($password) < 6) {
 
 try {
     $conn = connectToDatabase();
+    adProtectAnalyst($conn, (int)($id ?? $analyst_id ?? 0));
 
     // Check if analyst exists
     $checkSql = "SELECT id FROM analysts WHERE id = ?";

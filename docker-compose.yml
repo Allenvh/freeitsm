@@ -46,6 +46,7 @@ services:
       retries: 10
 
   keycloak-db:
+    profiles: ["sso-lab"]
     image: postgres:16
     environment:
       POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
@@ -60,6 +61,7 @@ services:
       retries: 20
 
   keycloak:
+    profiles: ["sso-lab"]
     image: quay.io/keycloak/keycloak:26.2
     command: ["start-dev"] # Lab only. Production: use hardened `start`.
     depends_on:

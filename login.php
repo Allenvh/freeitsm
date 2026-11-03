@@ -5,6 +5,7 @@
 session_start();
 require_once 'config.php';
 require_once 'includes/functions.php';
+require_once 'includes/ad/bootstrap.php';
 
 // An SSO sign-in attempt that failed bounces back here with a message.
 $sso_error = $_SESSION['sso_error'] ?? null;
@@ -181,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$username]);
             }
             $analyst = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($analyst && adManaged($conn, 'analyst_id', (int)$analyst['id'])) $analyst = false;
 
             // Check account lockout
             if ($analyst && !empty($analyst['locked_until'])) {
@@ -226,6 +228,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($trustedDeviceValid) {
                         // Trusted device — skip MFA, complete login directly
+                        $_SESSION = [];
+                        session_regenerate_id(true);
                         $_SESSION['analyst_id'] = $analyst['id'];
                         $_SESSION['analyst_username'] = $analyst['username'];
                         $_SESSION['analyst_name'] = $analyst['full_name'];
@@ -248,6 +252,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     }
 
+                    // A local recovery login must not retain an earlier AD session.
+                    $_SESSION = [];
+                    session_regenerate_id(true);
                     // MFA required - store pending state, don't complete login yet
                     $_SESSION['mfa_pending_analyst_id'] = $analyst['id'];
                     $_SESSION['mfa_pending_username'] = $analyst['username'];
@@ -262,6 +269,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $mfa_required = true;
                 } else {
                     // No MFA - complete login directly
+                    $_SESSION = [];
+                    session_regenerate_id(true);
                     $_SESSION['analyst_id'] = $analyst['id'];
                     $_SESSION['analyst_username'] = $analyst['username'];
                     $_SESSION['analyst_name'] = $analyst['full_name'];
@@ -542,6 +551,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-container">
+        <p><a href="ad-login.php">Sign in with corporate Active Directory</a></p>
         <div class="login-header">
             <img src="assets/images/CompanyLogo.png" alt="Company Logo">
             <?php if ($mfa_required): ?>

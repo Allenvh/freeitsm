@@ -94,6 +94,12 @@ A comprehensive web-based IT Service Management (ITSM) platform with 17 integrat
 
 ---
 
+## Corporate Active Directory
+
+Native LDAPS/StartTLS sign in, corporate email verification, immutable employee identity links, and Security Group permissions are available alongside local and OpenID Connect authentication. A single domain is sufficient; mirrored additional authentication domains are optional and disabled by default. Keycloak is not required.
+
+See [Active Directory deployment and security](docs/active-directory.md) for migrations, provider configuration, enterprise CA trust, Guest access, permission refresh, diagnostics and tests.
+
 ## 🚀 Quick Start
 
 ### Docker (Recommended)

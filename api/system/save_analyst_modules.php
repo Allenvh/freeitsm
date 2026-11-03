@@ -8,6 +8,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad/bootstrap.php';
 
 header('Content-Type: application/json');
 
@@ -32,6 +33,7 @@ if (!is_array($modules)) {
 
 try {
     $conn = connectToDatabase();
+    adProtectAnalyst($conn, (int)($id ?? $analyst_id ?? 0));
 
     // Delete existing assignments for this analyst
     $delSql = "DELETE FROM analyst_modules WHERE analyst_id = ?";

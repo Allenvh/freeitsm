@@ -3933,6 +3933,8 @@ try {
         // Non-fatal — fall through with verification result
     }
 
+    $conn->exec(file_get_contents(__DIR__ . '/../../database/migrations/20261103_active_directory.sql'));
+
     echo json_encode([
         'success' => true,
         'results' => $results,
