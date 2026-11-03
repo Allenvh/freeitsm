@@ -10,8 +10,9 @@ RUN apt-get update \
         unzip \
         libonig-dev \
         libzip-dev \
+        libldap2-dev \
     && update-ca-certificates \
-    && docker-php-ext-install pdo pdo_mysql mbstring zip \
+    && docker-php-ext-install pdo pdo_mysql mbstring zip ldap \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -41,18 +42,6 @@ RUN set -eux; \
         find /tmp/certs -type f -name '*.crt' -exec cp {} /usr/local/share/ca-certificates/ \; ; \
         update-ca-certificates; \
     fi
-
-# Install PHP dependencies, including the userland IMAP client.
-#RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
-#------------------- SSL Diagnostics -------------------
-# Diagnose HTTPS certificate chain
-RUN echo | openssl s_client \
-    -connect repo.packagist.org:443 \
-    -servername repo.packagist.org \
-    -showcerts 2>&1 | \
-    grep -E 's:|i:|subject=|issuer=|verify error|Verify return code'
-# Test HTTPS certificate trust
-RUN curl -Iv https://repo.packagist.org/packages.json
 
 # Install PHP dependencies
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader

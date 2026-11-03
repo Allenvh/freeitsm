@@ -7,6 +7,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ad/bootstrap.php';
 
 header('Content-Type: application/json');
 
@@ -26,6 +27,7 @@ if (empty($email) || empty($password)) {
 
 try {
     $conn = connectToDatabase();
+    if (adManaged($conn, 'email', $email)) throw new AdFailure('Use corporate Active Directory sign in.');
 
     $stmt = $conn->prepare("SELECT id, email, display_name, preferred_name, password_hash, totp_enabled FROM users WHERE email = ?");
     $stmt->execute([$email]);

@@ -10,6 +10,7 @@ session_start(['read_and_close' => true]);
 header('Content-Type: application/json');
 
 require_once '../../config.php';
+require_once '../../includes/ad/bootstrap.php';
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -51,6 +52,8 @@ try {
         echo json_encode(['success' => false, 'error' => 'Invalid reset link. Please request a new one.']);
         exit;
     }
+
+    adProtectAnalyst($conn, (int)$resetToken['analyst_id'], false);
 
     if ($resetToken['used']) {
         echo json_encode(['success' => false, 'error' => 'This reset link has already been used. Please request a new one.']);

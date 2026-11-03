@@ -205,6 +205,7 @@ $localAllowed = $localOn || $forceLocal;
 </head>
 <body>
     <div class="login-container">
+        <p><a href="../ad-login.php">Corporate Active Directory sign in or registration</a></p>
         <div class="login-header">
             <img src="../assets/images/CompanyLogo.png" alt="Company Logo">
             <h1><?php echo htmlspecialchars(t('self-service.login.heading')); ?></h1>
