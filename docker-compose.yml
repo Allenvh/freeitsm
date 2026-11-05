@@ -80,9 +80,46 @@ services:
     ports:
       - "${KEYCLOAK_HTTP_PORT:-8081}:8080"
 
+
+  greenmail:
+    image: docker.io/greenmail/standalone:2.1.15
+    container_name: freeitsm-mail
+    restart: unless-stopped
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.smtp
+        -Dgreenmail.setup.test.imap
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=helpdesk:Test123@freeitsm.test,user1:Test123@freeitsm.test
+        -Dgreenmail.users.login=email
+    ports:
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
+
+
+  roundcube:
+    image: docker.io/roundcube/roundcubemail:latest
+    container_name: freeitsm-roundcube
+    restart: unless-stopped
+    depends_on:
+      - greenmail
+    ports:
+      - "127.0.0.1:8081:80"
+    environment:
+      ROUNDCUBEMAIL_DB_TYPE: sqlite
+      ROUNDCUBEMAIL_DEFAULT_HOST: greenmail
+      ROUNDCUBEMAIL_DEFAULT_PORT: "3143"
+      ROUNDCUBEMAIL_SMTP_SERVER: greenmail
+      ROUNDCUBEMAIL_SMTP_PORT: "3025"
+      ROUNDCUBEMAIL_SKIN: elastic
+    volumes:
+      - roundcube-db:/var/roundcube/db
+
+
 volumes:
   db-data:
   attachments:
   cm-attachments:
   encryption-keys:
   keycloak-db-data:
+  roundcube-db:
