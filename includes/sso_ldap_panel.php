@@ -64,6 +64,7 @@ document.getElementById('ldapPreset').addEventListener('change',function(){
     document.getElementById('ldapTransport').value='ldaps';document.getElementById('ldap_ldap_port').value=636;
 });
 document.getElementById('ldapNew').addEventListener('click',()=>openLdapModal(null));
+document.getElementById('addLdapProviderBtn').addEventListener('click',()=>openLdapModal(null));
 async function ldapRequest(endpoint,p){
     const result=document.getElementById('ldapResult');result.textContent='Working…';
     try{const r=await fetch(API+'system/'+endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':NATIVE_LDAP_CSRF},body:JSON.stringify(p)});const d=await r.json();

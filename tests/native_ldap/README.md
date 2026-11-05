@@ -31,3 +31,7 @@ Run `python3 tests/native_ldap/http_fixture.py` from the checkout. Docker and Py
 The runner creates `freeitsm-native-ldap-fixture` and `freeitsm-native-ldap-http`, publishes only `127.0.0.1:8089`, overlays the current working-tree files into the test app, and removes both containers/anonymous volumes afterward. It rejects fixture SQL operations unless DB_NAME is exactly `freeitsm_native_ldap_test`. It exercises the real admin APIs, real service/user binds and group searches, analyst and requester logins, wrong passwords, group denial, TOTP requirements, permission boundaries, provider deletion protection, CSRF and retired-page redirects. Errors redact generated credentials and omit PHP function arguments.
 
 Existing `tests/mail` remain unchanged and should also pass. These tests do not establish corporate AD connectivity, enterprise CA trust, or live external OIDC behavior.
+
+## Browser layout regression
+
+`layout.py` requires Python Playwright and Chromium. Set `LDAP_LAYOUT_URL` to an isolated loopback test app, `LDAP_LAYOUT_USERNAME` and `LDAP_LAYOUT_PASSWORD` to its local administrator credentials, and optionally `CHROMIUM_PATH`. Run `python3 tests/native_ldap/layout.py`. It verifies that Add LDAP opens an editable form inside the visible scrolling region, Add OIDC remains functional, and the page has no browser script errors.
