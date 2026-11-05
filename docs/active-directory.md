@@ -1,121 +1,97 @@
-# Corporate Active Directory sign in
+# Native LDAP / Active Directory authentication
 
-FreeITSM supports native Active Directory over LDAPS or StartTLS alongside existing local and OpenID Connect sign in. Keycloak, Integrated Windows Authentication, and joining the application server to AD are not required.
+This fork now uses the upstream FreeITSM LDAP authentication core from `edmozley/freeitsm` commit `61163c1a1bf17071079765a44d8fdef14708091e` (`includes/ldap.php` and `includes/sso_identity.php`, under the repository's MIT license). Its UI and API integration are adapted to this fork's existing paths and schema. This is a selective authentication integration, not a wholesale upgrade to the newer upstream application.
 
-## One domain first; additional domains are optional
+## What changed
 
-AD is disabled on installation. Configure one trusted provider as both the default authentication provider and the sole authorization authority. Leave **Enable multiple authentication domains** unchecked. Only that provider can receive user credentials; the UI does not show a domain selector.
+Configure directories on **System → Authentication / SSO** (`system/sso/`), using **LDAP / Active Directory — Add or edit a directory**. The normal analyst login (`login.php`) and self-service login (`self-service/login.php`) accept directory passwords. LDAP shares `auth_providers`, `analyst_sso_identities` and `user_sso_identities` with OIDC, as upstream does. Local and OIDC accounts continue using their own assigned authentication method; failed directory binds never try a local password. Existing TOTP remains required for accounts that enabled it.
 
-To support mirrored accounts, explicitly enable multiple authentication domains, add a second trusted provider, and optionally enable password fallback. Fallback is off by default; the default bind budget is one. A maximum of two user binds per login is supported. Domain selection is optional, behind a disclosure control; it narrows password attempts but never bypasses identity conflict checks. Service-account searches are not user-password attempts.
+The custom AD implementation has been retired: `includes/ad`, corporate verification registration, unified mirrored-domain identity, the separate authorization authority, group-GUID-to-role mappings and periodic/manual directory authorization refresh are removed. Old AD page URLs redirect to the normal login/Authentication pages. Old custom sessions are signed out. Legacy tables and the historical migration are retained for recovery; they no longer grant permissions. A small transition quarantine prevents existing legacy accounts being claimed before migration.
 
-A corporate login is separate from local/OIDC login. Failed AD authentication never tries the supplied password against the local password store. Existing local/OIDC users keep their original login methods until an administrator explicitly enrolls their records in AD. A verified new corporate email cannot claim an existing account.
+Native upstream behavior is different:
 
-## Installation and upgrades
+- A person is assigned to one directory provider. Mirrored accounts are not automatically merged across domains.
+- Directory group gates are evaluated at sign-in. There is no periodic directory-group refresh during active sessions in this integration.
+- **Analyst group** members may use the analyst login; **Self-service group** members may use the portal. Membership in both grants the analyst role and portal eligibility. A person matching neither configured group is denied.
+- With both group gates blank, upstream treats authenticated directory users as analyst-eligible. Configure group gates before enabling an enterprise directory.
+- Analyst and self-service auto-provisioning switches are separate. Auto-provisioning defaults off for imported/new providers.
+- Default module keys apply to newly created analysts. Blank means all modules; a nonempty list restricts new analysts. Existing accounts retain their own module assignments. LDAP sessions enforce these explicit grants without the fork's legacy empty-means-all fallback.
+- No email verification, SMTP mailbox or public registration URL is required for LDAP login.
 
-1. Back up MySQL and the encryption key before upgrading.
-2. Build the PHP 8.4 image; the Dockerfile installs `libldap2-dev` and PHP `ldap`. No new Composer dependencies are needed.
-3. For an existing database, apply `database/migrations/20261103_active_directory.sql` with your normal authenticated MySQL deployment tooling. It is additive and repeatable. Setup → DB Verify also executes this migration. Fresh installations include the same tables in `database/freeitsm.sql`.
-4. Start `podman compose up -d app db` (or `docker compose up -d app db`). Keycloak and its database now use the optional `sso-lab` profile: `podman compose --profile sso-lab up -d`. Existing OIDC configurations continue to work with external identity providers.
-5. Use System → **Active Directory & User Authorization** to configure providers, permissions and registration. Initially use a local unrestricted administrator.
-6. Preserve the `includes/ad/guard.php` require at the end of your deployed `config.php`. The bundled Docker config already includes it. Custom configurations must include it **after defining DB credentials and BASE_URL**, on every page/API request; it must not be skipped by a custom bootstrap. For example: `require_once __DIR__ . '/includes/ad/guard.php';`.
+The existing Generic IMAP/SMTP fixes, mail tests, local Podman/GreenMail/Roundcube Compose configuration and other fork changes are preserved.
 
-The cloud onboarding install script is independent of this feature; it is not changed or republished by the PR. Rebuild deployed images using the updated repository Dockerfile.
+## Upgrade and migrate existing custom AD accounts
 
-## Provider configuration
+1. Keep a working unrestricted **local administrator** account and verify its password. Do not migrate that emergency account.
+2. Back up the entire database and the encryption-key volume/file. Keep the old release image for rollback. Run the following operations during a maintenance window; do not run old and new login implementations concurrently.
+3. Build the new application image and recreate **only the app** using your existing environment file:
 
-Example single-domain configuration (fictional):
+   ```sh
+   python -m podman_compose --env-file .env.example build app
+   python -m podman_compose --env-file .env.example up -d --no-deps --force-recreate app
+   ```
 
-| Setting | Example |
+4. Run Setup → **DB Verify**, or initialize the additive native schema from the app container:
+
+   ```sh
+   python -m podman_compose --env-file .env.example exec app php -r 'require "config.php"; require "includes/functions.php"; require "includes/ldap_schema.php"; ensureNativeLdapSchema(connectToDatabase());'
+   ```
+
+   Fresh installations include the new fields in `database/freeitsm.sql`. The helper also supports older databases and can be rerun. It adds LDAP settings, explicit module permissions, a nullable requester email/username, tenant association and migration ledgers without resetting existing records.
+
+5. Inspect the migration plan; the default invocation does not modify any data:
+
+   ```sh
+   python -m podman_compose --env-file .env.example exec app php scripts/migrate_legacy_ad.php
+   ```
+
+6. After reviewing the backups and plan, explicitly apply:
+
+   ```sh
+   python -m podman_compose --env-file .env.example exec app php scripts/migrate_legacy_ad.php --apply
+   ```
+
+   Application scripts do not run this automatically. Imported providers are **disabled** and auto-provisioning is **off**. Service credentials are retained encrypted using the existing key. The migration pins each existing requester/analyst ID to its previously successful directory identity, creates upstream-format links using the immutable raw GUID bytes, retains tickets/assignments, and snapshots current explicit module permissions. It does not merge accounts or rewrite ticket relationships. For an unavailable authorization snapshot it grants no elevated modules; review that account before enabling it. Repeated runs skip already migrated accounts.
+
+   Pending registrations without requester/analyst records remain archived and are not provisioned. Ambiguous or missing identity links, disabled legacy profiles, conflicting existing provider assignments and attempts to migrate the emergency local administrator stop and roll back the data migration. Resolve these explicitly before rerunning; do not delete history to force it through. Schema initialization occurs before the data transaction because MySQL DDL commits implicitly.
+
+7. Sign in locally and review each imported provider in **System → Authentication / SSO**:
+   - Verify server DNS name, port, transport, service DN and search bases/attributes.
+   - Set explicit analyst/self-service group names or DNs and review default modules and auto-provisioning.
+   - Configure enterprise CA trust in the container. The old per-provider CA-file and secondary-controller fields are archived, not silently translated; upstream uses the selected server and system trust store with an eight-second timeout.
+   - Test the service bind, then an optional sample user's password and group role.
+   - Enable only the reviewed provider. Do not reset existing users' passwords; directory users authenticate against the directory.
+
+8. Verify existing employees can sign in, see the same ticket history, retain intended module access, and still complete their configured TOTP step. Verify local emergency login and OIDC as well. Retain backups and legacy tables until that review completes.
+
+Rollback means restoring the backed-up database/key and previous release together. Do not attempt to roll back only PHP code after changing provider assignments.
+
+## New provider examples
+
+Select the AD or OpenLDAP preset. Example AD values (fictional):
+
+| Field | Example |
 | --- | --- |
-| Name | Corporate AD |
-| Domain DNS / UPN suffix | corp.example.test |
-| Controller | dc1.corp.example.test |
-| Secondary controller | dc2.corp.example.test |
-| Transport / port | LDAPS / 636 |
-| Base DN | DC=corp,DC=example,DC=test |
-| User search base | OU=Employees,DC=corp,DC=example,DC=test |
-| Group search base | OU=Security Groups,DC=corp,DC=example,DC=test |
+| Directory hostname | dc1.corp.example.test |
+| Port / transport | 636 / LDAPS |
 | Service identity | svc-freeitsm@corp.example.test |
-| Username / email / display | sAMAccountName / mail / displayName |
-| Nested Security Groups | Enabled |
-| Trusted / enabled / authentication | Enabled |
+| User base | OU=Employees,DC=corp,DC=example,DC=test |
+| Group base | OU=Groups,DC=corp,DC=example,DC=test |
+| Username / email / display / immutable ID | sAMAccountName / mail / displayName / objectGUID |
+| Analyst group | FreeITSM-Analysts |
+| Self-service group | FreeITSM-Portal |
+| Default analyst modules | tickets,knowledge,assets |
 
-The read-only service account needs permission to read user identity/account-state attributes and Security Groups. It must not be Domain Admin. Service passwords use the existing AES-256-GCM encryption infrastructure and are never returned to the browser. Blank password fields preserve the stored value.
+Filters use `%s`, replaced with an escaped login or user DN. The AD preset resolves nested groups using LDAP_MATCHING_RULE_IN_CHAIN. Groups can be identified by name or full DN; the retired raw-GUID mapping field is not used. Passwords remain encrypted and are never returned in provider lists. Blank service passwords on edits/tests reuse the stored secret.
 
-Controllers must be hostnames that match their certificates; credentials cannot be sent to arbitrary per-request servers. LDAP v3, disabled referrals, mandatory certificate validation, and bounded network/search timeouts apply to every connection. A secondary controller is tried for service connection failures. A user bind is attempted once per candidate; rejection never causes a second user bind against another controller. Account-disabled/locked/expired diagnostics stop fallback. LDAP filters escape values; configurable attribute names are validated.
+Serve the application login over HTTPS in production; HTTP is for isolated local testing. Use a read-only service account, not Domain Admin. Choose LDAPS or StartTLS with trusted certificates for production. Plain LDAP is exposed only for intentionally isolated testing, consistent with upstream support. Do not disable certificate validation. Install enterprise roots with the existing `certs/*.crt` build mechanism or the platform's system trust configuration. The server name must match its certificate. The app container needs DNS and TCP access to the chosen directory; container `localhost` is not the host or domain controller.
 
-**Trust settings:** set a provider's CA file to a readable PEM bundle mounted into the application container, or install enterprise roots in the system trust store. No validation-disable option exists. For example, add a local Compose override:
+Directory-assigned accounts cannot use local-password reset or local self-registration to bypass their provider. Deleting a provider with assigned accounts is refused; reassign them deliberately first. Migrated users retain their original requester/analyst IDs. Existing local/OIDC account behavior and module conventions remain unchanged until explicitly assigned to LDAP or an explicit module policy.
 
-```yaml
-services:
-  app:
-    volumes:
-      - /srv/freeitsm/trust/corporate-ca.pem:/run/freeitsm-trust/corporate-ca.pem:ro
-```
+## Upstream integration boundaries and validation
 
-Then set CA file to `/run/freeitsm-trust/corporate-ca.pem`. On Podman systems with SELinux, apply the deployment's appropriate bind-mount labeling. Allow network access from the app to the configured controllers on TCP 636 (or 389 with StartTLS). HTTP proxies do not generally carry LDAP; configure your platform's supported TCP/private-network route. Also allow encrypted SMTP to the existing configured mail service.
+The adopted core retains upstream password/NUL guards, service/user binds, escaped filters, nested AD groups, immutable identity links, provider isolation, separate JIT switches, and mailbox-less requester support. The compatibility changes are limited to this fork's tenancy helper name, optional preference templates (the newer preference-template subsystem is not imported), transition quarantine, existing admin/CSRF controls, and login/permission integration. This does **not** import unrelated upstream directory synchronization, CardDAV, Entra provisioning, claim/team mappings, preference templates or a complete upstream release.
 
-For offline installations, build and export the app image in a trusted build environment with dependency mirrors and verified artifacts, then import that image into the disconnected Podman/Docker environment. Keep the image's vendor dependencies, LDAP extension, migration, CA bundle and encryption-key volume. No public discovery service or Keycloak call is made for AD login. The existing Composer manifest has no lockfile; pin and retain your verified release image for repeatable offline deployments.
+`tests/native_ldap/run.php` creates and drops **only `freeitsm_native_ldap_test`** on its configured test MySQL server. It covers fresh installation, pre-LDAP upgrade, repeatability, local compatibility, JIT, immutable identity protection, group gates, module restrictions and non-destructive legacy migration. Native directory wire tests and HTTP smoke checks are described in that test directory. Existing `tests/mail` remain applicable.
 
-## Registration and unified identity
-
-Configure allowed email domains as exact comma-separated suffixes (for example `example.test`), a public HTTPS application base URL including any installation subpath, and an existing active SMTP mailbox ID with outbound enabled and TLS/SSL. The same SMTP transport and encrypted mailbox credentials used elsewhere in the application deliver verification mail. The base URL is administrator-configured; it is never derived from the untrusted request Host header.
-
-Employees use **Corporate Active Directory sign in → Create an account or resend verification**. Registration responses are generic. Tokens are random, stored only as SHA-256 hashes, expire after 5–30 minutes (default 20), and are consumed atomically. Confirming a link consumes sibling resend tokens too. A confirmation POST avoids consuming links when a mail scanner fetches them. Verification creates only a pending corporate profile, never a session, requester, analyst, ticket grant, or module grant. Successful trusted AD authentication is still required.
-
-A new profile receives one existing-model requester ID at first successful AD login and, only if mapped module access requires it, one analyst ID. Those IDs never change between domains or role changes. Existing ticket, comment, requester and assignment relationships remain in their original tables. User preferences are not overwritten; directory display names are synchronized.
-
-Each linked external identity is keyed by provider ID plus raw 16-byte `objectGUID` represented as 32 lowercase hexadecimal characters. These are raw LDAP bytes, not the byte-order-adjusted display form of a Windows GUID. Trusted mirrored accounts must have the same normalized corporate email and username. Searches must return exactly one directory user and a single matching mail value. On first proof, resolved mirrors and the authorization identity are pinned to immutable GUIDs. A conflicting GUID, changed email, missing established mirror or ambiguous search requires administrator review; choosing another domain does not bypass this check.
-
-Email possession alone never merges legacy profiles. Administrators can create a pending identity review, inspect the employee out of band, and explicitly attach existing requester and/or analyst IDs with a recorded review reason. This retains historical tickets and prevents duplicate accounts. Existing OIDC assignments must be reviewed separately before adopting an account. Controlled email changes require all previously linked providers to resolve the new address to the same established GUIDs. Existing internal IDs and GUIDs cannot be replaced via this screen. For an actual recycled account or conflicting person, do not reassign old history; create a separate reviewed identity after investigating the directory data.
-
-## Centralized authorization and Guest
-
-There is exactly one configured authority ID. In single-domain mode it must be the authentication provider. In multi-domain mode every elevated grant still comes exclusively from that authority; other domains' groups are never read for authorization. Directory-sourced email and immutable links are checked before using the dedicated read-only service account to fetch Security Groups.
-
-Map authority group GUIDs to existing `access_groups`. Configure the existing group's explicit module keys, for example `tickets,knowledge` for Support, and `system` only for administrative roles. Changes to these shared groups also affect existing OIDC group members. All matching groups' module grants combine; the lowest numeric precedence determines the displayed role. Guest is implicit when there are no effective modules, including an empty mapped group. No hardcoded group names or automatic System grant exists for AD users.
-
-Nested membership uses AD's LDAP_MATCHING_RULE_IN_CHAIN against Security Groups. Direct mode searches direct `member` values. Primary-group membership (which AD does not expose via `member`) is not used for elevated role mapping; use explicit application Security Groups. LDAP errors, timeouts, truncation/size limits and partial results fail closed rather than using an incomplete group list. A large directory may require narrower group search bases or higher server-side limits.
-
-Guest uses the existing self-service portal and its requester ownership checks. It has no analyst session. A successful authoritative search returning no account or no mapped groups yields Guest. A failed lookup yields **Authorization unavailable**, not Guest. The last persisted successful authorization is retained for diagnostics, but its grants cannot be used while the status is unavailable. No directory-outage Guest operations are enabled by default.
-
-## Refresh and sessions
-
-Every successful AD login refreshes authorization. The next request after the configurable interval (default 900 seconds) refreshes it again. Administrative/security/integration/automation paths use a shorter freshness budget (default 60 seconds, configurable to 0 for every request). Settings and mapping revisions invalidate otherwise fresh grants. Request guards run before endpoint/page handlers, refresh persisted state, update the current session and enforce explicit module grants. Privileged requests fail closed on refresh failure.
-
-**My Profile → Refresh My Permissions** is linked from the analyst and requester account menus. It shows effective access, source, refresh time and status, and limits manual refresh to once per 30 seconds. Administrators can inspect linked identities, matched groups, mappings, authentication/authorization history and force a lookup for any profile. Lookup/refresh buttons use the same authoritative service account and do not accept browser-supplied groups or roles. Sessions for other browsers pick up persisted changes on their next request.
-
-AD-managed accounts cannot use legacy local login, password reset, local registration, OIDC auto-linking or local module-assignment endpoints to bypass enrollment. Generic local/OIDC accounts otherwise retain existing behavior. All new state-changing forms use CSRF tokens. Authentication session IDs are regenerated. AD passwords are never persisted or audited.
-
-Before enabling AD, verify a working unrestricted, active local emergency administrator by ID and password. It must have no OIDC or AD enrollment. Its deletion, reassignment and local module changes are protected while AD is enabled. Keep its credentials securely offline. Local sign in remains reachable with `login.php?local=1`; disabling AD does not remove this recovery route. Reassign the protected ID through AD administration before modifying/removing that account. Production deployment should also enforce an appropriate MFA policy for emergency access.
-
-## Diagnostics and troubleshooting
-
-The administration screen provides latest profile status, last authentication provider, authorization authority/account, effective modules/role, linked GUIDs, matched groups, mapping rules and the latest 100 audit events per profile. Timestamps are UTC. Service secrets, user passwords and verification tokens are not displayed in diagnostics or audit records.
-
-- `tls_*` / connection failure: check mounted CA readability, certificate hostname/chain, clock, TCP access and controllers. TLS failures are not treated as missing groups.
-- `service_bind_failed`: check the read-only account and encrypted password; invalid service credentials are not retried across controllers.
-- `ambiguous_identity` / `identity_review_required`: inspect duplicate mail/username attributes, reassigned emails and GUID links. Do not fix by bypassing verification or deleting historical IDs.
-- `partial_directory_result` / `partial_group_resolution`: narrow the search bases or correct directory-side limits/permissions. Partial groups cannot grant privileges.
-- `rate_limited`: wait for the fixed window. User login is limited per normalized email (5/15 minutes) and IP (30/15 minutes), registration per email (3/15 minutes) and IP (10/15 minutes), and refresh per profile. Configure AD lockout policies in conjunction with the optional second bind; these limits do not replace domain-controller lockout policy.
-- Empty analyst permissions: ensure the mapped existing access group has explicit module rows. Empty never means full access for AD.
-- New custom endpoints: include the standard config before authorization/output. Register any new module alias/sensitive administration route in `includes/ad/guard.php` and add access-boundary tests.
-
-Audit events are in `ad_audit`; the existing data is not overwritten on failures. Set retention/purge policies for consumed/expired `ad_verifications`, aged `ad_rate_limits` rows, and `ad_audit` according to organizational policy. The feature deliberately retains immutable identity links and history; do not purge links merely to work around a conflict.
-
-## Automated validation and rollout limits
-
-`tests/ad/run.php` uses the production service and a mock `AdDirectory` with a real disposable MySQL schema. It **drops and recreates only `freeitsm_ad_test`**; never point it at a production server/account. It exercises one/two domains, fallback, disabled/locked/expired accounts, conflicting GUIDs, registration/token replay, authorization changes/outages, session freshness, rate limiting, encryption and local/OIDC compatibility. Directory wire behavior still requires staging validation with your real AD and certificates.
-
-Example using the built image on a test Compose network:
-
-```sh
-docker run --rm --network freeitsm_default --entrypoint php \
-  -v "$PWD:/src:ro" -e ENCRYPTION_KEY_PATH=/tmp/ad-test.key \
-  -e AD_TEST_DB_HOST=db -e AD_TEST_DB_USER=root -e AD_TEST_DB_PASSWORD \
-  freeitsm-app -r 'file_put_contents("/tmp/ad-test.key", bin2hex(random_bytes(32))); require "/src/tests/ad/run.php";'
-```
-
-For `tests/ad/http_smoke.py`, start an isolated HTTP container from the current image named `freeitsm-ad-http`, connected to the test database network, with DB_NAME=`freeitsm_ad_test`, test database credentials, and port `127.0.0.1:8088:80`. Use container-owned application files readable by Apache. Then run `python3 tests/ad/http_smoke.py`. The runner asserts the disposable database name before fixture writes. It verifies local login, administration/CSRF, anonymous and Support restrictions, requester access, stale authorization, generic errors and logout. It does not send mail or connect to production AD.
-
-Before rollout, validate actual primary/secondary controller failover, LDAPS and StartTLS certificate rejection, nested groups, SMTP verification delivery, both mirrored passwords, and your OIDC provider in staging. Confirm reverse-proxy HTTPS, session-cookie settings and all sensitive module routes in your deployment. Real corporate AD/SMTP/IdP connectivity is not established by automated mocks. This implementation does not perform bulk AD synchronization, profile-history merging, or require a background worker.
+Actual corporate AD/LDAPS certificates and deployed OIDC/SMTP must still be validated in staging. The migration does not prove your directory's reachability or group configuration.

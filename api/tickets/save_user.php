@@ -9,7 +9,6 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
-require_once '../../includes/ad/bootstrap.php';
 
 header('Content-Type: application/json');
 
@@ -47,7 +46,6 @@ if ($password !== '' && strlen($password) < 8) {
 
 try {
     $conn = connectToDatabase();
-    if (adManaged($conn, 'user_id', (int)($id ?? 0))) throw new AdFailure('Manage enrolled directory identities through AD administration.');
 
     // Email must be unique within users, and must not collide with an analyst account
     $analystStmt = $conn->prepare("SELECT id FROM analysts WHERE LOWER(email) = ?");

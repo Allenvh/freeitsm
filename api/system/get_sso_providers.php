@@ -15,8 +15,9 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+require_once '../../includes/native_ldap_admin.php';
 try {
-    $conn = connectToDatabase();
+    $conn = nativeLdapRequireAdmin();
 
     $stmt = $conn->query(
         "SELECT p.id, p.display_name, p.protocol, p.issuer_url, p.client_id, p.client_secret,
@@ -27,9 +28,17 @@ try {
           ORDER BY p.sort_order, p.display_name"
     );
 
+    // LDAP rows use upstream's auth_providers namespace; secrets never leave the server.
+    $ldapRows = [];
+    foreach ($conn->query("SELECT * FROM auth_providers WHERE protocol='ldap'")->fetchAll(PDO::FETCH_ASSOC) as $ldap) {
+        $id=(int)$ldap['id'];
+        foreach ($ldap as $key=>$value) if (str_starts_with($key,'ldap_') && $key!=='ldap_bind_password') $ldapRows[$id][$key]=$value;
+        $ldapRows[$id]['has_bind_password']=!empty($ldap['ldap_bind_password']);
+        $ldapRows[$id]['auto_create_analysts']=(int)$ldap['auto_create_analysts'];
+    }
     $providers = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $providers[] = [
+        $providers[] = ($ldapRows[(int)$r['id']] ?? []) + [
             'id'                => (int)$r['id'],
             'display_name'      => $r['display_name'],
             'protocol'          => $r['protocol'],

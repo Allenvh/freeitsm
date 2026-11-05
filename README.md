@@ -94,11 +94,11 @@ A comprehensive web-based IT Service Management (ITSM) platform with 17 integrat
 
 ---
 
-## Corporate Active Directory
+## LDAP / Active Directory
 
-Native LDAPS/StartTLS sign in, corporate email verification, immutable employee identity links, and Security Group permissions are available alongside local and OpenID Connect authentication. A single domain is sufficient; mirrored additional authentication domains are optional and disabled by default. Keycloak is not required.
+This fork uses upstream FreeITSM's native LDAP authentication core alongside local and OpenID Connect sign-in. Configure directories under **System → Authentication / SSO**; employees use the normal login pages. The former custom mirrored-domain/authorization-authority feature is retired.
 
-See [Active Directory deployment and security](docs/active-directory.md) for migrations, provider configuration, enterprise CA trust, Guest access, permission refresh, diagnostics and tests.
+See [Native LDAP configuration and migration](docs/active-directory.md) before upgrading existing custom AD accounts. The migration preserves user IDs and ticket history, retains archived legacy tables, and imports directories disabled for review. Existing IMAP/SMTP and local deployment changes remain intact.
 
 ## 🚀 Quick Start
 

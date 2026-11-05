@@ -63,6 +63,9 @@ try {
     $_SESSION['analyst_email'] = $_SESSION['mfa_pending_email'];
     $_SESSION['allowed_modules'] = $_SESSION['mfa_pending_allowed_modules'];
 
+    if (!empty($_SESSION['mfa_pending_ldap_provider_id'])) $_SESSION['ldap_analyst_provider_id'] = (int)$_SESSION['mfa_pending_ldap_provider_id'];
+    unset($_SESSION['mfa_pending_ldap_provider_id']);
+
     // Clear pending state
     unset($_SESSION['mfa_pending_analyst_id']);
     unset($_SESSION['mfa_pending_username']);

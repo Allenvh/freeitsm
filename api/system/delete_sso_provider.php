@@ -26,7 +26,13 @@ if ($id <= 0) {
 }
 
 try {
-    $conn = connectToDatabase();
+    require_once '../../includes/native_ldap_admin.php';
+    $conn = nativeLdapRequireAdmin(true);
+    $check=$conn->prepare("SELECT protocol FROM auth_providers WHERE id=?");$check->execute([$id]);
+    if($check->fetchColumn()==='ldap'){
+        $check=$conn->prepare('SELECT (SELECT COUNT(*) FROM analysts WHERE auth_provider_id=?)+(SELECT COUNT(*) FROM users WHERE auth_provider_id=?)');$check->execute([$id,$id]);
+        if($check->fetchColumn())throw new RuntimeException('Reassign directory accounts before deleting this provider.');
+    }
     $stmt = $conn->prepare("DELETE FROM auth_providers WHERE id = ?");
     $stmt->execute([$id]);
     echo json_encode(['success' => true]);

@@ -68,9 +68,9 @@ return [
         'security_title'    => 'Security',
         'security_desc'     => 'Configure trusted device policies, password expiry, and account lockout settings.',
         'security_keywords' => 'security password expiry lockout trusted device mfa 2fa login policy brute force',
-        'sso_title'         => 'Single Sign-On',
-        'sso_desc'          => 'Connect external identity providers (OpenID Connect) such as Keycloak, Entra, Okta or Google so users can sign in with SSO.',
-        'sso_keywords'      => 'sso single sign-on single sign on oidc openid connect saml identity provider idp keycloak entra azure ad okta google oauth federation login',
+        'sso_title'         => 'Authentication',
+        'sso_desc'          => 'Configure local, OpenID Connect, and native LDAP / Active Directory sign-in.',
+        'sso_keywords'      => 'authentication ldap active directory openldap sso single sign-on oidc openid connect identity provider keycloak entra okta google oauth login',
         'preferences_title' => 'Preferences',
         'preferences_desc'  => 'Personal settings like notification position. These are saved per-browser and apply only to you.',
         'preferences_keywords' => 'preferences personal settings notifications toast position per-browser',
@@ -372,11 +372,11 @@ return [
 
     // Single sign-on page (system/sso/index.php)
     'sso' => [
-        'title'    => 'Single sign-on',
-        'subtitle' => 'Let users sign in through an external identity provider (OpenID Connect) such as Keycloak, Microsoft Entra, Okta or Google — alongside local accounts.',
+        'title'    => 'Authentication',
+        'subtitle' => 'Configure OpenID Connect single sign-on and native LDAP / Active Directory alongside local accounts.',
 
         'global_heading' => 'Global settings',
-        'global_desc'    => 'Master controls for sign-on across the whole system.',
+        'global_desc'    => 'These switches control the OIDC buttons and local password form. Native LDAP directories have their own Enabled setting below.',
         'enable_sso'     => 'Enable single sign-on',
         'enable_sso_desc'=> 'Show the configured provider buttons on the login page. Turn off to instantly fall back to local logins everywhere (break-glass).',
         'allow_local'    => 'Allow local login',

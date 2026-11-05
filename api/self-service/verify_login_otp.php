@@ -53,6 +53,8 @@ try {
     $_SESSION['ss_user_id'] = (int)$_SESSION['mfa_pending_ss_user_id'];
     $_SESSION['ss_user_email'] = $_SESSION['mfa_pending_ss_email'];
     $_SESSION['ss_user_name'] = $_SESSION['mfa_pending_ss_name'];
+    $_SESSION['ldap_user_provider_id'] = $_SESSION['mfa_pending_ss_ldap_provider_id'] ?? null;
+    unset($_SESSION['mfa_pending_ss_ldap_provider_id']);
 
     // Clear pending state
     unset(

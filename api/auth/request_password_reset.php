@@ -11,7 +11,7 @@ session_start(['read_and_close' => true]);
 header('Content-Type: application/json');
 
 require_once '../../config.php';
-require_once '../../includes/ad/bootstrap.php';
+require_once '../../includes/ldap_transition.php';
 require_once '../../includes/encryption.php';
 
 try {
@@ -28,14 +28,14 @@ try {
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Look up analyst by username or email
-    $stmt = $conn->prepare("SELECT id, username, email, full_name FROM analysts WHERE (username = ? OR email = ?) AND is_active = 1");
+    $stmt = $conn->prepare("SELECT id, username, email, full_name, auth_provider_id FROM analysts WHERE (username = ? OR email = ?) AND is_active = 1");
     $stmt->execute([$identifier, $identifier]);
     $analyst = $stmt->fetch(PDO::FETCH_ASSOC);
 
     // Always show the same message whether the account exists or not (prevent enumeration)
     $genericMessage = 'If an account with that username or email exists, a password reset link has been sent.';
 
-    if (!$analyst || empty($analyst['email']) || adManaged($conn, 'analyst_id', (int)$analyst['id'])) {
+    if (!$analyst || empty($analyst['email']) || !empty($analyst['auth_provider_id']) || legacyAdMigrationPending($conn,'analyst_id',(int)$analyst['id'])) {
         echo json_encode(['success' => true, 'message' => $genericMessage]);
         exit;
     }

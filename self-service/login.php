@@ -12,6 +12,7 @@ if (isset($_SESSION['ss_user_id'])) {
 
 require_once '../config.php';
 require_once '../includes/functions.php';
+require_once '../includes/ldap.php';
 require_once '../includes/tenancy.php';
 require_once '../includes/i18n.php';
 I18n::initFromSession();
@@ -38,7 +39,7 @@ try {
         // Only GLOBAL providers are shown up front (single-company installs).
         // On a multi-tenant install we never list providers up front — the
         // email-first router reveals only the requester's own company's IdP(s).
-        $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
+        $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND protocol = 'oidc' AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
     }
     $multiTenant = isMultiTenant($ssoConn);
 } catch (Exception $e) { $ssoProviders = []; }
@@ -47,7 +48,7 @@ try {
 $ssoActive = $ssoOn && ($multiTenant || !empty($ssoProviders));
 // Break-glass: ?local=1 always reveals the local form, even when local login is "off".
 $forceLocal   = isset($_GET['local']);
-$localAllowed = $localOn || $forceLocal;
+$localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortalProviders($ssoConn)));
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
@@ -205,7 +206,6 @@ $localAllowed = $localOn || $forceLocal;
 </head>
 <body>
     <div class="login-container">
-        <p><a href="../ad-login.php">Corporate Active Directory sign in or registration</a></p>
         <div class="login-header">
             <img src="../assets/images/CompanyLogo.png" alt="Company Logo">
             <h1><?php echo htmlspecialchars(t('self-service.login.heading')); ?></h1>
@@ -218,8 +218,8 @@ $localAllowed = $localOn || $forceLocal;
         <div id="loginSection">
             <form id="loginForm" onsubmit="return handleLogin(event)" autocomplete="off">
                 <div class="form-group">
-                    <label for="email"><?php echo htmlspecialchars(t('self-service.login.email')); ?></label>
-                    <input type="email" id="email" required autofocus autocomplete="off">
+                    <label for="email">Email or directory username</label>
+                    <input type="text" id="email" required autofocus autocomplete="off">
                 </div>
                 <div class="form-group" id="passwordGroup"<?php if ($ssoActive): ?> style="display:none;"<?php endif; ?>>
                     <label for="password"><?php echo htmlspecialchars(t('self-service.login.password')); ?></label>

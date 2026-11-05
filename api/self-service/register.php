@@ -6,7 +6,7 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
-require_once '../../includes/ad/bootstrap.php';
+require_once '../../includes/ldap_transition.php';
 
 header('Content-Type: application/json');
 
@@ -44,12 +44,9 @@ if ($password !== $confirmPassword) {
 
 try {
     $conn = connectToDatabase();
-    if (adManaged($conn, 'email', $email)) throw new AdFailure('Use corporate Active Directory sign in.');
-    try {
-        $cfg = adService()->settings();
-        $domains = json_decode($cfg['allowed_domains'], true);
-        if ($cfg['enabled'] && in_array(explode('@', $email)[1], $domains, true)) throw new AdFailure('Use corporate registration with email verification.');
-    } catch (PDOException $e) { if ($e->getCode() !== '42S02') throw $e; }
+    if (legacyAdMigrationPending($conn,'email',$email)) throw new RuntimeException('Account requires administrator review.');
+    $assigned=$conn->prepare('SELECT auth_provider_id FROM users WHERE email=?');$assigned->execute([$email]);
+    if ($assigned->fetchColumn()) throw new RuntimeException('Use your assigned directory or identity provider.');
     $hash = password_hash($password, PASSWORD_BCRYPT);
 
     // Check if email belongs to an analyst account

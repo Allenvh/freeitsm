@@ -133,7 +133,6 @@ $translationNamespaces = ['common', 'self-service'];
 </head>
 <body>
     <div class="login-container">
-        <p><a href="../ad-login.php">Register with corporate email</a></p>
         <div class="login-header">
             <img src="../assets/images/CompanyLogo.png" alt="Company Logo">
             <h1><?php echo htmlspecialchars(t('self-service.register.heading')); ?></h1>
