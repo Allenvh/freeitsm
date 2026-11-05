@@ -8,7 +8,6 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
-require_once '../../includes/ad/bootstrap.php';
 
 header('Content-Type: application/json');
 
@@ -27,7 +26,6 @@ if ($id <= 0) {
 
 try {
     $conn = connectToDatabase();
-    if (adManaged($conn, 'user_id', (int)($id ?? 0))) throw new AdFailure('Manage enrolled directory identities through AD administration.');
 
     $stmt = $conn->prepare("SELECT COUNT(*) FROM tickets WHERE user_id = ?");
     $stmt->execute([$id]);

@@ -5,7 +5,8 @@
 session_start();
 require_once 'config.php';
 require_once 'includes/functions.php';
-require_once 'includes/ad/bootstrap.php';
+require_once 'includes/ldap.php';
+require_once 'includes/ldap_transition.php';
 
 // An SSO sign-in attempt that failed bounces back here with a message.
 $sso_error = $_SESSION['sso_error'] ?? null;
@@ -171,18 +172,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Falls back to basic query if security columns don't exist yet (pre db-verify)
             try {
                 $sql = "SELECT id, username, password_hash, full_name, email, totp_enabled,
-                               locked_until, failed_login_count, trust_device_enabled, password_changed_datetime
+                               locked_until, failed_login_count, trust_device_enabled, password_changed_datetime, auth_provider_id
                         FROM analysts WHERE username = ? AND is_active = 1";
                 $stmt = $conn->prepare($sql);
                 $stmt->execute([$username]);
             } catch (Exception $colEx) {
-                $sql = "SELECT id, username, password_hash, full_name, email, totp_enabled
+                $sql = "SELECT id, username, password_hash, full_name, email, totp_enabled, auth_provider_id
                         FROM analysts WHERE username = ? AND is_active = 1";
                 $stmt = $conn->prepare($sql);
                 $stmt->execute([$username]);
             }
             $analyst = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($analyst && adManaged($conn, 'analyst_id', (int)$analyst['id'])) $analyst = false;
+            if ($analyst && legacyAdMigrationPending($conn,'analyst_id',(int)$analyst['id'])) throw new RuntimeException('Legacy account requires migration.');
 
             // Check account lockout
             if ($analyst && !empty($analyst['locked_until'])) {
@@ -204,7 +205,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            if (empty($error) && $analyst && password_verify($password, $analyst['password_hash'])) {
+            $authOk           = false;
+            $ldapProviderUsed = null;
+            $ldapCandidates   = [];
+
+            if (empty($error)) {
+                $assignedProviderId = (int)($analyst['auth_provider_id'] ?? 0);
+
+                if ($analyst && $assignedProviderId > 0) {
+                    // ldapGetProvider() returns null for a non-LDAP provider, which
+                    // is how an OIDC-assigned analyst is kept off this form.
+                    $assigned = ldapGetProvider($conn, $assignedProviderId);
+                    if ($assigned && (int)$assigned['enabled'] === 1) {
+                        $ldapCandidates = [$assigned];
+                    } else {
+                        $error = 'This account signs in with single sign-on. Please use the sign-in button above.';
+                    }
+
+                } elseif ($analyst) {
+                    $authOk = password_verify($password, $analyst['password_hash']);
+
+                } else {
+                    $ldapCandidates = ldapAnalystProviders($conn);
+                }
+            }
+
+            // Both directory cases run the same resolve/link/JIT path, so the
+            // first login and every later one behave identically.
+            foreach ($ldapCandidates as $ldapProvider) {
+                $res = ldapAuthenticate($ldapProvider, $username, $password);
+                if (!$res['ok']) {
+                    continue; // wrong password, or this directory doesn't know them
+                }
+
+                // The password is right — but that alone must not grant analyst
+                // access, or every employee in the directory becomes an analyst
+                // (GitHub #47). The configured groups decide.
+                $role = ldapAccessRole($ldapProvider, $res['user']);
+                if ($role !== 'analyst') {
+                    $error = ($role === 'user')
+                        // Correct credentials, wrong portal: point them somewhere useful.
+                        ? 'Your account does not have analyst access. Please use the self-service portal.'
+                        : 'Your account is not a member of a group that grants access to FreeITSM.';
+                    logLoginAttempt($conn, null, $username, false);
+                    break;
+                }
+
+                $resolved = ldapResolveAnalyst($conn, $ldapProvider, $res['user']);
+                if (!$resolved['ok']) {
+                    $error = $resolved['error'];
+                    break;
+                }
+                $reload = $conn->prepare(
+                    "SELECT id, username, password_hash, full_name, email, totp_enabled,
+                            locked_until, failed_login_count, trust_device_enabled,
+                            password_changed_datetime, auth_provider_id
+                       FROM analysts WHERE id = ? AND is_active = 1"
+                );
+                $reload->execute([$resolved['analyst_id']]);
+                $analyst = $reload->fetch(PDO::FETCH_ASSOC) ?: null;
+                if ($analyst) {
+                    $authOk           = true;
+                    $ldapProviderUsed = $ldapProvider;
+                }
+                break; // the directory answered; do not try the others
+            }
+
+            // A directory-backed analyst has no usable local password, so local
+            // password expiry must never apply to them — force_password_change.php
+            // would ask them to change a password that does not exist.
+            $skipPasswordExpiry = ($ldapProviderUsed !== null);
+
+            if (empty($error) && $analyst && $authOk) {
                 // Reset failed login counter on success
                 if (!empty($analyst['failed_login_count'])) {
                     try {
@@ -234,6 +306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['analyst_username'] = $analyst['username'];
                         $_SESSION['analyst_name'] = $analyst['full_name'];
                         $_SESSION['analyst_email'] = $analyst['email'];
+                    if ($ldapProviderUsed) $_SESSION['ldap_analyst_provider_id'] = (int)$ldapProviderUsed['id'];
 
                         $updateSql = "UPDATE analysts SET last_login_datetime = UTC_TIMESTAMP() WHERE id = ?";
                         $updateStmt = $conn->prepare($updateSql);
@@ -243,7 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         logLoginAttempt($conn, $analyst['id'], $username, true);
 
                         // Check password expiry
-                        if (isset($analyst['password_changed_datetime']) && isPasswordExpired($conn, $analyst['password_changed_datetime'])) {
+                        if (!$skipPasswordExpiry && isset($analyst['password_changed_datetime']) && isPasswordExpired($conn, $analyst['password_changed_datetime'])) {
                             $_SESSION['password_expired'] = true;
                             header('Location: force_password_change.php');
                         } else {
@@ -260,6 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['mfa_pending_username'] = $analyst['username'];
                     $_SESSION['mfa_pending_name'] = $analyst['full_name'];
                     $_SESSION['mfa_pending_email'] = $analyst['email'];
+                    if ($ldapProviderUsed) $_SESSION['mfa_pending_ldap_provider_id'] = (int)$ldapProviderUsed['id'];
                     $_SESSION['mfa_pending_allowed_modules'] = getAnalystAllowedModules($conn, $analyst['id']);
 
                     // Log successful password step
@@ -275,6 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['analyst_username'] = $analyst['username'];
                     $_SESSION['analyst_name'] = $analyst['full_name'];
                     $_SESSION['analyst_email'] = $analyst['email'];
+                    if ($ldapProviderUsed) $_SESSION['ldap_analyst_provider_id'] = (int)$ldapProviderUsed['id'];
 
                     // Update last login time
                     $updateSql = "UPDATE analysts SET last_login_datetime = UTC_TIMESTAMP() WHERE id = ?";
@@ -288,7 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     logLoginAttempt($conn, $analyst['id'], $username, true);
 
                     // Check password expiry
-                    if (isset($analyst['password_changed_datetime']) && isPasswordExpired($conn, $analyst['password_changed_datetime'])) {
+                    if (!$skipPasswordExpiry && isset($analyst['password_changed_datetime']) && isPasswordExpired($conn, $analyst['password_changed_datetime'])) {
                         $_SESSION['password_expired'] = true;
                         header('Location: force_password_change.php');
                     } else {
@@ -323,7 +398,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } catch (Exception $e) {
             if ($e->getMessage() !== '__ip_banned__') {
-                $error = 'Login error: ' . $e->getMessage();
+                $error = 'Sign in failed. Check your credentials or contact an administrator.';
             }
         }
     }
@@ -551,7 +626,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-container">
-        <p><a href="ad-login.php">Sign in with corporate Active Directory</a></p>
         <div class="login-header">
             <img src="assets/images/CompanyLogo.png" alt="Company Logo">
             <?php if ($mfa_required): ?>
@@ -647,14 +721,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Only GLOBAL providers (tenant_id IS NULL) belong on the analyst
                     // login — tenant-scoped providers are client companies' own IdPs
                     // for the self-service portal, not for MSP staff.
-                    $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
+                    $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND protocol = 'oidc' AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
                 }
             } catch (Exception $e) { $ssoProviders = []; }
             $ssoActive = $ssoOn && !empty($ssoProviders);
             // Break-glass: ?local=1 always reveals the local form, even when local login is "off".
             $forceLocal = isset($_GET['local']);
             // Is local login permitted at all (for the reveal link / email-first fallback)?
-            $localAllowed = $localOn || $forceLocal;
+            $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapAnalystProviders($ssoConn)));
             $divider = 'display:flex;align-items:center;gap:10px;margin:20px 0 14px;color:#9aa;font-size:12px;';
             ?>
 
@@ -677,14 +751,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endforeach; ?>
 
                 <?php if ($localAllowed): ?>
-                    <a href="#" id="showLocalLink" class="forgot-link" style="display:block;margin-top:14px;">Sign in with a local account</a>
+                    <a href="#" id="showLocalLink" class="forgot-link" style="display:block;margin-top:14px;">Sign in with a password (local or directory)</a>
                 <?php endif; ?>
 
                 <!-- Local account sign-in lives in its own modal when SSO is leading -->
                 <div class="modal-overlay" id="localModal">
                     <div class="modal-box">
                         <button type="button" class="modal-close" id="localModalClose" aria-label="Close">&times;</button>
-                        <h2>Local account</h2>
+                        <h2>Password sign-in</h2>
                         <?php if ($error): ?>
                             <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
                         <?php endif; ?>

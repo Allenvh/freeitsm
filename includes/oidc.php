@@ -58,7 +58,7 @@ function oidcGetProvider(PDO $conn, int $id): ?array {
     $stmt = $conn->prepare("SELECT * FROM auth_providers WHERE id = ?");
     $stmt->execute([$id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$row) return null;
+    if (!$row || ($row['protocol'] ?? 'oidc') !== 'oidc') return null;
     $row['client_secret'] = decryptValue($row['client_secret']);
     return $row;
 }

@@ -10,6 +10,10 @@ I18n::initFromSession();
 
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/ldap.php';
+require_once '../../includes/native_ldap_admin.php';
+try { nativeLdapRequireAdmin(); } catch (Throwable $e) { http_response_code(403); exit('Administrator access required.'); }
+$nativeCsrf = nativeLdapCsrf();
 
 $current_page = 'sso';
 $path_prefix = '../../';
@@ -177,6 +181,8 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
         </div>
     </div>
 
+    <?php include '../../includes/sso_ldap_panel.php'; ?>
+
     <!-- Add/Edit modal -->
     <div class="sso-modal-overlay" id="providerModal">
         <div class="sso-modal">
@@ -249,7 +255,8 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
         </div>
     </div>
 
-    <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+    <script>
+const NATIVE_LDAP_CSRF = <?= json_encode($nativeCsrf) ?>;window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
     <script src="../../assets/js/i18n.js"></script>
     <script>
     const API = '<?php echo $path_prefix; ?>api/';
@@ -276,7 +283,7 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
         };
         try {
             const r = await fetch(API + 'settings/save_system_settings.php', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': NATIVE_LDAP_CSRF },
                 body: JSON.stringify({ settings })
             });
             const d = await r.json();
@@ -313,7 +320,7 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
             <tr>
                 <td><strong>${esc(p.display_name)}</strong></td>
                 ${MULTI_TENANT ? `<td>${p.tenant_name ? esc(p.tenant_name) : '<span style="color:#999;">' + window.t('system.sso.global_badge') + '</span>'}</td>` : ''}
-                <td class="issuer-cell" title="${esc(p.issuer_url)}">${esc(p.issuer_url)}</td>
+                <td class="issuer-cell" title="${esc(p.issuer_url)}">${esc(p.protocol === 'ldap' ? ('LDAP: ' + p.ldap_host) : p.issuer_url)}</td>
                 <td><span class="status-badge ${p.enabled ? 'on' : 'off'}">${p.enabled ? window.t('system.sso.enabled') : window.t('system.sso.disabled')}</span></td>
                 <td>${p.auto_create_users ? '<span class="badge-jit">' + window.t('system.sso.jit_on') + '</span>' : '<span style="color:#bbb;">' + window.t('system.sso.jit_off') + '</span>'}</td>
                 <td style="text-align:right;">
@@ -326,6 +333,7 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
     // ---------- Modal ----------
     const modal = document.getElementById('providerModal');
     function openModal(p) {
+        if (p && p.protocol === 'ldap') { openLdapModal(p); return; }
         document.getElementById('testResult').className = 'test-result';
         document.getElementById('modalTitle').textContent = p ? window.t('system.sso.modal_edit_title') : window.t('system.sso.modal_add_title');
         document.getElementById('providerId').value = p ? p.id : '';
@@ -371,7 +379,7 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
         this.disabled = true; box.className = 'test-result'; box.textContent = '';
         try {
             const r = await fetch(API + 'system/test_oidc_discovery.php', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': NATIVE_LDAP_CSRF },
                 body: JSON.stringify({ issuer_url: issuer })
             });
             const d = await r.json();
@@ -410,7 +418,7 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
         this.disabled = true;
         try {
             const r = await fetch(API + 'system/save_sso_provider.php', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': NATIVE_LDAP_CSRF },
                 body: JSON.stringify(payload)
             });
             const d = await r.json();
@@ -433,7 +441,7 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
         if (!ok) return;
         try {
             const r = await fetch(API + 'system/delete_sso_provider.php', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': NATIVE_LDAP_CSRF },
                 body: JSON.stringify({ id })
             });
             const d = await r.json();

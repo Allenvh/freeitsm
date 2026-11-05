@@ -27,6 +27,23 @@ if (!is_array($data)) {
     exit;
 }
 
+require_once '../../includes/native_ldap_admin.php';
+try { nativeLdapRequireAdmin(true); } catch (Throwable $e) { http_response_code(403); echo json_encode(['success'=>false,'error'=>$e->getMessage()]); exit; }
+if (($data['protocol'] ?? 'oidc') === 'ldap') {
+    try {
+        require_once '../../includes/native_ldap_provider.php';
+        $id = saveNativeLdapProvider(connectToDatabase(), $data);
+        echo json_encode(['success'=>true,'id'=>$id]);
+    } catch (Throwable $e) { echo json_encode(['success'=>false,'error'=>$e->getMessage()]); }
+    exit;
+}
+// An OIDC edit must never overwrite a directory's configuration.
+if (!empty($data['id'])) {
+    $check = connectToDatabase()->prepare('SELECT protocol FROM auth_providers WHERE id=?');
+    $check->execute([(int)$data['id']]);
+    if ($check->fetchColumn() !== 'oidc') { echo json_encode(['success'=>false,'error'=>'Edit LDAP providers using the LDAP form.']); exit; }
+}
+
 // --- Validate required fields ---
 $displayName = trim($data['display_name'] ?? '');
 $issuerUrl   = trim($data['issuer_url'] ?? '');

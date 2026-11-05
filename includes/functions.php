@@ -36,18 +36,13 @@ function getAnalystAllowedModules($conn, $analyst_id) {
  * Null still means unrestricted/full access for backwards compatibility.
  */
 function getAnalystEffectiveModules($conn, $analyst_id) {
-    // AD-managed analysts use only the authoritative directory result. The legacy
-    // empty-means-all and automatic system access rules must never apply to AD.
+    $explicit = null;
     try {
-        $ad = $conn->prepare("SELECT authorization_status, authorization_json FROM ad_profiles WHERE analyst_id = ?");
-        $ad->execute([$analyst_id]);
-        if ($profile = $ad->fetch(PDO::FETCH_ASSOC)) {
-            return $profile['authorization_status'] === 'current'
-                ? (json_decode($profile['authorization_json'] ?? '{}', true)['modules'] ?? []) : [];
-        }
-    } catch (PDOException $e) {
-        if ($e->getCode() !== '42S02') throw $e; // unmigrated legacy installs only
-    }
+        $flag = $conn->prepare('SELECT can_access_all_modules FROM analysts WHERE id=?');
+        $flag->execute([$analyst_id]);
+        $explicit = $flag->fetchColumn();
+        if ($explicit !== null && $explicit !== false && (int)$explicit === 1) return null;
+    } catch (PDOException $e) { if ($e->getCode() !== '42S22') throw $e; }
     $sql = "SELECT module_key FROM analyst_modules WHERE analyst_id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->execute([$analyst_id]);
@@ -67,6 +62,8 @@ function getAnalystEffectiveModules($conn, $analyst_id) {
     }
 
     $rows = array_values(array_unique(array_filter($rows)));
+    if ($explicit !== null && $explicit !== false) return $rows;
+
     if (empty($rows)) {
         return null; // No restrictions — full access
     }

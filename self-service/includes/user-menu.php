@@ -248,9 +248,6 @@ if (count($_um_parts) > 1) {
         <?php echo htmlspecialchars($_um_initials); ?>
     </div>
     <div class="ss-user-menu" id="ssUserMenu">
-        <?php if (!empty($_SESSION['ad_profile_id'])): ?>
-        <a href="<?php echo BASE_URL; ?>ad-permissions.php">Refresh My Permissions</a>
-        <?php endif; ?>
         <div class="ss-menu-header">
             <div class="ss-menu-name"><?php echo htmlspecialchars($ss_user_name); ?></div>
             <div class="ss-menu-email"><?php echo htmlspecialchars($ss_user_email); ?></div>

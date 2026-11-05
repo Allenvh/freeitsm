@@ -178,10 +178,6 @@ $translationNamespaces = ['common', 'system'];
             </div>
 
             <div class="system-cards" id="systemCards">
-                <a href="active-directory/" class="system-card" data-search="active directory ldap security authorization permissions">
-                    <h3>Active Directory &amp; User Authorization</h3>
-                    <p>Corporate sign in, optional additional domains, and permission diagnostics.</p>
-                </a>
                 <!-- Help is rendered directly (not from the areas registry) so it
                      appears here but never recurses onto the help landing. -->
                 <a href="help/" class="system-card system-card--help"

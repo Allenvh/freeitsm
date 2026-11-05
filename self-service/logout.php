@@ -6,14 +6,13 @@
  * (single logout), then returns to the portal login page.
  */
 session_start();
-if (!empty($_SESSION['ad_profile_id'])) { $_SESSION = []; session_destroy(); header('Location: ../ad-login.php'); exit; }
 
 // Capture any SSO context before we clear it.
 $ssoProviderId = $_SESSION['ss_sso_provider_id'] ?? null;
 $ssoIdToken    = $_SESSION['ss_sso_id_token'] ?? null;
 
 unset(
-    $_SESSION['ss_user_id'],
+    $_SESSION['ss_user_id'], $_SESSION['ldap_user_provider_id'], $_SESSION['mfa_pending_ss_ldap_provider_id'],
     $_SESSION['ss_user_email'],
     $_SESSION['ss_user_name'],
     $_SESSION['ss_sso_provider_id'],
