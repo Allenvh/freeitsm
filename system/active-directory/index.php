@@ -3,8 +3,32 @@ session_start();
 require_once '../../config.php';
 require_once '../../includes/ad/Admin.php';
 header('Cache-Control: no-store');
-$s = adService();
+if (empty($_SESSION['analyst_id'])) adDeny('Administrator access required.');
+try { $s = adService(); } catch (PDOException $e) { adDeny('Database connection unavailable. Check the application database configuration.', 503); }
 try { adRequireAdmin($s); } catch (Throwable $e) { adDeny('Administrator access required.'); }
+// Upgrades may deploy the PHP files before running the additive database migration.
+// Check the entire AD schema before rendering forms or accepting configuration writes.
+try {
+    foreach (['ad_settings', 'ad_providers', 'ad_profiles', 'ad_identities', 'ad_group_mappings', 'ad_verifications', 'ad_rate_limits', 'ad_audit'] as $table) {
+        $s->query("SELECT 1 FROM $table LIMIT 0");
+    }
+    if (!$s->settings()) throw new AdFailure('ad_settings_missing');
+} catch (Throwable $e) {
+    $missingSchema = $e instanceof AdFailure || ($e instanceof PDOException && in_array($e->getCode(), ['42S02', '42S22'], true));
+    http_response_code(503);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Active Directory setup required</title></head><body><main>';
+    if ($missingSchema) {
+        echo '<h1>Active Directory database setup required</h1>';
+        echo '<p>The Active Directory database migration has not been completed. The configuration page will be available after it runs.</p>';
+        echo '<p>Open <a href="' . htmlspecialchars(BASE_URL . 'setup/', ENT_QUOTES) . '">Setup</a> and run <strong>DB Verify</strong>, or apply <code>database/migrations/20261103_active_directory.sql</code> using your deployment tooling.</p>';
+        echo '<p>Back up the database before applying migrations. Reload this page afterward.</p>';
+    } else {
+        echo '<h1>Active Directory configuration unavailable</h1><p>The database could not be read. Check database connectivity and permissions, then retry.</p>';
+    }
+    echo '<p><a href="' . htmlspecialchars(BASE_URL . 'system/', ENT_QUOTES) . '">Return to System</a></p></main></body></html>';
+    exit;
+}
 $error = ''; $message = $_SESSION['ad_admin_message'] ?? ''; unset($_SESSION['ad_admin_message']);
 try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
