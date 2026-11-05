@@ -168,7 +168,10 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
                     <h3 style="margin:0;"><?php echo htmlspecialchars(t('system.sso.providers_heading')); ?></h3>
                     <p class="card-desc" style="margin:4px 0 0;"><?php echo htmlspecialchars(t('system.sso.providers_desc')); ?></p>
                 </div>
-                <button class="add-btn" id="addProviderBtn"><?php echo htmlspecialchars(t('system.sso.add')); ?></button>
+                <div style="display:flex;gap:8px">
+                    <button class="add-btn" id="addProviderBtn">+ Add OIDC</button>
+                    <button class="add-btn" id="addLdapProviderBtn">+ Add LDAP</button>
+                </div>
             </div>
             <table class="providers">
                 <thead>
@@ -179,9 +182,9 @@ $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_U
                 </tbody>
             </table>
         </div>
-    </div>
 
-    <?php include '../../includes/sso_ldap_panel.php'; ?>
+        <?php include '../../includes/sso_ldap_panel.php'; ?>
+    </div>
 
     <!-- Add/Edit modal -->
     <div class="sso-modal-overlay" id="providerModal">
