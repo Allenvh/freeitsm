@@ -50,6 +50,9 @@ try {
             $mailbox['decrypt_error_message'] = $e->getMessage();
         }
 
+        // Editing never needs either password; blank password inputs preserve the stored secret.
+        unset($mailbox['imap_password_encrypted'], $mailbox['smtp_password_encrypted']);
+
         // Convert numeric fields to integers
         $mailbox['id'] = (int)$mailbox['id'];
         $mailbox['imap_port'] = (int)$mailbox['imap_port'];

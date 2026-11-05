@@ -1,12 +1,10 @@
 <?php
 class SmtpMailer {
     public static function test(array $mailbox): bool {
-        $host = $mailbox['smtp_host'] ?? '';
-        $port = (int)($mailbox['smtp_port'] ?? 587);
-        $transport = (($mailbox['smtp_encryption'] ?? 'tls') === 'ssl') ? 'ssl://' : '';
-        $fp = @fsockopen($transport . $host, $port, $errno, $errstr, 10);
-        if (!$fp) throw new Exception("SMTP connection failed: $errstr");
-        fclose($fp); return true;
+        $fp = self::connect($mailbox);
+        try { self::command($fp, 'QUIT', [221]); }
+        finally { fclose($fp); }
+        return true;
     }
 
     public static function sendReadiness(array $mailbox): array {
@@ -52,7 +50,7 @@ class SmtpMailer {
         throw new Exception('Mailbox "' . ($mailbox['target_mailbox'] ?? $readiness['smtp_from_address']) . '" is not SMTP send-capable: ' . implode(', ', $missing));
     }
 
-    public static function send(array $mailbox, string $to, string $subject, string $htmlBody, string $cc = ''): bool {
+    private static function connect(array $mailbox) {
         self::assertSendReady($mailbox);
 
         $host = trim((string)$mailbox['smtp_host']);
@@ -82,6 +80,16 @@ class SmtpMailer {
                 self::command($fp, base64_encode($password), [235]);
             }
 
+            return $fp;
+        } catch (Throwable $e) {
+            fclose($fp);
+            throw $e;
+        }
+    }
+
+    public static function send(array $mailbox, string $to, string $subject, string $htmlBody, string $cc = ''): bool {
+        $fp = self::connect($mailbox);
+        try {
             $from = trim((string)($mailbox['smtp_from_address'] ?? $mailbox['target_mailbox'] ?? ''));
             $fromName = trim((string)($mailbox['smtp_from_name'] ?? $mailbox['mailbox_name'] ?? $mailbox['name'] ?? ''));
             $recipients = self::parseRecipients($to . ',' . $cc);
@@ -160,7 +168,7 @@ class SmtpMailer {
 
         $code = (int)substr($response, 0, 3);
         if (!in_array($code, $expected, true)) {
-            throw new Exception('SMTP command failed: ' . trim($response));
+            throw new Exception('SMTP command failed (response code ' . $code . ').');
         }
         return $response;
     }

@@ -8,6 +8,7 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
 require_once '../../includes/mailbox_graph.php';
+require_once '../../includes/mail/MailboxProviderFactory.php';
 
 header('Content-Type: application/json');
 
@@ -39,6 +40,13 @@ try {
     }
 
     $mailbox = decryptMailboxRow($mailbox);
+
+    // Basic IMAP authentication is independent of OAuth and Microsoft Graph.
+    if (MailboxProviderFactory::isImapSmtp($mailbox)) {
+        $client = MailboxProviderFactory::imap($mailbox);
+        echo json_encode(['success' => true, 'folder' => $client->verifyFolder($folderName)]);
+        exit;
+    }
 
     $provider = $mailbox['provider'] ?? 'microsoft';
     $authMode = $mailbox['auth_mode'] ?? 'delegated';
@@ -173,5 +181,6 @@ try {
     }
 
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => isset($mailbox) && MailboxProviderFactory::isImapSmtp($mailbox)
+        ? 'IMAP folder verification failed. Check the folder name, connection settings and credentials.' : $e->getMessage()]);
 }
