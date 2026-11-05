@@ -266,6 +266,7 @@ $translationNamespaces = ['common', 'tickets'];
         <a href="#overview" class="tk-help-nav-link active" data-section="overview">
             <span class="tk-help-nav-num">1</span> Overview
         </a>
+        <a href="#imap-smtp" class="tk-help-nav-link" data-section="imap-smtp">Generic IMAP/SMTP</a>
         <a href="#modes" class="tk-help-nav-link" data-section="modes">
             <span class="tk-help-nav-num">2</span> Delegated vs App-only
         </a>
@@ -300,6 +301,14 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
 
         <div class="tk-help-content">
+
+            <div class="tk-help-section" id="imap-smtp">
+                <h3>Generic IMAP/SMTP — password authentication</h3>
+                <p>This provider does not use OAuth. Leave OAuth client, redirect URI and scope fields empty. Configure IMAP host, port, encryption, username, password and folder independently of SMTP host, port, encryption, username, password and sender address.</p>
+                <p>Saved passwords are encrypted. Leave either password blank when editing to keep its existing value. Verify Folder authenticates to IMAP and checks the requested folder without importing messages; Test SMTP performs the SMTP handshake and authenticates when a username is configured. An unauthenticated relay may leave SMTP username and password blank.</p>
+                <p>For an isolated GreenMail lab, choose None explicitly for plaintext IMAP/SMTP. Use TLS/SSL and trusted certificates for production. Inside a container, 127.0.0.1 means that application container—not the Podman host or GreenMail container. Use an existing reachable container DNS name/internal port or the supported host address and published port.</p>
+                <p>After saving, verify INBOX, run Check Emails to create tickets from unread messages, then send a ticket reply and confirm delivery in the mail client. Folder verification alone does not create tickets.</p>
+            </div>
 
             <!-- 1. Overview -->
             <div class="tk-help-section" id="overview">

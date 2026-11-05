@@ -44,6 +44,6 @@ try {
     error_log('audit: mailbox_connection_test type=imap mailbox_id=' . $id . ' status=connected');
     echo json_encode(['success' => true, 'status' => 'connected']);
 } catch (Exception $e) {
-    error_log('audit: mailbox_connection_test_failed type=imap error=' . $e->getMessage());
+    error_log('audit: mailbox_connection_test_failed type=imap');
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

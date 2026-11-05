@@ -3330,6 +3330,7 @@ $translationNamespaces = ['common', 'tickets'];
             // URI / scopes must stay visible regardless of the (hidden) selector's value.
             const isMicrosoft = document.getElementById('mailboxProvider').value === 'microsoft';
             const isAppOnly = isMicrosoft && document.getElementById('mailboxAuthMode').value === 'app_only';
+            const usesOAuth = document.getElementById('mailboxProvider').value !== 'imap_smtp' && !isAppOnly;
             const help = document.getElementById('mailboxAuthModeHelp');
             if (help) {
                 help.textContent = t(isAppOnly
@@ -3338,13 +3339,13 @@ $translationNamespaces = ['common', 'tickets'];
             }
             const redirectInput = document.getElementById('mailboxRedirectUri');
             const redirectGroup = redirectInput.closest('.form-group');
-            if (redirectGroup) redirectGroup.style.display = isAppOnly ? 'none' : '';
-            redirectInput.required = !isAppOnly;
+            if (redirectGroup) redirectGroup.style.display = usesOAuth ? '' : 'none';
+            redirectInput.required = usesOAuth;
             // A hidden field carrying a custom-validity message can still block submit —
-            // clear it so an app-only mailbox can save without a redirect URI.
-            if (isAppOnly) redirectInput.setCustomValidity('');
+            // clear it so basic/app-only mailboxes can save without a redirect URI.
+            if (!usesOAuth) redirectInput.setCustomValidity('');
             const scopesGroup = document.getElementById('mailboxScopes').closest('.form-group');
-            if (scopesGroup) scopesGroup.style.display = isAppOnly ? 'none' : '';
+            if (scopesGroup) scopesGroup.style.display = usesOAuth ? '' : 'none';
         }
 
         function toggleProviderFields() {
@@ -3376,15 +3377,20 @@ $translationNamespaces = ['common', 'tickets'];
                 : 'xxxxxxxxxx-xxxxxxxxx.apps.googleusercontent.com';
 
             const redirectInput = document.getElementById('mailboxRedirectUri');
-            const expectedCallback = isMicrosoft ? 'oauth_callback.php' : 'google_oauth_callback.php';
-            const otherCallback = isMicrosoft ? 'google_oauth_callback.php' : 'oauth_callback.php';
-            redirectInput.placeholder = getDefaultOAuthRedirectUri(provider);
+            if (!isImapSmtp) {
+                const expectedCallback = isMicrosoft ? 'oauth_callback.php' : 'google_oauth_callback.php';
+                const otherCallback = isMicrosoft ? 'google_oauth_callback.php' : 'oauth_callback.php';
+                redirectInput.placeholder = getDefaultOAuthRedirectUri(provider);
 
-            if (!mailboxId || redirectInput.value.includes(otherCallback)) {
-                redirectInput.value = getDefaultOAuthRedirectUri(provider);
+                if (!mailboxId || redirectInput.value.includes(otherCallback)) {
+                    redirectInput.value = getDefaultOAuthRedirectUri(provider);
+                    redirectInput.setCustomValidity('');
+                } else if (redirectInput.value && !redirectInput.value.includes(expectedCallback)) {
+                    redirectInput.setCustomValidity('OAuth redirect URI must use ' + expectedCallback + ' for this provider.');
+            } else {
                 redirectInput.setCustomValidity('');
-            } else if (redirectInput.value && !redirectInput.value.includes(expectedCallback)) {
-                redirectInput.setCustomValidity('OAuth redirect URI must use ' + expectedCallback + ' for this provider.');
+            }
+
             } else {
                 redirectInput.setCustomValidity('');
             }

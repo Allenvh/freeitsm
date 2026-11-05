@@ -21,11 +21,11 @@ class ImapMailboxClient {
     }
 
     private function host(): string {
-        return (string)($this->mailbox['imap_host'] ?? $this->mailbox['imap_server'] ?? '');
+        return trim((string)($this->mailbox['imap_host'] ?? '')) ?: trim((string)($this->mailbox['imap_server'] ?? ''));
     }
 
     private function username(): string {
-        return (string)($this->mailbox['imap_username'] ?? $this->mailbox['target_mailbox'] ?? '');
+        return trim((string)($this->mailbox['imap_username'] ?? '')) ?: trim((string)($this->mailbox['target_mailbox'] ?? ''));
     }
 
     private function password(): string {
@@ -48,7 +48,7 @@ class ImapMailboxClient {
             'port' => (int)($this->mailbox['imap_port'] ?? 993),
             'protocol' => 'imap',
             'encryption' => $this->encryption(),
-            'validate_cert' => false,
+            'validate_cert' => true,
             'username' => $this->username(),
             'password' => $this->password(),
             'folder' => $this->folderName(),
@@ -58,7 +58,7 @@ class ImapMailboxClient {
     }
 
     private function folderName(): string {
-        return (string)($this->mailbox['imap_folder'] ?? $this->mailbox['email_folder'] ?? 'INBOX');
+        return trim((string)($this->mailbox['imap_folder'] ?? '')) ?: (trim((string)($this->mailbox['email_folder'] ?? '')) ?: 'INBOX');
     }
 
     public function connect(): void {
@@ -72,7 +72,7 @@ class ImapMailboxClient {
         }
 
         $config = $this->resolvedConfig(true);
-        error_log('IMAP resolved config before connect: ' . json_encode($this->resolvedConfig(false)));
+        // Never log connection configuration or library exceptions containing credentials.
 
         $manager = new Webklex\PHPIMAP\ClientManager();
         $this->client = $manager->make($config);
@@ -80,10 +80,23 @@ class ImapMailboxClient {
         try {
             $this->client->connect();
             $this->folder = $this->client->getFolder($this->folderName());
+            if (!$this->folder) throw new RuntimeException('Configured IMAP folder was not found.');
         } catch (Throwable $e) {
             $this->close();
-            throw new RuntimeException('IMAP connection failed: ' . $e->getMessage(), 0, $e);
+            throw new RuntimeException('IMAP connection or folder selection failed. Check connection settings and credentials.', 0, $e);
         }
+    }
+
+    public function verifyFolder(string $name): array {
+        // Use a separate read-only connection; never alter the saved intake folder.
+        $mailbox = $this->mailbox;
+        $mailbox['imap_folder'] = $name;
+        $probe = new self($mailbox);
+        try {
+            $probe->connect();
+            $probe->folder->examine(); // Read-only check of folder accessibility.
+            return ['id' => $name, 'displayName' => $name, 'totalItemCount' => null, 'unreadItemCount' => null];
+        } finally { $probe->close(); }
     }
 
     public function test(): bool { $this->connect(); $this->close(); return true; }
@@ -94,7 +107,7 @@ class ImapMailboxClient {
         try {
             $messages = $this->folder->messages()->unseen()->limit($limit)->get();
         } catch (Throwable $e) {
-            throw new RuntimeException('IMAP fetch failed: ' . $e->getMessage(), 0, $e);
+            throw new RuntimeException('IMAP fetch failed. Check mailbox access and folder settings.', 0, $e);
         }
 
         $out = [];
@@ -141,7 +154,7 @@ class ImapMailboxClient {
                 $message->setFlag('Seen');
             }
         } catch (Throwable $e) {
-            error_log('IMAP mark seen failed: ' . $e->getMessage());
+            error_log('IMAP mark seen failed.');
         }
     }
 
