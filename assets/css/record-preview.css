@@ -1,0 +1,178 @@
+/**
+ * At-a-glance record previews (#91) — the badge and its card.
+ *
+ * ⚠️ Nothing here is scoped to a module. Seven kinds of record are previewed
+ * from six different screens, each with its own accent colour, so the badge
+ * borrows `currentColor` from whatever it sits inside rather than picking one.
+ */
+
+/* --- The badge ---------------------------------------------------------- */
+.rp-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    margin: 0 0 0 2px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-faint, #9aa0a6);
+    cursor: pointer;
+    vertical-align: middle;
+    flex: 0 0 auto;      /* never squeezed out of a flex row of link pills */
+    line-height: 0;
+    transition: background .12s, color .12s;
+    /* It often sits INSIDE a link pill, so it has to refuse the things it would
+       otherwise inherit from the anchor around it. */
+    text-decoration: none;
+    -webkit-user-select: none;
+    user-select: none;
+
+    /* ⚠️ Optical, not geometric. Beside text the badge measures as EXACTLY
+       centred and still reads as sitting high (Ed spotted it), because a line
+       box is centred on ascent-to-descent while the eye centres on the
+       cap-height band. At 13px those differ by 2px, measured — ascent 10,
+       descent 3, so the cap band's middle is 5px above the baseline and the
+       line box's is 7px. Hence 2px down. */
+    position: relative;
+    top: 2px;
+}
+
+/* ⚠️ …except where the badge sits in a row of OTHER ICONS rather than beside
+   text. There it must line up with its neighbours, and the optical nudge above
+   would push it 2px out of a column of buttons — trading a real misalignment
+   for the perceived one it was fixing.
+
+   These selectors name other modules, which a shared file would normally not
+   do. The alternative was a modifier class every caller had to remember, and a
+   badge that is silently 2px wrong when somebody forgets is worse than one file
+   knowing where its own icon rows are. */
+.pm-actions > .rp-badge,
+.linked-incidents-actions > .rp-badge,
+.asset-contract-item > .rp-badge,
+.asset-ticket-row > .rp-badge {
+    top: 0;
+}
+.rp-badge:hover,
+.rp-badge:focus-visible {
+    color: var(--accent, #2563eb);
+    background: var(--surface-hover, #f1f3f5);
+}
+.rp-badge:focus-visible { outline: 2px solid var(--accent, #2563eb); outline-offset: 1px; }
+.rp-badge--open {
+    color: var(--accent, #2563eb);
+    background: var(--accent-soft, #e8f0fe);
+}
+
+/* --- The card ------------------------------------------------------------ */
+.rp-popover {
+    position: fixed;
+    z-index: 4000;      /* above modals' backdrops; a preview opens on top of a dialog */
+    width: 320px;
+    max-width: calc(100vw - 20px);
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 8px;
+    background: var(--surface, #fff);
+    color: var(--text, #222);
+    box-shadow: var(--shadow, 0 6px 24px rgba(0, 0, 0, .16));
+    font-size: 13px;
+    line-height: 1.45;
+}
+.rp-popover[hidden] { display: none; }
+
+.rp-head {
+    font-weight: 600;
+    font-size: 13.5px;
+    margin-bottom: 8px;
+    /* Two lines, then an ellipsis. A subject can be a paragraph, and a preview
+       that grows to fit one stops being a glance. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+.rp-fields { display: flex; flex-direction: column; gap: 4px; }
+
+.rp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+.rp-label {
+    flex: 0 0 40%;
+    color: var(--text-muted, #666);
+    font-size: 12px;
+}
+.rp-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+}
+
+/* The status/priority colour, which comes from the record's own settings and is
+   therefore set inline. The ring keeps a pale colour visible on a pale card. */
+.rp-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .15);
+    vertical-align: middle;
+}
+
+/* A knowledge article's opening lines. Clamped for the same reason as the head. */
+.rp-lead {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-soft, #f0f0f0);
+    color: var(--text-dim, #555);
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.rp-foot {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-soft, #f0f0f0);
+    text-align: right;
+}
+.rp-open {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent, #2563eb);
+    text-decoration: none;
+}
+.rp-open:hover { text-decoration: underline; }
+
+.rp-loading,
+.rp-unavailable {
+    color: var(--text-muted, #666);
+    padding: 2px 0;
+}
+
+/* --- Narrow screens: a sheet, not a popover ------------------------------ */
+/* Driven by a class the script sets from the viewport width, not by a media
+   query, because the script has to know which shape it drew in order to
+   position it — two sources of truth here would disagree at the boundary. */
+.rp-popover.rp-sheet {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    max-width: none;
+    border-radius: 12px 12px 0 0;
+    border-bottom: none;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    font-size: 14px;
+}
+.rp-sheet .rp-label { flex-basis: 38%; }

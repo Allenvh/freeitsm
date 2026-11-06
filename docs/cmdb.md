@@ -4,6 +4,14 @@ Configuration Management Database. Models the IT estate as a graph of typed obje
 
 This document captures the design decisions made during planning so future work can continue without re-litigating them. Anything not listed here is undecided.
 
+⚠️ **This is a design doc, not a status report.** It was written before the module was built and describes intent. Items are tagged where reality has since diverged:
+
+- ✅ **shipped** — built and in the product
+- ⬜ **not built** — described in V1 scope below, never implemented
+- 🔀 **changed** — built differently to the sketch here
+
+For what the module actually does today, read the [CMDB wiki page](https://github.com/edmozley/freeitsm/wiki/CMDB) and the three developer guides ([foundations](https://github.com/edmozley/freeitsm/wiki/CMDB-Developer-Guide), [impact analysis](https://github.com/edmozley/freeitsm/wiki/CMDB-Impact-Analysis-Developer-Guide), [data quality](https://github.com/edmozley/freeitsm/wiki/CMDB-Data-Quality-Developer-Guide)), which are kept current with the code.
+
 ---
 
 ## Core concepts
@@ -50,9 +58,22 @@ Regenerated on demand (or cached and refreshed when properties/relationships cha
 
 On every object: a panel showing what would be affected if this object were taken offline — its descendants in the hierarchy plus everything linked through inverse relationships. Pure graph traversal, no AI required for v1. (V2 layers a prose AI summary on top: *"Taking this offline would interrupt the nightly archive job and break the analyst dashboard's ticket counts widget."*)
 
+**Update — transitive blast radius.** The panel originally stopped one hop out, which answers "what is attached to this?" but not "what actually breaks?". It now leads with a **blast radius** grouped by hop distance, so a server failure can be traced through its VM and its application to the customer-facing service. The three original buckets remain below it as the direct-connection detail, and their shape is unchanged because `GET /cmdb/objects/{id}/impact` publishes it.
+
+Two rules make this safe rather than noisy:
+
+- **Not every edge carries impact.** Following everything would report that a server failure affects the building it sits in. `cmdb_relationship_types.impact_direction` says whether a failure travels along a relationship and which way (`none` / `to_from` — *"A depends on B"*, B breaking affects A / `from_to` — *"A hosts B"*, A breaking affects B). Object-reference properties opt in separately via `cmdb_class_properties.spreads_impact`, because plenty of estates record a dependency as a field rather than a relationship. Containment always carries impact, since parent semantics here are ontological dependency.
+- **Everything defaults to "does not spread"**, so an upgraded install reports exactly what it did before until someone configures it. The panel distinguishes "nothing depends on this" from "nothing is configured to spread impact yet" — those look identical otherwise and call for opposite responses.
+
+The walk is breadth-first (so a hop count is the *shortest* path, not an artefact of traversal order), bounded by node and depth caps that surface as a `truncated` flag rather than silently capping, and scoped to the root object's company rather than trusting the no-cross-company-links invariant. It lives in `includes/cmdb_impact.php` — the internal endpoint and the REST API had each grown their own copy of the descendants walk, and both now share one.
+
+The panel itself ships as a grouped list. ✅ **Open as diagram** (#973) then hands that blast radius to the **Network Mapper** — `api/cmdb/create_impact_diagram.php` lays the affected set out in rings by hop distance and creates a real diagram through `NetworkMapperService::createDiagram()`. That deliberately settles the "graph visualisation" item in V2 §4 below by *handing off to the renderer that already exists* rather than building a second one inside this module.
+
 ### 3. Activity panel — cross-module visibility
 
 On every object: open tickets touching this object, recent changes affecting it, related KB articles. This is what makes the CMDB feel woven into the rest of the product instead of inert.
+
+🔀 **Tickets only, so far.** The panel ships with live open tickets plus recent closed ones (capped at 20, total shown), each deep-linking into the tickets module, and the ticket counts feed the AI summary prompt. ⬜ Changes and KB articles are not wired in — see V2 §6.
 
 ### 4. Inline mini-graph
 
@@ -62,6 +83,8 @@ A small CSS-only visualisation on every object detail page showing parent above,
 
 Anywhere the CMDB is mentioned elsewhere — in tickets, changes, search results, audit logs — render the reference as a card showing name + class + parent + owner, not just a text link. Context without clicking through.
 
+🔀 **Tickets only.** The reading pane's *Affected CMDB Objects* section renders linked CIs as cards with class + parent context. Changes and audit logs still have no CMDB reference to render.
+
 ### 6. Inline editing
 
 Click a property value on the detail page to edit in place. No modal-per-edit friction. Save on blur or Enter.
@@ -69,6 +92,8 @@ Click a property value on the detail page to edit in place. No modal-per-edit fr
 ### 7. Two browse modes
 
 Tree view for navigating the hierarchy from a starting object; flat list view filtered by class for bulk inspection (sortable columns built from the class's properties). Same data, different lenses.
+
+⬜ **Only the flat list was built.** `cmdb/index.php` ships a class sidebar with per-class counts and a filterable object table showing name, parent, child count and last updated. There is no tree view. Hierarchy navigation happens instead on the object detail page — the parent breadcrumb, the children cards and the inline mini-graph — which turned out to cover most of the need, so the tree has never been missed enough to build.
 
 ### 8. Empty states do work
 
@@ -79,6 +104,8 @@ When you create a new class, show AI-suggested properties inline (see V1 feature
 ## V1 scope
 
 ### Data model (sketch — not final column types)
+
+🔀 **This sketch is the original plan and has drifted.** It is kept because the *reasoning* under each comment still holds, but the shipped schema has since gained `cmdb_icons` (an 8th table), `cmdb_objects.is_planned` / `ai_summary` / `ai_summary_generated_at` / `tenant_id`, `cmdb_class_properties.spreads_impact` and `target_class_id`, `cmdb_relationship_types.impact_direction`, a colour on `cmdb_class_property_options`, and the `ticket_cmdb_objects` link table. `database/freeitsm.sql` is the authority; the [foundations guide](https://github.com/edmozley/freeitsm/wiki/CMDB-Developer-Guide) §3 explains what each addition is for.
 
 Every entity (classes, properties, objects, relationship types) gets an immutable auto-increment `id`. User-facing names and labels are editable freely; storage and references always go via the `id`. This is the safety net that makes renaming risk-free.
 
@@ -128,7 +155,7 @@ AI settings are stored in the existing `system_settings` table under prefixed ke
 - **Classes** — CRUD for classes; shows class list with object counts
 - **Properties** — managed inline on the Classes tab (per-class property editor)
 - **Relationship types** — CRUD for verbs and inverse verbs
-- **AI integration** — provider (Anthropic / OpenAI), API key (encrypted, masked), model dropdown, verify-SSL toggle, Test connection button. Separate key from RFP AI / Knowledge AI / Forms AI / Reply Cleanup so usage shows on its own line in the Anthropic billing console (matches the established per-feature key pattern). A Custom Instructions textarea is appended to the system prompt at runtime so analysts can shape AI output to their environment.
+- **AI integration** — provider (🔀 Anthropic / OpenAI / **OpenRouter**, via the shared AI Providers panel), API key (encrypted, masked), model dropdown, Test connection button. Separate key from RFP AI / Knowledge AI / Forms AI / Reply Cleanup so usage shows on its own line in the provider's billing console (matches the established per-feature key pattern). A Custom Instructions textarea is appended to the system prompt at runtime so analysts can shape AI output to their environment.
 
 **Object management:**
 - Objects CRUD with class picker, parent picker (must be a valid class — see open questions), and dynamic property form rendered from the class definition
@@ -137,16 +164,16 @@ AI settings are stored in the existing `system_settings` table under prefixed ke
 - Relationships UI on each object's detail view — add/remove links with verb, grouped by direction (incoming / outgoing) and verb
 
 **Browse and surface:**
-- Object detail page laid out per the [UX principles](#ux-principles) above — AI summary header, quick facts row, properties, relationships, activity panel, impact panel, inline mini-graph
-- Tree view: navigate the parent/child hierarchy from any object
-- Flat list view per class: sortable, filterable table built dynamically from the class's property definitions
-- Global search bar (text match against object names and key property values)
-- **Info card** rendered everywhere a CMDB object is referenced (including from other modules in v2)
+- ✅ Object detail page laid out per the [UX principles](#ux-principles) above — AI summary header, quick facts row, properties, relationships, activity panel, impact panel, inline mini-graph
+- ⬜ Tree view: navigate the parent/child hierarchy from any object — **not built**, see UX principle 7
+- ✅ Flat list view per class: filterable table built dynamically from the class's property definitions
+- ✅ Global search bar (text match against object names and key property values)
+- 🔀 **Info card** rendered everywhere a CMDB object is referenced — tickets only, see UX principle 5
 
-**V1 AI features** (all reusing the existing Anthropic streaming helper):
-- **Object summary** at the top of every detail page — short prose synthesis of class, hierarchy, owner, and what depends on it
-- **Suggest properties for this class** — when creating a new class (e.g. *Firewall*), the AI proposes 6-10 sensible properties with types. Analyst ticks the ones they want.
-- **Suggest a relationship** — on the object detail view, an AI button scans the rest of the CMDB and proposes plausible relationships the analyst may have missed (e.g. "It looks like FREEITSM might also depend on the *Auth Service* — add this relationship?")
+**V1 AI features** (all reusing the shared provider layer — see [AI Providers](https://github.com/edmozley/freeitsm/wiki/AI-Providers); Anthropic / OpenAI / OpenRouter):
+- ✅ **Object summary** at the top of every detail page — short prose synthesis of class, hierarchy, owner, and what depends on it. Cached on `cmdb_objects.ai_summary` so page views cost nothing.
+- ✅ **Suggest properties for this class** — the AI proposes sensible properties with types and the analyst ticks the ones they want. 🔀 Built as a **two-stage wizard**: it asks 3-5 clarifying questions about the environment first (`ai_suggest_questions.php`), then proposes 6-12 properties with a one-line rationale each (`ai_suggest_properties.php`). It also auto-creates a missing target class when it suggests an `object_ref`.
+- ⬜ **Suggest a relationship** — on the object detail view, an AI button scans the rest of the CMDB and proposes plausible relationships the analyst may have missed (e.g. "It looks like FREEITSM might also depend on the *Auth Service* — add this relationship?"). **Never built.** There is no such endpoint. It remains a good idea and the plumbing is all in place, but it is a candidate for future work rather than something the module does.
 
 ### V1 explicit non-goals
 
@@ -154,16 +181,16 @@ These are **deliberately out** of v1 — see V2 below.
 
 - **Class inheritance.** Classes are flat. Five separate classes for the SQL chain example, with their own duplicated common fields where necessary. Pain of duplication is small at the start; complexity of inheritance is significant.
 - **Discovery / auto-sync** from external sources (vCenter, InTune, network scans). All v1 objects are entered manually.
-- **Force-directed graph visualisation.** V1 ships only the inline mini-graph and the tree view; full D3-style dependency-graph viz is v2.
+- **Force-directed graph visualisation.** V1 ships only the inline mini-graph (the tree view was never built either). 🔀 The v2 item was ultimately answered by handing off to the Network Mapper rather than adding a graph library — see V2 §4.
 - **Versioning / change history** of object properties.
-- **Permissions / RBAC** beyond the existing module-level access control.
+- ~~**Permissions / RBAC** beyond the existing module-level access control.~~ 🔀 **This changed.** The module now has four capabilities in `includes/capabilities.php` — `cmdb.manage` (umbrella), `cmdb.classes` (the CI schema), `cmdb.relationship_types` (the verb library) and `cmdb.ai` (provider + key) — on top of the `requireModuleAccessJson('cmdb')` check every endpoint still makes. Settings tabs are filtered through `settingsManifestFor('cmdb')` so a tab an analyst may not use is never rendered. Object-level permissions remain out of scope.
 - **Natural-language search and impact Q&A in prose.** V1 AI is targeted assistance (summarise, suggest); free-form chat is v2.
 
 ### Design decisions that shape v1 (and protect v2)
 
 - **Human-readable vocabulary from day one.** Labels, relationship verbs, and class names should read like natural language — `"depends on"` not `"DEP"`, `Database Owner` not `DBO`. The v1 AI features feed these strings straight into the prompt; obscure abbreviations would force a glossary layer later. Flag this in the settings UI ("Use plain English — this is what AI features see").
 - **Typed reference properties exist in v1.** Object-to-object property links mean the AI sees a rich graph from day one, not a thin one.
-- **Cascade delete on parent_id.** Because parent semantics are ontological dependency, the FK enforces it. No orphan handling logic needed.
+- **Cascade delete on parent_id.** Because parent semantics are ontological dependency, deleting a parent must take the whole descendant subtree. 🔀 ⚠️ **But the FK does not enforce it, and code must not assume it does.** `freeitsm.sql` declares the cascade, yet installs grown through Database Verification have **no CMDB foreign keys at all** — `db_verify_schema.php` generates columns and primary keys, not FKs. `CmdbService::deleteObject()` therefore walks the subtree and cleans up by hand: nulls inbound `object_ref` values, deletes properties, removes Network Mapper nodes and connectors, deletes relationships both directions, removes ticket links, then deletes the objects. Any cleanup that trusts the cascade works on a fresh install and silently leaves orphans on an upgraded one.
 - **AI features are first-class in v1, not bolted on later.** Building the AI summary, property suggestions, and relationship suggestions into v1 means the data model and UI are designed *with* AI in mind from the first commit — the alternative is retrofitting prompts onto a UX that wasn't built to surface them.
 
 ---
@@ -177,9 +204,9 @@ Each of these can be added later without breaking v1 data or schema. Listed roug
 V1 already ships object summaries, property suggestions, and relationship suggestions. V2 adds the larger, more open-ended features that need the v1 base data and AI plumbing in place first:
 
 - **Free-form chat panel** on the CMDB module — natural-language search and exploration ("Show me servers Bob owns that haven't been edited in 6 months", "Which databases are missing a backup_schedule property?").
-- **Impact analysis Q&A in prose** — "If I take DBPROD01 down for 2 hours tonight, what's the blast radius?" The LLM walks the hierarchy and relationships graph and answers in plain English, naming affected services, owners to notify, and tickets/changes potentially impacted. (V1 already shows the raw impact panel; v2 prose-summarises it.)
-- **Stale-data nudges** — proactive suggestions on the dashboard when an object hasn't been edited in N months, or when a class has objects with required-but-missing fields.
-- **Bulk import / classification** — paste or upload a CSV; the AI proposes a mapping into existing classes and properties (with new class suggestions where nothing fits).
+- **Impact analysis Q&A in prose** — "If I take DBPROD01 down for 2 hours tonight, what's the blast radius?" The LLM walks the hierarchy and relationships graph and answers in plain English, naming affected services, owners to notify, and tickets/changes potentially impacted. (V1 already shows the raw impact panel; v2 prose-summarises it.) **The graph walk this needs now exists** — `cmdbBlastRadius()` returns the affected set with hop counts and how each was reached, so this becomes a prompt change rather than a new traversal.
+- **Stale-data nudges** — proactive suggestions on the dashboard when an object hasn't been edited in N months, or when a class has objects with required-but-missing fields. 🔀 **Both of those exact checks shipped as #972**, in the [Data Quality audit](https://github.com/edmozley/freeitsm/wiki/CMDB-Data-Quality-Developer-Guide) (`cmdb/audit.php`) — *not touched in a while* and *required fields left empty*, alongside four others. What is still missing is the **proactive** half: the audit is a page you choose to open, not a nudge that finds you. No AI is involved either, deliberately — every check is derived from a declaration the install already made.
+- ⬜ **Bulk import / classification** — paste or upload a CSV; the AI proposes a mapping into existing classes and properties (with new class suggestions where nothing fits). Still the single biggest adoption blocker: there is no CSV import at all, only the demo-data importer.
 
 **Non-breaking** — pure additive. No schema changes; reuses the v1 AI settings and key.
 
@@ -207,7 +234,12 @@ Each feed needs a class mapping and a "source of truth" rule (manual edits vs sy
 
 Dependency graph view — D3 or vis.js force-directed graph showing an object plus everything it relates to (hierarchy + relationships) within N hops. Click a node to navigate.
 
-**Non-breaking** — read-only view over existing data.
+🔀 **Answered differently, and better.** No charting library was added. **Network Mapper** already draws, saves, versions and exports diagrams whose nodes are bound to real `cmdb_objects` rows, so the CMDB hands off to it instead of growing a second renderer:
+
+- **Open as diagram** on the impact panel (#973) builds a Network Mapper diagram from the blast radius — root at the centre, one ring per hop, connectors along the path the engine actually took, solid for relationships and dashed for containment and property links.
+- Network Mapper's own *add related objects* flow walks the same three buckets for freehand exploration.
+
+The difference from the sketch is that the result is a **durable artefact** you can rearrange, annotate and attach to a change or an incident review, rather than a view that evaporates on navigation. ⬜ An ephemeral in-page force-directed graph is still not built, and there is now little reason to.
 
 ### 5. Versioning / change history
 
@@ -217,9 +249,9 @@ Audit log of property changes per object, like the existing ticket audit pattern
 
 ### 6. CMDB-aware features in other modules
 
-- Tickets: link a ticket to an affected CMDB object; view "open tickets affecting this object" on the object detail page.
-- Change Management: scope a change to one or more CMDB objects; impact analysis (v2 AI) shows what else might be affected.
-- Knowledge: link a KB article to a class or object ("Runbook for FREEITSM database").
+- ✅ Tickets: link a ticket to an affected CMDB object; view "open tickets affecting this object" on the object detail page. **Shipped** via the `ticket_cmdb_objects` table — an *Affected CMDB Objects* search-and-link section in the ticket reading pane, and a reciprocal Activity panel on the object. Both ends are company-checked. The ticket counts also feed the AI summary prompt, which is what turns the CMDB from a static inventory into a live operational map.
+- ⬜ Change Management: scope a change to one or more CMDB objects; impact analysis shows what else might be affected. **The engine is now the missing half** — `cmdbBlastRadius()` returns the affected set with hop counts, so this is wiring rather than new traversal.
+- ⬜ Knowledge: link a KB article to a class or object ("Runbook for FREEITSM database").
 
 **Non-breaking** — additive FKs in the consuming modules.
 
@@ -240,4 +272,10 @@ These can all be deferred to when they bite. None of them block starting v1.
 
 2. **Required-property defaults.** When marking an existing property `is_required`, what happens to existing objects that don't have a value? Block the change, prompt for a default, or leave them invalid until next edit? Pure UX decision, no schema impact.
 
-3. **Module placement.** Top-level entry in the waffle menu (likely), sub-module under Asset Management, or standalone tab? Cosmetic — easy to move.
+3. ~~**Module placement.**~~ ✅ **Settled** — CMDB is a top-level entry in the waffle menu, with its own `cmdb/` folder and module header.
+
+### Questions the build has since raised
+
+4. **How does an estate get *into* the CMDB?** Everything today is typed in by hand. The two candidates are a **CSV import** (V2 §1) and **promoting existing Assets** — the Assets module already has fresh, automatically-fed records for much of the same hardware, while a hand-maintained CMDB rots. They are not mutually exclusive but they imply very different models of where truth lives. Undecided, and the biggest open question in the module.
+
+5. **Does a CI ever move between companies?** Deliberately not possible today: a CI sits in a tree with links hanging off it, so a move must decide the fate of its parent, children and every relationship, and either default is wrong. A misfiled CI is deleted and recreated. See the multi-tenancy progress tracker for the shape this would take.

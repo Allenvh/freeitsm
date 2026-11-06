@@ -1,0 +1,1060 @@
+/**
+ * Projects - one project's page (3.2.0).
+ *
+ * Banner + Overview / Plan / Timeline / History. Everything is drawn from one call to
+ * api/projects/get.php and redrawn after each change, so the ring, the counts
+ * and the plan can never disagree with each other.
+ *
+ * The Plan: each phase / stage / sprint is a lane of task rows; a task can be
+ * dragged onto another lane (or onto "not in a phase yet"), and a task can be
+ * added in place. Task rows open the task on the Tasks board - the task window
+ * there is the one place a task is edited, so this page never grows a second one.
+ *
+ * @wiki Projects-Internals-1-Architecture
+ */
+(function () {
+    'use strict';
+    const P = window.Prj;
+    const T = P.T, esc = P.esc;
+
+    const page = document.getElementById('prjPage');
+    const projectId = parseInt(page.dataset.projectId, 10) || 0;
+    let data = null;      // {project, stages, tasks, history}
+    let L = null;         // lookups
+    let tab = 'overview';
+    let docsMounted = false, docsTouched = false;   // 3.3.0 documents tab
+    let openAdd = null;
+    let links = null;     // {links: {kind: [...]}, ready} from api/projects/links.php   // the lane (stage id, '' = not in one) whose add-a-task form is open
+
+    /** What the project's way of running calls its time boxes - phase, stage or sprint. */
+    function timeboxKind() {
+        const m = (L && L.methodologies || []).find(x => x.key === data.project.methodology);
+        return m ? m.timebox : 'phase';
+    }
+    /** The name of the project's way of running, for the banner. */
+    function methodLabel() {
+        const m = (L && L.methodologies || []).find(x => x.key === data.project.methodology);
+        return m ? m.label : data.project.methodology;
+    }
+
+    // ---- Banner -------------------------------------------------------------------
+    /** Draws the project banner - colour, icon, code, status, method, members-only and priority chips, company, name, goal, owner and dates, and the progress ring with its health. */
+    function renderBanner() {
+        const p = data.project;
+        const b = document.getElementById('prjBanner');
+        b.style.background = P.gradient(p.colour);
+        b.hidden = false;
+        document.getElementById('pvIcon').innerHTML = P.icon(p.icon, 34);
+        document.getElementById('pvCode').textContent = p.code;
+        document.getElementById('pvStatus').outerHTML = P.statusPill(p.status).replace('<span ', '<span id="pvStatus" ');
+        document.getElementById('pvMethod').textContent = T('view.method_chip', { method: methodLabel() });
+        // Members-only (3.3.0).
+        const pv = document.getElementById('pvPrivate');
+        pv.hidden = p.visibility !== 'members';
+        pv.textContent = T('visibility.badge');
+        pv.title = T('visibility.members_hint');
+        // Priority (3.3.0), only when it is not the ordinary Medium.
+        const pc = document.getElementById('pvPriority');
+        pc.innerHTML = P.priorityChip(p.priority);
+        pc.hidden = !pc.innerHTML;
+        const comp = document.getElementById('pvCompany');
+        comp.hidden = !(L.multi_company && p.company_name);
+        comp.textContent = p.company_name || '';
+        document.getElementById('pvName').textContent = p.name;
+        document.title = (document.titleBase = document.titleBase || document.title) + ' - ' + p.name;   // GH #173: appended to the server's pageTitle()
+        const goal = document.getElementById('pvGoal');
+        goal.textContent = p.goal || '';
+        goal.hidden = !p.goal;
+
+        const tp = P.targetPhrase(p);
+        const facts = [];
+        facts.push('<span class="prj-fact"><span class="prj-avatar light">' + esc(p.owner_name ? P.initials(p.owner_name) : '?') + '</span>' + esc(p.owner_name ? T('portfolio.led_by', { name: p.owner_name }) : T('portfolio.nobody')) + '</span>');
+        if (p.start_date && p.target_end_date) facts.push('<span class="prj-fact">' + esc(T('view.dates', { start: P.fmtDate(p.start_date), end: P.fmtDate(p.target_end_date) })) + '</span>');
+        else if (p.start_date) facts.push('<span class="prj-fact">' + esc(T('view.starts', { date: P.fmtDate(p.start_date) })) + '</span>');
+        else if (p.target_end_date) facts.push('<span class="prj-fact">' + esc(T('view.ends', { date: P.fmtDate(p.target_end_date) })) + '</span>');
+        facts.push('<span class="prj-fact strong">' + esc(tp.text) + '</span>');
+        document.getElementById('pvFacts').innerHTML = facts.join('');
+
+        const health = p.shown_health;
+        document.getElementById('pvRing').innerHTML = P.ring(p.progress, health, 92, true)
+            + '<span class="prj-ring-caption">' + esc(health ? T('health.' + health) : T('health.none'))
+            + (health ? '<small>' + esc(p.health === 'auto' ? T('health.auto_note') : T('health.manual_note')) + '</small>' : '') + '</span>';
+        document.getElementById('prjTabs').hidden = false;
+    }
+
+    // ---- Overview -----------------------------------------------------------------
+    /** Draws the Overview - the tiles, the warnings (exceptions, ticket spike, missed milestones, late RAID, benefit reviews, waiting change requests, escalations), the slots the other files fill, About, Now, Next up, Recent and the connections summary. */
+    function renderOverview() {
+        const p = data.project;
+        const open = p.task_total - p.task_done;
+        const d = P.daysTo(p.target_end_date);
+        const finished = p.status === 'closed' || p.status === 'cancelled';
+        // Effort (3.3.0): estimated against logged, under the progress figure.
+        const ef = p.effort || {};
+        const effort = ef.estimated_tasks > 0 || ef.logged_hours > 0
+            ? T('effort.tile', { est: hrsTxt(ef.estimate_hours || 0), logged: hrsTxt(ef.logged_hours || 0) }) : '';
+        const tiles = [
+            { n: p.progress + '%', l: T('view.progress'), cls: '', sub: effort },
+            { n: open, l: T('view.open_tasks'), cls: '' },
+            { n: p.task_overdue, l: T('view.overdue'), cls: p.task_overdue > 0 ? 'bad' : '' },
+            (d === null || finished) ? { n: '-', l: T('view.days_left'), cls: '' }
+                : d < 0 ? { n: -d, l: T('view.days_late'), cls: 'bad' } : { n: d, l: T('view.days_left'), cls: d <= 14 ? 'warn' : '' },
+        ];
+        const kind = timeboxKind();
+        const active = data.stages.filter(s => s.status === 'active');
+        const today = P.todayStr();
+        const upcoming = data.tasks.filter(t => !Number(t.is_closed) && t.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date)).slice(0, 6);
+
+        let html = (window.PrjTools && p.exceptions && p.exceptions.length ? window.PrjTools.exceptionsBanner(p.exceptions) : '') + '<div class="prj-ov-tiles">' + tiles.map(t => '<div class="prj-tile ' + t.cls + '"><span class="prj-tile-num">' + esc(t.n) + '</span><span class="prj-tile-label">' + esc(t.l) + '</span>' + (t.sub ? '<span class="prj-tile-sub">' + esc(t.sub) + '</span>' : '') + '</div>').join('') + '</div>';
+        // A jump in linked tickets (3.2.0) - why the ring may be amber when the tasks look fine.
+        if (p.ticket_spike) html += '<div class="prj-gate-warn"><div class="prj-gate-warn-head">' + P.icon('flag', 16) + '<strong>' + esc(T('gates.ticket_spike', { count: p.tickets_7d })) + '</strong></div></div>';
+        // A missed milestone (3.3.0) - the other reason the ring may be amber.
+        if (p.milestones_missed > 0 && !finished) html += '<div class="prj-gate-warn"><div class="prj-gate-warn-head">' + P.icon('flag', 16) + '<strong>' + esc(T('view.milestones_missed', { count: p.milestones_missed })) + '</strong></div></div>';
+        // RAID (3.3.0): a dependency or decision late (amber), and anything escalated - named, with what is needed.
+        if (p.raid_overdue > 0 && !finished) html += '<div class="prj-gate-warn"><div class="prj-gate-warn-head">' + P.icon('flag', 16) + '<strong>' + esc(T('view.raid_late', { count: p.raid_overdue })) + '</strong>'
+            + ' <button type="button" class="prj-link" data-goto="raid">' + esc(T('view.see_all')) + '</button></div></div>';
+        // Benefit reviews due (3.3.0) - after the project closes too: that is when most benefits arrive.
+        if (p.benefits_due > 0 && (p.tools || []).includes('benefits')) html += '<div class="prj-gate-warn"><div class="prj-gate-warn-head">' + P.icon('flag', 16) + '<strong>' + esc(T('benefits.due_overview', { count: p.benefits_due })) + '</strong>'
+            + ' <button type="button" class="prj-link" data-goto="benefits">' + esc(T('view.see_all')) + '</button></div></div>';
+        // Change requests waiting for a decision (3.3.0).
+        if (p.changes_pending > 0 && !finished && (p.tools || []).includes('control')) html += '<div class="prj-gate-warn"><div class="prj-gate-warn-head">' + P.icon('flag', 16) + '<strong>' + esc(T('control.waiting_overview', { count: p.changes_pending })) + '</strong>'
+            + ' <button type="button" class="prj-link" data-goto="control">' + esc(T('view.see_all')) + '</button></div></div>';
+        const escalated = (data.raid || []).filter(r => r.status === 'open' && r.escalated_datetime);
+        if (escalated.length && !finished) {
+            html += '<div class="prj-gate-warn prj-esc-warn"><div class="prj-gate-warn-head">' + P.icon('flag', 16) + '<strong>' + esc(T('view.escalated', { count: escalated.length })) + '</strong>'
+                + ' <button type="button" class="prj-link" data-goto="raid">' + esc(T('view.see_all')) + '</button></div><ul>'
+                + escalated.map(r => '<li><strong>' + esc(T('raid.' + r.type)) + ': ' + esc(r.title) + '</strong> - ' + esc(r.escalation_note || '')
+                    + ' <span class="prj-muted">(' + esc(T('raid.escalated_by', { name: r.escalated_by_name || T('history.someone'), date: P.fmtDate(String(r.escalated_datetime).slice(0, 10)) })) + ')</span></li>').join('')
+                + '</ul></div>';
+        }
+        // The proposal and its approval (3.3.0) - drawn by projects-intake.js after this.
+        html += '<div id="pvProposal" hidden></div>';
+        // The Toolbox (3.3.0): tools not in use yet, to add as the project grows - projects-toolbox.js.
+        html += '<div id="pvToolbox" hidden></div>';
+        // The AI project manager's briefing (3.2.0) - drawn by projects-reports.js after this.
+        html += '<div id="pvBriefing" hidden></div>';
+        // Progress over time (3.3.0) - drawn by renderBurnup() once it is on the page.
+        html += '<div id="pvBurnup"></div>';
+        // Task status, progress by stage, flow over time (3.3.0) - projects-insights.js.
+        html += '<div id="pvInsights"></div>';
+        // Milestones (3.3.0) - drawn by projects-milestones.js after this.
+        html += '<div id="pvMilestones" hidden></div>';
+        // Asset targets (3.2.0) - drawn by projects-targets.js after this.
+        html += '<div id="pvTargets" hidden></div>';
+        html += '<div class="prj-ov-grid">';
+
+        html += '<div class="prj-panel prj-ov-about"><h3>' + esc(T('view.about')) + '</h3>'
+            + (p.goal ? '<p class="prj-ov-goal">' + esc(p.goal) + '</p>' : '<p class="prj-muted">' + esc(T('view.no_goal')) + '</p>')
+            + (p.summary ? '<p class="prj-ov-summary">' + esc(p.summary).replace(/\n/g, '<br>') + '</p>' : '')
+            + (p.health !== 'auto' && p.health_note ? '<p class="prj-ov-note">' + P.healthBadge(p.health) + ' ' + esc(p.health_note) + '</p>' : '')
+            + '</div>';
+
+        html += '<div class="prj-panel"><h3>' + esc(T('view.now')) + '</h3>';
+        if (active.length) {
+            html += active.map(s => stageMini(s)).join('');
+        } else {
+            html += '<p class="prj-muted">' + esc(T('view.nothing_now')) + '</p>';
+        }
+        html += '</div>';
+
+        html += '<div class="prj-panel"><h3>' + esc(T('view.next_up')) + '</h3>';
+        if (upcoming.length) {
+            html += '<ul class="prj-next">' + upcoming.map(t => {
+                const late = t.due_date < today;
+                // GH #217: an <a> only while Tasks is on - nowhere to open it otherwise.
+                const tag = window.PRJ_TASKS ? 'a' : 'span';
+                return '<li><' + tag + (window.PRJ_TASKS ? ' href="' + esc(window.PRJ_BASE + 'tasks/?task=' + t.id) + '"' : '') + '><span class="prj-next-title">' + esc(t.title) + '</span>'
+                    + '<span class="prj-next-meta">' + (t.assignee_name ? '<span class="prj-avatar sm" title="' + esc(t.assignee_name) + '">' + esc(P.initials(t.assignee_name)) + '</span>' : '')
+                    + '<span class="prj-due' + (late ? ' late' : '') + '">' + esc(P.fmtDate(t.due_date)) + '</span></span></' + tag + '></li>';
+            }).join('') + '</ul>';
+        } else {
+            html += '<p class="prj-muted">' + esc(T('view.nothing_next')) + '</p>';
+        }
+        html += '</div>';
+
+        html += '<div class="prj-panel"><h3>' + esc(T('view.recent')) + ' <button type="button" class="prj-link" data-goto="history">' + esc(T('view.see_all')) + '</button></h3>'
+            + (data.history.length ? '<ul class="prj-feed">' + data.history.slice(0, 6).map(historyItem).join('') + '</ul>' : '<p class="prj-muted">' + esc(T('view.no_history')) + '</p>')
+            + '</div>';
+
+        html += '</div>';
+        html += linksSummary();
+        document.getElementById('pvOverview').innerHTML = html;
+        renderBurnup();
+        void kind;
+    }
+
+    // ---- Progress over time: the burn-up (3.3.0) ------------------------------------------
+    let burnStage = '';        // '' = the whole project
+    let burnMeasure = null;    // tasks | hours; null until lookups give the install's default
+    let burnView = 'up';   // 3.3.0: up (burn-up) | down (burndown), remembered per browser
+    try { burnView = localStorage.getItem('freeitsm.projects.burnview') === 'down' ? 'down' : 'up'; } catch (e) { /* private window */ }
+    /**
+     * Scope and done over time, worked out here from the tasks the page already
+     * has: each top-level task counts from the day it was created (scope) and the
+     * day it was completed (done) - one each, or its estimate in hours. A task
+     * moved into the project later counts from its creation; that is the honest
+     * reading of what is stored.
+     */
+    function burnupPoints() {
+        /** What one task counts for on the burn-up - one, or its estimate in hours. */
+        const val = t => burnMeasure === 'hours' ? (t.estimate_hours !== null && t.estimate_hours !== undefined ? Number(t.estimate_hours) : 0) : 1;
+        const tasks = data.tasks.filter(t => !burnStage || String(t.project_stage_id || '') === burnStage);
+        if (!tasks.length) return null;
+        /** The date a task was created, as Y-m-d. */
+        const created = t => String(t.created_datetime || '').slice(0, 10);
+        /** The date a closed task was completed, or null while it is open. */
+        const doneOn = t => Number(t.is_closed) && t.completed_datetime ? String(t.completed_datetime).slice(0, 10) : null;
+        const today = P.todayStr();
+        let first = tasks.map(created).filter(Boolean).sort()[0] || today;
+        if (data.project.start_date && data.project.start_date < first) first = data.project.start_date;
+        /** A Y-m-d date as a whole day number (days since 1970, UTC). */
+        const dn = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000;
+        /** A day number back to a Y-m-d date. */
+        const iso = n => new Date(n * 86400000).toISOString().slice(0, 10);
+        const span = dn(today) - dn(first);
+        const step = span > 120 ? 7 : 1;
+        const pts = [];
+        for (let n = dn(first); n <= dn(today); n += step) pts.push(iso(n));
+        if (pts[pts.length - 1] !== today) pts.push(today);
+        return pts.map(d => ({ d: d,
+            scope: tasks.reduce((s, t) => s + (created(t) && created(t) <= d ? val(t) : 0), 0),
+            done: tasks.reduce((s, t) => s + (doneOn(t) && doneOn(t) <= d ? val(t) : 0), 0) }));
+    }
+    /** Draws the progress-over-time panel - stage, tasks / hours and burn-up / burndown switches, then the chart, or a note when there is nothing to plot. */
+    function renderBurnup() {
+        const box = document.getElementById('pvBurnup');
+        if (!box || !window.PrjCharts) return;
+        if (burnMeasure === null) burnMeasure = (L && L.burnup_measure) || 'tasks';
+        if (!data.tasks.length) { box.innerHTML = ''; return; }
+        if (burnStage && !data.stages.some(s => String(s.id) === burnStage)) burnStage = '';
+        const kind = timeboxKind();
+        const stageSel = data.stages.length ? '<select class="prj-burn-stage" data-burn-stage aria-label="' + esc(T('burnup.stage')) + '"><option value="">' + esc(T('burnup.whole')) + '</option>'
+            + data.stages.map(s => '<option value="' + s.id + '"' + (String(s.id) === burnStage ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select>' : '';
+        box.innerHTML = '<div class="prj-panel prj-burn"><div class="prj-panel-head"><h3>' + esc(T('burnup.title')) + '</h3><div class="prj-burn-controls">' + stageSel
+            + '<div class="prj-seg" role="tablist" aria-label="' + esc(T('burnup.measure')) + '"><button type="button" data-burn-measure="tasks"' + (burnMeasure === 'tasks' ? ' class="active"' : '') + '>' + esc(T('burnup.tasks')) + '</button>'
+            + '<button type="button" data-burn-measure="hours"' + (burnMeasure === 'hours' ? ' class="active"' : '') + '>' + esc(T('burnup.hours')) + '</button></div>'
+            // 3.3.0: the same work, as what is left - against an ideal line to the end.
+            + '<div class="prj-seg" role="tablist" aria-label="' + esc(T('burnup.view')) + '"><button type="button" data-burn-view="up"' + (burnView === 'up' ? ' class="active"' : '') + '>' + esc(T('burnup.view_up')) + '</button>'
+            + '<button type="button" data-burn-view="down"' + (burnView === 'down' ? ' class="active"' : '') + '>' + esc(T('burnup.view_down')) + '</button></div></div></div>'
+            + '<p class="prj-muted prj-burn-intro"></p><div class="prj-burn-chart"></div></div>';
+        const pts = burnupPoints();
+        const intro = box.querySelector('.prj-burn-intro');
+        const chart = box.querySelector('.prj-burn-chart');
+        if (!pts || (burnMeasure === 'hours' && pts[pts.length - 1].scope === 0)) {
+            intro.textContent = burnMeasure === 'hours' ? T('burnup.no_estimates') : T('burnup.no_tasks', { timebox: P.timeboxWord(kind) });
+            return;
+        }
+        const last = pts[pts.length - 1];
+        intro.textContent = T(burnMeasure === 'hours' ? 'burnup.intro_hours' : 'burnup.intro_tasks', { done: (Math.round(last.done * 10) / 10), scope: (Math.round(last.scope * 10) / 10) });
+        const stage = burnStage ? data.stages.find(s => String(s.id) === burnStage) : null;
+        if (burnView === 'down') {
+            const unit = burnMeasure === 'hours' ? 'h' : '';
+            const left = Math.round((last.scope - last.done) * 10) / 10;
+            intro.textContent = T('burnup.intro_down', { left: left + unit });
+            window.PrjCharts.burndown(chart, {
+                // From the first day there was any work: before it, nothing was left to do and the ideal line would start at zero.
+                points: pts.slice(Math.max(0, pts.findIndex(p => p.scope > 0))).map(p => ({ d: p.d, remaining: Math.round((p.scope - p.done) * 10) / 10 })), target: stage ? stage.end_date : data.project.target_end_date,
+                unit: unit, fmtDate: P.fmtDate,
+                labels: { table: T('burnup.show_table'), chart: T('burnup.show_chart'), date: T('burnup.date'), remaining: T('burnup.remaining'), ideal: T('burnup.ideal'),
+                    target: stage ? T('burnup.stage_end') : T('timeline.target'), aria: T('burnup.aria_down', { left: left + unit }) },
+            });
+            return;
+        }
+        window.PrjCharts.burnup(chart, {
+            points: pts, target: stage ? stage.end_date : data.project.target_end_date,
+            series: [T('burnup.scope'), T('burnup.done')], unit: burnMeasure === 'hours' ? 'h' : '', fmtDate: P.fmtDate,
+            labels: { table: T('burnup.show_table'), chart: T('burnup.show_chart'), date: T('burnup.date'), target: stage ? T('burnup.stage_end') : T('timeline.target'),
+                aria: T('burnup.aria', { done: last.done, scope: last.scope }) },
+        });
+    }
+
+    /** A small card for an active stage on the Overview - name, tasks done of total, goal and a progress bar. */
+    function stageMini(s) {
+        const total = Number(s.task_total), done = Number(s.task_done);
+        const pct = total ? Math.round(done * 100 / total) : 0;
+        return '<div class="prj-stage-mini"><div class="prj-stage-mini-head"><strong>' + esc(s.name) + '</strong>'
+            + '<span>' + esc(T('plan.stage_done', { done: done, total: total })) + '</span></div>'
+            + (s.goal ? '<p class="prj-muted">' + esc(s.goal) + '</p>' : '')
+            + '<span class="prj-bar"><span style="width:' + pct + '%;background:' + P.gradient(data.project.colour) + '"></span></span></div>';
+    }
+
+    // ---- History ------------------------------------------------------------------
+    /** One history line - who, what changed in the viewer's words, the detail (translated where the stored value is a key) and when. */
+    function historyItem(h) {
+        const who = h.analyst_name || T('history.someone');
+        const f = h.field_name;
+        let what = T('history.' + f);
+        if (what === 'projects.history.' + f) what = f;
+        let detail = '';
+        if (f === 'project_created') detail = '';
+        else if (f === 'stage_added') detail = h.new_value || '';
+        else if (f === 'stage_removed') detail = h.old_value || '';
+        else if (f === 'gate') detail = (h.old_value || '') + ': ' + T('gates.' + (h.new_value || ''));
+        else if (f === 'tolerances') detail = '';
+        else if (f === 'target_saved' || f === 'target_removed') detail = h.new_value || h.old_value || '';
+        else if (f.indexOf('raid_') === 0) detail = (h.new_value || h.old_value || '').replace(/^(risk|assumption|issue|dependency|decision|lesson): /, (m, k) => T('raid.' + k) + ': ');
+        else if (f === 'link_added' || f === 'link_removed') detail = linkHistoryText(h.new_value || h.old_value || '');
+        else if (f === 'milestone_moved') detail = (h.new_value || '').replace(/: (\d{4}-\d{2}-\d{2})$/, (m, d) => ': ' + T('history.from_to', { from: P.fmtDate((h.old_value || '').slice(-10)), to: P.fmtDate(d) }));
+        else if (f === 'stage_status') detail = (h.new_value || '').replace(/: (planned|active|closed)$/, (m, s) => ': ' + T('stage_status.' + s));
+        else if (f === 'status') detail = T('history.from_to', { from: T('status.' + h.old_value), to: T('status.' + h.new_value) });
+        // Change control (3.3.0): "CR-2: title" as stored; "Baseline 3" in the viewer's words.
+        else if (f === 'change_raised' || f === 'change_approved' || f === 'change_rejected' || f === 'change_withdrawn' || f === 'change_edited') detail = h.new_value || '';
+        else if (f === 'proposal_approved' || f === 'proposal_rejected' || f === 'benefit_added' || f === 'benefit_changed' || f === 'benefit_measured') detail = h.new_value || '';
+        else if (f === 'benefit_removed' || f === 'gate_item_removed') detail = h.old_value || '';
+        else if (f.indexOf('gate_item_') === 0 || f === 'gate_signed' || f === 'gate_unsigned') detail = h.new_value || '';
+        else if (f === 'gate_kind') detail = T('gatecheck.gate_' + (h.new_value === 'golive' ? 'golive' : 'standard'));
+        else if (f === 'baseline_taken') detail = String(h.new_value || '').replace(/^Baseline (\d+)/, (m, n) => T('control.baseline_n', { n: n }));
+        else if (f === 'visibility') detail = T('history.from_to', { from: T('visibility.' + h.old_value), to: T('visibility.' + h.new_value) });
+        else if (f === 'priority') detail = T('history.from_to', { from: P.priorityLabel(h.old_value), to: P.priorityLabel(h.new_value) });
+        else if (f === 'health') detail = T('history.from_to', { from: T('health.' + h.old_value), to: T('health.' + h.new_value) });
+        else if (f === 'methodology') detail = T('history.from_to', { from: T('method.' + h.old_value), to: T('method.' + h.new_value) });
+        else if (['start_date', 'target_end_date', 'actual_end_date'].includes(f)) detail = T('history.from_to', { from: h.old_value ? P.fmtDate(h.old_value) : '-', to: h.new_value ? P.fmtDate(h.new_value) : '-' });
+        else if (['colour', 'icon', 'tailoring', 'business_case'].includes(f)) detail = '';
+        else if (f === 'item_moscow') detail = (h.new_value || '').replace(/: (must|should|could|wont|-)$/, (m, k) => ': ' + (k === '-' ? T('scope.unsorted') : T('scope.' + k)));
+        else if (h.new_value) detail = h.old_value ? T('history.from_to', { from: h.old_value, to: h.new_value }) : h.new_value;
+        const when = window.fmtDateTime ? window.fmtDateTime(h.created_datetime) : h.created_datetime;
+        return '<li><span class="prj-avatar sm">' + esc(P.initials(who)) + '</span><div><span class="prj-feed-line"><strong>' + esc(who) + '</strong> ' + esc(what)
+            + (detail ? ' <span class="prj-feed-detail">' + esc(detail) + '</span>' : '') + '</span><span class="prj-feed-when">' + esc(when) + '</span></div></li>';
+    }
+
+    /** Draws the History tab - every history line, newest first, or a note when there is none. */
+    function renderHistory() {
+        document.getElementById('pvHistory').innerHTML = '<div class="prj-panel">'
+            + (data.history.length ? '<ul class="prj-feed big">' + data.history.map(historyItem).join('') + '</ul>' : '<p class="prj-muted">' + esc(T('view.no_history')) + '</p>')
+            + '</div>';
+    }
+
+    // ---- Plan -----------------------------------------------------------------------
+    /** "4h" / "1.5h" in the page's language. */
+    function hrsTxt(h) {
+        return (Math.round(Number(h) * 10) / 10).toLocaleString(document.documentElement.lang || undefined) + 'h';
+    }
+    /**
+     * A task's estimate on the Plan (3.3.0): a small box to type it in, for those
+     * who may change the project; text for everyone else. Time logged shows
+     * beside it, red once it is over the estimate.
+     */
+    function estimateCell(t) {
+        const est = t.estimate_hours !== null && t.estimate_hours !== undefined ? Number(t.estimate_hours) : null;
+        const logged = Number(t.logged_minutes || 0) / 60;
+        const over = est !== null && logged > est;
+        const log = logged > 0 ? '<span class="prj-est-logged' + (over ? ' over' : '') + '" title="' + esc(T('effort.logged_tip', { hours: hrsTxt(logged) })) + '">' + esc(hrsTxt(logged)) + '</span>' : '';
+        const canEdit = !data.permissions || data.permissions.can_change;
+        if (!canEdit) return '<span class="prj-est">' + log + (est !== null ? '<span class="prj-est-val">' + esc(hrsTxt(est)) + '</span>' : '') + '</span>';
+        return '<span class="prj-est">' + log + '<input type="number" class="prj-est-input" min="0" max="9999" step="0.25" inputmode="decimal" data-estimate="' + t.id + '"'
+            + ' value="' + (est !== null ? est : '') + '" placeholder="' + esc(T('effort.ph')) + '" title="' + esc(T('effort.input_tip')) + '" aria-label="' + esc(T('effort.input_tip')) + '"></span>';
+    }
+
+    /** One task row in a Plan lane - drag grip, status, title linking to the task, subtasks, priority (when not the default), estimate, waiting / clash flags, contractor, due date, assignee and remove. */
+    function taskRow(t) {
+        const closed = !!Number(t.is_closed);
+        const late = !closed && t.due_date && t.due_date < P.todayStr();
+        return '<div class="prj-task' + (closed ? ' done' : '') + '" draggable="true" data-task="' + t.id + '">'
+            // GH #184: also the keyboard handle - focus it and press the up or down arrow.
+            + '<span class="prj-grip" tabindex="0" role="button" aria-keyshortcuts="ArrowUp ArrowDown" aria-label="' + esc(T('plan.move_task', { title: t.title })) + '" title="' + esc(T('plan.drag_tip')) + '">&#8942;&#8942;</span>'
+            + '<span class="prj-task-status" style="background:' + esc(t.status_colour || '#94a3b8') + '" title="' + esc(t.status_name || '') + '"></span>'
+            // GH #217: plain text while Tasks is off - the board it opens on is gone.
+            + (window.PRJ_TASKS ? '<a class="prj-task-title" href="' + esc(window.PRJ_BASE + 'tasks/?task=' + t.id) + '" title="' + esc(T('plan.task_open')) + '">' + esc(t.title) + '</a>'
+                : '<span class="prj-task-title">' + esc(t.title) + '</span>')
+            + (Number(t.subtask_count) ? '<span class="prj-task-sub">' + esc(t.subtask_count) + '</span>' : '')
+            + (t.priority_name && !isDefaultPriority(t.priority_id) ? '<span class="prj-task-prio" style="--c:' + esc(t.priority_colour || '#94a3b8') + '">' + esc(t.priority_name) + '</span>' : '')
+            + estimateCell(t)
+            // Dependencies (3.3.0): what it is waiting for, and a plan that cannot be true as written.
+            + ((t.waiting_on || []).length && !closed ? '<span class="prj-task-wait" title="' + esc(T('deps.waiting_tip', { names: t.waiting_on.map(id => ((data.tasks.find(x => x.id === id) || {}).title || '#' + id)).join(', ') })) + '">' + esc(T('deps.waiting', { count: t.waiting_on.length })) + '</span>' : '')
+            + (t.clash && !closed ? '<span class="prj-task-clash" title="' + esc(T('deps.clash')) + '">' + esc(T('deps.clash_short')) + '</span>' : '')
+            // Contractors (3.3.0): a supplier doing the work; the avatar stays the person here who chases it.
+            + (t.supplier_id ? '<span class="prj-task-ctr" title="' + esc(T('contractors.tip', { name: t.supplier_name + (t.contact_name ? ' - ' + t.contact_name : '') })) + '">' + esc(t.supplier_name) + '</span>' : '')
+            + (t.due_date ? '<span class="prj-due' + (late ? ' late' : '') + '">' + esc(P.fmtDate(t.due_date)) + '</span>' : '<span class="prj-due none"></span>')
+            + '<span class="prj-avatar sm" title="' + esc(t.assignee_name || t.team_name || T('plan.unassigned_person')) + '">' + esc(t.assignee_name ? P.initials(t.assignee_name) : (t.team_name ? P.initials(t.team_name) : '-')) + '</span>'
+            + '<button type="button" class="prj-task-remove" data-remove-task="' + t.id + '" title="' + esc(T('plan.remove_task')) + '" aria-label="' + esc(T('plan.remove_task')) + '">&times;</button>'
+            + '</div>';
+    }
+
+    /** The default priority is what most tasks have, so its pill is noise: only the exceptions are shown. */
+    function isDefaultPriority(id) {
+        const p = (L.task_priorities || []).find(x => String(x.id) === String(id));
+        return !!(p && Number(p.is_default));
+    }
+
+    /**
+     * Each lane offers a light "+ Add a task" that opens the form. The lane whose
+     * form is open is remembered across redraws, so adding several tasks in a row
+     * keeps the box open and focused.
+     */
+    function addRow(stageId) {
+        const key = String(stageId || '');
+        if (openAdd !== key) {
+            return '<button type="button" class="prj-add-toggle" data-add-open="' + esc(key) + '">+ ' + esc(T('plan.add_task')) + '</button>';
+        }
+        const opts = '<option value="">' + esc(T('plan.assignee')) + '</option>' + L.analysts.map(a => '<option value="' + a.id + '">' + esc(a.full_name) + '</option>').join('');
+        return '<form class="prj-add-task" data-stage="' + (stageId || '') + '">'
+            + '<input type="text" name="title" maxlength="255" placeholder="' + esc(T('plan.task_ph')) + '" autocomplete="off">'
+            + '<select name="assignee" aria-label="' + esc(T('plan.assignee')) + '">' + opts + '</select>'
+            + '<input type="date" name="due" aria-label="' + esc(T('plan.due')) + '">'
+            + '<button type="submit" class="btn btn-primary prj-btn sm">' + esc(T('plan.add')) + '</button>'
+            + '</form>';
+    }
+
+    /** One Plan lane - a stage's header (kind, name, goal, milestones, dates, status, counts, effort, start / finish and edit buttons), progress bar, task rows and add row; or the "not in a stage yet" lane when stage is null. */
+    function lane(stage, tasks) {
+        const kind = timeboxKind();
+        if (!stage) {
+            return '<section class="prj-lane unassigned" data-lane="">'
+                + '<header class="prj-lane-head"><div><h3>' + esc(T('plan.unassigned', { timebox: P.timeboxWord(kind) })) + '</h3>'
+                + '<p class="prj-muted">' + esc(T('plan.unassigned_hint', { timebox: P.timeboxWord(kind) })) + '</p></div></header>'
+                + '<div class="prj-lane-tasks" data-drop="">' + tasks.map(taskRow).join('') + '</div>'
+                + addRow(null) + '</section>';
+        }
+        const total = Number(stage.task_total), done = Number(stage.task_done);
+        const pct = total ? Math.round(done * 100 / total) : 0;
+        // Effort in this lane (3.3.0), only once something is estimated or logged.
+        const est = tasks.reduce((s, t) => s + (t.estimate_hours !== null && t.estimate_hours !== undefined ? Number(t.estimate_hours) : 0), 0);
+        const logged = tasks.reduce((s, t) => s + Number(t.logged_minutes || 0), 0) / 60;
+        const effort = est > 0 || logged > 0 ? '<span class="prj-lane-count" title="' + esc(T('effort.lane_tip')) + '">' + esc(T('effort.lane', { est: hrsTxt(est), logged: hrsTxt(logged) })) + '</span>' : '';
+        const dates = stage.start_date || stage.end_date
+            ? '<span class="prj-lane-dates">' + esc((stage.start_date ? P.fmtDate(stage.start_date) : '...') + ' - ' + (stage.end_date ? P.fmtDate(stage.end_date) : '...')) + '</span>' : '';
+        const action = stage.status === 'planned'
+            ? '<button type="button" class="btn btn-secondary sm" data-stage-start="' + stage.id + '">' + esc(T('plan.start_stage')) + '</button>'
+            : stage.status === 'active'
+                ? '<button type="button" class="btn btn-primary prj-btn sm" data-stage-finish="' + stage.id + '">' + esc(T('plan.finish_stage')) + '</button>' : '';
+        return '<section class="prj-lane st-' + esc(stage.status) + '" data-lane="' + stage.id + '">'
+            + '<header class="prj-lane-head">'
+            +   '<span class="prj-lane-kind">' + esc(T('timebox.' + (stage.kind || kind))) + '</span>'
+            +   '<div class="prj-lane-titles"><h3>' + esc(stage.name) + '</h3>' + (stage.goal ? '<p class="prj-muted">' + esc(stage.goal) + '</p>' : '')
+            +     (window.PrjMilestones ? window.PrjMilestones.chips(stage.id) : '') + '</div>'
+            +   '<div class="prj-lane-side">' + dates
+            +     '<span class="prj-stage-pill sp-' + esc(stage.status) + '">' + esc(T('stage_status.' + stage.status)) + '</span>'
+            +     '<span class="prj-lane-count">' + esc(T('plan.stage_done', { done: done, total: total })) + '</span>' + effort
+            +     action
+            +     '<button type="button" class="prj-icon-btn" data-stage-edit="' + stage.id + '" title="' + esc(T('plan.stage_edit', { timebox: P.timeboxWord(stage.kind || kind) })) + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'
+            +   '</div>'
+            + '</header>'
+            + '<span class="prj-bar thin"><span style="width:' + pct + '%;background:' + P.gradient(data.project.colour) + '"></span></span>'
+            + '<div class="prj-lane-tasks" data-drop="' + stage.id + '">' + tasks.map(taskRow).join('') + '</div>'
+            + addRow(stage.id) + '</section>';
+    }
+
+    /** Draws the Plan tab - the intro, Milestone and add-stage buttons, the project milestones strip, a lane per stage and the unassigned lane. */
+    function renderPlan() {
+        const kind = timeboxKind();
+        const byStage = {};
+        data.tasks.forEach(t => { const k = t.project_stage_id || ''; (byStage[k] = byStage[k] || []).push(t); });
+        const canEdit = !data.permissions || data.permissions.can_change;
+        let html = '<div class="prj-plan-head"><p class="prj-muted">' + esc(T('plan.intro', { timeboxes: P.timeboxWord(kind, true) })) + '</p>'
+            + '<div class="prj-plan-actions">'
+            + (canEdit ? '<button type="button" class="btn btn-secondary" data-ms-new>+ ' + esc(T('milestones.add')) + '</button>' : '')
+            + '<button type="button" class="btn btn-primary prj-btn" id="pvAddStage">+ ' + esc(T('timebox.add_' + kind)) + '</button></div></div>';
+        if (window.PrjMilestones) html += window.PrjMilestones.projectStrip();
+        if (!data.stages.length) html += '<div class="prj-plan-empty">' + esc(T('plan.no_stages', { timeboxes: P.timeboxWord(kind, true) })) + '</div>';
+        html += data.stages.map(s => lane(s, byStage[s.id] || [])).join('');
+        html += lane(null, byStage[''] || []);
+        document.getElementById('pvPlan').innerHTML = html;
+        if (data.permissions && !data.permissions.can_change) document.querySelectorAll('#pvPlan .prj-task').forEach(r => { r.draggable = false; const g = r.querySelector('.prj-grip'); if (g) g.removeAttribute('tabindex'); });
+    }
+
+    // ---- Drawing everything ---------------------------------------------------------
+    /** Redraws the whole page from the data - applies the viewer's permissions, draws the banner, Overview, Plan, Connections and History, shows only switched-on tool tabs, and hands the data to every other Projects file. */
+    function renderAll() {
+        // What this analyst may do (Projects -> Settings -> General). The server
+        // refuses anything else; this only stops the page offering it.
+        const perms = data.permissions || { can_change: true, can_delete: true };
+        page.classList.toggle('prj-readonly', !perms.can_change);
+        document.getElementById('pvEdit').hidden = !perms.can_change;
+        document.getElementById('pvDelete').hidden = !perms.can_delete;
+        page.querySelectorAll('.prj-task[draggable]').forEach(r => { r.draggable = !!perms.can_change; });
+        const toolCtx = { data: data, L: L, projectId: projectId, refresh: refresh, page: page };
+        renderBanner();
+        renderOverview();
+        if (window.PrjMilestones) window.PrjMilestones.render(toolCtx);
+        renderPlan();
+        renderConnections();
+        renderHistory();
+        // Phase 2 tools: a tab per tool the project has switched on (its method's
+        // defaults, then its tailoring); a hidden tool's tab is never the open one.
+        const tools = data.project.tools || [];
+        document.querySelectorAll('#prjTabs [data-tool]').forEach(b => { b.hidden = !tools.includes(b.dataset.tool); });
+        const cur = document.querySelector('#prjTabs [data-tab="' + tab + '"]');
+        if (!cur || cur.hidden) tab = 'overview';
+        if (window.PrjTools) window.PrjTools.render(toolCtx);
+        if (window.PrjTargets) window.PrjTargets.render({ data: data, projectId: projectId, refresh: refresh });
+        if (window.PrjBudget) window.PrjBudget.render({ data: data, projectId: projectId, refresh: refresh });
+        if (window.PrjControl) window.PrjControl.render({ data: data, projectId: projectId, refresh: refresh });
+        if (window.PrjIntake) window.PrjIntake.render({ data: data, projectId: projectId, refresh: refresh });
+        if (window.PrjBenefits) window.PrjBenefits.render({ data: data, projectId: projectId, refresh: refresh });
+        if (window.PrjInsights) window.PrjInsights.render({ data: data, L: L, projectId: projectId });
+        if (window.PrjToolbox) window.PrjToolbox.render({ data: data, L: L, projectId: projectId, refresh: refresh });
+        if (window.PrjAssistant) window.PrjAssistant.bind({ projectId: projectId, refresh: refresh });   // Ask AI (3.3.0)
+        // Documents (3.3.0): the shared panel, mounted once - it loads and checks its own list.
+        if (window.FreeITSMDocuments && !docsMounted) {
+            docsMounted = true;
+            window.FreeITSMDocuments.mount(document.getElementById('pvDocumentsPanel'), { parentType: 'project', parentId: projectId, apiBase: '../api/documents/', canEdit: !!(data.permissions && data.permissions.can_change) });
+        }
+        if (window.PrjReports) window.PrjReports.render({ data: data, projectId: projectId, refresh: refresh });
+        showTab(tab);
+        if (window.PrjTimeline) window.PrjTimeline.render(toolCtx);   // after showTab: it draws only when visible
+    }
+
+    /** Shows a tab and puts it in the address bar; charts on the shown tab draw now that they can measure their width, and the Gates tab refreshes if a document was added meanwhile. */
+    function showTab(name) {
+        // A document attached since the page loaded is something a gate's document item can now point at.
+        if (name === 'gates' && docsTouched) { docsTouched = false; refresh(); }
+        if (name === 'documents') docsTouched = true;
+        tab = name;
+        document.querySelectorAll('#prjTabs [data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+        document.querySelectorAll('.prj-tab-panel').forEach(s => { s.hidden = s.dataset.panel !== name; });
+        if (name === 'timeline' && window.PrjTimeline) window.PrjTimeline.shown();
+        if (name === 'overview') { renderBurnup(); if (window.PrjInsights) window.PrjInsights.draw(); }   // they measure their width, so draw them where they can be seen
+        if (name === 'budget' && window.PrjBudget && window.PrjBudget.shown) window.PrjBudget.shown();
+        try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
+    }
+
+    /** Loads the project, the lookups and its connections together and draws the page, or shows "not found"; a new empty project opens with the add-a-task box ready. */
+    async function load() {
+        try {
+            const [d, lk, ln] = await Promise.all([P.api('get.php?id=' + projectId), P.lookups(), P.api('links.php?project_id=' + projectId).catch(() => null)]);
+            L = lk;
+            links = ln;
+            P.setPalette(L.colours);
+            P.setPriorityLabels(L.priority_labels);
+            data = d;
+            // A brand-new project has nothing in it yet: open the add box so the
+            // first thing on the Plan tab is somewhere to type.
+            if (!data.tasks.length && !data.stages.length) openAdd = '';
+            renderAll();
+            // The recent trail (#124).
+            if (window.trailVisit) window.trailVisit('project', projectId);
+        } catch (e) {
+            document.getElementById('prjNotFound').hidden = false;
+            document.querySelectorAll('.prj-tab-panel').forEach(s => { s.hidden = true; });
+        }
+    }
+
+    /** Reloads the project from get.php and redraws the page. */
+    async function refresh() {
+        const d = await P.api('get.php?id=' + projectId);
+        data = d;
+        renderAll();
+    }
+
+    // ---- Connections ------------------------------------------------------------------
+    const LINK_ICONS = {
+        asset: 'laptop', change: 'wrench', ticket: 'mail', contract: 'box', cmdb: 'network', article: 'star', problem: 'shield',
+    };
+
+    /** A connection's history value ("asset: name") with the kind in the viewer's words. */
+    function linkHistoryText(v) {
+        const m = /^(\w+): (.*)$/.exec(v);
+        if (!m) return v;
+        return T('links.kind.' + m[1]) + ': ' + m[2];
+    }
+
+    /** "Connected to" chips on the Overview, one per kind that has links. */
+    function linksSummary() {
+        if (!links || !links.links) return '';
+        const chips = Object.entries(links.links).filter(([, rows]) => rows.length)
+            .map(([kind, rows]) => '<button type="button" class="prj-link-chip" data-goto="connections">' + P.icon(LINK_ICONS[kind], 15)
+                + '<b>' + rows.length + '</b> ' + esc(T('links.kind.' + kind)) + '</button>');
+        if (!chips.length) return '';
+        return '<div class="prj-panel prj-ov-links"><h3>' + esc(T('links.summary')) + '</h3><div class="prj-link-chips">' + chips.join('') + '</div></div>';
+    }
+
+    /** One connected record on the Connections tab - label linking to it, sub-line, status and unlink. */
+    function linkRow(kind, r) {
+        return '<li class="prj-conn-row' + (r.closed ? ' closed' : '') + '">'
+            + '<a href="' + esc(window.PRJ_BASE + r.url) + '" class="prj-conn-main">'
+            +   '<span class="prj-conn-label">' + esc(r.label) + '</span>'
+            +   (r.sub ? '<span class="prj-conn-sub">' + esc(r.sub) + '</span>' : '')
+            + '</a>'
+            + (r.status ? '<span class="prj-conn-status"' + (r.status_colour ? ' style="--sc:' + esc(r.status_colour) + '"' : '') + '>' + esc(r.status) + '</span>' : '')
+            + '<button type="button" class="prj-task-remove" data-unlink="' + esc(kind) + ':' + r.id + '" title="' + esc(T('links.remove')) + '" aria-label="' + esc(T('links.remove')) + '">&times;</button>'
+            + '</li>';
+    }
+
+    /**
+     * Service Status (3.2.0, going live safely): disruption this project has
+     * announced, and the Announce button. data.announcements is null for
+     * somebody who cannot open Service Status - then there is no panel at all.
+     * Planned maintenance is not an incident until it starts; the server turns
+     * it into one at its start and resolves it at its end.
+     */
+    function announcePanel() {
+        const a = data.announcements;
+        if (!a || (a.mode === 'off' && !a.list.length)) return '';
+        const can = data.permissions && data.permissions.can_change && a.mode !== 'off';
+        /** An announcement's time in words - from start to end, or from start with no end yet. */
+        const when = p => p.end ? T('announce.when_range', { start: window.fmtDateTime(p.start), end: window.fmtDateTime(p.end) })
+                                : T('announce.when_open', { start: window.fmtDateTime(p.start) });
+        const rows = a.list.map(p => '<li class="prj-conn-row' + (p.state === 'finished' || p.state === 'cancelled' ? ' closed' : '') + '">'
+            + '<div class="prj-conn-main"><span class="prj-conn-label">' + esc(p.title) + '</span>'
+            + '<span class="prj-conn-sub">' + esc(when(p)) + ' - ' + esc((p.services || []).map(s => s.name + (s.impact ? ' (' + s.impact + ')' : '')).join(', ')) + '</span></div>'
+            + '<span class="prj-conn-status prj-ann-' + esc(p.state) + '">' + esc(T('announce.state_' + p.state)) + '</span>'
+            + (can && p.state === 'scheduled' ? '<button type="button" class="prj-task-remove" data-withdraw="' + p.id + '" title="' + esc(T('announce.withdraw')) + '" aria-label="' + esc(T('announce.withdraw')) + '">&times;</button>' : '')
+            + '</li>').join('');
+        return '<section class="prj-panel prj-conn prj-announce">'
+            + '<header class="prj-conn-head"><span class="prj-conn-icon">' + P.icon('server', 18) + '</span>'
+            + '<div><h4>' + esc(T('announce.title')) + ' <span class="prj-conn-count">' + a.list.length + '</span></h4>'
+            + '<p class="prj-muted">' + esc(T('announce.hint_' + a.mode)) + '</p></div>'
+            + (can ? '<button type="button" class="btn btn-primary prj-btn sm" data-announce>' + esc(T('announce.button')) + '</button>' : '')
+            + '</header>'
+            + (rows ? '<ul class="prj-conn-list">' + rows + '</ul>' : '<p class="prj-conn-empty">' + esc(T('announce.none')) + '</p>')
+            + '</section>';
+    }
+
+    /** Adds a service-and-impact row to the announce dialog; the impact defaults to the most serious level that is neither downtime nor the all-clear (Maintenance on a stock install). */
+    function announceRow(serviceId, impactId) {
+        const a = data.announcements;
+        // Default impact by meaning: the most serious level that does not count
+        // as downtime and is not the all-clear - Maintenance on a stock install.
+        const maint = a.impacts.filter(l => !Number(l.counts_as_downtime) && !Number(l.is_default)).sort((x, y) => x.severity_order - y.severity_order)[0];
+        const pick = impactId || (maint && maint.id);
+        const row = document.createElement('div');
+        row.className = 'prj-ann-row';
+        row.innerHTML = '<select class="prj-ann-svc">' + a.services.map(s => '<option value="' + s.id + '"' + (String(s.id) === String(serviceId) ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select>'
+            + '<select class="prj-ann-impact">' + a.impacts.map(l => '<option value="' + l.id + '"' + (String(l.id) === String(pick) ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('') + '</select>'
+            + '<button type="button" class="prj-task-remove" aria-label="' + esc(T('announce.remove_service')) + '">&times;</button>';
+        row.querySelector('button').addEventListener('click', () => row.remove());
+        document.getElementById('paServices').appendChild(row);
+    }
+
+    /** Opens the announce-disruption dialog, empty, with one service row and, for planned work, the active stage's end as a suggested start. */
+    function openAnnounce() {
+        const a = data.announcements;
+        const planned = a.mode === 'planned';
+        document.getElementById('paIntro').textContent = T('announce.intro_' + a.mode);
+        document.getElementById('paTitle').value = '';
+        document.getElementById('paComment').value = '';
+        document.getElementById('paStartWrap').hidden = !planned;
+        document.getElementById('paStart').value = '';
+        document.getElementById('paEnd').value = '';
+        // The stage in progress, as a starting point for the dates.
+        const st = (data.stages || []).find(s => s.status === 'active' && s.end_date);
+        if (planned && st) document.getElementById('paStart').value = st.end_date + 'T08:00';
+        document.getElementById('paServices').innerHTML = '';
+        if (a.services.length) announceRow();
+        document.getElementById('paError').hidden = true;
+        P.openModal('prjAnnounceModal');
+    }
+
+    /** Announces the disruption on Service Status through tools.php, then reloads the project and redraws Connections and History. */
+    async function saveAnnounce() {
+        const err = document.getElementById('paError');
+        const services = Array.from(document.querySelectorAll('#paServices .prj-ann-row')).map(r => ({
+            service_id: parseInt(r.querySelector('.prj-ann-svc').value, 10), impact_level_id: parseInt(r.querySelector('.prj-ann-impact').value, 10) }));
+        try {
+            const r = await P.api('tools.php', { action: 'announce', project_id: projectId,
+                title: document.getElementById('paTitle').value.trim(), comment: document.getElementById('paComment').value.trim(),
+                start: window.inputToUTC(document.getElementById('paStart').value), end: window.inputToUTC(document.getElementById('paEnd').value), services: services });
+            data.announcements = r.announcements;
+            P.closeModal('prjAnnounceModal');
+            P.toast(T('announce.saved'));
+            const d = await P.api('get.php?id=' + projectId);   // the history shows it
+            data = d;
+            renderConnections();
+            renderHistory();
+        } catch (e) { err.textContent = e.message; err.hidden = false; }
+    }
+
+    /** Asks, then withdraws a scheduled announcement and redraws Connections. */
+    async function withdrawAnnounce(id) {
+        const p = (data.announcements.list || []).find(x => String(x.id) === String(id));
+        if (!p) return;
+        const ok = window.showConfirm ? await window.showConfirm({ title: T('announce.withdraw_title'), message: T('announce.withdraw_message', { name: p.title }),
+            okLabel: T('announce.withdraw'), okClass: 'danger' }) : confirm(T('announce.withdraw_title'));
+        if (!ok) return;
+        try {
+            const r = await P.api('tools.php', { action: 'announce_withdraw', project_id: projectId, id: p.id });
+            data.announcements = r.announcements;
+            renderConnections();
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    /** Draws the Connections tab - the Service Status panel, then a panel per kind of linked record with its rows and a search box to add one. */
+    function renderConnections() {
+        const box = document.getElementById('pvConnections');
+        if (!links) { box.innerHTML = ''; return; }
+        if (!links.ready) { box.innerHTML = '<div class="prj-plan-empty">' + esc(T('links.not_ready')) + '</div>'; return; }
+        const kinds = Object.keys(links.links || {});
+        if (!kinds.length) { box.innerHTML = '<div class="prj-plan-empty">' + esc(T('links.none_kinds')) + '</div>'; return; }
+        box.innerHTML = '<p class="prj-muted prj-conn-intro">' + esc(T('links.intro')) + '</p>' + announcePanel() + '<div class="prj-conn-grid">'
+            + kinds.map(kind => {
+                const rows = links.links[kind] || [];
+                return '<section class="prj-panel prj-conn" data-kind="' + esc(kind) + '">'
+                    + '<header class="prj-conn-head"><span class="prj-conn-icon">' + P.icon(LINK_ICONS[kind], 18) + '</span>'
+                    + '<div><h4>' + esc(T('links.kind.' + kind)) + ' <span class="prj-conn-count">' + rows.length + '</span></h4>'
+                    + '<p class="prj-muted">' + esc(T('links.hint.' + kind)) + '</p></div></header>'
+                    + (rows.length ? '<ul class="prj-conn-list">' + rows.map(r => linkRow(kind, r)).join('') + '</ul>' : '<p class="prj-conn-empty">' + esc(T('links.empty')) + '</p>')
+                    + '<div class="prj-conn-add"><input type="text" data-link-search="' + esc(kind) + '" placeholder="' + esc(T('links.add_ph')) + '" autocomplete="off">'
+                    + '<ul class="prj-conn-results" hidden></ul></div>'
+                    + '</section>';
+            }).join('') + '</div>';
+    }
+
+    /** Reloads the project's connections and redraws the Connections tab and the Overview. */
+    async function reloadLinks() {
+        try { links = await P.api('links.php?project_id=' + projectId); } catch (e) { /* keep the last copy */ }
+        renderConnections();
+        renderOverview();
+    }
+
+    let searchTimer = null;
+    /** Searches records of one kind (after a 180ms pause) to connect to the project, showing the matches under the box. */
+    function searchLinks(input) {
+        clearTimeout(searchTimer);
+        const kind = input.dataset.linkSearch;
+        const list = input.parentNode.querySelector('.prj-conn-results');
+        searchTimer = setTimeout(async () => {
+            try {
+                const d = await P.api('links.php?project_id=' + projectId + '&search=' + encodeURIComponent(kind) + '&q=' + encodeURIComponent(input.value.trim()));
+                list.innerHTML = (d.results || []).length
+                    ? d.results.map(r => '<li><button type="button" data-link-add="' + esc(kind) + ':' + r.id + '"><span class="prj-conn-label">' + esc(r.label) + '</span>'
+                        + (r.sub ? '<span class="prj-conn-sub">' + esc(r.sub) + '</span>' : '') + '</button></li>').join('')
+                    : '<li class="prj-conn-noresult">' + esc(T('links.no_results')) + '</li>';
+                list.hidden = false;
+            } catch (e) { P.toast(e.message, 'error'); }
+        }, 180);
+    }
+
+    /** Connects or disconnects a record, then reloads the project and its connections and redraws; after adding, the search box keeps focus for the next one. */
+    async function linkAction(action, value) {
+        const [kind, id] = value.split(':');
+        try {
+            await P.api('links.php', { action: action, project_id: projectId, kind: kind, target_id: parseInt(id, 10) });
+            P.toast(T(action === 'add' ? 'links.linked' : 'links.unlinked'));
+            const d = await P.api('get.php?id=' + projectId);   // the history shows the change
+            data = d;
+            await reloadLinks();
+            renderHistory();
+            const again = document.querySelector('[data-link-search="' + kind + '"]');
+            if (again && action === 'add') again.focus();
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    // ---- Stages -------------------------------------------------------------------
+    /** Opens the stage dialog filled from stage, or empty for a new one, worded for the project's kind of time box. */
+    function openStage(stage) {
+        const kind = stage ? (stage.kind || timeboxKind()) : timeboxKind();
+        const word = P.timeboxWord(kind);
+        document.getElementById('psTitle').textContent = stage ? T('plan.stage_edit', { timebox: word }) : T('plan.stage_new', { timebox: word });
+        document.getElementById('psId').value = stage ? stage.id : '';
+        document.getElementById('psName').value = stage ? stage.name : '';
+        document.getElementById('psGoal').value = stage ? (stage.goal || '') : '';
+        document.getElementById('psGoal').placeholder = T('plan.stage_goal_ph', { timebox: word });
+        document.getElementById('psStart').value = stage ? (stage.start_date || '') : '';
+        document.getElementById('psEnd').value = stage ? (stage.end_date || '') : '';
+        document.getElementById('psStatus').value = stage ? stage.status : 'planned';
+        document.getElementById('psDelete').hidden = !stage;
+        document.getElementById('psError').hidden = true;
+        P.openModal('prjStageModal');
+        setTimeout(() => document.getElementById('psName').focus(), 60);
+    }
+
+    /** Saves the stage dialog through stage_save.php and redraws; closing a stage this way is cheered. */
+    async function saveStage() {
+        const id = document.getElementById('psId').value;
+        const body = {
+            project_id: projectId,
+            name: document.getElementById('psName').value.trim(),
+            goal: document.getElementById('psGoal').value.trim(),
+            start_date: document.getElementById('psStart').value || null,
+            end_date: document.getElementById('psEnd').value || null,
+            status: document.getElementById('psStatus').value,
+        };
+        if (id) body.id = parseInt(id, 10);
+        const was = id ? data.stages.find(s => String(s.id) === id) : null;
+        try {
+            await P.api('stage_save.php', body);
+            P.closeModal('prjStageModal');
+            await refresh();
+            if (was && was.status !== 'closed' && body.status === 'closed') cheer(body.name, id);
+        } catch (e) {
+            const er = document.getElementById('psError'); er.textContent = e.message; er.hidden = false;
+        }
+    }
+
+    /** Starts or finishes a stage from its lane's button and redraws; finishing is cheered. */
+    async function setStageStatus(id, status) {
+        const s = data.stages.find(x => String(x.id) === String(id));
+        if (!s) return;
+        try {
+            await P.api('stage_save.php', { project_id: projectId, id: s.id, name: s.name, status: status });
+            await refresh();
+            if (status === 'closed') cheer(s.name, s.id);
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    /** Celebrates a finished stage on its lane (or the ring) with a toast. */
+    function cheer(name, stageId) {
+        const el = document.querySelector('[data-lane="' + stageId + '"] .prj-lane-head') || document.getElementById('pvRing');
+        P.celebrate(el);
+        P.toast(T('celebrate.stage_done', { name: name }));
+    }
+
+    /** Asks, then deletes the stage open in the dialog. */
+    async function deleteStage() {
+        const id = document.getElementById('psId').value;
+        const s = data.stages.find(x => String(x.id) === id);
+        if (!s) return;
+        const word = P.timeboxWord(s.kind || timeboxKind());
+        const ok = await window.showConfirm({ title: T('plan.stage_delete_title', { timebox: word }), message: T('plan.stage_delete_body', { timebox: word }), okLabel: P.TC('delete'), okClass: 'danger' });
+        if (!ok) return;
+        try {
+            await P.api('stage_delete.php', { project_id: projectId, id: s.id });
+            P.closeModal('prjStageModal');
+            await refresh();
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    // ---- Tasks --------------------------------------------------------------------
+    /** Creates a task in a lane from its add form through task_create.php, redraws and puts the cursor back in the same form for the next one. */
+    async function addTask(form) {
+        const title = form.title.value.trim();
+        if (!title) { form.title.focus(); return; }
+        const btn = form.querySelector('button'); btn.disabled = true;
+        try {
+            await P.api('task_create.php', {
+                project_id: projectId,
+                stage_id: form.dataset.stage || null,
+                title: title,
+                assigned_analyst_id: form.assignee.value || null,
+                due_date: form.due.value || null,
+            });
+            const stageKey = form.dataset.stage;
+            await refresh();
+            P.toast(T('plan.task_added'));
+            const again = document.querySelector('.prj-add-task[data-stage="' + stageKey + '"] input[name="title"]');
+            if (again) again.focus();
+        } catch (e) {
+            P.toast(e.message, 'error');
+            btn.disabled = false;
+        }
+    }
+
+    /**
+     * Puts a task at a place in a lane (GH #184): into the lane if it is not
+     * already there (task_assign.php), then the lane's order (task_order.php),
+     * then redraws. index null = the end, without an order call - which is what a
+     * drop without a pointer position (the phone's move sheet) means.
+     *
+     * @param {string} taskId
+     * @param {string} laneId   a stage id, or '' for the tasks not in a stage
+     * @param {?number} index   where in the lane, 0 = top
+     */
+    async function placeTask(taskId, laneId, index) {
+        const t = data.tasks.find(x => String(x.id) === String(taskId));
+        if (!t) return;
+        const sameLane = String(t.project_stage_id || '') === String(laneId || '');
+        if (index === null || index === undefined) { if (!sameLane) await moveTask(taskId, laneId); return; }
+        const laneEl = document.querySelector('#pvPlan .prj-lane[data-lane="' + CSS.escape(String(laneId || '')) + '"]');
+        const ids = laneEl ? [...laneEl.querySelectorAll('.prj-task')].map(r => r.dataset.task).filter(id => String(id) !== String(taskId)) : [];
+        const before = ids.join(',');
+        ids.splice(Math.max(0, Math.min(index, ids.length)), 0, String(taskId));
+        if (sameLane && laneEl && [...laneEl.querySelectorAll('.prj-task')].map(r => r.dataset.task).join(',') === ids.join(',')) return;
+        try {
+            if (!sameLane) await P.api('task_assign.php', { task_id: taskId, project_id: projectId, stage_id: laneId || null });
+            await P.api('task_order.php', { project_id: projectId, stage_id: laneId || null, ids: ids });
+        } catch (e) { P.toast(e.message, 'error'); }
+        await refresh();
+        // Keep the keyboard where it was: on the moved task's handle.
+        const grip = document.querySelector('#pvPlan .prj-task[data-task="' + CSS.escape(String(taskId)) + '"] .prj-grip');
+        if (grip && before !== null) grip.focus();
+    }
+
+    /** Moves a task one place up (-1) or down (+1) within its lane - the arrow keys on its handle, and the phone's Up / Down. */
+    function nudgeTask(taskId, delta) {
+        const row = document.querySelector('#pvPlan .prj-task[data-task="' + CSS.escape(String(taskId)) + '"]');
+        const laneEl = row && row.closest('.prj-lane');
+        if (!laneEl) return;
+        const rows = [...laneEl.querySelectorAll('.prj-task')];
+        const at = rows.indexOf(row);
+        const to = at + delta;
+        if (to < 0 || to >= rows.length) return;
+        placeTask(taskId, laneEl.dataset.lane, to);
+    }
+    // For the phone layer (mobile.js LAYER 44c), which offers Up / Down beside its lane list.
+    window.PrjPlan = { nudgeTask: nudgeTask };
+
+    /** Moves a task to another lane (or out of every lane) through task_assign.php and redraws; nothing happens when it is already there. */
+    async function moveTask(taskId, stageId) {
+        const t = data.tasks.find(x => String(x.id) === String(taskId));
+        if (!t || String(t.project_stage_id || '') === String(stageId || '')) return;
+        try {
+            await P.api('task_assign.php', { task_id: taskId, project_id: projectId, stage_id: stageId || null });
+            await refresh();
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    /** Asks, then takes a task off the project (the task itself is kept) and redraws. */
+    async function removeTask(taskId) {
+        const ok = await window.showConfirm({ title: T('plan.remove_task'), message: T('plan.remove_task_body'), okLabel: T('plan.remove'), okClass: 'danger' });
+        if (!ok) return;
+        try {
+            await P.api('task_assign.php', { task_id: taskId, project_id: null });
+            await refresh();
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    // ---- Project actions -------------------------------------------------------------
+    /** Opens the project form and redraws after saving; closing the project this way is cheered. */
+    function editProject() {
+        const before = data.project.status;
+        P.openProjectForm(data.project, async (id, isNew, body) => {
+            await P.lookups();
+            await refresh();
+            if (before !== 'closed' && body.status === 'closed') {
+                P.celebrate(document.getElementById('pvRing'));
+                P.toast(T('celebrate.project_done'));
+            }
+        });
+    }
+
+    /** Asks, then deletes the project and goes back to the portfolio. */
+    async function deleteProject() {
+        const kind = timeboxKind();
+        const ok = await window.showConfirm({
+            title: T('view.delete_title'),
+            message: T('view.delete_body', { timeboxes: P.timeboxWord(kind, true), count: data.tasks.length }),
+            okLabel: P.TC('delete'), okClass: 'danger',
+        });
+        if (!ok) return;
+        try {
+            await P.api('delete.php', { id: projectId });
+            P.toast(T('view.deleted'));
+            window.location.href = window.PRJ_BASE + 'projects/';
+        } catch (e) { P.toast(e.message, 'error'); }
+    }
+
+    // ---- Wiring -----------------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+        const start = (location.hash || '').replace('#', '');
+        if (['overview', 'plan', 'timeline', 'people', 'scope', 'raci', 'raid', 'gates', 'budget', 'control', 'benefits', 'documents', 'reports', 'connections', 'history'].includes(start)) tab = start;
+        if (/[?&]new=1/.test(location.search)) tab = 'plan';
+
+        document.getElementById('prjTabs').addEventListener('click', e => {
+            const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab);
+        });
+        document.getElementById('pvEdit').addEventListener('click', editProject);
+        document.getElementById('pvDelete').addEventListener('click', deleteProject);
+        document.getElementById('psSave').addEventListener('click', saveStage);
+        document.getElementById('paSave').addEventListener('click', saveAnnounce);
+        document.getElementById('paAddService').addEventListener('click', () => announceRow());
+        document.getElementById('psDelete').addEventListener('click', deleteStage);
+        document.getElementById('psName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveStage(); } });
+
+        page.addEventListener('click', e => {
+            const g = e.target.closest('[data-goto]'); if (g) { showTab(g.dataset.goto); return; }
+            if (e.target.closest('#pvAddStage')) { openStage(null); return; }
+            const ed = e.target.closest('[data-stage-edit]');
+            if (ed) { openStage(data.stages.find(s => String(s.id) === ed.dataset.stageEdit)); return; }
+            const st = e.target.closest('[data-stage-start]'); if (st) { setStageStatus(st.dataset.stageStart, 'active'); return; }
+            const fi = e.target.closest('[data-stage-finish]'); if (fi) { setStageStatus(fi.dataset.stageFinish, 'closed'); return; }
+            const rm = e.target.closest('[data-remove-task]'); if (rm) { e.preventDefault(); removeTask(rm.dataset.removeTask); return; }
+            const la = e.target.closest('[data-link-add]'); if (la) { linkAction('add', la.dataset.linkAdd); return; }
+            const ul = e.target.closest('[data-unlink]'); if (ul) { linkAction('remove', ul.dataset.unlink); return; }
+            if (e.target.closest('[data-announce]')) { openAnnounce(); return; }
+            const wd = e.target.closest('[data-withdraw]'); if (wd) { withdrawAnnounce(wd.dataset.withdraw); return; }
+            if (!e.target.closest('.prj-conn-add')) document.querySelectorAll('.prj-conn-results').forEach(l => { l.hidden = true; });
+            const ao = e.target.closest('[data-add-open]');
+            if (ao) {
+                openAdd = ao.dataset.addOpen;
+                renderPlan();
+                const f = document.querySelector('.prj-add-task[data-stage="' + openAdd + '"] input[name="title"]');
+                if (f) f.focus();
+            }
+        });
+        // The Plan's estimate box (3.3.0): saved when it is left or Enter is pressed.
+        page.addEventListener('change', async e => {
+            const box = e.target.closest('[data-estimate]');
+            if (!box) return;
+            try {
+                await P.api('tools.php', { action: 'task_estimate', project_id: projectId, task_id: parseInt(box.dataset.estimate, 10), estimate_hours: box.value === '' ? null : box.value });
+                // Tabbing down the list moved focus to the next box before the redraw
+                // replaced it: put it back, so a column of estimates can be typed in one go.
+                const next = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.estimate : null;
+                await refresh();
+                if (next) { const el = document.querySelector('[data-estimate="' + next + '"]'); if (el) { el.focus(); el.select(); } }
+            } catch (err) { P.toast(err.message, 'error'); await refresh(); }
+        });
+        // The burn-up's own controls (3.3.0).
+        page.addEventListener('change', e => {
+            const s = e.target.closest('[data-burn-stage]'); if (s) { burnStage = s.value; renderBurnup(); }
+        });
+        page.addEventListener('click', e => {
+            const m = e.target.closest('[data-burn-measure]'); if (m) { burnMeasure = m.dataset.burnMeasure; renderBurnup(); }
+            const bv = e.target.closest('[data-burn-view]');
+            if (bv) { burnView = bv.dataset.burnView; try { localStorage.setItem('freeitsm.projects.burnview', burnView); } catch (er) { /* private window */ } renderBurnup(); }
+        });
+        page.addEventListener('input', e => {
+            const s = e.target.closest('[data-link-search]'); if (s) searchLinks(s);
+        });
+        page.addEventListener('focusin', e => {
+            const s = e.target.closest('[data-link-search]'); if (s) searchLinks(s);
+        });
+        page.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && e.target.closest('[data-link-search]')) { e.target.parentNode.querySelector('.prj-conn-results').hidden = true; }
+            if (e.key === 'Escape' && e.target.closest('.prj-add-task')) { openAdd = null; renderPlan(); }
+            if (e.key === 'Enter' && e.target.closest('[data-estimate]')) { e.preventDefault(); e.target.blur(); }
+        });
+        page.addEventListener('submit', e => {
+            const f = e.target.closest('.prj-add-task'); if (!f) return;
+            e.preventDefault(); addTask(f);
+        });
+
+        // Drag a task between lanes (desktop). On a phone the row's link still opens the task.
+        let dragId = null;
+        page.addEventListener('dragstart', e => {
+            const row = e.target.closest('.prj-task'); if (!row) return;
+            dragId = row.dataset.task;
+            row.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', dragId); } catch (err) { /* old browsers */ }
+        });
+        const clearDropMarks = () => document.querySelectorAll('#pvPlan .drop-before, #pvPlan .drop-after').forEach(r => r.classList.remove('drop-before', 'drop-after'));
+        /**
+         * Where in a lane a drop at this pointer height lands (GH #184): the index
+         * among the lane's other tasks, and the row to mark. null when the event has
+         * no pointer position - the phone's move sheet - which means "the end".
+         */
+        function dropSpot(laneEl, clientY) {
+            if (typeof clientY !== 'number') return null;
+            const rows = [...laneEl.querySelectorAll('.prj-task')].filter(r => r.dataset.task !== dragId);
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i].getBoundingClientRect();
+                if (clientY < r.top + r.height / 2) return { index: i, row: rows[i], after: false };
+            }
+            return { index: rows.length, row: rows[rows.length - 1] || null, after: true };
+        }
+        page.addEventListener('dragend', e => {
+            const row = e.target.closest('.prj-task'); if (row) row.classList.remove('dragging');
+            document.querySelectorAll('.prj-lane.drop-over').forEach(l => l.classList.remove('drop-over'));
+            clearDropMarks();
+        });
+        page.addEventListener('dragover', e => {
+            const laneEl = e.target.closest('.prj-lane'); if (!laneEl || !dragId) return;
+            e.preventDefault();
+            document.querySelectorAll('.prj-lane.drop-over').forEach(l => { if (l !== laneEl) l.classList.remove('drop-over'); });
+            laneEl.classList.add('drop-over');
+            clearDropMarks();
+            const spot = dropSpot(laneEl, e.clientY);
+            if (spot && spot.row) spot.row.classList.add(spot.after ? 'drop-after' : 'drop-before');
+        });
+        page.addEventListener('drop', e => {
+            const laneEl = e.target.closest('.prj-lane'); if (!laneEl || !dragId) return;
+            e.preventDefault();
+            laneEl.classList.remove('drop-over');
+            const spot = dropSpot(laneEl, e.clientY);
+            clearDropMarks();
+            const id = dragId; dragId = null;
+            placeTask(id, laneEl.dataset.lane, spot ? spot.index : null);
+        });
+        // The keyboard (GH #184): up / down on a task's handle moves it within its lane.
+        page.addEventListener('keydown', e => {
+            const grip = e.target.closest && e.target.closest('#pvPlan .prj-grip');
+            if (!grip || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+            if (data.permissions && !data.permissions.can_change) return;
+            e.preventDefault();
+            nudgeTask(grip.closest('.prj-task').dataset.task, e.key === 'ArrowUp' ? -1 : 1);
+        });
+
+        load();
+    });
+})();

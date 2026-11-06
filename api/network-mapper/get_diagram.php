@@ -22,6 +22,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('network-mapper');
 
 try {
     $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
@@ -54,6 +55,19 @@ try {
     // icon_key lives on cmdb_icons (cmdb_classes only holds the FK), so a LEFT
     // JOIN turns it back into a flat string. node.icon_override (if set) wins
     // over the class default at render time.
+    // ── Multi-tenancy boundary (deliberate, read this before "fixing" it) ──
+    // CMDB objects are company-scoped; network DIAGRAMS are not yet. So a node
+    // here is NOT filtered by company. Two reasons for leaving it:
+    //   1. The ways a node gets ONTO a canvas are already scoped as of the CMDB
+    //      slice — api/cmdb/search_objects.php and
+    //      api/network-mapper/get_related_objects.php — so no NEW diagram can
+    //      pick up another company's CI.
+    //   2. Filtering here would make nodes silently DISAPPEAR from existing
+    //      diagrams, which is a worse failure than the residual it closes.
+    // The residual is therefore historical data only: a diagram built before the
+    // CMDB slice could still name a CI the viewer can't otherwise reach.
+    // Closing it properly means giving diagrams their own company — that's the
+    // first thing Network Mapper's own multi-tenancy slice should do.
     $nstmt = $conn->prepare(
         "SELECT n.id, n.cmdb_object_id, n.x, n.y, n.size, n.icon_override,
                 o.name, o.is_planned,

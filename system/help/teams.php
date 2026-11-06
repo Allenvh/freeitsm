@@ -1,0 +1,152 @@
+<?php
+/**
+ * System Help — Teams.
+ */
+require __DIR__ . '/_init.php';
+$helpSlug = 'teams';
+require __DIR__ . '/_top.php';
+?>
+
+<!-- 1. Overview -->
+<div class="help-section" id="overview">
+    <div class="help-section-header"><?php echo helpSectionNum('overview'); ?>
+        <div>
+            <h3>What a team is for</h3>
+            <p>A team is a group of analysts — service desk, infrastructure, applications — that you grant things to <em>once</em> instead of person by person. Add someone to the team and they inherit everything the team has.</p>
+        </div>
+    </div>
+    <p>A team carries four things:</p>
+    <div class="help-cards">
+        <div class="help-card">
+            <h4>Departments</h4>
+            <p>Which ticket departments its members can see. This is the big one — see below.</p>
+        </div>
+        <div class="help-card">
+            <h4>Members</h4>
+            <p>The analysts in the team.</p>
+        </div>
+        <div class="help-card">
+            <h4>Company access</h4>
+            <p>On a multi-company install, which companies its members can work in.</p>
+        </div>
+        <div class="help-card">
+            <h4>Module access</h4>
+            <p>Which modules its members can open (granted on System &rarr; Modules).</p>
+        </div>
+    </div>
+    <p>The table lists each team with its description, how many departments and analysts it has, its display order and whether it's active. Teams are <strong>global</strong> — they are not owned by a company, so the same team can serve several companies at once.</p>
+</div>
+
+<!-- 2. Creating a team -->
+<div class="help-section" id="creating">
+    <div class="help-section-header"><?php echo helpSectionNum('creating'); ?>
+        <div>
+            <h3>Creating a team</h3>
+            <p>Press <strong>Add</strong> and give it a name. Everything else is optional.</p>
+        </div>
+    </div>
+    <div class="help-table"><table>
+        <tr><th>Field</th><th>What it does</th></tr>
+        <tr><td><strong>Name</strong></td><td>Required. Note that duplicate names are <em>not</em> rejected — two teams called &ldquo;Support&rdquo; are indistinguishable in every dropdown, so keep names unique yourself.</td></tr>
+        <tr><td><strong>Description</strong></td><td>Free text, shown in the table and in the picker when assigning analysts.</td></tr>
+        <tr><td><strong>Display order</strong></td><td>Sorts the team list and every team dropdown in the app. Lower numbers first; ties fall back to name.</td></tr>
+        <tr><td><strong>Active</strong></td><td>On by default. See the warning at the end of this page about what deactivating does <em>not</em> do.</td></tr>
+        <tr><td><strong>Access all modules</strong></td><td><strong>Off</strong> by default for a new team. On means members can open every module.</td></tr>
+        <tr><td><strong>Sign-in method</strong></td><td><strong>Not set</strong> by default. Set it and members who <em>follow their team</em> sign in this way. See Sign-in method below.</td></tr>
+    </table></div>
+    <p>Once the team exists, use the buttons on its row to fill it out: <strong>Manage departments</strong>, <strong>Manage members</strong>, and — on a multi-company install — <strong>Manage company access</strong>.</p>
+</div>
+
+<!-- 3. Departments -->
+<div class="help-section" id="departments">
+    <div class="help-section-header"><?php echo helpSectionNum('departments'); ?>
+        <div>
+            <h3>Departments — which ticket folders a team member gets</h3>
+            <p>A team's departments decide the <strong>department folders</strong> its members see in the Tickets folder list, and what the folder numbers count:</p>
+        </div>
+    </div>
+    <div class="help-steps">
+        <div class="help-step"><span class="help-step-num">1</span><div>An analyst in <strong>no team</strong> gets a folder for <strong>every</strong> active department.</div></div>
+        <div class="help-step"><span class="help-step-num">2</span><div>An analyst in <strong>one or more teams</strong> gets folders only for the departments linked to those teams — the union of them. Their numbers count those departments, <strong>plus every ticket with no department</strong>, plus anything assigned to them.</div></div>
+    </div>
+    <div class="help-note warn"><strong>A team with members but no departments</strong> leaves those members counting only tickets with no department, plus their own. That is fine on an install that has no departments yet; anywhere else it is usually a mistake, so <strong>System → Teams</strong> flags such a team with a <strong>Check</strong> badge and a note at the top. Link the departments <em>before</em> you add the members.</div>
+    <div class="help-note"><strong>Teams organise the folder list; they are not a lock.</strong> An analyst can still open a ticket from another department in a company they can access. To keep tickets from someone, use <strong>company access</strong> (System → Analysts or Teams), or make the ticket <strong>confidential</strong>.</div>
+    <p>The picker lists <em>all</em> departments, including inactive ones (labelled as such), deliberately — so that saving the form doesn't silently drop a link to a department that happens to be switched off.</p>
+    <div class="help-note">The same links can be edited from the other side, under Tickets &rarr; Settings &rarr; Departments. It's one relationship, two doors.</div>
+</div>
+
+<!-- 4. Members -->
+<div class="help-section" id="members">
+    <div class="help-section-header"><?php echo helpSectionNum('members'); ?>
+        <div>
+            <h3>Members</h3>
+            <p><strong>Manage members</strong> opens a checkbox list of analysts. Tick who belongs, press <strong>Save</strong> — what you tick <em>replaces</em> the current membership, so it's the full list, not an addition to it.</p>
+        </div>
+    </div>
+    <p>This is the same relationship as <strong>Assign teams</strong> on System &rarr; Analysts. Edit it from whichever end suits: from here when you're standing up a team, from there when you're onboarding one person.</p>
+</div>
+
+<!-- 5. Company access -->
+<div class="help-section" id="companies">
+    <div class="help-section-header"><?php echo helpSectionNum('companies'); ?>
+        <div>
+            <h3>Company access</h3>
+            <p>Only shown once you have more than one company. <strong>Manage company access</strong> lets you grant the whole team a set of companies — useful when a squad looks after a specific group of clients.</p>
+        </div>
+    </div>
+    <div class="help-table"><table>
+        <tr><th>Setting</th><th>What it does</th></tr>
+        <tr><td><strong>Access all companies</strong></td><td>On means members reach every company, including any you add later. Off reveals a checkbox list.</td></tr>
+    </table></div>
+    <div class="help-note"><strong>Team company access is added to each member's own access — it never removes any.</strong> The effective answer for a person is <em>their</em> companies plus <em>their teams'</em> companies. So a team is a way to widen access, not to restrict it: to narrow someone down, reduce what's ticked on their own analyst record <em>and</em> take them out of the wider team.</div>
+</div>
+
+<!-- 6. Module access -->
+<div class="help-section" id="modules">
+    <div class="help-section-header"><?php echo helpSectionNum('modules'); ?>
+        <div>
+            <h3>Module access</h3>
+            <p>The <strong>Access all modules</strong> toggle lives on the team's Edit form; the specific per-module ticks live on System &rarr; Modules, which has a column for teams as well as analysts.</p>
+        </div>
+    </div>
+    <div class="help-note warn"><strong>Unlike company access, module access does not always widen.</strong> It depends on the install-wide privilege mode set on System &rarr; Modules:
+        <ul>
+            <li><strong>Most privilege</strong> — an analyst gets the union of their own modules and their teams'. A team can only add.</li>
+            <li><strong>Least privilege</strong> — the analyst gets the intersection. Adding someone to a team with a narrow module list can <em>take modules away</em> from them.</li>
+        </ul>
+        If a module disappears from someone's waffle right after a team change, this is the reason.
+    </div>
+</div>
+
+<!-- Sign-in method (GH #41) -->
+<div class="help-section" id="signin">
+    <div class="help-section-header"><?php echo helpSectionNum('signin'); ?>
+        <div>
+            <h3>Sign-in method</h3>
+            <p>Set a sign-in method on a team once, and new people pick it up just by joining the team. It only applies to analysts whose own <strong>Sign-in method</strong> on System &rarr; Analysts is <strong>Follow team</strong>, which is the default for anyone you add from now on. Analysts who already existed keep exactly what they had until you change them.</p>
+        </div>
+    </div>
+    <div class="help-table"><table>
+        <tr><th>The analyst's teams</th><th>What happens</th></tr>
+        <tr><td>One team sets a method, or several teams set the <em>same</em> one</td><td>They sign in that way, and move automatically if you change the team's method.</td></tr>
+        <tr><td>Their teams set <em>different</em> methods</td><td><strong>Nothing changes</strong> — they keep signing in the way they did. The team list shows <em>N sign-in conflicts</em>, and their row on System &rarr; Analysts shows a <em>Sign-in conflict</em> badge — click it for an explanation — until you choose one on their record.</td></tr>
+        <tr><td>None of their teams sets a method</td><td>They keep what they had.</td></tr>
+    </table></div>
+    <div class="help-note warn"><strong>Moving someone between teams can change how they sign in.</strong> So can switching a team off, deleting it, or changing its method. After each of those saves, a message says how many analysts changed. Before you put a team on a single sign-on provider, make sure its members' email addresses match their accounts at that provider.</div>
+    <div class="help-note">Each analyst still has exactly <strong>one</strong> way in. Being in two teams never gives someone two sign-in methods. It only raises the question of which one, and FreeITSM leaves that to you rather than guessing.</div>
+</div>
+
+<!-- 7. Deleting a team -->
+<div class="help-section" id="deleting">
+    <div class="help-section-header"><?php echo helpSectionNum('deleting'); ?>
+        <div>
+            <h3>Deleting a team</h3>
+            <p>Delete removes the team and, with it, every grant it was making. There are <strong>no protections</strong> on this — no check for members, no warning about what they'll lose.</p>
+        </div>
+    </div>
+    <div class="help-note warn"><strong>Deleting a team silently changes what its members can see.</strong> They lose the team's departments, its company access and its module grants all at once. If it was their only team, they flip from &ldquo;that team's departments&rdquo; back to &ldquo;every department&rdquo; — which may be more than you intended.</div>
+    <div class="help-note"><strong>Deactivating is not the safe half-measure it looks like.</strong> Setting a team inactive removes it from the pickers and dropdowns, but its company and module grants <em>keep applying</em> to its members. If your aim is to stop a team granting access, empty its membership or change its grants — don't just switch it off.</div>
+    <div class="help-note ok"><strong>A good order to work in:</strong> create the team &rarr; link its departments &rarr; set its company and module access &rarr; add the members last. That way nobody spends a minute staring at an empty ticket list.</div>
+</div>
+
+<?php require __DIR__ . '/_bottom.php'; ?>

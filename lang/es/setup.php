@@ -1,0 +1,123 @@
+<?php
+/**
+ * FreeITSM — setup strings (es).
+ *
+ * Keys mirror lang/en/setup.php exactly. A key absent here falls back to
+ * English at runtime, so this file may be incomplete without breaking
+ * anything. Check coverage with: php scripts/i18n_audit.php es
+ *
+ * ⚠️ Placeholders like {name} and %d are substituted at runtime — printf
+ * tokens substitute BY POSITION, so their order must match English.
+ */
+
+return [
+    'title' => 'Configuración de FreeITSM',
+    'heading' => 'Verificación de la instalación',
+    'storage' => [
+        'heading' => 'Alto: los archivos que suba se eliminarán cada vez que actualice',
+        'explain' => 'FreeITSM se está ejecutando en Docker, y algunas de las carpetas donde almacena los archivos subidos están dentro del contenedor en lugar de en un volumen de Docker. Actualizar FreeITSM reconstruye el contenedor, y todo lo que hay dentro se pierde cuando eso ocurre. Su base de datos está en un volumen y sobrevivirá, así que después los adjuntos seguirían apareciendo en las listas aunque los archivos ya no existieran. Dos minutos ahora evitan esto de forma permanente.',
+        'encryption_key' => 'Esto incluye su clave de cifrado. Si se pierde, las contraseñas de buzón guardadas y las credenciales de integración no resultan dañadas, pero no se podrán volver a leer nunca, y habrá que introducir cada una a mano.',
+        'existing_install' => 'Esta instalación ya está en uso, así que no se limite a añadir esto y reconstruir. Copie antes las carpetas fuera del contenedor en ejecución — añadir un volumen no rescata los archivos que ya están dentro de él. Sistema → Herramientas de depuración → D013 le da los comandos en el orden correcto.',
+        'step1' => '1. Cree un nuevo archivo llamado docker-compose.override.yml, en la misma carpeta que docker-compose.yml, con exactamente este contenido. No edite el propio docker-compose.yml — ese archivo se sustituye al actualizar, y sus cambios se perderían o bloquearían la actualización. FreeITSM lee el archivo override automáticamente.',
+        'step2' => '2. Aplíquelo:',
+        'foot' => 'Después recargue esta página — este mensaje desaparecerá. No hace falta cambiar nada más, y hacerlo ahora no cuesta nada, porque todavía no hay nada almacenado en estas carpetas.',
+        'foot_in_use' => 'Después recargue esta página — este mensaje desaparecerá. No omita el paso de copiar antes descrito: ya hay archivos en estas carpetas, y reconstruir sin copiarlos antes los eliminará para siempre.',
+    ],
+    'summary' => [
+        'passed' => '{n} aprobadas',
+        'warning' => '{n} advertencia',
+        'warnings' => '{n} advertencias',
+        'failed' => '{n} fallidas',
+    ],
+    'checks' => [
+        'config' => 'config.php',
+        'db_config' => 'db_config.php',
+        'db_connection' => 'Conexión a la base de datos',
+        'encryption_key' => 'Clave de cifrado',
+        'ssl_verify' => 'Verificación de certificado HTTPS',
+        'ca_bundle_ini' => 'Paquete CA en php.ini',
+        'display_errors' => 'Mostrar errores',
+        'php_version' => 'Versión de PHP',
+        'php_extension' => 'Extensión de PHP: {ext}',
+        'php_extension_optional' => 'Extensión de PHP: {ext} (opcional)',
+        'storage_persistence' => 'Persistencia del almacenamiento (Docker)',
+    ],
+    'detail' => [
+        'found' => 'Encontrado',
+        'storage_persisted' => 'Todas las carpetas que contienen archivos subidos están en almacenamiento que sobrevive a una reconstrucción',
+        'storage_at_risk' => 'NO están en un volumen de Docker y se vacían en cada reconstrucción: {dirs} — añada un volumen para cada una de ellas ahora, antes de que se almacene nada en ellas',
+        'storage_at_risk_masked' => '{n} carpetas que contienen archivos subidos no sobrevivirían a una actualización',
+        'config_not_found' => 'No encontrado — copie config.php a la raíz de la aplicación',
+        'db_config_not_found' => 'No encontrado en: {path}',
+        'db_config_path_unset' => 'La variable $db_config_path no está definida en config.php',
+        'db_connected' => 'Conectado (controlador: {driver})',
+        'db_constants_undefined' => 'Las constantes de la base de datos no están definidas — compruebe db_config.php',
+        'encryption_key_missing' => 'No encontrado en: {path} — necesario para cifrar la configuración sensible',
+        'encryption_key_undefined' => 'ENCRYPTION_KEY_PATH no está definido en includes/encryption.php',
+        'ssl_enabled' => 'Activado',
+        'ssl_verified' => 'Activado y funcionando — se verificó el certificado de una solicitud HTTPS en vivo (paquete CA: {bundle})',
+        'ssl_broken' => 'Activado, pero el servidor no pudo verificar un certificado — el HTTPS saliente (correo, IA, webhooks, inicio de sesión) fallará. Solución más sencilla: coloque un archivo cacert.pem en la carpeta includes/ de la aplicación (descárguelo de https://curl.se/ca/cacert.pem) — no es necesario modificar php.ini. Error: {error}',
+        'ssl_untested' => 'Activado, pero no se pudo completar una solicitud de prueba en vivo (¿sin red saliente?), por lo que no se pudo confirmar la verificación. Error: {error}',
+        'ssl_bundle_system' => 'almacén del sistema',
+        'help_link' => 'Cómo solucionarlo — guía de certificados HTTPS →',
+        'ca_ini_status' => 'curl.cainfo: {curl} · openssl.cafile: {ossl}',
+        'ca_ini_none' => 'no definido',
+        'ca_ini_missing' => '{path} (¡archivo no encontrado!)',
+        'ca_ini_note_fix' => ' — corrija la ruta o comente el ajuste en php.ini.',
+        'ca_ini_note_fallback' => ' — opcional: FreeITSM recurre a su lista de CA incluida (Windows) o al almacén de confianza del sistema operativo (Linux). Nota: esto refleja el PHP del servidor web; el proceso en segundo plano usa un php.ini de CLI independiente.',
+        'ssl_disabled' => 'Desactivado — actívelo para producción (defina SSL_VERIFY_PEER como true en config.php)',
+        'ssl_undefined' => 'SSL_VERIFY_PEER no está definido en config.php',
+        'display_errors_enabled' => 'Activado — desactívelo para producción (defina display_errors como 0 en config.php)',
+        'display_errors_disabled' => 'Desactivado',
+        'php_version_ok' => '{version}',
+        'php_version_too_low' => '{version} — se requiere PHP 8.1 o superior',
+        'php_version_eol' => '{version} — aún compatible, pero esta versión no ha recibido actualizaciones de seguridad desde que llegó al final de su ciclo de vida. Se recomienda PHP 8.3 u 8.4.',
+        'extension_loaded' => 'Cargada',
+        'extension_not_loaded' => 'No cargada — actívela en php.ini',
+        'pdo_mysql_not_loaded' => 'No cargada — active pdo_mysql en php.ini',
+        'imap_not_loaded' => 'No cargada — solo es necesaria para buzones IMAP/SMTP básicos. PHP 8.4 ya no incluye esta extensión; instálela mediante PECL si utiliza uno.',
+        'ldap_not_loaded' => 'No cargada — solo es necesaria para el inicio de sesión con LDAP / Active Directory y la sincronización del directorio. Active extension=ldap si los utiliza.',
+        'zip_not_loaded' => 'No cargada — es necesaria para subir cursos del LMS (SCORM), leer archivos de Word en el RFP Builder y buscar dentro de adjuntos .docx y .xlsx.',
+        'intl_not_loaded' => 'No cargada — solo es necesaria para los nombres de dominio internacionales (como münchen.de) en Dominios.',
+        'db_config_not_found_masked' => 'No encontrado en la ruta definida en config.php',
+        'ssl_verified_masked' => 'Activado y funcionando — se verificó el certificado de una solicitud HTTPS en vivo',
+        'ssl_broken_masked' => 'Activado, pero el servidor no pudo verificar un certificado — el HTTPS saliente (correo, IA, webhooks, inicio de sesión) fallará. Inicie sesión como administrador para ver el error.',
+        'ssl_untested_masked' => 'Activado, pero no se pudo completar una solicitud de prueba en vivo, por lo que no se pudo confirmar la verificación.',
+        'db_error_masked' => 'No se pudo conectar — inicie sesión como administrador para ver el error completo',
+        'encryption_key_missing_masked' => 'No encontrado — necesario para cifrar la configuración sensible',
+        'ca_ini_masked_ok' => 'Configurado',
+        'ca_ini_masked_broken' => 'Definido, pero apunta a un archivo que no existe — corrija la ruta o comente el ajuste en php.ini.',
+        'php_version_ok_masked' => 'Cumple el requisito',
+        'php_version_too_low_masked' => 'Demasiado antigua — se requiere PHP 8.1 o superior',
+        'php_version_eol_masked' => 'Compatible, pero esta versión ha llegado al final de su ciclo de vida y ya no recibe actualizaciones de seguridad. Inicie sesión como administrador para ver la versión.',
+    ],
+    'locked' => [
+        'notice' => 'La instalación está completa, por lo que las rutas, los errores de conexión y las credenciales están ocultos. Inicie sesión como administrador para ver todos los detalles.',
+    ],
+    'db_verify' => [
+        'heading' => 'Verificación de la base de datos',
+        'intro' => 'Compruebe y cree automáticamente las tablas o columnas que falten en la base de datos.',
+        'run' => 'Ejecutar',
+    ],
+    'login' => [
+        'heading' => 'Inicio de sesión predeterminado',
+        'intro' => 'Se crea una cuenta de administrador predeterminada al ejecutar Verificación de la base de datos.',
+        'username' => 'Usuario:',
+        'password' => 'Contraseña:',
+    ],
+    'footer' => [
+        'warning' => 'Una vez que el sistema esté en producción, elimine la carpeta {folder} por seguridad.',
+        'signature' => 'Verificación de la instalación de FreeITSM',
+    ],
+    'js' => [
+        'running' => 'Ejecutando...',
+        'run' => 'Ejecutar',
+        'tables_checked' => '{n} tablas comprobadas:',
+        'ok' => '{n} correctas',
+        'created' => '{n} creadas',
+        'updated' => '{n} actualizadas',
+        'errors' => '{n} errores',
+        'unknown_error' => 'Error desconocido',
+        'verify_failed' => 'Error al ejecutar la verificación de la base de datos: {error}',
+    ],
+];

@@ -10,9 +10,11 @@
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
+require_once '../../includes/admin_api_guard.php'; // System admins only (issue #34)
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/mailbox_auth.php';
 
 header('Content-Type: application/json');
 
@@ -47,7 +49,7 @@ try {
     // --- Bulk child loads, grouped by tenant_id ---
     $mailboxRows = $rows("SELECT id, name, tenant_id, is_active, provider, target_mailbox,
                                  email_folder, last_checked_datetime,
-                                 CASE WHEN token_data IS NOT NULL AND token_data <> '' THEN 1 ELSE 0 END AS is_auth
+                                 " . mailboxAuthenticatedSql() . " AS is_auth
                             FROM target_mailboxes ORDER BY name");
     // The mailbox address is encrypted at rest — decrypt for display (admin-only view).
     foreach ($mailboxRows as &$_m) {

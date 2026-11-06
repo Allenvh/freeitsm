@@ -20,8 +20,16 @@ $statusFilter = $_GET['status'] ?? '';
 try {
     $conn = connectToDatabase();
 
+    // Discussion #62 - the requester sees which of their tickets are confidential.
+    require_once '../../includes/ticket_sensitivity.php';
+    $sensCol = ticketSensitivityReady($conn) ? 't.sensitivity' : "'normal' AS sensitivity";
+
+    // status_colour + is_closed drive the list pane's dot and its Open/Closed
+    // filter; `preview` is the newest message, so the list reads like a mailbox
+    // rather than a table of subjects.
     $sql = "SELECT t.id, t.ticket_number, t.subject, ts.name AS status, tp.name AS priority,
-                   t.created_datetime, t.updated_datetime,
+                   ts.colour AS status_colour, ts.is_closed,
+                   t.created_datetime, t.updated_datetime, $sensCol,
                    d.name as department_name,
                    a.full_name as assigned_analyst_name
             FROM tickets t
@@ -29,7 +37,7 @@ try {
             LEFT JOIN ticket_priorities tp ON tp.id = t.priority_id
             LEFT JOIN departments d ON t.department_id = d.id
             LEFT JOIN analysts a ON t.assigned_analyst_id = a.id
-            WHERE t.user_id = ?";
+            WHERE t.user_id = ? AND t.deleted_datetime IS NULL";
     $params = [$userId];
 
     if (!empty($statusFilter)) {
@@ -42,6 +50,12 @@ try {
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // The newest message the requester may see - not simply the newest (privacy setting).
+    require_once '../../includes/portal_visibility.php';
+    $previews = portalVisiblePreviews($conn, array_column($tickets, 'id'));
+    foreach ($tickets as &$t) $t['preview'] = $previews[(int)$t['id']] ?? null;
+    unset($t);
 
     echo json_encode(['success' => true, 'tickets' => $tickets]);
 

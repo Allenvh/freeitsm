@@ -16,3 +16,13 @@ Dockerfile
 *.tmp
 *.temp
 node_modules/
+/vendor/
+.env
+.env.*
+
+# The developer test suite. It is a build-time tool, not part of the product —
+# nobody running FreeITSM has any use for it, and the Dockerfile's `COPY . ` was
+# otherwise putting 56 scripts, 36 of which connect to the real database, into
+# the web root of the official image. Every one of them now refuses to run
+# unless PHP_SAPI is 'cli', but the cheapest defence is not shipping them at all.
+tests/

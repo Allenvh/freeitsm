@@ -5,6 +5,9 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
+require_once '../../includes/knowledge/visibility.php';
+require_once '../../includes/timezone.php';   // DateFmt - the analyst's date format
 
 header('Content-Type: application/json');
 
@@ -12,9 +15,18 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+// Was reachable by ANY signed-in analyst with no module check at all.
+requireModuleAccessJson('knowledge');
 
 try {
     $conn = connectToDatabase();
+
+    // Everything this analyst may read, applied to BOTH the list and the badge
+    // count below — one clause, so the badge cannot disagree with what clicking it
+    // returns. 'live' because a review queue is about articles that are actually
+    // published: an unpublished draft is not overdue for review, it is unfinished.
+    $viewer = KnowledgeViewer::forAnalyst($conn, (int)$_SESSION["analyst_id"]);
+    [$tenantSql, $tenantParams] = knowledgeVisibilitySql($conn, $viewer, "ka", ["lifecycle" => "live"]);
 
     // Get filter parameter (all, overdue, upcoming, no_date)
     $filter = $_GET['filter'] ?? 'all';
@@ -31,8 +43,7 @@ try {
             FROM knowledge_articles ka
             LEFT JOIN analysts owner ON ka.owner_id = owner.id
             LEFT JOIN analysts author ON ka.author_id = author.id
-            WHERE ka.is_published = 1
-              AND (ka.is_archived = 0 OR ka.is_archived IS NULL)";
+            WHERE 1=1";
 
     switch ($filter) {
         case 'overdue':
@@ -47,13 +58,15 @@ try {
         // 'all' shows everything
     }
 
+    $sql .= $tenantSql;
+
     $sql .= " ORDER BY
                 CASE WHEN ka.next_review_date IS NULL THEN 1 ELSE 0 END,
                 ka.next_review_date ASC,
                 ka.title ASC";
 
     $stmt = $conn->prepare($sql);
-    $stmt->execute();
+    $stmt->execute($tenantParams);
     $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Format dates for display
@@ -61,7 +74,7 @@ try {
         if ($article['next_review_date']) {
             $reviewDate = new DateTime($article['next_review_date']);
             $today = new DateTime('today');
-            $article['next_review_date_formatted'] = $reviewDate->format('d M Y');
+            $article['next_review_date_formatted'] = DateFmt::render($reviewDate, DateFmt::DATE_TEMPLATES[DateFmt::dateKey()]);
             $article['is_overdue'] = $reviewDate < $today;
             $article['days_until_review'] = $today->diff($reviewDate)->days * ($reviewDate < $today ? -1 : 1);
         } else {
@@ -77,11 +90,10 @@ try {
         SUM(CASE WHEN next_review_date < DATE(UTC_TIMESTAMP()) THEN 1 ELSE 0 END) as overdue,
         SUM(CASE WHEN next_review_date >= DATE(UTC_TIMESTAMP()) AND next_review_date <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as upcoming,
         SUM(CASE WHEN next_review_date IS NULL THEN 1 ELSE 0 END) as no_date
-    FROM knowledge_articles
-    WHERE is_published = 1
-    AND (is_archived = 0 OR is_archived IS NULL)";
+    FROM knowledge_articles ka
+    WHERE 1=1" . $tenantSql;
     $countsStmt = $conn->prepare($countsSql);
-    $countsStmt->execute();
+    $countsStmt->execute($tenantParams);
     $counts = $countsStmt->fetch(PDO::FETCH_ASSOC);
 
     echo json_encode([

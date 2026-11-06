@@ -32,6 +32,8 @@
  *   ]
  *
  * If `enabled` is false, the other fields are best-effort / informational only.
+ *
+ * @param int $ticket_id  the ticket (tickets.id) to work out
  */
 function sla_get_state(PDO $conn, int $ticket_id): array {
     $state = [
@@ -57,6 +59,14 @@ function sla_get_state(PDO $conn, int $ticket_id): array {
     }
 
     // --- 2. Check global enforcement ---
+    // SLA switched off for the install (GH #217) - before sla_enforce_from, which
+    // it leaves alone so switching back on restores the date that was set. Every
+    // reader treats enabled=false as "show nothing": the pane, the list pill, the
+    // workspace summary, the batch endpoint and the breach check.
+    if (function_exists('moduleIsEnabled') && !moduleIsEnabled($conn, 'sla')) {
+        $state['reason_disabled'] = moduleDisabledMessage('sla');
+        return $state;
+    }
     $settings = sla_load_settings($conn);
     if (empty($settings['sla_enforce_from'])) {
         $state['reason_disabled'] = 'SLA enforcement is disabled globally';
@@ -156,6 +166,12 @@ function sla_get_state(PDO $conn, int $ticket_id): array {
  * setting. v1 supports 'status_change' (first audit row that moves status
  * away from the default) for all three options — outbound-email detection
  * is deferred to a follow-up (see docs/sla.md).
+ *
+ * @param array $ticket  the ticket row as loaded by sla_get_state() (not read in v1)
+ * @param array $priority  the ticket_priorities row; sla_response_minutes is the target
+ * @param array $calendar  the SLA calendar from sla_load_calendar(): timezone, hours, holidays
+ * @param array $timeline  status segments [{start: DateTimeImmutable UTC, status: name, pauses: bool}], oldest first
+ * @param array $settings  the SLA settings from sla_load_settings() (not read in v1 - every definition uses status change)
  */
 function sla_compute_response(PDO $conn, array $ticket, array $priority, array $calendar, array $timeline, array $settings): array {
     $target = (int)$priority['sla_response_minutes'];
@@ -194,6 +210,11 @@ function sla_compute_response(PDO $conn, array $ticket, array $priority, array $
  * Compute resolution-time SLA state. The clock stops at ticket close time
  * (read from tickets.closed_datetime or the first audit row that lands on a
  * status with is_closed = 1).
+ *
+ * @param array $ticket  the ticket row as loaded by sla_get_state(); closed_datetime stops the clock
+ * @param array $priority  the ticket_priorities row; sla_resolution_minutes is the target
+ * @param array $calendar  the SLA calendar from sla_load_calendar(): timezone, hours, holidays
+ * @param array $timeline  status segments [{start: DateTimeImmutable UTC, status: name, pauses: bool}], oldest first
  */
 function sla_compute_resolution(array $ticket, array $priority, array $calendar, array $timeline): array {
     $target = (int)$priority['sla_resolution_minutes'];
@@ -233,6 +254,11 @@ function sla_compute_resolution(array $ticket, array $priority, array $calendar,
 /**
  * Walk the status timeline, summing business minutes in intervals where the
  * status was NOT pausing. Bounded between [start, end].
+ *
+ * @param array $timeline  status segments [{start: DateTimeImmutable UTC, status: name, pauses: bool}], oldest first
+ * @param DateTimeImmutable $start  when the clock starts (UTC)
+ * @param DateTimeImmutable $end  when the clock stops (UTC)
+ * @param array $calendar  the SLA calendar from sla_load_calendar(): timezone, hours, holidays
  */
 function sla_elapsed_business_minutes(array $timeline, DateTimeImmutable $start, DateTimeImmutable $end, array $calendar): int {
     if ($end <= $start) return 0;
@@ -342,6 +368,8 @@ function sla_load_settings(PDO $conn): array {
 
 /**
  * Load a calendar with its hours + holidays nested. Returns null if not found.
+ *
+ * @param int $calendar_id  the SLA calendar (sla_calendars.id); an inactive one gives null
  */
 function sla_load_calendar(PDO $conn, int $calendar_id): ?array {
     $stmt = $conn->prepare("SELECT id, name, timezone FROM sla_calendars WHERE id = ? AND is_active = 1");
@@ -362,6 +390,8 @@ function sla_load_calendar(PDO $conn, int $calendar_id): ?array {
 
 /**
  * Format a minute count as a short human-friendly string: "1h 30m", "45m", "2h", "-15m" (negative).
+ *
+ * @param int $minutes  a number of minutes; negative gives a leading minus
  */
 function sla_format_minutes(int $minutes): string {
     $neg = $minutes < 0 ? '-' : '';

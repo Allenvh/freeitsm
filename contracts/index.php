@@ -4,34 +4,46 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('contracts');
 
 $current_page = 'dashboard';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'contracts'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('contracts.title_full')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('contracts')); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
     <style>
+        body { --accent: var(--con-accent, #f59e0b); --accent-hover: var(--con-accent-hover, #d97706); --on-accent: var(--con-on-accent, #fff); }
+
         /* Sidebar layout */
         .contracts-layout {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
         }
 
         .contracts-sidebar {
             width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface, white);
+            border-right: 1px solid var(--border, #ddd);
             padding: 20px;
             overflow-y: auto;
             flex-shrink: 0;
@@ -45,18 +57,18 @@ $translationNamespaces = ['common', 'contracts'];
 
         .sidebar-section { margin-bottom: 24px; }
         .sidebar-section h3 {
-            font-size: 14px; font-weight: 600; color: #333;
+            font-size: 14px; font-weight: 600; color: var(--text, #333);
             margin: 0 0 12px 0;
         }
 
         .sidebar-search-btn {
             width: 100%;
             padding: 10px 16px;
-            background: white;
-            border: 1px solid #ddd;
+            background: var(--surface, white);
+            border: 1px solid var(--border, #ddd);
             border-radius: 6px;
             font-size: 14px;
-            color: #888;
+            color: var(--text-dim, #888);
             cursor: pointer;
             text-align: left;
             transition: all 0.2s;
@@ -64,7 +76,7 @@ $translationNamespaces = ['common', 'contracts'];
             align-items: center;
             gap: 8px;
         }
-        .sidebar-search-btn:hover { border-color: #f59e0b; color: #333; }
+        .sidebar-search-btn:hover { border-color: var(--con-accent, #f59e0b); color: var(--text, #333); }
         .sidebar-search-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
         .sidebar-stat {
@@ -74,7 +86,7 @@ $translationNamespaces = ['common', 'contracts'];
             padding: 10px 12px;
             border-radius: 6px;
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
             cursor: default;
             margin-bottom: 4px;
         }
@@ -82,23 +94,23 @@ $translationNamespaces = ['common', 'contracts'];
             font-weight: 700;
             font-size: 16px;
         }
-        .sidebar-stat.warning .stat-value { color: #f59e0b; }
+        .sidebar-stat.warning .stat-value { color: var(--con-accent, #f59e0b); }
 
         .sidebar-links { display: flex; flex-direction: column; gap: 4px; }
         .sidebar-link {
             display: flex; align-items: center; gap: 10px;
             padding: 10px 12px; border-radius: 6px;
-            font-size: 14px; color: #333;
+            font-size: 14px; color: var(--text, #333);
             text-decoration: none; transition: all 0.15s;
         }
-        .sidebar-link:hover { background: #fff7ed; color: #f59e0b; }
+        .sidebar-link:hover { background: #fff7ed; color: var(--con-accent, #f59e0b); }
         .sidebar-link svg { width: 18px; height: 18px; flex-shrink: 0; }
 
         .sidebar-add-btn {
             display: block;
             width: 100%;
             padding: 10px 16px;
-            background: #f59e0b;
+            background: var(--con-accent, #f59e0b);
             color: white;
             border: none;
             border-radius: 6px;
@@ -110,30 +122,30 @@ $translationNamespaces = ['common', 'contracts'];
             text-decoration: none;
             box-sizing: border-box;
         }
-        .sidebar-add-btn:hover { background: #d97706; }
+        .sidebar-add-btn:hover { background: var(--con-accent-hover, #d97706); }
 
         /* Main content */
         .section-card {
-            background: #fff; border-radius: 10px;
+            background: var(--surface, #fff); border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;
         }
         .section-card .section-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 18px 24px; border-bottom: 1px solid #eee;
+            padding: 18px 24px; border-bottom: 1px solid var(--border-soft, #eee);
         }
-        .section-card .section-header h2 { margin: 0; font-size: 16px; font-weight: 600; color: #333; }
+        .section-card .section-header h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text, #333); }
 
         .section-card table { width: 100%; border-collapse: collapse; }
         .section-card table th {
             text-align: left; padding: 12px 24px; font-size: 12px; font-weight: 600;
-            color: #888; text-transform: uppercase; letter-spacing: 0.5px;
-            border-bottom: 1px solid #eee; background: #fafafa;
+            color: var(--text-dim, #888); text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-soft, #eee); background: var(--surface-2, #fafafa);
         }
         .section-card table td {
-            padding: 14px 24px; font-size: 14px; color: #333; border-bottom: 1px solid #f0f0f0;
+            padding: 14px 24px; font-size: 14px; color: var(--text, #333); border-bottom: 1px solid var(--border-soft, #f0f0f0);
         }
         .section-card table tr:last-child td { border-bottom: none; }
-        .section-card table tr:hover { background: #fafafa; }
+        .section-card table tr:hover { background: var(--surface-hover, #fafafa); }
 
         /* Canonical pill shape (matches .status-badge in inbox.css); the
            active/expired/expiring colours are contract-lifecycle specific. */
@@ -143,21 +155,21 @@ $translationNamespaces = ['common', 'contracts'];
         .status-badge.expiring { background: #fff3cd; color: #856404; }
 
         .action-btn {
-            background: none; border: 1px solid #ddd; color: #666; cursor: pointer;
+            background: none; border: 1px solid var(--border, #ddd); color: var(--text-muted, #666); cursor: pointer;
             padding: 6px; margin-right: 4px; border-radius: 4px;
             display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s;
         }
-        .action-btn:hover { background: #f0f0f0; border-color: #f59e0b; color: #f59e0b; }
+        .action-btn:hover { background: var(--surface-hover, #f0f0f0); border-color: var(--con-accent, #f59e0b); color: var(--con-accent, #f59e0b); }
         .action-btn svg { width: 16px; height: 16px; }
 
-        .empty-state { text-align: center; padding: 40px; color: #999; }
+        .empty-state { text-align: center; padding: 40px; color: var(--text-dim, #999); }
 
         /* Search Modal - amber overrides */
-        .search-modal-header { background: #f59e0b; }
-        .search-field input:focus { border-color: #f59e0b; }
+        .search-modal-header { background: var(--con-accent, #f59e0b); }
+        .search-field input:focus { border-color: var(--con-accent, #f59e0b); }
 
         .search-result-item { cursor: pointer; }
-        .search-result-item:hover { background: #fff7ed; border-color: #f59e0b; }
+        .search-result-item:hover { background: #fff7ed; border-color: var(--con-accent, #f59e0b); }
         .search-result-type {
             display: inline-block; padding: 2px 8px; border-radius: 10px;
             font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
@@ -166,12 +178,26 @@ $translationNamespaces = ['common', 'contracts'];
         .search-result-type.contract { background: #fff3cd; color: #856404; }
         .search-result-type.supplier { background: #d4edda; color: #155724; }
         .search-result-type.contact { background: #d6e9f8; color: #1a5276; }
-        .search-result-title { font-weight: 600; color: #333; font-size: 14px; }
-        .search-result-meta { font-size: 12px; color: #888; margin-top: 4px; }
+        .search-result-title { font-weight: 600; color: var(--text, #333); font-size: 14px; }
+        .search-result-meta { font-size: 12px; color: var(--text-dim, #888); margin-top: 4px; }
+
+        /* Dark-mode overrides for pale amber tints (light values kept hardcoded) */
+        [data-theme-mode="dark"] .sidebar-link:hover { background: #3a2e12; }
+        [data-theme-mode="dark"] .search-result-item:hover { background: #3a2e12; }
+        /* Supplier or customer (#153) */
+        .party-filter { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--border, #ddd); border-radius: 6px; background: var(--surface, #fff); color: var(--text, #333); }
+        .party-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--con-accent-soft, #fef3c7); color: var(--text, #333); vertical-align: 1px; }
+        .row-company { font-size: 12px; color: var(--text-muted, #777); margin-top: 2px; }
     </style>
+    <!-- Mobile layer: linked AFTER this page's own <style> so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="contracts" data-mobile-page="contracts-list">
     <?php include 'includes/header.php'; ?>
+    <?php /* New contract moved from the bottom of the sidebar to the action row
+             (#185) - on a phone too, where it was in the footer bar. */
+          require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('contracts.nav.contracts'), [actionRowNew('edit.php', t('contracts.list.new_contract'), true)]); ?>
 
     <div class="contracts-layout">
         <!-- Left Sidebar -->
@@ -229,9 +255,6 @@ $translationNamespaces = ['common', 'contracts'];
                 </div>
             </div>
 
-            <div class="sidebar-section">
-                <a href="edit.php" class="sidebar-add-btn">+ <?php echo htmlspecialchars(t('contracts.list.new_contract')); ?></a>
-            </div>
         </div>
 
         <!-- Main Content -->
@@ -239,13 +262,18 @@ $translationNamespaces = ['common', 'contracts'];
             <div class="section-card">
                 <div class="section-header">
                     <h2><?php echo htmlspecialchars(t('contracts.nav.contracts')); ?></h2>
+                    <select id="partyFilter" class="party-filter" onchange="loadContracts()" aria-label="<?php echo htmlspecialchars(t('contracts.party.filter')); ?>">
+                        <option value=""><?php echo htmlspecialchars(t('contracts.party.filter_all')); ?></option>
+                        <option value="supplier"><?php echo htmlspecialchars(t('contracts.party.filter_supplier')); ?></option>
+                        <option value="customer"><?php echo htmlspecialchars(t('contracts.party.filter_customer')); ?></option>
+                    </select>
                 </div>
                 <table>
                     <thead>
                         <tr>
                             <th><?php echo htmlspecialchars(t('contracts.list.col_number')); ?></th>
                             <th><?php echo htmlspecialchars(t('contracts.list.col_title')); ?></th>
-                            <th><?php echo htmlspecialchars(t('contracts.list.col_supplier')); ?></th>
+                            <th><?php echo htmlspecialchars(t('contracts.party.col_with')); ?></th>
                             <th><?php echo htmlspecialchars(t('contracts.list.col_owner')); ?></th>
                             <th><?php echo htmlspecialchars(t('contracts.list.col_end_date')); ?></th>
                             <th><?php echo htmlspecialchars(t('contracts.list.col_status')); ?></th>
@@ -301,7 +329,8 @@ $translationNamespaces = ['common', 'contracts'];
         // Contract list
         async function loadContracts() {
             try {
-                const response = await fetch(API_BASE + 'get_contracts.php');
+                const party = (document.getElementById('partyFilter') || {}).value || '';
+                const response = await fetch(API_BASE + 'get_contracts.php' + (party ? '?party=' + encodeURIComponent(party) : ''));
                 const data = await response.json();
                 if (data.success) {
                     renderContracts(data.contracts);
@@ -321,13 +350,16 @@ $translationNamespaces = ['common', 'contracts'];
                 tbody.innerHTML = '<tr><td colspan="7" class="empty-state">' + escapeHtml(window.t('contracts.list.empty')) + '</td></tr>';
                 return;
             }
+            // Name each contract's company only when the list holds more than one
+            // (the "All companies" view) - in one company it would say the same thing on every row.
+            const manyCompanies = new Set(contracts.map(c => c.tenant_id)).size > 1;
             tbody.innerHTML = contracts.map(c => {
                 const status = getContractStatus(c);
                 return `
                     <tr>
                         <td><strong>${escapeHtml(c.contract_number)}</strong></td>
-                        <td>${escapeHtml(c.title)}</td>
-                        <td>${escapeHtml(c.supplier_name || '-')}</td>
+                        <td>${escapeHtml(c.title)}${manyCompanies && c.company_name ? '<div class="row-company">' + escapeHtml(c.company_name) + '</div>' : ''}</td>
+                        <td>${escapeHtml(c.party_label || '-')}${c.party_type === 'customer' ? ' <span class="party-badge">' + escapeHtml(window.t('contracts.party.customer')) + '</span>' : ''}</td>
                         <td>${escapeHtml(c.owner_name || '-')}</td>
                         <td>${formatDate(c.contract_end)}</td>
                         <td><span class="status-badge ${status.class}">${status.label}</span></td>
@@ -344,19 +376,56 @@ $translationNamespaces = ['common', 'contracts'];
             }).join('');
         }
 
+        /**
+         * The badge a contract shows in the list and on its own page.
+         *
+         * 🔑 THE COLOUR COMES FROM THE DATES. THE WORDS COME FROM THE STATUS.
+         * Those are two different questions, and this used to answer both with
+         * the status: any contract that had one was painted green. So a
+         * contract three weeks from its end date, correctly marked with the
+         * "Expiring Soon" status the product ships with, rendered as a GREEN
+         * badge reading "Expiring Soon" - and the only way to get the amber
+         * one was to leave the status empty. Choosing the right status made
+         * the badge wrong, which is the wrong way round for a register whose
+         * whole job is telling you what is about to lapse.
+         *
+         * The end date is a fact, so it decides the colour. The status is the
+         * operator's own word for where the paperwork has got to - Draft, In
+         * Negotiation, Renewal Pending - so it decides the label. A contract
+         * can be both "Renewal Pending" and three weeks from expiry, and now
+         * it looks like both at once.
+         *
+         * ⚠️ Never key on the status NAME. contract_statuses is editable in
+         * Settings and it is translated, so "Expiring Soon" is not a value
+         * this code can test for - it is whatever this operator happened to
+         * type. Same trap as the hardcoded status names in Watchtower.
+         */
         function getContractStatus(c) {
             if (!c.is_active) return { class: 'expired', label: window.t('contracts.status.inactive') };
+
+            let cls   = 'active';
+            let label = window.t('contracts.status.active');
+
             if (c.contract_end) {
                 const end = new Date(c.contract_end);
                 const today = new Date(); today.setHours(0,0,0,0);
                 const daysLeft = Math.ceil((end - today) / (1000*60*60*24));
-                if (daysLeft < 0) return { class: 'expired', label: window.t('contracts.status.expired') };
-                if (c.contract_status_name) return { class: 'active', label: c.contract_status_name };
-                if (daysLeft <= 90) return { class: 'expiring', label: window.t('contracts.status.expiring') };
-                return { class: 'active', label: window.t('contracts.status.active') };
+                if (daysLeft < 0) {
+                    cls = 'expired';
+                    label = window.t('contracts.status.expired');
+                } else if (daysLeft <= 90) {
+                    cls = 'expiring';
+                    label = window.t('contracts.status.expiring');
+                }
             }
-            if (c.contract_status_name) return { class: 'active', label: c.contract_status_name };
-            return { class: 'active', label: window.t('contracts.status.active') };
+
+            // Past the end date the date is the whole truth, so the computed
+            // word wins. A status nobody remembered to change - "Active" on an
+            // agreement that lapsed in March - would otherwise be printed onto
+            // a red badge and read as a live contract.
+            if (c.contract_status_name && cls !== 'expired') label = c.contract_status_name;
+
+            return { class: cls, label: label };
         }
 
         // Search
@@ -405,7 +474,7 @@ $translationNamespaces = ['common', 'contracts'];
                         results.push({
                             type: 'contract',
                             title: c.contract_number + ' — ' + c.title,
-                            meta: [c.supplier_name, c.owner_name].filter(Boolean).join(' | ') || window.t('contracts.list.no_supplier'),
+                            meta: [c.party_label, c.owner_name].filter(Boolean).join(' | ') || window.t('contracts.list.no_supplier'),
                             url: 'view.php?id=' + c.id
                         });
                     });
@@ -471,24 +540,35 @@ $translationNamespaces = ['common', 'contracts'];
             }
         }
 
-        // Close search modal on escape
+        // Close search modal on escape. Kept as-is; the shared helper below
+        // registers the same key, and both routes call the same close.
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeSearchModal();
+        });
+
+        // Clicking away closes the panel if the analyst turned that on
+        // (System > Preferences > Display). #144. No reading-pane exception:
+        // clicking a result navigates to the contract, so the panel goes anyway.
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.initSearchPanelDismiss && document.getElementById('searchModal')) {
+                window.initSearchPanelDismiss({ panelId: 'searchModal', close: closeSearchModal });
+            }
         });
 
         // Helpers
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             const d = new Date(dateStr);
-            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            return fmtNaiveDate(d);
         }
 
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

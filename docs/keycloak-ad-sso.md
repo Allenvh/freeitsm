@@ -1,3 +1,5 @@
+> **Historical fork documentation.** The full 4.10 upgrade replaces these custom screens and mail paths with upstream implementations. Use [the current upgrade guide](upstream-4.10-upgrade.md).
+
 # Keycloak + Active Directory SSO for FreeITSM
 
 This is the supported foundation for on-prem/segregated SSO. FreeITSM validates OIDC ID tokens, then treats group/role claims as authorization input only after token validation.

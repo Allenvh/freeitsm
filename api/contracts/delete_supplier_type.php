@@ -5,6 +5,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -12,6 +16,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('contracts');
+requireCapabilityJson(Cap::CONTRACTS_SUPPLIER_TYPES);   // Contracts settings tab — see docs/design/rbac.md
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);
@@ -27,9 +33,11 @@ try {
     $stmt = $conn->prepare("UPDATE suppliers SET supplier_type_id = NULL WHERE supplier_type_id = ?");
     $stmt->execute([$id]);
 
+    $name = $conn->query("SELECT name FROM supplier_types WHERE id = " . (int)$id)->fetchColumn() ?: null;
     $stmt = $conn->prepare("DELETE FROM supplier_types WHERE id = ?");
     $stmt->execute([$id]);
 
+    wf_emit('supplier_type', 'deleted', (int)$id, $name);
     echo json_encode(['success' => true]);
 
 } catch (Exception $e) {

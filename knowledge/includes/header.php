@@ -12,7 +12,7 @@ $module_title = function_exists('t') ? t('knowledge.title') : 'Knowledge';
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 
@@ -45,6 +45,12 @@ require_once $path_prefix . 'includes/waffle-menu.php';
                 <line x1="3" y1="10" x2="21" y2="10"></line>
             </svg>
             <span><?php echo htmlspecialchars(function_exists('t') ? t('knowledge.nav.review') : 'Review'); ?></span>
+        </a>
+        <a href="<?php echo BASE_URL; ?>knowledge/assistant/" class="nav-btn <?php echo $current_page === 'assistant' ? 'active' : ''; ?>" title="What the knowledge base is missing">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2l2.09 6.26L20 9.27l-4 3.9.94 5.83L12 16.25 7.06 19l.94-5.83-4-3.9 5.91-1.01L12 2z"></path>
+            </svg>
+            <span>Assistant</span>
         </a>
         <button class="nav-btn" onclick="openAiChatOrNavigate()" title="<?php echo htmlspecialchars(function_exists('t') ? t('knowledge.nav_title.ask_ai') : 'Ask AI Assistant'); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

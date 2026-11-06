@@ -1,0 +1,239 @@
+.chk-ticket-card {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border-soft, #e2e8f0);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    margin-bottom: 0;
+}
+.chk-ticket-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.chk-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.chk-icon { font-size: 16px; }
+.chk-heading {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text, #0f172a);
+}
+.chk-progress-badge {
+    background: #ccfbf1;
+    color: #0f766e;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 12px;
+}
+.chk-btn-del {
+    background: none;
+    border: none;
+    color: var(--text-muted, #94a3b8);
+    font-size: 13px;
+    cursor: pointer;
+}
+.chk-btn-del:hover { color: #ef4444; }
+
+.chk-progress-bar-wrap {
+    height: 5px;
+    background: var(--border-soft, #f1f5f9);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+.chk-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #0d9488, #14b8a6);
+    transition: width 0.25s ease;
+}
+
+.chk-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.chk-ticket-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 10px;
+    background: var(--app-bg, #f8fafc);
+    border: 1px solid var(--border-soft, #e2e8f0);
+    border-radius: 6px;
+}
+.chk-ticket-item.done {
+    background: #f0fdfa;
+    border-color: #99f6e4;
+}
+.chk-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text, #1e293b);
+}
+.chk-title.strike {
+    text-decoration: line-through;
+    color: var(--text-muted, #64748b);
+}
+.chk-step-meta {
+    font-size: 11px;
+    color: #0d9488;
+    font-weight: 500;
+}
+.chk-step-role {
+    font-size: 11px;
+    color: var(--text-muted, #64748b);
+    background: var(--surface, #fff);
+    border: 1px solid var(--border-soft, #cbd5e1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.chk-in-ticket-empty {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--surface, #fff);
+    border: 1px dashed var(--border-soft, #cbd5e1);
+    border-radius: 6px;
+    margin-bottom: 16px;
+}
+.chk-btn-attach {
+    background: #f0fdfa;
+    color: #0d9488;
+    border: 1px solid #99f6e4;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 5px;
+    cursor: pointer;
+}
+.chk-btn-attach:hover {
+    background: #ccfbf1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Attach-a-procedure modal
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* 🔑 A FIXED height, not max-height.
+   With `max-height: 80vh` the dialogue grew and shrank as the search filtered
+   the list, so the Cancel button and the whole frame jumped under the cursor
+   while typing. A constant height means only the list scrolls and nothing
+   below it moves. 68vh is clamped so it stays sane on a short laptop screen
+   and does not become a letterbox on a tall monitor. */
+.chk-attach-dialog {
+    height: clamp(420px, 68vh, 640px);
+}
+.chk-attach-list {
+    flex: 1 1 auto;
+    min-height: 0;          /* or the flex child refuses to shrink and scroll */
+    overflow-y: auto;
+}
+
+.chk-tpl-row {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: var(--surface-hover, #f8fafc);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.chk-tpl-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.chk-tpl-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text, #1e293b);
+}
+.chk-tpl-desc {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted, #64748b);
+}
+.chk-tpl-attach {
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    background: #0d9488;                 /* the module's own accent, not --primary */
+    color: #fff;
+}
+.chk-tpl-attach:hover { background: #0f766e; }
+
+/* Category pill. Six fixed pairs rather than one generated colour, so each
+   stays legible in both themes — a hue computed at runtime cannot be checked
+   for contrast. categoryPillClass() picks one from a hash of the name, so a
+   category keeps the same colour everywhere without anybody choosing it. */
+.chk-tpl-pill {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.chk-pill-c0 { background: #e0f2fe; color: #0369a1; }
+.chk-pill-c1 { background: #dcfce7; color: #15803d; }
+.chk-pill-c2 { background: #f3e8ff; color: #7e22ce; }
+.chk-pill-c3 { background: #fef3c7; color: #a16207; }
+.chk-pill-c4 { background: #ffe4e6; color: #be123c; }
+.chk-pill-c5 { background: #e0e7ff; color: #4338ca; }
+
+/* Dark mode: the light fills above are unreadable on a dark card, so give each
+   pill a translucent wash of its own hue and lift the text instead. */
+[data-theme="dark"] .chk-pill-c0 { background: rgba(56,189,248,0.16);  color: #7dd3fc; }
+[data-theme="dark"] .chk-pill-c1 { background: rgba(74,222,128,0.16);  color: #86efac; }
+[data-theme="dark"] .chk-pill-c2 { background: rgba(192,132,252,0.16); color: #d8b4fe; }
+[data-theme="dark"] .chk-pill-c3 { background: rgba(251,191,36,0.16);  color: #fcd34d; }
+[data-theme="dark"] .chk-pill-c4 { background: rgba(251,113,133,0.16); color: #fda4af; }
+[data-theme="dark"] .chk-pill-c5 { background: rgba(129,140,248,0.16); color: #a5b4fc; }
+
+/* Small inline chips on the ticket reading pane — Pop out, Attach, dismiss.
+   NOT the same control as a modal's .btn: these sit inside a dense card beside
+   body text and would dwarf it at .btn's 10px/20px.
+
+   🔴 These used to carry `class="btn btn-sm btn-secondary"` plus an inline
+   style. `.btn-sm` is defined in change-management.css, itsm_calendar.css and
+   knowledge.css — none of which load on the tickets page — so it was a phantom
+   class doing nothing, and only the inline style was sizing them. Same family
+   as the `.switch` / `.slider` trap: a class name that exists SOMEWHERE is not
+   the same as one that applies HERE. */
+.chk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 4px;
+    background: var(--surface, #fff);
+    color: var(--text, #334155);
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.chk-chip:hover {
+    background: var(--surface-hover, #f1f5f9);
+    border-color: #0d9488;
+    color: #0d9488;
+}

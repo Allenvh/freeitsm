@@ -20,16 +20,42 @@ $DIAG_NAME = 'Demo Core Data Import';
 // ---- helpers -----------------------------------------------------------
 
 $sections = [];
+/**
+ * Adds one titled section ("=== TITLE ===" and its lines) to the report; $body is a
+ * string or an array of lines.
+ *
+ * @param mixed $sections  the report so far, a list of section strings - appended to by reference
+ * @param mixed $title  the section heading, printed between === marks
+ * @param mixed $body  the section text - a string, or an array of lines
+ */
 function addSection(&$sections, $title, $body) {
     if (is_array($body)) $body = implode("\n", $body);
     $sections[] = "=== {$title} ===\n" . rtrim($body, "\n");
 }
+/**
+ * Formats a boolean as YES or NO for the report.
+ *
+ * @param mixed $v  any value, judged as true or false
+ */
 function bool_str($v) { return $v ? 'YES' : 'NO'; }
+/**
+ * Returns a file's size in bytes for the report - 'n/a' when it does not exist,
+ * 'unknown' when it cannot be read.
+ *
+ * @param mixed $path  the file's absolute path
+ */
 function safe_size($path) {
     if (!file_exists($path)) return 'n/a';
     $sz = @filesize($path);
     return $sz === false ? 'unknown' : ($sz . ' bytes');
 }
+/**
+ * Replaces the personal values in a row (names, email, username, password hash, MFA
+ * secret) with "[redacted N chars]", so the report can be shared.
+ *
+ * @param mixed $row  a database row as an array; anything else is returned untouched
+ * @param mixed $redactCols  the column names whose values are replaced
+ */
 function redact_row($row, $redactCols = ['password_hash', 'totp_secret', 'username', 'email', 'full_name', 'display_name', 'preferred_name']) {
     if (!is_array($row)) return $row;
     foreach ($redactCols as $c) {
@@ -134,6 +160,15 @@ try {
 } catch (Throwable $e) {
     $cfg[] = "config.php include      : FAILED — " . $e->getMessage();
 }
+
+// Debug tools are administrators-only (issue #34). Fail closed.
+require_once __DIR__ . '/../../../includes/functions.php';
+try { $__dbgAdmin = !empty($_SESSION['analyst_id']) && analystIsAdmin(connectToDatabase(), (int)$_SESSION['analyst_id']); } catch (Throwable $e) { $__dbgAdmin = false; }
+if (!$__dbgAdmin) { http_response_code(403); if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8'); echo "Administrator access required.\n"; exit; }
+// Re-imports the demo data: never on a GET, which a link on another site can send
+// (csrf.php). The tool page runs it as a POST - see 'method' in tools.php.
+csrfRequireWriteMethod();
+
 $cfg[] = "config.php include      : " . ($includeOk ? 'OK' : 'NOT ATTEMPTED');
 $cfg[] = "DB_SERVER defined       : " . bool_str(defined('DB_SERVER'))   . (defined('DB_SERVER')   ? ' = ' . DB_SERVER : '');
 $cfg[] = "DB_NAME defined         : " . bool_str(defined('DB_NAME'))     . (defined('DB_NAME')     ? ' = ' . DB_NAME : '');
@@ -212,7 +247,7 @@ $connErr = null;
 if (defined('DB_SERVER') && defined('DB_NAME') && defined('DB_USERNAME') && defined('DB_PASSWORD')) {
     try {
         $dsn = "mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-        $conn = new PDO($dsn, DB_USERNAME, DB_PASSWORD);
+        $conn = new PDO($dsn, DB_USERNAME, DB_PASSWORD, dbConnectionOptions());   // UTC session — includes/db.php
         $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $connOk = true;
     } catch (Throwable $e) {

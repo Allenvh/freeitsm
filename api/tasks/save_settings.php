@@ -2,10 +2,24 @@
 /**
  * API: Tasks — Save module settings
  * Upserts tasks_* keys into system_settings.
+ *
+ * This endpoint serves THREE different settings tabs — Calendar, Card and Tags — each of
+ * which is a separate permission. So a single guard at the top of the file would be
+ * meaningless, exactly as it was for the shared settings writer (#829): it would have to
+ * cover three audiences at once.
+ *
+ * So authorisation is PER KEY, reusing the same helper and the same ownership map as
+ * api/settings/save_system_settings.php. The map derives from tasks/settings/manifest.php,
+ * so the tab that shows a setting and the permission that guards it are one declaration.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+require_once '../../includes/settings_keys.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -13,6 +27,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tasks');
 
 $input = json_decode(file_get_contents('php://input'), true);
 $settings = $input['settings'] ?? [];
@@ -24,10 +39,32 @@ if (empty($settings)) {
 
 try {
     $conn = connectToDatabase();
+    $analystId = (int) $_SESSION['analyst_id'];
 
-    $allowed = ['calendar_span_mode', 'card_fields', 'tag_settings'];
-    $cardFieldKeys = ['priority', 'assignee', 'team', 'start_date',
+    // Authorise EVERY key before writing ANY of them, so a partly-permitted save is
+    // refused whole rather than half-applied. The stored keys are prefixed 'tasks_'.
+    foreach (array_keys($settings) as $key) {
+        $dbKey = 'tasks_' . $key;
+        if (settingKeyOwner($dbKey) === null) continue;   // unknown key — ignored below anyway
+        if (!analystCanWriteSettingKey($conn, $analystId, $dbKey)) {
+            http_response_code(403);
+            echo json_encode([
+                'success' => false,
+                'error'   => 'You do not have permission to change this setting: ' . $key,
+            ]);
+            exit;
+        }
+    }
+
+    $allowed = ['calendar_span_mode', 'card_fields', 'tag_settings', 'time_scope', 'collaborator_completion', 'checklists_enabled', 'forms_enabled', 'procedures_enabled',
+                // Repeating task evidence (#181) - Tasks -> Settings -> Evidence.
+                'evidence_completed_checklist', 'evidence_delete_occurrence', 'evidence_skip_status_id', 'evidence_report_access',
+                'evidence_open_followups'];
+    // `priority` is absent from this list on purpose — it holds a placement,
+    // not a boolean, and is normalised separately below. See get_settings.php.
+    $cardFieldKeys = ['assignee', 'team', 'start_date',
                       'due_date', 'description', 'subtasks', 'links'];
+    $priorityStyles = ['off', 'dot', 'pill', 'border'];
     $tagSettingKeys = ['allow_create', 'surface_card', 'surface_filter',
                        'surface_search', 'surface_calendar'];
 
@@ -37,11 +74,50 @@ try {
         if ($key === 'calendar_span_mode') {
             // Whitelist guards against junk
             if (!in_array($value, ['deadline', 'span', 'repeat'], true)) continue;
+        } elseif ($key === 'time_scope') {
+            // Where scheduled work and time entries are offered (GH #112).
+            if (!in_array($value, ['both', 'tasks', 'subtasks', 'off'], true)) continue;
+        } elseif ($key === 'evidence_completed_checklist' || $key === 'evidence_delete_occurrence') {
+            if (!in_array($value, ['allow', 'refuse'], true)) continue;
+        } elseif ($key === 'evidence_open_followups') {
+            if (!in_array($value, ['allow', 'warn', 'block'], true)) continue;
+        } elseif ($key === 'evidence_report_access') {
+            if (!in_array($value, ['anyone', 'permission'], true)) continue;
+        } elseif ($key === 'evidence_skip_status_id') {
+            // Empty = the last closed status; otherwise it must BE an active closed one.
+            $value = (string)(int)$value === '0' ? '' : (string)(int)$value;
+            if ($value !== '') {
+                $chk = $conn->prepare("SELECT 1 FROM task_statuses WHERE id = ? AND is_closed = 1 AND is_active = 1");
+                $chk->execute([(int)$value]);
+                if (!$chk->fetchColumn()) continue;
+            }
+        } elseif ($key === 'checklists_enabled' || $key === 'forms_enabled' || $key === 'procedures_enabled') {
+            // Checklists on tasks (discussion #138). '1'/'0' only, read by
+            // ChecklistsService::tasksEnabled() as exactly '1'.
+            $value = !empty($value) && $value !== '0' && $value !== 'false' ? '1' : '0';
+        } elseif ($key === 'collaborator_completion') {
+            // Whether each person on a task ticks off their own part (GH #89).
+            // Normalised to '1'/'0' here so the column only ever holds one of two
+            // values — TasksService reads it with a whitelist for the same reason.
+            $value = !empty($value) && $value !== '0' && $value !== 'false' ? '1' : '0';
         } elseif ($key === 'card_fields') {
             // Rebuild from known keys only, coercing each to 0/1
             $clean = [];
             foreach ($cardFieldKeys as $fk) {
                 $clean[$fk] = (is_array($value) && !empty($value[$fk])) ? 1 : 0;
+            }
+            // Normalise the placement BEFORE storage so the database only ever
+            // holds a registry value — the same rule the ticket row-display
+            // settings follow. Anything unrecognised falls back to the shipped
+            // default rather than to 'off', so a bad payload cannot silently
+            // switch the indicator off for everybody.
+            $p = is_array($value) ? ($value['priority'] ?? null) : null;
+            if (is_string($p) && in_array($p, $priorityStyles, true)) {
+                $clean['priority'] = $p;
+            } elseif ($p === 0 || $p === '0' || $p === false) {
+                $clean['priority'] = 'off';
+            } else {
+                $clean['priority'] = 'dot';
             }
             $value = json_encode($clean);
         } elseif ($key === 'tag_settings') {

@@ -26,6 +26,16 @@ const RICH_TEXT_FIELDS = ['description', 'reason', 'risk', 'testplan', 'rollback
 // filter list, the editor's Status dropdown, and the updateCounts() loop.
 let changeStatuses = [];
 
+// Lookups for the right-click context menu submenus (active rows only). Loaded
+// once at init; the menu is rebuilt from these each time it opens so newly-added
+// entries + the current-value tick appear without a page refresh.
+let changePriorities = [];
+let changeTypes = [];
+let changeImpacts = [];
+// Companies this analyst can move a change into (multi-company installs only).
+let moveCompanies = [];
+let isMultiCompany = false;
+
 // TinyMCE editor instances
 const editorIds = ['editorDescription', 'editorReason', 'editorRisk', 'editorTestplan', 'editorRollback', 'editorPir'];
 let editorsReady = false;
@@ -36,6 +46,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const layoutReady = loadFormLayout();
     loadAnalysts();
     const statusesReady = loadStatuses();
+    // Context-menu lookups (priorities / types / impacts) + accessible companies.
+    loadChangePriorities();
+    loadChangeTypes();
+    loadChangeImpacts();
+    loadMoveCompanies();
     loadChanges();
     setupFileUpload();
 
@@ -82,6 +97,10 @@ const DETAIL_FIELD_MAP = {
     outage_start: 'outage_start_datetime', outage_end: 'outage_end_datetime'
 };
 
+/**
+ * Loads the change form layout (sections, fields and where each is placed) set in Change
+ * Management settings.
+ */
 async function loadFormLayout() {
     try {
         const res = await fetch(API_BASE + 'get_field_layout.php');
@@ -102,6 +121,10 @@ async function loadFormLayout() {
     }
 }
 
+/**
+ * Whether a change field is shown, by the form layout. A field the layout does not know
+ * about is shown.
+ */
 function isFieldVisible(fieldKey) {
     const f = fieldByKey[fieldKey];
     // Unknown fields default to visible. Keeps newly-added catalogue keys
@@ -326,6 +349,70 @@ async function loadStatuses() {
     }
 }
 
+// Context-menu lookups. Each endpoint returns {success, <key>:[{id,name,colour,
+// is_active,display_order,...}]}. We keep active rows only, sorted the same way
+// as the sidebar (display_order then name) so the submenus match Settings.
+function sortLookup(rows) {
+    return rows.sort((a, b) => {
+        const o = (a.display_order || 0) - (b.display_order || 0);
+        return o !== 0 ? o : String(a.name).localeCompare(String(b.name));
+    });
+}
+
+/** Loads the active change priorities, in order. */
+async function loadChangePriorities() {
+    try {
+        const res = await fetch(API_BASE + 'get_change_priorities.php');
+        const data = await res.json();
+        if (data.success) changePriorities = sortLookup((data.priorities || []).filter(p => p.is_active));
+    } catch (e) {
+        console.error('Error loading change priorities:', e);
+    }
+}
+
+/** Loads the active change types, in order. */
+async function loadChangeTypes() {
+    try {
+        const res = await fetch(API_BASE + 'get_change_types.php');
+        const data = await res.json();
+        if (data.success) changeTypes = sortLookup((data.types || []).filter(t => t.is_active));
+    } catch (e) {
+        console.error('Error loading change types:', e);
+    }
+}
+
+/** Loads the active change impact levels, in order. */
+async function loadChangeImpacts() {
+    try {
+        const res = await fetch(API_BASE + 'get_change_impacts.php');
+        const data = await res.json();
+        if (data.success) changeImpacts = sortLookup((data.impacts || []).filter(i => i.is_active));
+    } catch (e) {
+        console.error('Error loading change impacts:', e);
+    }
+}
+
+// Companies this analyst can move a change into (multi-company installs only).
+// Same source as the tickets "Move to company" submenu; the "Move to company"
+// row stays hidden unless there's more than one accessible company.
+async function loadMoveCompanies() {
+    try {
+        const res = await fetch('../api/system/get_tenants.php?accessible=1');
+        const data = await res.json();
+        if (data.success) {
+            moveCompanies = data.companies || [];
+            isMultiCompany = moveCompanies.length > 1;
+        }
+    } catch (e) {
+        moveCompanies = [];
+        isMultiCompany = false;
+    }
+}
+
+/**
+ * Draws one filter row per change status (with its colour and a count) under the
+ * always-present All row.
+ */
 function renderStatusFilters() {
     const container = document.getElementById('statusFilterList');
     if (!container) return;
@@ -346,6 +433,7 @@ function renderStatusFilters() {
     });
 }
 
+/** Fills the editor's status dropdown, keeping the current choice when it still exists. */
 function populateStatusDropdown() {
     const sel = document.getElementById('changeStatus');
     if (!sel) return;
@@ -358,6 +446,7 @@ function populateStatusDropdown() {
     if (currentValue) sel.value = currentValue;
 }
 
+/** Loads the analysts and fills every analyst dropdown. */
 async function loadAnalysts() {
     try {
         const response = await fetch(API_BASE + 'list.php?analysts=1');
@@ -371,6 +460,7 @@ async function loadAnalysts() {
     }
 }
 
+/** Fills the requester, assigned-to, approver and CAB member dropdowns with the analysts. */
 function populateAnalystDropdowns() {
     const dropdowns = ['changeRequester', 'changeAssignedTo', 'changeApprover', 'cabMemberSelect'];
     dropdowns.forEach(id => {
@@ -387,6 +477,7 @@ function populateAnalystDropdowns() {
     });
 }
 
+/** Loads the change list for the current status filter and search, and updates the counts. */
 async function loadChanges() {
     try {
         let url = API_BASE + 'list.php?';
@@ -414,6 +505,10 @@ async function loadChanges() {
 // Last counts payload from list.php — cached so loadStatuses() can re-apply
 // them if the status list lands after the first counts response.
 let latestCounts = null;
+/**
+ * Writes the total and per-status counts into the filter rows, and keeps them so they
+ * can be reapplied when the status list arrives later.
+ */
 function updateCounts(counts) {
     if (!counts) return;
     latestCounts = counts;
@@ -430,6 +525,10 @@ function updateCounts(counts) {
 
 // ============ Rendering ============
 
+/**
+ * Draws the change cards - reference, title, assignee, work start and risk, type,
+ * priority and status badges.
+ */
 function renderChangeList() {
     const container = document.getElementById('changeList');
     const countEl = document.getElementById('changeCount');
@@ -453,7 +552,7 @@ function renderChangeList() {
         const workStart = c.work_start_datetime ? formatDate(c.work_start_datetime) : '';
 
         return `
-            <div class="change-card" onclick="viewChange(${c.id})">
+            <div class="change-card" data-id="${c.id}" onclick="viewChange(${c.id})" oncontextmenu="openChangeContextMenu(event, ${c.id}); return false;">
                 <div class="change-card-ref">${ref}</div>
                 <div class="change-card-info">
                     <div class="change-card-title">${escapeHtml(c.title)}</div>
@@ -463,10 +562,10 @@ function renderChangeList() {
                     </div>
                 </div>
                 <div class="change-card-badges">
-                    ${c.risk_level ? `<span class="risk-badge risk-${c.risk_level.toLowerCase().replace(/\s+/g, '-')}">${c.risk_level}</span>` : ''}
-                    <span class="type-badge ${typeClass}">${c.change_type}</span>
-                    <span class="priority-badge ${priorityClass}">${c.priority}</span>
-                    <span class="status-badge ${statusClass}">${c.status}</span>
+                    ${ChangeRisk.badge(c)}
+                    <span class="type-badge ${typeClass}">${escapeHtml(c.change_type)}</span>
+                    <span class="priority-badge ${priorityClass}">${escapeHtml(c.priority)}</span>
+                    <span class="status-badge ${statusClass}">${escapeHtml(c.status)}</span>
                 </div>
             </div>
         `;
@@ -475,6 +574,7 @@ function renderChangeList() {
 
 // ============ View Change Detail ============
 
+/** Loads one change, records it in the recent trail and shows its detail view. */
 async function viewChange(id) {
     try {
         const response = await fetch(API_BASE + 'get.php?id=' + id);
@@ -486,6 +586,8 @@ async function viewChange(id) {
         }
 
         currentChange = data.change;
+        // The recent trail (#124).
+        if (window.trailVisit) window.trailVisit('change', id);
         renderChangeDetail();
         showView('detail');
     } catch (error) {
@@ -494,6 +596,11 @@ async function viewChange(id) {
     }
 }
 
+/**
+ * Draws the detail view of the current change - header, badges and the fields the form
+ * layout shows, CAB review, rich-text sections, risk matrix, review results,
+ * attachments, linked incidents and activity.
+ */
 function renderChangeDetail() {
     const c = currentChange;
     const ref = 'CHG-' + String(c.id).padStart(4, '0');
@@ -504,23 +611,23 @@ function renderChangeDetail() {
 
     // Build badges
     let badgesHtml = '';
-    if (v('status')) badgesHtml += `<span class="status-badge ${statusClass}">${c.status}</span>`;
-    if (v('change_type')) badgesHtml += `<span class="type-badge ${typeClass}">${c.change_type}</span>`;
-    if (v('priority')) badgesHtml += `<span class="priority-badge ${priorityClass}">${c.priority}</span>`;
+    if (v('status')) badgesHtml += `<span class="status-badge ${statusClass}">${escapeHtml(c.status)}</span>`;
+    if (v('change_type')) badgesHtml += `<span class="type-badge ${typeClass}">${escapeHtml(c.change_type)}</span>`;
+    if (v('priority')) badgesHtml += `<span class="priority-badge ${priorityClass}">${escapeHtml(c.priority)}</span>`;
 
     // Build meta grid — only include visible fields
     let metaItems = '';
-    if (v('impact')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.impact')}</span><span class="detail-meta-value">${c.impact}</span></div>`;
+    if (v('impact')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.impact')}</span><span class="detail-meta-value">${escapeHtml(c.impact)}</span></div>`;
     if (v('category') && c.category) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.category')}</span><span class="detail-meta-value">${escapeHtml(c.category)}</span></div>`;
-    if (v('requester')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.requester')}</span><span class="detail-meta-value">${c.requester_name || window.t('change-management.detail.not_set')}</span></div>`;
-    if (v('assigned_to')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.assigned_to')}</span><span class="detail-meta-value">${c.assigned_to_name || window.t('change-management.detail.not_set')}</span></div>`;
-    if (v('approver')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.approver')}</span><span class="detail-meta-value">${c.approver_name || window.t('change-management.detail.not_set')}</span></div>`;
+    if (v('requester')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.requester')}</span><span class="detail-meta-value">${c.requester_name ? escapeHtml(c.requester_name) : window.t('change-management.detail.not_set')}</span></div>`;
+    if (v('assigned_to')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.assigned_to')}</span><span class="detail-meta-value">${c.assigned_to_name ? escapeHtml(c.assigned_to_name) : window.t('change-management.detail.not_set')}</span></div>`;
+    if (v('approver')) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.approver')}</span><span class="detail-meta-value">${c.approver_name ? escapeHtml(c.approver_name) : window.t('change-management.detail.not_set')}</span></div>`;
     if (v('approver') && c.approval_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.approved')}</span><span class="detail-meta-value">${formatDateTime(c.approval_datetime)}</span></div>`;
-    if (v('work_start') && c.work_start_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.work_start')}</span><span class="detail-meta-value">${formatDateTime(c.work_start_datetime)}</span></div>`;
-    if (v('work_end') && c.work_end_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.work_end')}</span><span class="detail-meta-value">${formatDateTime(c.work_end_datetime)}</span></div>`;
-    if (v('outage_start') && c.outage_start_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.outage_start')}</span><span class="detail-meta-value">${formatDateTime(c.outage_start_datetime)}</span></div>`;
-    if (v('outage_end') && c.outage_end_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.outage_end')}</span><span class="detail-meta-value">${formatDateTime(c.outage_end_datetime)}</span></div>`;
-    if (v('risk') && c.risk_level) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.risk_level')}</span><span class="detail-meta-value"><span class="risk-badge risk-${c.risk_level.toLowerCase().replace(/\s+/g, '-')}">${c.risk_level} (${c.risk_score})</span></span></div>`;
+    if (v('work_start') && c.work_start_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.work_start')}</span><span class="detail-meta-value">${formatNaiveDateTime(c.work_start_datetime)}</span></div>`;
+    if (v('work_end') && c.work_end_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.work_end')}</span><span class="detail-meta-value">${formatNaiveDateTime(c.work_end_datetime)}</span></div>`;
+    if (v('outage_start') && c.outage_start_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.outage_start')}</span><span class="detail-meta-value">${formatNaiveDateTime(c.outage_start_datetime)}</span></div>`;
+    if (v('outage_end') && c.outage_end_datetime) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.outage_end')}</span><span class="detail-meta-value">${formatNaiveDateTime(c.outage_end_datetime)}</span></div>`;
+    if (v('risk') && c.risk_level) metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.risk_level')}</span><span class="detail-meta-value">${ChangeRisk.badge(c, true)}</span></div>`;
     metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.created')}</span><span class="detail-meta-value">${c.created_by_name ? window.t('change-management.detail.created_by', { datetime: formatDateTime(c.created_datetime), name: c.created_by_name }) : formatDateTime(c.created_datetime)}</span></div>`;
     metaItems += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.detail.last_modified')}</span><span class="detail-meta-value">${formatDateTime(c.modified_datetime)}</span></div>`;
 
@@ -559,6 +666,13 @@ function renderChangeDetail() {
                                 </svg>
                                 ${window.t('change-management.detail.export_pdf')}
                             </a>
+                            <a href="${window.CHG_BASE}change-management/evidence.php?id=${c.id}" target="_blank" rel="noopener">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                    <polyline points="9 12 11 14 15 10"></polyline>
+                                </svg>
+                                ${window.t('change-management.detail.export_evidence')}
+                            </a>
                             <a href="#" onclick="shareChangeBoth(); return false;">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -569,11 +683,13 @@ function renderChangeDetail() {
                         </div>
                     </div>
                     <button class="btn btn-primary" onclick="editCurrentChange()">${window.t('change-management.detail.edit')}</button>
-                    <button class="btn btn-danger" onclick="deleteCurrentChange()">${window.t('change-management.detail.delete')}</button>
+                    ${c.approval_rules && c.approval_rules.delete_refused
+                        ? (c.status_stage !== 'stopped' ? `<button class="btn btn-danger" onclick="cancelCurrentChange()">${window.t('change-management.approval_panel.cancel')}</button>` : '')
+                        : `<button class="btn btn-danger" onclick="deleteCurrentChange()">${window.t('change-management.detail.delete')}</button>`}
                 </div>
             </div>
             <div class="sticky-header-top">
-                <div class="change-detail-ref">${ref}</div>
+                <div class="change-detail-ref">${ref}${window.MODULE_LEVEL === 'read' ? ` <span class="read-only-badge">${escapeHtml(window.t('common.module_read_only_badge'))}</span>` : ''}</div>
                 ${badgesHtml ? `<div class="sticky-header-badges">${badgesHtml}</div>` : ''}
             </div>
             ${v('title') ? `<div class="change-detail-title">${escapeHtml(c.title)}</div>` : ''}
@@ -581,27 +697,30 @@ function renderChangeDetail() {
         </div>
     `;
 
-    // CAB Review panel
-    html += renderCabReviewPanel(c);
+    // Approval panel (#180): the current round, the CAB or the approver, earlier rounds.
+    html += renderApprovalPanel(c);
+
+    // Projects (3.2.0): the projects this change is part of.
+    if (window.CHG_SHOW_PROJECTS) html += '<div id="changeProjects" class="chg-projects"></div>';
 
     // Detail sections — only include visible fields
     let sections = '';
-    if (v('description')) sections += renderDetailSection(window.t('change-management.detail.description'), c.description);
-    if (v('reason')) sections += renderDetailSection(window.t('change-management.detail.reason'), c.reason_for_change);
-    if (v('risk')) sections += renderDetailSection(window.t('change-management.detail.risk_eval'), c.risk_evaluation);
-    if (v('testplan')) sections += renderDetailSection(window.t('change-management.detail.test_plan'), c.test_plan);
-    if (v('rollback')) sections += renderDetailSection(window.t('change-management.detail.rollback_plan'), c.rollback_plan);
-    if (v('pir')) sections += renderDetailSection(window.t('change-management.detail.pir'), c.post_implementation_review);
+    if (v('description')) sections += renderDetailSection(window.t('change-management.detail.description'), c.description, 'description');
+    if (v('reason')) sections += renderDetailSection(window.t('change-management.detail.reason'), c.reason_for_change, 'reason_for_change');
+    if (v('risk')) sections += renderDetailSection(window.t('change-management.detail.risk_eval'), c.risk_evaluation, 'risk_evaluation');
+    if (v('testplan')) sections += renderDetailSection(window.t('change-management.detail.test_plan'), c.test_plan, 'test_plan');
+    if (v('rollback')) sections += renderDetailSection(window.t('change-management.detail.rollback_plan'), c.rollback_plan, 'rollback_plan');
+    if (v('pir')) sections += renderDetailSection(window.t('change-management.detail.pir'), c.post_implementation_review, 'post_implementation_review');
 
     if (sections) html += `<div class="detail-sections">${sections}</div>`;
 
     // Risk Matrix (shown when risk scores exist)
     if (v('risk') && c.risk_likelihood && c.risk_impact_score) {
-        html += renderRiskMatrix(c.risk_likelihood, c.risk_impact_score, c.risk_score, c.risk_level);
+        html += ChangeRisk.matrix(c);
     }
 
-    // PIR Structured Data (for Completed/Failed changes)
-    if (v('pir') && (c.status === 'Completed' || c.status === 'Failed') && (c.pir_was_successful !== null || c.pir_actual_start || c.pir_lessons_learned)) {
+    // PIR Structured Data (for changes in the Done stage - Completed, Failed, or any renamed equivalent)
+    if (v('pir') && c.status_stage === 'done' && (c.pir_was_successful !== null || c.pir_actual_start || c.pir_lessons_learned)) {
         html += renderPirDetail(c);
     }
 
@@ -628,6 +747,9 @@ function renderChangeDetail() {
         `;
     }
 
+    // Linked incidents section
+    html += renderLinkedIncidents(c);
+
     // Activity section (comments + audit trail)
     html += `
         <div class="activity-section">
@@ -642,94 +764,189 @@ function renderChangeDetail() {
         </div>
     `;
 
+    html += '<div class="detail-section"><h3>Documents</h3><div id="chgDocuments"></div></div>';
+
     document.getElementById('changeDetailContent').innerHTML = html;
+    if (window.CHG_SHOW_PROJECTS && window.ProjectLinks) ProjectLinks.mount(document.getElementById('changeProjects'), { kind: 'change', id: c.id, base: window.CHG_BASE });
+
+    // Attached documents (discussion #76). Mounted, not re-pointed: this content
+    // is rebuilt for every change, so the previous element is already gone.
+    if (window.FreeITSMDocuments) {
+        FreeITSMDocuments.mount(document.getElementById('chgDocuments'), {
+            parentType: 'change',
+            parentId:   c.id,
+            apiBase:    '../api/documents/'
+        });
+    }
 
     // Load activity timeline asynchronously
     loadActivityTimeline(c.id);
 }
 
-function renderDetailSection(title, content) {
+// ============ Linked incidents ============
+
+// Small inline icons for the linked-incidents rows.
+const CM_OPEN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+const CM_UNLINK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+/**
+ * The ⓘ preview badge (#91). Guarded, so a page that somehow loaded without
+ * record-preview.js loses the preview rather than the table it belongs to.
+ */
+function cmPreviewBadge(type, id) {
+    return window.FreeITSMPreview ? window.FreeITSMPreview.badge(type, id) : '';
+}
+
+/**
+ * The linked tickets table for a change - each with its type, a link, a preview badge and
+ * Unlink - and the button to link another. Any ticket type can be linked, so the wording is
+ * "tickets", and the type beside each one says which kind it is (GH #245).
+ */
+function renderLinkedIncidents(c) {
+    const incidents = c.incidents || [];
+    const rows = incidents.map(i => `
+        <tr>
+            <td><a href="../tickets/index.php?ticket_id=${i.id}" target="_blank" rel="noopener">${escapeHtml(i.ticket_number || ('#' + i.id))}</a>${i.ticket_type ? ` <span class="linked-ticket-type">${escapeHtml(i.ticket_type)}</span>` : ''}</td>
+            <td>${escapeHtml(i.subject || '')}</td>
+            <td>${escapeHtml(i.status || '')}</td>
+            <td class="linked-incidents-actions">
+                ${cmPreviewBadge('ticket', i.id)}
+                <a class="linked-incident-btn" href="../tickets/index.php?ticket_id=${i.id}" target="_blank" rel="noopener" title="${escapeHtml(window.t('change-management.detail.open_incident'))}">${CM_OPEN_SVG}</a>
+                <button class="linked-incident-btn danger" onclick="unlinkChangeIncident(${i.id})" title="${escapeHtml(window.t('change-management.detail.unlink'))}">${CM_UNLINK_SVG}</button>
+            </td>
+        </tr>`).join('');
+    const body = rows || `<tr class="linked-incidents-empty"><td colspan="4">${window.t('change-management.detail.no_incidents')}</td></tr>`;
+    return `
+        <div class="linked-incidents-section">
+            <div class="linked-incidents-head">
+                <h3>${window.t('change-management.detail.linked_incidents')} (${incidents.length})</h3>
+                <button class="btn btn-secondary btn-sm" onclick="openLinkIncidentModal()">${window.t('change-management.detail.link_incident')}</button>
+            </div>
+            <table class="linked-incidents-table">
+                <tbody>${body}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+let cmLinkIncidentSearchTimer = null;
+/** Opens the dialog for linking an incident to the current change. */
+function openLinkIncidentModal() {
+    if (!currentChange) return;
+    const search = document.getElementById('linkIncidentSearch');
+    if (search) search.value = '';
+    document.getElementById('linkIncidentModal').classList.add('active');
+    loadLinkableIncidents();
+}
+/** Closes the link-an-incident dialog. */
+function closeLinkIncidentModal() {
+    document.getElementById('linkIncidentModal').classList.remove('active');
+}
+/** Re-runs the incident search 250 ms after the last keystroke. */
+function linkIncidentSearchDebounced() {
+    clearTimeout(cmLinkIncidentSearchTimer);
+    cmLinkIncidentSearchTimer = setTimeout(loadLinkableIncidents, 250);
+}
+/** Lists the tickets that can be linked to the current change, matching the search box. */
+async function loadLinkableIncidents() {
+    if (!currentChange) return;
+    const list = document.getElementById('linkIncidentList');
+    const q = (document.getElementById('linkIncidentSearch') || {}).value || '';
+    list.innerHTML = `<div class="link-incident-empty">${window.t('change-management.detail.loading')}</div>`;
+    try {
+        const res = await fetch(API_BASE + 'list_linkable_tickets.php?change_id=' + currentChange.id + '&q=' + encodeURIComponent(q.trim()));
+        const data = await res.json();
+        if (!data.success) { list.innerHTML = `<div class="link-incident-empty">${escapeHtml(data.error || '')}</div>`; return; }
+        if (!data.tickets.length) { list.innerHTML = `<div class="link-incident-empty">${window.t('change-management.detail.no_linkable')}</div>`; return; }
+        list.innerHTML = data.tickets.map(t => `
+            <button type="button" class="link-incident-row" onclick="linkChangeIncident(${t.id})">
+                <span class="link-incident-title">${escapeHtml(t.subject || '(no subject)')}</span>
+                <span class="link-incident-meta">${escapeHtml(t.ticket_number || '')}${t.ticket_type ? ' &middot; ' + escapeHtml(t.ticket_type) : ''}${t.status ? ' &middot; ' + escapeHtml(t.status) : ''}${t.requester ? ' &middot; ' + escapeHtml(t.requester) : ''}</span>
+            </button>`).join('');
+    } catch (e) {
+        list.innerHTML = `<div class="link-incident-empty">${window.t('change-management.toast.load_incidents_failed')}</div>`;
+    }
+}
+/** Links a ticket to the current change and reloads it. */
+async function linkChangeIncident(ticketId) {
+    if (!currentChange) return;
+    try {
+        const res = await fetch(API_BASE + 'link_ticket.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ change_id: currentChange.id, ticket_id: ticketId }) });
+        const data = await res.json();
+        if (!data.success) { showToast(data.error || window.t('change-management.toast.link_failed'), 'error'); return; }
+        closeLinkIncidentModal();
+        showToast(window.t('change-management.toast.incident_linked'), 'success');
+        viewChange(currentChange.id);
+    } catch (e) { showToast(window.t('change-management.toast.link_failed'), 'error'); }
+}
+/** Asks for confirmation, then unlinks a ticket from the current change and reloads it. */
+async function unlinkChangeIncident(ticketId) {
+    if (!currentChange) return;
+    const ok = window.showConfirm
+        ? await showConfirm({ title: window.t('change-management.detail.unlink'), message: window.t('change-management.detail.unlink_incident_confirm'), okLabel: window.t('change-management.detail.unlink'), okClass: 'danger' })
+        : confirm(window.t('change-management.detail.unlink_incident_confirm'));
+    if (!ok) return;
+    try {
+        const res = await fetch(API_BASE + 'unlink_ticket.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ change_id: currentChange.id, ticket_id: ticketId }) });
+        const data = await res.json();
+        if (!data.success) { showToast(data.error || window.t('change-management.toast.unlink_failed'), 'error'); return; }
+        showToast(window.t('change-management.toast.incident_unlinked'), 'success');
+        viewChange(currentChange.id);
+    } catch (e) { showToast(window.t('change-management.toast.unlink_failed'), 'error'); }
+}
+
+/**
+ * The editor HTML of a change's long-text fields, cleaned for display.
+ *
+ * TRAP: change text is stored as the editor sent it, and anybody with Change Management
+ * (or an API key) can write it, so it is untrusted. Every place it reaches innerHTML -
+ * the detail view AND the PDF export - must come through here. Fails closed: if
+ * safe-html.js did not load, the markup is shown as inert text.
+ */
+function safeChangeHtml(html) {
+    if (typeof safeHtmlFragment !== 'function') {
+        console.error('FreeITSM: assets/js/safe-html.js did not load - change text shown as plain text.');
+        return escapeHtml(html || '');
+    }
+    return safeHtmlFragment(html || '');
+}
+
+/**
+ * One titled rich-text section of the detail view, or a "not provided" placeholder when
+ * it is empty. The content is the editor's HTML, cleaned by safeChangeHtml().
+ */
+function renderDetailSection(title, content, field) {
+    // Every rich field keeps its full history (#180); the link opens the viewer.
+    const history = field && currentChange
+        ? `<button type="button" class="detail-history-link" onclick="openRevisionViewer(${currentChange.id}, '${field}')">${escapeHtml(window.t('change-management.revisions.versions'))}</button>`
+        : '';
     if (!content || content.trim() === '') {
         return `
             <div class="detail-section">
-                <h3>${title}</h3>
+                <h3>${title}${history}</h3>
                 <div class="detail-section-body"><span class="detail-section-empty">${window.t('change-management.detail.not_provided')}</span></div>
             </div>
         `;
     }
     return `
         <div class="detail-section">
-            <h3>${title}</h3>
-            <div class="detail-section-body">${content}</div>
+            <h3>${title}${history}</h3>
+            <div class="detail-section-body">${safeChangeHtml(content)}</div>
         </div>
     `;
 }
 
 // ============ Risk Matrix ============
 
-function renderRiskMatrix(likelihood, impact, score, level) {
-    const riskClass = level ? level.toLowerCase().replace(/\s+/g, '-') : '';
-
-    // 5x5 grid: rows = likelihood (5 top to 1 bottom), cols = impact (1 left to 5 right)
-    const cellColors = [
-        // [likelihood][impact] => color class
-        // Row 1 (likelihood=1): impacts 1-5
-        ['low','low','low','medium','medium'],
-        // Row 2 (likelihood=2): impacts 1-5
-        ['low','low','medium','medium','high'],
-        // Row 3 (likelihood=3): impacts 1-5
-        ['low','medium','medium','high','high'],
-        // Row 4 (likelihood=4): impacts 1-5
-        ['medium','medium','high','very-high','very-high'],
-        // Row 5 (likelihood=5): impacts 1-5
-        ['medium','high','high','very-high','critical'],
-    ];
-
-    let gridHtml = '';
-    // Render rows from top (likelihood=5) to bottom (likelihood=1)
-    for (let l = 5; l >= 1; l--) {
-        gridHtml += `<div class="risk-matrix-label-y">${l}</div>`;
-        for (let i = 1; i <= 5; i++) {
-            const cellClass = cellColors[l-1][i-1];
-            const isActive = (l === parseInt(likelihood) && i === parseInt(impact));
-            gridHtml += `<div class="risk-matrix-cell ${cellClass}${isActive ? ' active' : ''}">${l * i}</div>`;
-        }
-    }
-
-    return `
-        <div class="risk-matrix-section">
-            <h3>${window.t('change-management.risk.assessment')}</h3>
-            <div class="risk-matrix-wrapper">
-                <div class="risk-matrix-info">
-                    <div class="risk-score-badge ${riskClass}">
-                        <span class="risk-score-value">${score}</span>
-                        <span class="risk-score-label">${level}</span>
-                    </div>
-                    <div class="risk-matrix-details">
-                        <div><strong>${window.t('change-management.risk.likelihood')}:</strong> ${likelihood} / 5</div>
-                        <div><strong>${window.t('change-management.risk.impact')}:</strong> ${impact} / 5</div>
-                    </div>
-                </div>
-                <div class="risk-matrix-grid-container">
-                    <div class="risk-matrix-y-label">${window.t('change-management.risk.likelihood')}</div>
-                    <div class="risk-matrix-grid">
-                        ${gridHtml}
-                        <div class="risk-matrix-spacer"></div>
-                        <div class="risk-matrix-label-x">1</div>
-                        <div class="risk-matrix-label-x">2</div>
-                        <div class="risk-matrix-label-x">3</div>
-                        <div class="risk-matrix-label-x">4</div>
-                        <div class="risk-matrix-label-x">5</div>
-                    </div>
-                    <div class="risk-matrix-x-label">${window.t('change-management.risk.impact')}</div>
-                </div>
-            </div>
-        </div>
-    `;
-}
+// Drawn by ChangeRisk.matrix() (assets/js/change-risk.js), on the policy version the change
+// was rated under (#246).
 
 // ============ PIR Detail ============
 
+/**
+ * The post-implementation review block - whether it succeeded, actual start and end,
+ * lessons learned and follow-up.
+ */
 function renderPirDetail(c) {
     let html = `<div class="pir-detail-section"><h3>${window.t('change-management.pir.heading')}</h3><div class="pir-detail-grid">`;
 
@@ -739,10 +956,10 @@ function renderPirDetail(c) {
         html += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.pir.successful')}</span><span class="detail-meta-value ${successClass}">${successText}</span></div>`;
     }
     if (c.pir_actual_start) {
-        html += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.pir.actual_start')}</span><span class="detail-meta-value">${formatDateTime(c.pir_actual_start)}</span></div>`;
+        html += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.pir.actual_start')}</span><span class="detail-meta-value">${formatNaiveDateTime(c.pir_actual_start)}</span></div>`;
     }
     if (c.pir_actual_end) {
-        html += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.pir.actual_end')}</span><span class="detail-meta-value">${formatDateTime(c.pir_actual_end)}</span></div>`;
+        html += `<div class="detail-meta-item"><span class="detail-meta-label">${window.t('change-management.pir.actual_end')}</span><span class="detail-meta-value">${formatNaiveDateTime(c.pir_actual_end)}</span></div>`;
     }
     html += '</div>';
 
@@ -759,6 +976,7 @@ function renderPirDetail(c) {
 
 // ============ Activity Timeline ============
 
+/** Loads a change's audit trail and comments together and shows them as one timeline, newest first. */
 async function loadActivityTimeline(changeId) {
     const container = document.getElementById('activityTimeline');
     if (!container) return;
@@ -802,6 +1020,10 @@ async function loadActivityTimeline(changeId) {
     }
 }
 
+/**
+ * Draws the activity timeline - comments, status changes, CAB votes, incident links and
+ * field edits.
+ */
 function renderActivityTimeline(timeline, container) {
     if (!timeline.length) {
         container.innerHTML = `<div class="timeline-empty">${window.t('change-management.detail.no_activity')}</div>`;
@@ -832,10 +1054,33 @@ function renderActivityTimeline(timeline, container) {
                 });
             } else if (entry.action_type === 'comment') {
                 return ''; // Already shown as comment entry
+            } else if (entry.action_type === 'text_edit' || entry.action_type === 'comment_deleted') {
+                // A long field's edit, or a deleted comment: the full text is a revision
+                // (#180), and the audit row's new_value names it - "Revision #812".
+                const revId = parseInt(String(entry.new_value || '').replace(/\D+/g, ''), 10) || null;
+                const field = entry.action_type === 'comment_deleted' ? 'comment' : (REVISION_FIELD_BY_LABEL[entry.field_name] || null);
+                description = entry.action_type === 'comment_deleted'
+                    ? escapeHtml(window.t('change-management.timeline.deleted_comment'))
+                    : window.t('change-management.timeline.edited_text', {
+                        field: `<strong>${escapeHtml(field ? window.t('change-management.revisions.field.' + field) : (entry.field_name || ''))}</strong>`
+                    });
+                if (field && revId && currentChange) {
+                    description += ` <button type="button" class="timeline-view-link" onclick="openRevisionViewer(${currentChange.id}, '${field}', ${revId})">${escapeHtml(window.t('change-management.revisions.view'))}</button>`;
+                }
+            } else if (entry.action_type === 'evidence_export') {
+                description = escapeHtml(window.t('change-management.timeline.exported_evidence'));
+            } else if (entry.action_type === 'attachment') {
+                description = entry.new_value
+                    ? escapeHtml(window.t('change-management.timeline.attached', { file: entry.new_value }))
+                    : escapeHtml(window.t('change-management.timeline.removed_attachment', { file: entry.old_value || '' }));
             } else if (entry.action_type === 'cab_vote') {
                 description = `<strong>${escapeHtml(entry.field_name || 'CAB')}</strong>`;
                 if (entry.new_value) description += `: <span class="new-val">${escapeHtml(entry.new_value)}</span>`;
                 if (entry.old_value) description += ` <span class="old-val">(${escapeHtml(entry.old_value)})</span>`;
+            } else if (entry.field_name === 'Linked incident') {
+                description = entry.new_value
+                    ? `${window.t('change-management.detail.linked_incident')} <span class="new-val">${escapeHtml(entry.new_value)}</span>`
+                    : `${window.t('change-management.detail.unlinked_incident')} <span class="old-val">${escapeHtml(entry.old_value)}</span>`;
             } else {
                 description = `changed <strong>${escapeHtml(entry.field_name || '')}</strong>`;
                 if (entry.old_value && entry.new_value) {
@@ -865,6 +1110,7 @@ function renderActivityTimeline(timeline, container) {
     }).join('');
 }
 
+/** Adds the typed comment to the current change and reloads the timeline. */
 async function postComment() {
     if (!currentChange) return;
 
@@ -897,6 +1143,7 @@ async function postComment() {
 
 // ============ Filtering & Search ============
 
+/** Filters the change list to one status (or all) and highlights its filter row. */
 function filterByStatus(status) {
     currentFilter = status;
     document.querySelectorAll('.status-filter').forEach(el => {
@@ -910,6 +1157,7 @@ function filterByStatus(status) {
 let searchModalOffsetX = 0;
 let searchModalOffsetY = 0;
 
+/** Opens the search panel next to the search button and focuses the change number box. */
 function openSearchModal() {
     const modal = document.getElementById('searchModal');
     modal.classList.add('active');
@@ -931,14 +1179,27 @@ function openSearchModal() {
     document.getElementById('searchChangeNumber').focus();
 }
 
+/** Closes the search panel. */
 function closeSearchModal() {
     document.getElementById('searchModal').classList.remove('active');
 }
 
+// Escape always closes the panel; clicking away closes it only if the analyst
+// turned that on (System > Preferences > Display). #144. No reading-pane
+// exception here: clicking a result opens the change in a detail view that
+// covers the screen, and closeSearchModal() is already called for it.
+document.addEventListener('DOMContentLoaded', function () {
+    if (window.initSearchPanelDismiss && document.getElementById('searchModal')) {
+        window.initSearchPanelDismiss({ panelId: 'searchModal', close: closeSearchModal });
+    }
+});
+
+/** Lets the search panel be dragged by its header. */
 function initSearchModalDrag() {
     const header = document.getElementById('searchModalHeader');
     const modal = document.getElementById('searchModal');
 
+    /** Starts dragging the panel from where the header was pressed (not on a button). */
     header.onmousedown = function(e) {
         if (e.target.tagName === 'BUTTON') return;
         e.preventDefault();
@@ -946,11 +1207,13 @@ function initSearchModalDrag() {
         searchModalOffsetX = e.clientX - rect.left;
         searchModalOffsetY = e.clientY - rect.top;
 
+        /** Moves the panel with the mouse. */
         function onMouseMove(e) {
             modal.style.left = (e.clientX - searchModalOffsetX) + 'px';
             modal.style.top = (e.clientY - searchModalOffsetY) + 'px';
             modal.style.transform = 'none';
         }
+        /** Ends the drag. */
         function onMouseUp() {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
@@ -960,6 +1223,7 @@ function initSearchModalDrag() {
     };
 }
 
+/** Searches changes by number (CHG-0001 or plain digits) or title and shows the results. */
 async function performSearch() {
     const changeNumber = document.getElementById('searchChangeNumber').value.trim();
     const title = document.getElementById('searchChangeTitle').value.trim();
@@ -1005,6 +1269,7 @@ async function performSearch() {
     }
 }
 
+/** Draws the search results with their count. */
 function renderSearchResults(results) {
     const container = document.getElementById('searchResults');
 
@@ -1035,11 +1300,13 @@ function renderSearchResults(results) {
     container.innerHTML = html;
 }
 
+/** Closes the search panel and opens the chosen change. */
 function selectSearchResult(changeId) {
     closeSearchModal();
     viewChange(changeId);
 }
 
+/** Empties the search boxes and results. */
 function clearSearch() {
     document.getElementById('searchChangeNumber').value = '';
     document.getElementById('searchChangeTitle').value = '';
@@ -1048,7 +1315,11 @@ function clearSearch() {
 
 // ============ Create / Edit ============
 
+/** Opens a blank change editor with the default status and empty risk, review and CAB fields. */
 function openCreateChange() {
+    if (window.MODULE_LEVEL === 'read') return;   // Read only (#180): nothing to create
+    applyApprovalEditorRules(null);
+    loadChangeTemplatePicker();
     document.getElementById('editChangeId').value = '';
     document.getElementById('editorTitle').textContent = window.t('change-management.editor.new');
     document.getElementById('changeTitle').value = '';
@@ -1070,11 +1341,11 @@ function openCreateChange() {
     document.getElementById('changeOutageEnd').value = '';
     document.getElementById('editorAttachmentList').innerHTML = '';
 
-    // Risk scoring
+    // Risk scoring: a new change is rated on the policy in use (#246)
+    setEditorRiskScale(ChangeRisk.currentId(), false);
     document.getElementById('riskLikelihood').value = '';
     document.getElementById('riskImpactScore').value = '';
-    document.getElementById('riskScoreDisplay').textContent = '-';
-    document.getElementById('riskScoreDisplay').className = 'risk-score-display';
+    updateRiskScore();
 
     // PIR fields
     document.querySelectorAll('input[name="pirWasSuccessful"]').forEach(r => r.checked = false);
@@ -1102,8 +1373,14 @@ function openCreateChange() {
     updatePirVisibility();
 }
 
+/**
+ * Opens the editor filled with the current change - fields, attachments, risk, review,
+ * CAB members and the rich-text sections.
+ */
 function editCurrentChange() {
-    if (!currentChange) return;
+    if (!currentChange || window.MODULE_LEVEL === 'read') return;   // Read only (#180)
+    document.getElementById('templatePickerWrap').style.display = 'none';   // a template is chosen when a change is raised
+    document.getElementById('templateVersionId').value = '';
     const c = currentChange;
 
     document.getElementById('editChangeId').value = c.id;
@@ -1125,7 +1402,9 @@ function editCurrentChange() {
     // Render existing attachments with delete buttons
     renderEditorAttachments(c.attachments || []);
 
-    // Risk scoring
+    // Risk scoring: on the scale it was rated on; an unrated change on the policy in use (#246)
+    const rated = !!(c.risk_likelihood || c.risk_impact_score);
+    setEditorRiskScale(rated ? (c.risk_policy_version_id || 0) : ChangeRisk.currentId(), false);
     document.getElementById('riskLikelihood').value = c.risk_likelihood || '';
     document.getElementById('riskImpactScore').value = c.risk_impact_score || '';
     updateRiskScore();
@@ -1162,8 +1441,121 @@ function editCurrentChange() {
 
     showView('editor');
     updatePirVisibility();
+    applyApprovalEditorRules(c);
 }
 
+// The approved templates this analyst may use (#180 §8), for the picker.
+let usableTemplates = [];
+
+/** Fills the "From a template" picker on a new change, if any approved template is usable. */
+async function loadChangeTemplatePicker() {
+    const wrap = document.getElementById('templatePickerWrap');
+    document.getElementById('templateVersionId').value = '';
+    document.getElementById('templateScope').textContent = '';
+    wrap.style.display = 'none';
+    try {
+        const res = await fetch(API_BASE + 'get_usable_templates.php');
+        const data = await res.json();
+        usableTemplates = data.success ? data.templates : [];
+    } catch (e) { usableTemplates = []; }
+    if (!usableTemplates.length) return;
+    const T = k => window.t('change-management.templates.' + k);
+    document.getElementById('templatePicker').innerHTML = `<option value="">${escapeHtml(T('none_option'))}</option>`
+        + usableTemplates.map(t => `<option value="${t.version_id}">${escapeHtml(t.name)} (v${t.version_no})</option>`).join('');
+    wrap.style.display = '';
+}
+
+/**
+ * Fill the editor from a template version. The fields stay editable - but changing a fixed
+ * one means the change is no longer the recipe, and it goes to normal approval (the server
+ * decides that on submission, comparing the words).
+ */
+function applyChangeTemplate(versionId) {
+    const tpl = usableTemplates.find(t => String(t.version_id) === String(versionId));
+    document.getElementById('templateVersionId').value = tpl ? tpl.version_id : '';
+    const scope = document.getElementById('templateScope');
+    scope.textContent = tpl ? [tpl.scope_use, tpl.scope_not ? '✗ ' + tpl.scope_not : ''].filter(Boolean).join('  ·  ') : '';
+    if (!tpl) return;
+    const v = tpl.values || {};
+    const nameOf = (rows, id) => { const r = rows.find(x => String(x.id) === String(id)); return r ? r.name : null; };
+    if (v.change_type_id && nameOf(changeTypes, v.change_type_id)) document.getElementById('changeType').value = nameOf(changeTypes, v.change_type_id);
+    if (v.priority_id && nameOf(changePriorities, v.priority_id)) document.getElementById('changePriority').value = nameOf(changePriorities, v.priority_id);
+    if (v.impact_id && nameOf(changeImpacts, v.impact_id)) document.getElementById('changeImpact').value = nameOf(changeImpacts, v.impact_id);
+    // A template's ratings belong to the policy they were given under (#246): on another
+    // scale they are left for the analyst, and the server leaves them out the same way.
+    if ((tpl.risk_policy_version_id || 0) === (editorRisk.version || 0)) {
+        if (v.risk_likelihood) document.getElementById('riskLikelihood').value = v.risk_likelihood;
+        if (v.risk_impact_score) document.getElementById('riskImpactScore').value = v.risk_impact_score;
+    } else if (v.risk_likelihood || v.risk_impact_score) {
+        showToast(window.t('change-management.risk_policy.template_other_scale'), 'info');
+    }
+    updateRiskScore();
+    const set = (id, val) => { if (val) setEditorContent(id, val); };
+    set('editorDescription', v.description);
+    set('editorReason', v.reason_for_change);
+    set('editorRisk', v.risk_evaluation);
+    set('editorTestplan', v.test_plan);
+    set('editorRollback', v.rollback_plan);
+}
+
+/**
+ * Enforce mode in the editor (#180): offer only the statuses the guard would accept, and
+ * show the approval set-up read-only once the change is submitted. Comfort, not the
+ * control - ChangesService refuses the same moves, and the API meets the same guard.
+ * Called with null for a new change, which resets everything.
+ */
+function applyApprovalEditorRules(c) {
+    const allowed = c && Array.isArray(c.allowed_status_ids) ? c.allowed_status_ids : null;
+    document.querySelectorAll('#changeStatus option').forEach(opt => {
+        const st = changeStatuses.find(s => s.name === opt.value);
+        opt.disabled = !!(allowed && st && !allowed.includes(parseInt(st.id)));
+    });
+    const mayChoose = c && c.approval_rules ? c.approval_rules.can_choose_approvers !== false : window.CHG_CAN_CHOOSE_APPROVERS !== false;
+    const locked = !!(c && c.approval_rules && c.approval_rules.setup_locked) || !mayChoose;
+    ['cabRequired', 'cabApprovalType', 'changeApprover', 'cabMemberSelect'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = locked;
+    });
+    document.querySelectorAll('#cabConfigSection button, #cabMembersList button').forEach(b => { b.disabled = locked; });
+    let note = document.getElementById('approvalLockedNote');
+    if (locked && !note) {
+        note = document.createElement('div');
+        note.id = 'approvalLockedNote';
+        note.className = 'approval-note';
+        note.textContent = window.t(mayChoose ? 'change-management.approval_panel.locked_note' : 'change-management.approval.cannot_choose_approvers');
+        const host = document.getElementById('cabRequired');
+        if (host && host.closest('.form-group')) host.closest('.form-group').appendChild(note);
+    } else if (!locked && note) {
+        note.remove();
+    }
+}
+
+/**
+ * Would this save change a field the approval was given against? Then, where an edit
+ * withdraws the approval (Enforce, or Settings say so), the person is told before saving.
+ */
+function savingWithdrawsApproval(payload) {
+    const c = currentChange;
+    if (!c || !c.approval || !c.approval.id || !c.approval_rules || !c.approval_rules.edit_withdraws) return false;
+    if (!['open', 'approved'].includes(c.approval.state)) return false;
+    const norm = v => (v === null || v === undefined) ? '' : String(v).trim();
+    const map = {
+        title: [payload.title, c.title], description: [payload.description, c.description],
+        reason_for_change: [payload.reason_for_change, c.reason_for_change], risk_evaluation: [payload.risk_evaluation, c.risk_evaluation],
+        test_plan: [payload.test_plan, c.test_plan], rollback_plan: [payload.rollback_plan, c.rollback_plan],
+        risk_likelihood: [payload.risk_likelihood, c.risk_likelihood], risk_impact_score: [payload.risk_impact_score, c.risk_impact_score],
+        change_type_id: [payload.change_type, c.change_type], impact_id: [payload.impact, c.impact], priority_id: [payload.priority, c.priority],
+        assigned_to_id: [payload.assigned_to_id, c.assigned_to_id],
+        work_window: [norm(payload.work_start_datetime) + '|' + norm(payload.work_end_datetime), toDatetimeLocal(c.work_start_datetime) + '|' + toDatetimeLocal(c.work_end_datetime)],
+        outage_window: [norm(payload.outage_start_datetime) + '|' + norm(payload.outage_end_datetime), toDatetimeLocal(c.outage_start_datetime) + '|' + toDatetimeLocal(c.outage_end_datetime)],
+    };
+    return (c.approval_rules.material || []).some(k => map[k] && norm(map[k][0]) !== norm(map[k][1]));
+}
+
+/**
+ * Leaves the editor without saving, back to the change (or the list), and tidies the
+ * address if it was the new-change route.
+ */
 function cancelEdit() {
     destroyEditors();
     if (currentChange) {
@@ -1188,6 +1580,10 @@ function restoreUrlFromNewRoute() {
 
 // ============ Save ============
 
+/**
+ * Saves the change from the editor, then its CAB members when CAB approval is on, and
+ * opens the saved change.
+ */
 async function saveChange() {
     const title = document.getElementById('changeTitle').value.trim();
     if (!title) {
@@ -1196,6 +1592,9 @@ async function saveChange() {
     }
 
     const changeId = document.getElementById('editChangeId').value;
+    const setupLocked = !!(changeId && currentChange && currentChange.approval_rules
+        && (currentChange.approval_rules.setup_locked || currentChange.approval_rules.can_choose_approvers === false))
+        || (!changeId && window.CHG_CAN_CHOOSE_APPROVERS === false);
 
     const payload = {
         id: changeId ? parseInt(changeId) : null,
@@ -1220,6 +1619,7 @@ async function saveChange() {
         post_implementation_review: getEditorContent('editorPir'),
         risk_likelihood: document.getElementById('riskLikelihood').value || null,
         risk_impact_score: document.getElementById('riskImpactScore').value || null,
+        risk_reassess: editorRisk.reassess || undefined,
         pir_was_successful: (() => { const r = document.querySelector('input[name="pirWasSuccessful"]:checked'); return r ? r.value : null; })(),
         pir_actual_start: document.getElementById('pirActualStart').value || null,
         pir_actual_end: document.getElementById('pirActualEnd').value || null,
@@ -1228,6 +1628,17 @@ async function saveChange() {
         cab_required: document.getElementById('cabRequired').checked ? 1 : 0,
         cab_approval_type: document.getElementById('cabApprovalType').value
     };
+    // Raised from a template (#180 §8): only on a new change.
+    if (!changeId && document.getElementById('templateVersionId').value) {
+        payload.template_version_id = parseInt(document.getElementById('templateVersionId').value);
+    }
+
+    if (changeId && savingWithdrawsApproval(payload)
+        && !(await showConfirm({ title: window.t('change-management.approval_panel.heading'),
+                                 message: window.t('change-management.approval.material_edit_confirm'),
+                                 okLabel: window.t('change-management.editor.save') }))) {
+        return;
+    }
 
     try {
         const response = await fetch(API_BASE + 'save.php', {
@@ -1238,8 +1649,9 @@ async function saveChange() {
         const data = await response.json();
 
         if (data.success) {
-            // Save CAB members if CAB is enabled
-            if (payload.cab_required) {
+            // Save CAB members if CAB is enabled - not while the set-up is locked (the
+            // service would refuse it anyway, Enforce mode, #180).
+            if (payload.cab_required && !setupLocked) {
                 await fetch(API_BASE + 'save_cab_members.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1273,6 +1685,7 @@ async function saveChange() {
 
 // ============ Delete ============
 
+/** Shows the confirmation dialog for deleting the current change. */
 function deleteCurrentChange() {
     if (!currentChange) return;
     const ref = 'CHG-' + String(currentChange.id).padStart(4, '0');
@@ -1291,10 +1704,12 @@ function deleteCurrentChange() {
     `;
 }
 
+/** Closes the delete confirmation dialog. */
 function closeDeleteModal() {
     document.getElementById('deleteModal').innerHTML = '';
 }
 
+/** Deletes the change and goes back to the list. */
 async function confirmDelete(id) {
     try {
         const response = await fetch(API_BASE + 'delete.php', {
@@ -1320,6 +1735,7 @@ async function confirmDelete(id) {
 
 // ============ Attachments ============
 
+/** Wires the attachment area - click to choose files, or drag and drop them. */
 function setupFileUpload() {
     const area = document.getElementById('fileUploadArea');
     const input = document.getElementById('fileInput');
@@ -1351,6 +1767,10 @@ function setupFileUpload() {
     });
 }
 
+/**
+ * Uploads files to the change being edited one at a time, refreshing its attachment list
+ * after each. A new change has to be saved first.
+ */
 async function uploadFiles(files) {
     const changeId = document.getElementById('editChangeId').value;
     if (!changeId) {
@@ -1388,6 +1808,7 @@ async function uploadFiles(files) {
     }
 }
 
+/** Lists the change's attachments in the editor with download and delete buttons. */
 function renderEditorAttachments(attachments) {
     const container = document.getElementById('editorAttachmentList');
     if (!attachments.length) {
@@ -1410,10 +1831,12 @@ function renderEditorAttachments(attachments) {
     `).join('');
 }
 
+/** Opens an attachment in a new tab. */
 function downloadAttachment(id) {
     window.open(API_BASE + 'get_attachment.php?id=' + id, '_blank');
 }
 
+/** Asks for confirmation, deletes an attachment and refreshes the list. */
 async function deleteAttachment(id) {
     if (!(await showConfirm({ title: window.t('change-management.delete.delete'), message: window.t('change-management.delete.attachment_confirm'), okLabel: window.t('change-management.delete.delete'), okClass: 'danger' }))) return;
 
@@ -1447,6 +1870,10 @@ async function deleteAttachment(id) {
 
 // ============ TinyMCE ============
 
+/**
+ * Starts a TinyMCE editor for each rich-text field, matching the light or dark theme,
+ * and calls callback once they are all ready.
+ */
 function initEditors(callback) {
     // Destroy existing instances first
     destroyEditors();
@@ -1454,15 +1881,31 @@ function initEditors(callback) {
     let initialized = 0;
     const total = editorIds.length;
 
+    // Match the editor chrome + content area to the active palette. TinyMCE
+    // renders in an iframe, so we swap its bundled oxide-dark UI skin + dark
+    // content CSS by the palette's declared mode (data-theme-mode on <html>) —
+    // same approach as the tickets reply editor (inbox.js). Any new palette
+    // works with no change here.
+    const isDark = (document.documentElement.getAttribute('data-theme-mode') || 'light') === 'dark';
+
     editorIds.forEach(id => {
         tinymce.init({
+            // Plugins and skins load without the page's ?v=, so a browser could pair a new
+            // editor with old cached plugins after an update. TinyMCE's own version stamps them.
+            cache_suffix: '?v=' + tinymce.majorVersion + '.' + tinymce.minorVersion,
             selector: '#' + id,
             license_key: 'gpl',
             height: 300,
             menubar: false,
+            skin: isDark ? 'oxide-dark' : 'oxide',
+            content_css: isDark ? 'dark' : 'default',
             plugins: ['advlist', 'autolink', 'lists', 'link', 'table', 'wordcount'],
             toolbar: 'undo redo | blocks | bold italic underline | bullist numlist | link table | removeformat',
-            content_style: 'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; }',
+            content_style: 'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; } @media (pointer: coarse) { body { font-size: 16px; } }',
+            /**
+             * Counts each editor as it finishes starting, and runs the callback when the
+             * last one is ready.
+             */
             setup: function(editor) {
                 editor.on('init', function() {
                     initialized++;
@@ -1476,6 +1919,7 @@ function initEditors(callback) {
     });
 }
 
+/** Removes every TinyMCE editor. */
 function destroyEditors() {
     editorsReady = false;
     editorIds.forEach(id => {
@@ -1484,11 +1928,13 @@ function destroyEditors() {
     });
 }
 
+/** The HTML in one rich-text editor - empty when it is not running. */
 function getEditorContent(id) {
     const editor = tinymce.get(id);
     return editor ? editor.getContent() : '';
 }
 
+/** Puts HTML into one rich-text editor. */
 function setEditorContent(id, content) {
     const editor = tinymce.get(id);
     if (editor) {
@@ -1498,6 +1944,7 @@ function setEditorContent(id, content) {
 
 // ============ Rich Text Tabs ============
 
+/** Shows one rich-text tab and its panel. */
 function switchTab(tab) {
     // Update tab buttons
     document.querySelectorAll('.rich-text-tab').forEach(btn => btn.classList.remove('active'));
@@ -1510,42 +1957,132 @@ function switchTab(tab) {
 
 // ============ Risk Scoring & PIR Visibility ============
 
+/**
+ * The scale the editor is rating on (#246): the policy version a change was rated under,
+ * or the one in use for a new or unrated change. `reassess` is set by Re-assess, which
+ * moves an older change onto the current policy deliberately - the server needs both
+ * ratings then, and records the move.
+ */
+let editorRisk = { version: 0, reassess: false };
+
+/** Puts a version's levels in the two selects and its criteria in the guide, with the "older policy" note. */
+function setEditorRiskScale(versionId, reassess) {
+    editorRisk = { version: versionId || 0, reassess: !!reassess };
+    ChangeRisk.fillSelects(editorRisk.version, document.getElementById('riskLikelihood'), document.getElementById('riskImpactScore'));
+    const body = document.getElementById('riskGuideRows');
+    if (body) body.innerHTML = ChangeRisk.guideRows(editorRisk.version);
+    const p = ChangeRisk.policy(editorRisk.version);
+    const note = document.getElementById('riskGuideNote');
+    if (note) note.textContent = ChangeRisk.isBuiltin(p)
+        ? window.t('change-management.editor.risk_help_note')
+        : window.t('change-management.risk_policy.guide_note', { name: p.name || '' });
+    const example = document.getElementById('riskGuideExample');
+    if (example) example.style.display = ChangeRisk.isBuiltin(p) ? '' : 'none';
+    const older = document.getElementById('riskOlderPolicy');
+    if (older) {
+        const isOlder = editorRisk.version !== (ChangeRisk.currentId() || 0);
+        older.hidden = !isOlder;
+        if (isOlder) document.getElementById('riskOlderPolicyText').textContent = window.t('change-management.risk_policy.older_note', {
+            name: ChangeRisk.isBuiltin(p) ? window.t('change-management.risk_policy.builtin_name') : (p.name || '') });
+    }
+}
+
+/** Re-assess: clear the ratings and offer the policy in use now. */
+function reassessRisk() {
+    document.getElementById('riskLikelihood').value = '';
+    document.getElementById('riskImpactScore').value = '';
+    setEditorRiskScale(ChangeRisk.currentId(), true);
+    updateRiskScore();
+    document.getElementById('riskLikelihood').focus();
+}
+
+/**
+ * GH #231: the ? beside Risk likelihood and Risk impact opens the rating guide
+ * under them, with that field's explanation marked; pressed again, or Escape, or
+ * the close button, it closes and focus goes back to the button.
+ */
+(function () {
+    let opener = null;
+    function close() {
+        const g = document.getElementById('riskGuide');
+        if (!g || g.hidden) return;
+        g.hidden = true;
+        document.querySelectorAll('.cm-risk-help-btn').forEach(b => b.setAttribute('aria-expanded', 'false'));
+        if (opener) opener.focus();
+        opener = null;
+    }
+    function open(btn) {
+        const g = document.getElementById('riskGuide');
+        const part = btn.dataset.riskHelp;
+        g.hidden = false;
+        document.querySelectorAll('.cm-risk-help-btn').forEach(b => b.setAttribute('aria-expanded', b === btn ? 'true' : 'false'));
+        g.querySelectorAll('[data-risk-part]').forEach(p => p.classList.toggle('is-current', p.dataset.riskPart === part));
+        opener = btn;
+        g.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.cm-risk-help-btn');
+        if (btn) {
+            const g = document.getElementById('riskGuide');
+            if (!g.hidden && opener === btn) close(); else open(btn);
+            return;
+        }
+        if (e.target.closest('.cm-risk-guide-close')) close();
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        const g = document.getElementById('riskGuide');
+        if (g && !g.hidden && (g.contains(document.activeElement) || document.activeElement === opener)) { e.stopPropagation(); close(); }
+    }, true);
+})();
+
+/** Shows the score and the result the policy's matrix gives the two ratings - never the score banded. */
 function updateRiskScore() {
     const likelihood = parseInt(document.getElementById('riskLikelihood').value) || 0;
     const impact = parseInt(document.getElementById('riskImpactScore').value) || 0;
     const display = document.getElementById('riskScoreDisplay');
-
-    if (likelihood && impact) {
-        const score = likelihood * impact;
-        let level, cssClass;
-        if (score <= 4) { level = 'Low'; cssClass = 'risk-low'; }
-        else if (score <= 9) { level = 'Medium'; cssClass = 'risk-medium'; }
-        else if (score <= 15) { level = 'High'; cssClass = 'risk-high'; }
-        else if (score <= 20) { level = 'Very High'; cssClass = 'risk-very-high'; }
-        else { level = 'Critical'; cssClass = 'risk-critical'; }
-        display.textContent = score + ' - ' + level;
-        display.className = 'risk-score-display ' + cssClass;
+    const p = ChangeRisk.policy(editorRisk.version);
+    const r = likelihood && impact ? ChangeRisk.resultFor(p, likelihood, impact) : null;
+    if (r) {
+        const pt = ChangeRisk.paint(r);
+        display.textContent = (likelihood * impact) + ' - ' + ChangeRisk.resultName(r);
+        display.className = 'risk-score-display ' + pt.cls;
+        display.style.cssText = pt.style;
     } else {
         display.textContent = '-';
         display.className = 'risk-score-display';
+        display.style.cssText = '';
     }
 }
 
+/** Shows the post-implementation review fields only when the chosen status is in the Done stage. */
 function updatePirVisibility() {
     const status = document.getElementById('changeStatus').value;
     const pirSection = document.getElementById('pirStructuredFields');
     if (pirSection) {
-        pirSection.style.display = (status === 'Completed' || status === 'Failed') ? '' : 'none';
+        pirSection.style.display = statusStage(status) === 'done' ? '' : 'none';
     }
+}
+
+/**
+ * The stage of a status, by name, from the loaded statuses (draft, awaiting, approved,
+ * implementing, done, stopped), or null when it has none. TRAP: decide by the stage,
+ * never by a status name - names are editable in Settings.
+ */
+function statusStage(name) {
+    const s = changeStatuses.find(x => x.name === name);
+    return s && s.stage ? s.stage : null;
 }
 
 // ============ CAB Editor Functions ============
 
+/** Shows or hides the CAB settings with the CAB required tick. */
 function toggleCabConfig() {
     const checked = document.getElementById('cabRequired').checked;
     document.getElementById('cabConfigSection').style.display = checked ? '' : 'none';
 }
 
+/** Adds the analyst chosen in the dropdown to the CAB members, as required. */
 function addCabMember() {
     const select = document.getElementById('cabMemberSelect');
     const analystId = parseInt(select.value);
@@ -1563,11 +2100,13 @@ function addCabMember() {
     renderCabMemberChips();
 }
 
+/** Removes an analyst from the CAB members. */
 function removeCabMember(analystId) {
     cabEditorMembers = cabEditorMembers.filter(m => m.analyst_id !== analystId);
     renderCabMemberChips();
 }
 
+/** Switches a CAB member between required and optional. */
 function toggleCabMemberRequired(analystId) {
     const member = cabEditorMembers.find(m => m.analyst_id === analystId);
     if (member) {
@@ -1576,6 +2115,7 @@ function toggleCabMemberRequired(analystId) {
     }
 }
 
+/** Draws the CAB members as chips with their required switch and a remove button. */
 function renderCabMemberChips() {
     const container = document.getElementById('cabMembersList');
     if (!container) return;
@@ -1598,8 +2138,237 @@ function renderCabMemberChips() {
 
 // ============ CAB Review Panel (Detail View) ============
 
-function renderCabReviewPanel(c) {
+/**
+ * The CAB review panel on the detail view - each member's vote and, for a member who has
+ * not voted on a change pending approval, the voting form. Empty when CAB is not
+ * required.
+ */
+/**
+ * The Approval panel (#180): the current round (its route and state, and whether the
+ * content has moved on since it opened), the CAB vote or the named approver's decision,
+ * and the earlier rounds, collapsed. Everything here is drawn from get.php's approval /
+ * approval_rounds; the rules it shows are enforced by ChangesService, not here.
+ */
+function renderApprovalPanel(c) {
+    const rounds = c.approval_rounds || [];
+    const live = c.approval || {};
+    const hasSetup = parseInt(c.cab_required) || c.approver_id || c.template;
+    if (!rounds.length && !hasSetup) return '';
+
+    const T = (k, p) => window.t('change-management.approval_panel.' + k, p);
+    const current = rounds.find(r => r.id === live.id) || null;
+    const me = parseInt(document.body.dataset.analystId) || 0;
+    let html = `<div class="approval-section"><div class="approval-header"><h3>${escapeHtml(T('heading'))}</h3>`;
+    if (current) {
+        html += `<div class="approval-badges"><span class="approval-badge route">${escapeHtml(T('route_' + current.route))}</span>`
+            + `<span class="approval-badge state-${current.state}">${escapeHtml(T('state_' + current.state))}</span>`
+            + (current.is_independent === false ? `<span class="approval-badge not-independent">${escapeHtml(T('not_independent'))}</span>` : '')
+            + `<span class="approval-round-no">${escapeHtml(T('round', { n: current.round_no }))}</span></div>`;
+    } else {
+        html += `<div class="approval-badges"><span class="approval-badge">${escapeHtml(T('none_yet'))}</span></div>`;
+    }
+    html += '</div>';
+
+    if (window._staleNotice) {
+        html += window._staleNotice;
+    }
+
+    if (current && live.content_changed) {
+        const fields = Object.entries(live.changed_fields || {}).map(([field, since]) => ({ field, since }));
+        html += `<div class="approval-earlier">${escapeHtml(T(current.state === 'approved' ? 'approved_earlier' : 'edited_since'))}`
+            + fields.map(f => ` <button type="button" class="timeline-view-link" onclick="openRevisionViewer(${c.id}, '${f.field}', null, ${f.since})">${escapeHtml(window.t('change-management.revisions.field.' + f.field))}</button>`).join('')
+            + '</div>';
+    }
+    if (c.template) {
+        const TM = (k, p) => window.t('change-management.templates.' + k, p);
+        const why = c.template.check;
+        let line = TM('raised_from', { name: c.template.name, n: c.template.version_no });
+        if (current && current.route === 'pre_authorised') line += ' ' + TM('pre_authorised');
+        else if (why && why.reason === 'changed') line += ' ' + TM('lost_changed', { fields: (why.changed_fields || []).map(f => window.t('change-management.approval_settings.field_' + f)).join(', ') });
+        else if (why && why.reason === 'switched_off') line += ' ' + TM('lost_switched_off');
+        else if (why && why.reason === 'version_not_current') line += ' ' + TM('lost_version');
+        else if (why && why.reason === 'not_allowed') line += ' ' + TM('lost_not_allowed');
+        html += `<div class="approval-note">${escapeHtml(line)}${c.template.scope_use ? `<br><em>${escapeHtml(c.template.scope_use)}</em>` : ''}</div>`;
+    }
+    if (current && current.route === 'legacy') {
+        html += `<div class="approval-note">${escapeHtml(T(current.state === 'open' ? 'legacy_open' : 'legacy_approved'))}</div>`;
+    }
+
+    // The CAB, for a CAB round.
+    if (parseInt(c.cab_required) && c.cab_members) {
+        html += renderCabReviewPanel(c, current);
+    }
+
+    // The named approver's own decision (until #180 the Approver was only a label).
+    if (current && current.state === 'open' && current.route === 'approver' && c.status_stage === 'awaiting') {
+        if (parseInt(c.approver_id) === me) {
+            html += `<div class="cab-vote-form">
+                <textarea class="form-input" id="approverNote" rows="2" placeholder="${escapeHtml(T('note_placeholder'))}"></textarea>
+                <div class="cab-vote-buttons">
+                    <button class="btn cab-btn-approve" onclick="submitApproverDecision('approve')">${window.t('change-management.cab.approve')}</button>
+                    <button class="btn cab-btn-reject" onclick="submitApproverDecision('reject')">${window.t('change-management.cab.reject')}</button>
+                </div></div>`;
+        } else {
+            html += `<div class="approval-note">${escapeHtml(T('waiting_for', { name: c.approver_name || '' }))}</div>`;
+        }
+    }
+    // The administrator override (Settings → Approvals), never the default action.
+    if (current && current.state === 'open' && c.approval_rules && c.approval_rules.override_allowed) {
+        html += `<div class="approval-override"><button type="button" class="btn btn-secondary" onclick="openOverrideDialog()">${escapeHtml(T('override'))}</button></div>`;
+    }
+    if (current && current.state === 'approved' && current.decided_by_name) {
+        html += `<div class="approval-note">${escapeHtml(T('decided', { name: current.decided_by_name, date: formatDateTime(current.decided_at) }))}`
+            + (current.decision_note ? `: ${escapeHtml(current.decision_note)}` : '') + '</div>';
+    }
+
+    // Earlier rounds, collapsed: the history reads approved, edited, re-approved.
+    const earlier = rounds.filter(r => !current || r.id !== current.id).reverse();
+    if (earlier.length) {
+        html += `<details class="approval-history"><summary>${escapeHtml(T('earlier', { n: earlier.length }))}</summary><ul>`
+            + earlier.map(r => `<li><strong>${escapeHtml(T('round', { n: r.round_no }))}</strong> · ${escapeHtml(T('route_' + r.route))} · ${escapeHtml(T('state_' + r.state))}`
+                + (r.decided_by_name ? ` · ${escapeHtml(T('decided', { name: r.decided_by_name, date: formatDateTime(r.decided_at) }))}` : '')
+                + (r.closed_reason ? ` · ${escapeHtml(r.closed_reason)}` : '')
+                + (r.votes.length ? ` · ${escapeHtml(T('votes', { n: r.votes.length }))}` : '') + '</li>').join('')
+            + '</ul></details>';
+    }
+    html += '</div>';
+    return html;
+}
+
+
+/** The named approver approves or rejects, against the version this page was drawn with. */
+async function submitApproverDecision(decision) {
+    if (!currentChange) return;
+    const note = document.getElementById('approverNote')?.value?.trim() || '';
+    try {
+        const res = await fetch(API_BASE + 'decide_approval.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                change_id: currentChange.id, decision, note,
+                approval_id: currentChange.approval ? currentChange.approval.id : null,
+                content_hash: currentChange.approval ? currentChange.approval.current_version : null
+            })
+        });
+        const data = await res.json();
+        if (!data.success && data.code === 'approval_stale') { await handleStaleApproval(note, 'approverNote'); return; }
+        if (data.success) {
+            showToast(window.t('change-management.approval_panel.decided_toast'), 'success');
+            await viewChange(currentChange.id);
+            loadChanges();
+        } else {
+            showToast(window.t('change-management.toast.error_prefix', { message: data.error }), 'error');
+        }
+    } catch (e) {
+        showToast(window.t('change-management.toast.vote_error'), 'error');
+    }
+}
+
+/**
+ * A vote or decision refused because the change was edited after this page was drawn
+ * (#180 §5): reload it, say what changed, keep what they had typed, and let them vote
+ * again - knowingly - against the new version.
+ */
+async function handleStaleApproval(typed, inputId) {
+    const before = currentChange;
+    await viewChange(before.id);
+    const after = currentChange;
+    const longFields = ['description', 'reason_for_change', 'risk_evaluation', 'test_plan', 'rollback_plan'];
+    const changed = longFields.filter(f => (before[f] || '') !== (after[f] || ''));
+    const T = (k, p) => window.t('change-management.approval_panel.' + k, p);
+    window._staleNotice = `<div class="approval-stale">${escapeHtml(T('stale'))}`
+        + changed.map(f => ` <button type="button" class="timeline-view-link" onclick="openRevisionViewer(${after.id}, '${f}')">${escapeHtml(window.t('change-management.revisions.field.' + f))}</button>`).join('')
+        + '</div>';
+    await viewChange(after.id);
+    window._staleNotice = '';
+    const box = document.getElementById(inputId);
+    if (box) box.value = typed;
+}
+
+/** The administrator override dialog: a written reason is required and recorded. */
+function openOverrideDialog() {
+    if (!currentChange) return;
+    const T = (k, p) => window.t('change-management.approval_panel.' + k, p);
+    document.getElementById('deleteModal').innerHTML = `
+        <div class="modal-overlay" onclick="closeDeleteModal()">
+            <div class="modal-box" onclick="event.stopPropagation()">
+                <h3>${escapeHtml(T('override_heading'))}</h3>
+                <p>${escapeHtml(T('override_explain'))}</p>
+                <textarea class="form-input" id="overrideReason" rows="3" placeholder="${escapeHtml(T('override_reason'))}"></textarea>
+                <div class="modal-box-actions">
+                    <button class="btn btn-secondary" onclick="closeDeleteModal()">${escapeHtml(T('back'))}</button>
+                    <button class="btn btn-primary" onclick="confirmOverride(${currentChange.id})">${escapeHtml(T('override'))}</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+/** Sends the override and reloads the change. */
+async function confirmOverride(id) {
+    const reason = document.getElementById('overrideReason')?.value?.trim() || '';
+    try {
+        const res = await fetch(API_BASE + 'override_approval.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ change_id: id, reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeDeleteModal();
+            showToast(window.t('change-management.approval_panel.override_toast'), 'success');
+            await viewChange(id);
+            loadChanges();
+        } else {
+            showToast(window.t('change-management.toast.error_prefix', { message: data.error }), 'error');
+        }
+    } catch (e) {
+        showToast(window.t('change-management.toast.vote_error'), 'error');
+    }
+}
+
+/** Cancel instead of Delete: the change keeps every record (#180 §4). */
+function cancelCurrentChange() {
+    if (!currentChange) return;
+    const T = (k, p) => window.t('change-management.approval_panel.' + k, p);
+    document.getElementById('deleteModal').innerHTML = `
+        <div class="modal-overlay" onclick="closeDeleteModal()">
+            <div class="modal-box" onclick="event.stopPropagation()">
+                <h3>${escapeHtml(T('cancel_heading'))}</h3>
+                <p>${escapeHtml(T('cancel_explain'))}</p>
+                <textarea class="form-input" id="cancelReason" rows="2" placeholder="${escapeHtml(T('cancel_reason'))}"></textarea>
+                <div class="modal-box-actions">
+                    <button class="btn btn-secondary" onclick="closeDeleteModal()">${escapeHtml(T('back'))}</button>
+                    <button class="btn btn-danger" onclick="confirmCancelChange(${currentChange.id})">${escapeHtml(T('cancel'))}</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+/** Sends the cancel and reloads the change. */
+async function confirmCancelChange(id) {
+    const reason = document.getElementById('cancelReason')?.value?.trim() || '';
+    try {
+        const res = await fetch(API_BASE + 'cancel.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ change_id: id, reason })
+        });
+        const data = await res.json();
+        closeDeleteModal();
+        if (data.success) {
+            showToast(window.t('change-management.approval_panel.cancelled_toast'), 'success');
+            await viewChange(id);
+            loadChanges();
+        } else {
+            showToast(window.t('change-management.toast.error_prefix', { message: data.error }), 'error');
+        }
+    } catch (e) {
+        showToast(window.t('change-management.toast.error_deleting'), 'error');
+    }
+}
+
+function renderCabReviewPanel(c, round) {
     if (!parseInt(c.cab_required) || !c.cab_members) return '';
+    // This round's votes, by voter: whether each counted and was cast on the current version.
+    const roundVotes = {};
+    ((round && round.votes) || []).forEach(v => { roundVotes[v.analyst_id] = v; });
 
     const members = c.cab_members;
     const requiredMembers = members.filter(m => parseInt(m.is_required));
@@ -1607,7 +2376,7 @@ function renderCabReviewPanel(c) {
     const approvalType = c.cab_approval_type === 'majority' ? window.t('change-management.cab.type_majority') : window.t('change-management.cab.type_all');
     const currentAnalystId = parseInt(document.body.dataset.analystId) || 0;
     const myMembership = members.find(m => parseInt(m.analyst_id) === currentAnalystId);
-    const canVote = myMembership && !myMembership.vote && c.status === 'Pending Approval';
+    const canVote = myMembership && !myMembership.vote && c.status_stage === 'awaiting' && round && round.state === 'open';
 
     let html = `
         <div class="cab-review-section">
@@ -1637,6 +2406,8 @@ function renderCabReviewPanel(c) {
                     ${m.vote_datetime ? `<span class="cab-vote-date">${formatDateTime(m.vote_datetime)}</span>` : ''}
                 </div>
                 ${m.vote_comment ? `<div class="cab-vote-comment">${escapeHtml(m.vote_comment)}</div>` : ''}
+                ${m.vote && roundVotes[m.analyst_id] && !roundVotes[m.analyst_id].is_counted ? `<div class="cab-vote-flag">${escapeHtml(window.t('change-management.approval_panel.not_counted'))}</div>` : ''}
+                ${m.vote && roundVotes[m.analyst_id] && roundVotes[m.analyst_id].was_current === false ? `<div class="cab-vote-flag">${escapeHtml(window.t('change-management.approval_panel.earlier_version_vote'))}</div>` : ''}
             </div>
         `;
     });
@@ -1661,6 +2432,7 @@ function renderCabReviewPanel(c) {
     return html;
 }
 
+/** Records the signed-in analyst's CAB vote with an optional comment and reloads the change. */
 async function submitCabVote(vote) {
     if (!currentChange) return;
 
@@ -1673,11 +2445,19 @@ async function submitCabVote(vote) {
             body: JSON.stringify({
                 change_id: currentChange.id,
                 vote: vote,
-                vote_comment: comment
+                vote_comment: comment,
+                // TRAP: the values this page was DRAWN with - never re-fetched before
+                // posting, or the check becomes "approve whatever is current" (#180 §5).
+                approval_id: currentChange.approval ? currentChange.approval.id : null,
+                content_hash: currentChange.approval ? currentChange.approval.current_version : null
             })
         });
         const data = await response.json();
 
+        if (!data.success && data.code === 'approval_stale') {
+            await handleStaleApproval(comment, 'cabVoteComment');
+            return;
+        }
         if (data.success) {
             showToast(window.t('change-management.toast.vote_recorded', { vote: vote }), 'success');
             // Refresh the change detail
@@ -1695,6 +2475,7 @@ async function submitCabVote(vote) {
 
 // ============ View Management ============
 
+/** Shows the list, detail or editor view and hides the others. */
 function showView(view) {
     document.getElementById('changeListView').style.display = view === 'list' ? '' : 'none';
     document.getElementById('changeDetailView').style.display = view === 'detail' ? '' : 'none';
@@ -1710,6 +2491,7 @@ function showView(view) {
     }
 }
 
+/** Goes back to the change list and reloads it. */
 function backToList() {
     currentChange = null;
     showView('list');
@@ -1718,26 +2500,57 @@ function backToList() {
 
 // ============ Utility Functions ============
 
+// change_audit.field_name of a text edit is the field's English label
+// (ChangeRevisions::FIELDS in includes/changes/revisions.php); this maps it back to
+// the field key the viewer and the translations use.
+const REVISION_FIELD_BY_LABEL = {
+    'Description': 'description',
+    'Reason for change': 'reason_for_change',
+    'Risk evaluation': 'risk_evaluation',
+    'Test plan': 'test_plan',
+    'Rollback plan': 'rollback_plan',
+    'Post-implementation review': 'post_implementation_review',
+    'Lessons learned': 'pir_lessons_learned',
+    'Follow-up': 'pir_follow_up',
+};
+
+/** Escapes text for safe use inside HTML. */
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// NAIVE wall-clock scheduling date (only caller is work_start on the list card)
+// — shown exactly as typed, no zone conversion (parseNaiveDate from tz.js).
 function formatDate(dateStr) {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const d = parseNaiveDate(dateStr);
+    return fmtNaiveDate(d);
 }
 
+// Server-stamped UTC timestamp (created / modified / approved / CAB vote /
+// history "when") → analyst display zone (parseUTCDate / tzOpts from tz.js).
 function formatDateTime(dateStr) {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-           ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const d = parseUTCDate(dateStr);
+    return fmtDateTime(d);
 }
 
+// NAIVE wall-clock scheduling datetime (work / outage / PIR windows) — shown
+// exactly as typed for every analyst, no zone conversion. Same output shape as
+// formatDateTime so the two are drop-in interchangeable at each call site.
+function formatNaiveDateTime(dateStr) {
+    if (!dateStr) return '';
+    const d = parseNaiveDate(dateStr);
+    return fmtNaiveDateTime(d);
+}
+
+/**
+ * A stored date-time in the YYYY-MM-DDTHH:MM form a datetime-local input expects - blank
+ * when it cannot be read.
+ */
 function toDatetimeLocal(dateStr) {
     if (!dateStr) return '';
     const d = new Date(dateStr);
@@ -1748,6 +2561,7 @@ function toDatetimeLocal(dateStr) {
            'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
+/** A byte count as B, KB or MB. */
 function formatFileSize(bytes) {
     if (!bytes) return '';
     if (bytes < 1024) return bytes + ' B';
@@ -1758,11 +2572,13 @@ function formatFileSize(bytes) {
 
 // ============ Share Functions ============
 
+/** Opens or closes the Share menu. */
 function toggleShareDropdown() {
     const menu = document.getElementById('shareDropdownMenu');
     menu.classList.toggle('active');
 }
 
+/** Closes the Share menu. */
 function closeShareDropdown() {
     const menu = document.getElementById('shareDropdownMenu');
     if (menu) menu.classList.remove('active');
@@ -1776,52 +2592,98 @@ document.addEventListener('click', function(e) {
     }
 });
 
+/** The current change's reference, such as CHG-0042. */
 function getChangeRef() {
     if (!currentChange) return '';
     return 'CHG-' + String(currentChange.id).padStart(4, '0');
 }
 
+/** A link straight to the current change. */
 function getChangeUrl() {
     return window.location.origin + window.location.pathname + '?change_id=' + currentChange.id;
 }
 
+/** Copies the link to the current change to the clipboard. */
 function shareChangeLink() {
     closeShareDropdown();
     if (!currentChange) return;
-
     const url = getChangeUrl();
-    navigator.clipboard.writeText(url).then(() => {
-        showToast(window.t('change-management.toast.link_copied'), 'success');
-    }).catch(() => {
-        // Fallback for older browsers
-        const input = document.createElement('input');
-        input.value = url;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
-        showToast(window.t('change-management.toast.link_copied'), 'success');
+    // copyToClipboard(), not navigator.clipboard directly — see clipboard.js.
+    copyToClipboard(url).then(ok => {
+        showToast(
+            ok ? window.t('change-management.toast.link_copied')
+               : window.t('change-management.toast.link_copy_failed'),
+            ok ? 'success' : 'error');
     });
 }
 
-function shareChangePdf() {
+/**
+ * The change as an A4 PDF, laid out as html2pdf laid it out until 4.1.0: the
+ * content drawn by html2canvas at the page's printable width, then cut into
+ * page-high slices, each a JPEG on its own page inside 10mm margins.
+ *
+ * html2pdf did exactly this with a copy of jsPDF bundled inside it, which fell
+ * behind the install's own (and its security fixes). Doing the three steps here
+ * keeps one jsPDF.
+ *
+ * TRAP: the content must be IN the document, at the printable width, while it is
+ * drawn - html2canvas renders laid-out elements, and a detached one has no size.
+ *
+ * @param {HTMLElement} content  what buildPdfContent() returns (detached)
+ * @returns {Promise<object>} the jsPDF document
+ */
+async function changePdfDocument(content) {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const margin = 10;
+    const pageW = pdf.internal.pageSize.getWidth() - margin * 2;
+    const pageH = pdf.internal.pageSize.getHeight() - margin * 2;
+
+    const holder = document.createElement('div');
+    // A PDF page is always white, so the text colour is set here rather than
+    // inherited from the screen's theme - in dark mode it would be pale grey on white.
+    holder.style.cssText = 'position: fixed; left: -10000px; top: 0; background: #fff; color: #333; width: '
+        + Math.round(pageW * 96 / 25.4) + 'px;';   // the printable width at 96 CSS px per inch
+    holder.appendChild(content);
+    document.body.appendChild(holder);
+    try {
+        const canvas = await html2canvas(content, { scale: 2, backgroundColor: '#ffffff' });
+        const pxPerMm = canvas.width / pageW;
+        const slice = Math.floor(pageH * pxPerMm);
+        const page = document.createElement('canvas');
+        page.width = canvas.width;
+        for (let y = 0, n = 0; y < canvas.height; y += slice, n++) {
+            const h = Math.min(slice, canvas.height - y);
+            page.height = h;
+            const ctx = page.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, page.width, h);
+            ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+            if (n > 0) pdf.addPage();
+            pdf.addImage(page.toDataURL('image/jpeg', 0.98), 'JPEG', margin, margin, pageW, h / pxPerMm);
+        }
+    } finally {
+        holder.remove();
+    }
+    return pdf;
+}
+
+/** Downloads the current change as a PDF. */
+async function shareChangePdf() {
     closeShareDropdown();
     if (!currentChange) return;
 
-    const pdfContent = buildPdfContent();
     const ref = getChangeRef();
-
-    const opt = {
-        margin: 10,
-        filename: `${ref}_${currentChange.title.replace(/[^a-z0-9]/gi, '_')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    html2pdf().set(opt).from(pdfContent).save();
+    try {
+        const pdf = await changePdfDocument(buildPdfContent());
+        pdf.save(`${ref}_${currentChange.title.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+    } catch (error) {
+        console.error('Error generating PDF:', error);
+        showToast(window.t('change-management.toast.pdf_error'), 'error');
+    }
 }
 
+/** Opens the email dialog for sharing the current change as a link, a PDF or both. */
 function shareChangeBoth() {
     closeShareDropdown();
     if (!currentChange) return;
@@ -1836,10 +2698,15 @@ function shareChangeBoth() {
     document.getElementById('shareEmailModal').classList.add('active');
 }
 
+/** Closes the share-by-email dialog. */
 function closeShareEmailModal() {
     document.getElementById('shareEmailModal').classList.remove('active');
 }
 
+/**
+ * Emails the current change to the address given, with the link, the PDF or both, and an
+ * optional message.
+ */
 async function sendShareEmail() {
     const toEmail = document.getElementById('shareEmailTo').value.trim();
     const message = document.getElementById('shareEmailMessage').value.trim();
@@ -1862,17 +2729,8 @@ async function sendShareEmail() {
     const pdfFilename = `${ref}_${currentChange.title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
 
     if (includePdf) {
-        const pdfContent = buildPdfContent();
-
-        const opt = {
-            margin: 10,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2 },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-
         try {
-            const pdfBlob = await html2pdf().set(opt).from(pdfContent).outputPdf('blob');
+            const pdfBlob = (await changePdfDocument(buildPdfContent())).output('blob');
             pdfBase64 = await blobToBase64(pdfBlob);
         } catch (error) {
             console.error('Error generating PDF:', error);
@@ -1911,6 +2769,7 @@ async function sendShareEmail() {
     }
 }
 
+/** Reads a Blob as base64, without the data: prefix. */
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1923,6 +2782,10 @@ function blobToBase64(blob) {
     });
 }
 
+/**
+ * Builds the HTML the change's PDF is made from - header, details and each rich-text
+ * section that has content.
+ */
 function buildPdfContent() {
     const c = currentChange;
     const ref = getChangeRef();
@@ -1935,15 +2798,15 @@ function buildPdfContent() {
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9; width: 25%;"><strong>${window.t('change-management.pdf.status')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.status}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(c.status)}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9; width: 25%;"><strong>${window.t('change-management.pdf.change_type')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.change_type}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(c.change_type)}</td>
                 </tr>
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.priority')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.priority}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(c.priority)}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.impact')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.impact}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(c.impact)}</td>
                 </tr>
                 ${c.category ? `<tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.category')}</strong></td>
@@ -1951,25 +2814,25 @@ function buildPdfContent() {
                 </tr>` : ''}
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.requester')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.requester_name || window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${c.requester_name ? escapeHtml(c.requester_name) : window.t('change-management.pdf.not_set')}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.assigned_to')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.assigned_to_name || window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${c.assigned_to_name ? escapeHtml(c.assigned_to_name) : window.t('change-management.pdf.not_set')}</td>
                 </tr>
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.approver')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;" colspan="3">${c.approver_name || window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;" colspan="3">${c.approver_name ? escapeHtml(c.approver_name) : window.t('change-management.pdf.not_set')}</td>
                 </tr>
                 ${c.work_start_datetime || c.work_end_datetime ? `<tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.work_start')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.work_start_datetime ? formatDateTime(c.work_start_datetime) : window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${c.work_start_datetime ? formatNaiveDateTime(c.work_start_datetime) : window.t('change-management.pdf.not_set')}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.work_end')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.work_end_datetime ? formatDateTime(c.work_end_datetime) : window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${c.work_end_datetime ? formatNaiveDateTime(c.work_end_datetime) : window.t('change-management.pdf.not_set')}</td>
                 </tr>` : ''}
                 ${c.outage_start_datetime || c.outage_end_datetime ? `<tr>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.outage_start')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.outage_start_datetime ? formatDateTime(c.outage_start_datetime) : window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${c.outage_start_datetime ? formatNaiveDateTime(c.outage_start_datetime) : window.t('change-management.pdf.not_set')}</td>
                     <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>${window.t('change-management.pdf.outage_end')}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${c.outage_end_datetime ? formatDateTime(c.outage_end_datetime) : window.t('change-management.pdf.not_set')}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${c.outage_end_datetime ? formatNaiveDateTime(c.outage_end_datetime) : window.t('change-management.pdf.not_set')}</td>
                 </tr>` : ''}
             </table>
     `;
@@ -1988,7 +2851,7 @@ function buildPdfContent() {
         if (section.content && section.content.trim()) {
             html += `
                 <h3 style="color: #00897b; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 20px;">${section.title}</h3>
-                <div style="line-height: 1.6;">${section.content}</div>
+                <div style="line-height: 1.6;">${safeChangeHtml(section.content)}</div>
             `;
         }
     });
@@ -2009,3 +2872,194 @@ function buildPdfContent() {
 
 // Deep-link handling (?change_id= and legacy aliases) lives in the
 // DOMContentLoaded handler near the top of this file.
+
+/* --- Right-click context menu for change cards ----------------------------
+ * Mirrors the tickets inbox context menu (openTicketContextMenu). Right-click
+ * a change card to set its Status / Priority / Type / Impact — or, on
+ * multi-company installs, move it to another company — without opening it.
+ * Submenus are rebuilt each open from the loaded lookups so newly-added
+ * entries + the current-value tick always reflect the latest data.
+ */
+let ctxTargetChangeId = null;
+
+/**
+ * Opens the right-click menu for a change card at the cursor, rebuilding its submenus
+ * and keeping it on screen.
+ */
+function openChangeContextMenu(event, changeId) {
+    event.preventDefault();
+    if (window.MODULE_LEVEL === 'read') return;   // every item in it is a write (#180)
+    ctxTargetChangeId = changeId;
+    const menu = document.getElementById('changeContextMenu');
+    if (!menu) return;
+
+    const ref = 'CHG-' + String(changeId).padStart(4, '0');
+    const header = document.getElementById('changeContextMenuHeader');
+    if (header) header.textContent = ref;
+
+    // Rebuild each submenu so newly-added lookups + the current tick appear.
+    populateContextChangeStatusSubmenu();
+    populateContextChangePrioritySubmenu();
+    populateContextChangeTypeSubmenu();
+    populateContextChangeImpactSubmenu();
+    populateContextChangeCompanySubmenu();
+
+    // Position at cursor — flip if it would overflow the viewport.
+    menu.classList.add('active');
+    const rect = menu.getBoundingClientRect();
+    let x = event.clientX;
+    let y = event.clientY;
+    if (x + rect.width  > window.innerWidth)  x = window.innerWidth  - rect.width  - 4;
+    if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 4;
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+
+    // Flip the submenu leftward when the parent menu sits near the right edge.
+    const SUBMENU_W = 220;
+    menu.classList.toggle('flip-sub', x + rect.width + SUBMENU_W > window.innerWidth);
+}
+
+/** Closes the change right-click menu. */
+function closeChangeContextMenu() {
+    const menu = document.getElementById('changeContextMenu');
+    if (menu) menu.classList.remove('active');
+}
+
+// The change record backing the current context target (for the ✓ tick).
+function ctxTargetChange() {
+    return changes.find(c => c.id == ctxTargetChangeId) || null;
+}
+
+// Shared submenu HTML builder. rows = active lookup rows; currentName = the
+// change's current value for this field (name string) so we can tick it.
+function renderCtxLookupSubmenu(sub, rows, currentName, emptyKey, onclickFn) {
+    if (!sub) return;
+    if (!rows.length) {
+        sub.innerHTML = '<div class="ticket-context-submenu-item" style="color:#999; font-style: italic; cursor: default;">' + escapeHtml(window.t('change-management.context.' + emptyKey)) + '</div>';
+        return;
+    }
+    sub.innerHTML = rows.map(r => {
+        const isCurrent = (r.name === currentName);
+        const swatch = r.colour
+            ? `<span class="ctx-status-swatch" style="background: ${escapeHtml(r.colour)};"></span>`
+            : '<span class="ctx-status-swatch" style="background:#ddd;"></span>';
+        const safeName = String(r.name).replace(/'/g, "\\'");
+        return `<div class="ticket-context-submenu-item" onclick="${onclickFn}('${safeName}')">
+            ${swatch}<span class="ctx-status-name">${escapeHtml(r.name)}</span>${isCurrent ? '<span class="ctx-status-check">&#10003;</span>' : ''}
+        </div>`;
+    }).join('');
+}
+
+/** Fills the right-click Status submenu, ticking the change's current status. */
+function populateContextChangeStatusSubmenu() {
+    const c = ctxTargetChange();
+    renderCtxLookupSubmenu(document.getElementById('ctxChangeStatusSubmenu'), changeStatuses, c ? c.status : '', 'no_statuses', 'setChangeStatusFromContext');
+}
+
+/** Fills the right-click Priority submenu, ticking the change's current priority. */
+function populateContextChangePrioritySubmenu() {
+    const c = ctxTargetChange();
+    renderCtxLookupSubmenu(document.getElementById('ctxChangePrioritySubmenu'), changePriorities, c ? c.priority : '', 'no_priorities', 'setChangePriorityFromContext');
+}
+
+/** Fills the right-click Type submenu, ticking the change's current type. */
+function populateContextChangeTypeSubmenu() {
+    const c = ctxTargetChange();
+    renderCtxLookupSubmenu(document.getElementById('ctxChangeTypeSubmenu'), changeTypes, c ? c.change_type : '', 'no_types', 'setChangeTypeFromContext');
+}
+
+/** Fills the right-click Impact submenu, ticking the change's current impact. */
+function populateContextChangeImpactSubmenu() {
+    const c = ctxTargetChange();
+    renderCtxLookupSubmenu(document.getElementById('ctxChangeImpactSubmenu'), changeImpacts, c ? c.impact : '', 'no_impacts', 'setChangeImpactFromContext');
+}
+
+// Build the Move-to-company submenu (multi-company installs only; hidden at N=1).
+function populateContextChangeCompanySubmenu() {
+    const parent = document.getElementById('ctxChangeCompanyParent');
+    const sub = document.getElementById('ctxChangeCompanySubmenu');
+    if (!parent || !sub) return;
+    if (!isMultiCompany || !moveCompanies.length) {
+        parent.style.display = 'none';
+        return;
+    }
+    parent.style.display = '';
+    const c = ctxTargetChange();
+    const currentTid = c ? (c.tenant_id ?? null) : null;
+    sub.innerHTML = moveCompanies.map(co => {
+        const isCurrent = (currentTid != null && String(co.id) === String(currentTid));
+        return `<div class="ticket-context-submenu-item" onclick="moveChangeToCompanyFromContext(${co.id})">
+            <span class="ctx-status-swatch" style="background:#ede7f6; border:none;"></span><span class="ctx-status-name">${escapeHtml(co.name)}</span>${isCurrent ? '<span class="ctx-status-check">&#10003;</span>' : ''}
+        </div>`;
+    }).join('');
+}
+
+// Field setters. All post to save.php with {id, <field>: <name>}; the change
+// service resolves the lookup by name and applies status side-effects.
+async function saveChangeFieldFromContext(field, value, toastKey) {
+    closeChangeContextMenu();
+    const id = ctxTargetChangeId;
+    if (!id) return;
+    try {
+        const res = await fetch(API_BASE + 'save.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id, [field]: value })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.error || window.t('change-management.context.update_error'), 'error');
+            return;
+        }
+        showToast(window.t('change-management.context.' + toastKey), 'success');
+        loadChanges();
+    } catch (e) {
+        showToast(window.t('change-management.context.update_error'), 'error');
+    }
+}
+
+/** Sets the right-clicked change's status. */
+function setChangeStatusFromContext(name)   { saveChangeFieldFromContext('status', name, 'status_set'); }
+/** Sets the right-clicked change's priority. */
+function setChangePriorityFromContext(name) { saveChangeFieldFromContext('priority', name, 'priority_set'); }
+/** Sets the right-clicked change's type. */
+function setChangeTypeFromContext(name)     { saveChangeFieldFromContext('change_type', name, 'type_set'); }
+/** Sets the right-clicked change's impact. */
+function setChangeImpactFromContext(name)   { saveChangeFieldFromContext('impact', name, 'impact_set'); }
+
+// Move a change to another company. The endpoint enforces access + writes the
+// audit entry server-side, then we reload the list and toast its message.
+async function moveChangeToCompanyFromContext(tenantId) {
+    closeChangeContextMenu();
+    const id = ctxTargetChangeId;
+    if (!id) return;
+    try {
+        const res = await fetch(API_BASE + 'move_to_company.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ change_id: id, tenant_id: tenantId })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.error || window.t('change-management.context.move_error'), 'error');
+            return;
+        }
+        showToast(data.message || window.t('change-management.context.move_error'), 'success');
+        loadChanges();
+    } catch (e) {
+        showToast(window.t('change-management.context.move_error'), 'error');
+    }
+}
+
+// Dismiss the menu on outside-click / scroll / Escape / resize (mirrors tickets).
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('changeContextMenu');
+    if (menu && menu.classList.contains('active') && !menu.contains(e.target)) {
+        closeChangeContextMenu();
+    }
+});
+document.addEventListener('scroll', closeChangeContextMenu, true);
+window.addEventListener('resize', closeChangeContextMenu);
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeChangeContextMenu();
+});

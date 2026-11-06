@@ -1,18 +1,23 @@
 /**
  * Forms Module Styles - Sidebar + Editor Layout
+ *
+ * Colours are tokenised via var(--token, #fallback) so the module themes
+ * with the palette system (assets/css/theme.css); the fallback is the
+ * original light colour, so pages that don't load theme.css are unchanged.
+ * Module accent = teal (--forms-*).
  */
 
 .forms-container {
     display: flex;
     height: calc(100vh - 48px);
-    background: #f5f5f5;
+    background: var(--app-bg, #f5f5f5);
 }
 
 /* Sidebar */
 .forms-sidebar {
     width: 280px;
-    background: white;
-    border-right: 1px solid #ddd;
+    background: var(--surface, white);
+    border-right: 1px solid var(--border, #ddd);
     padding: 20px;
     overflow-y: auto;
     display: flex;
@@ -26,7 +31,7 @@
 .sidebar-section h3 {
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -35,7 +40,7 @@
 .forms-sidebar .search-box input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     font-size: 14px;
     box-sizing: border-box;
@@ -43,7 +48,7 @@
 
 .forms-sidebar .search-box input:focus {
     outline: none;
-    border-color: #00897b;
+    border-color: var(--forms-accent, #00897b);
 }
 
 .forms-sidebar .btn-full {
@@ -72,15 +77,18 @@
     background: #f0f7f6;
 }
 
+/* Active form uses the teal-soft token (its light value == the original
+   #e0f2f1, so light mode is unchanged). The pale hover above keeps its
+   exact light colour with a dark override below so it doesn't glow. */
 .form-list-item.active {
-    background: #e0f2f1;
-    border-color: #00897b;
+    background: var(--forms-accent-soft, #e0f2f1);
+    border-color: var(--forms-accent, #00897b);
 }
 
 .form-list-item-title {
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
@@ -89,7 +97,7 @@
 
 .form-list-item-meta {
     font-size: 12px;
-    color: #888;
+    color: var(--text-dim, #888);
     display: flex;
     gap: 10px;
 }
@@ -104,19 +112,19 @@
 }
 
 .form-list-item-status.active {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--success-bg, #e8f5e9);
+    color: var(--success-text, #2e7d32);
 }
 
 .form-list-item-status.inactive {
-    background: #f5f5f5;
-    color: #999;
+    background: var(--surface-hover, #f5f5f5);
+    color: var(--text-faint, #999);
 }
 
 .form-list-empty {
     text-align: center;
     padding: 30px 10px;
-    color: #999;
+    color: var(--text-faint, #999);
     font-size: 13px;
 }
 
@@ -129,13 +137,13 @@
 
 /* Teal theme overrides */
 .forms-container .btn-primary {
-    background: #00897b;
-    border-color: #00897b;
+    background: var(--forms-accent, #00897b);
+    border-color: var(--forms-accent, #00897b);
 }
 
 .forms-container .btn-primary:hover {
-    background: #00695c;
-    border-color: #00695c;
+    background: var(--forms-accent-hover, #00695c);
+    border-color: var(--forms-accent-hover, #00695c);
 }
 
 /* Empty / welcome state */
@@ -145,19 +153,19 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #888;
+    color: var(--text-dim, #888);
     text-align: center;
     padding: 40px;
 }
 
 .forms-welcome svg {
     margin-bottom: 20px;
-    color: #ccc;
+    color: var(--text-faint, #ccc);
 }
 
 .forms-welcome h3 {
     font-size: 18px;
-    color: #666;
+    color: var(--text-muted, #666);
     margin: 0 0 8px;
 }
 
@@ -177,7 +185,7 @@
 .editor-toolbar h2 {
     margin: 0;
     font-size: 20px;
-    color: #333;
+    color: var(--text, #333);
 }
 
 .editor-toolbar-actions {
@@ -185,7 +193,8 @@
     gap: 8px;
 }
 
-/* Unsaved changes indicator */
+/* Unsaved changes indicator — orange is intentional (encodes "unsaved"),
+   left hardcoded so it reads on both light and dark. */
 .unsaved-indicator {
     display: none;
     align-items: center;
@@ -218,9 +227,9 @@
 
 /* Form settings (title/desc) */
 .form-settings-card {
-    background: #fff;
+    background: var(--surface, #fff);
     border-radius: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08));
     padding: 20px;
     margin-bottom: 16px;
 }
@@ -237,7 +246,7 @@
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: #666;
+    color: var(--text-muted, #666);
     margin-bottom: 4px;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -247,17 +256,19 @@
 .form-settings-card textarea {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 5px;
     font-size: 14px;
     font-family: inherit;
     box-sizing: border-box;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
 }
 
 .form-settings-card input:focus,
 .form-settings-card textarea:focus {
     outline: none;
-    border-color: #00897b;
+    border-color: var(--forms-accent, #00897b);
     box-shadow: 0 0 0 2px rgba(0,137,123,0.1);
 }
 
@@ -266,10 +277,10 @@
     display: flex;
     gap: 0;
     margin-bottom: 0;
-    border-bottom: 2px solid #e0e0e0;
-    background: white;
+    border-bottom: 2px solid var(--border, #e0e0e0);
+    background: var(--surface, white);
     border-radius: 8px 8px 0 0;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08));
     padding: 0 20px;
 }
 
@@ -277,7 +288,7 @@
     padding: 12px 24px;
     font-size: 14px;
     font-weight: 500;
-    color: #666;
+    color: var(--text-muted, #666);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -2px;
@@ -289,20 +300,20 @@
 }
 
 .form-tab:hover {
-    color: #00897b;
+    color: var(--forms-accent, #00897b);
 }
 
 .form-tab.active {
-    color: #00897b;
-    border-bottom-color: #00897b;
+    color: var(--forms-accent, #00897b);
+    border-bottom-color: var(--forms-accent, #00897b);
     font-weight: 600;
 }
 
 .form-tab-content {
     display: none;
-    background: white;
+    background: var(--surface, white);
     border-radius: 0 0 8px 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08));
     padding: 20px;
 }
 
@@ -322,7 +333,7 @@
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
 }
 
 .add-field-btn {
@@ -334,10 +345,10 @@
     position: absolute;
     top: 100%;
     right: 0;
-    background: #fff;
-    border: 1px solid #ddd;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px var(--shadow, rgba(0,0,0,0.15));
     z-index: 10;
     /* Wide enough that the longest label ("Radio buttons (one of)")
        fits on one line. nowrap on the button stops any future labels
@@ -360,12 +371,12 @@
     background: none;
     font-size: 13px;
     cursor: pointer;
-    color: #333;
+    color: var(--text, #333);
     white-space: nowrap;
 }
 
 .add-field-menu button:hover {
-    background: #f5f7fa;
+    background: var(--surface-hover, #f5f7fa);
 }
 
 /* Badges inside the add-field menu — fixed-width column so the labels
@@ -388,6 +399,9 @@
     letter-spacing: 0.3px;
 }
 
+/* Field-type badges are colour-coded by type (data). Light values below;
+   the dark-mode overrides further down darken each tint + lighten its text
+   so the chips don't glow on the dark builder. */
 .field-type-badge.text       { background: #e3f2fd; color: #1565c0; }
 .field-type-badge.textarea   { background: #f3e5f5; color: #7b1fa2; }
 .field-type-badge.checkbox   { background: #e8f5e9; color: #2e7d32; }
@@ -396,6 +410,22 @@
 .field-type-badge.number     { background: #fce4ec; color: #ad1457; }
 .field-type-badge.checkboxes { background: #dcedc8; color: #33691e; }
 .field-type-badge.radio      { background: #fff8e1; color: #ff8f00; }
+.field-type-badge.section    { background: #eceff1; color: #455a64; }
+/* Standing text. Uses the theme's informational pair so the badge matches what
+   a note actually looks like on the form, in both modes. */
+.field-type-badge.note       { background: var(--info-bg, #e0f2fe); color: var(--info-text, #075985); }
+.field-type-badge.datetime   { background: #ede7f6; color: #4527a0; }
+
+[data-theme-mode="dark"] .field-type-badge.text       { background: #14283a; color: #8ec5f0; }
+[data-theme-mode="dark"] .field-type-badge.textarea   { background: #2a1a33; color: #d6a5e8; }
+[data-theme-mode="dark"] .field-type-badge.checkbox   { background: #16301c; color: #8fd89b; }
+[data-theme-mode="dark"] .field-type-badge.dropdown   { background: #3a2410; color: #f0a86a; }
+[data-theme-mode="dark"] .field-type-badge.email      { background: #16302d; color: #66c2b8; }
+[data-theme-mode="dark"] .field-type-badge.number     { background: #331a24; color: #e88bb0; }
+[data-theme-mode="dark"] .field-type-badge.checkboxes { background: #22300f; color: #a8cf6a; }
+[data-theme-mode="dark"] .field-type-badge.radio      { background: #332a10; color: #e0b95a; }
+[data-theme-mode="dark"] .field-type-badge.section    { background: #263238; color: #b0bec5; }
+[data-theme-mode="dark"] .field-type-badge.datetime   { background: #241a38; color: #b39ddb; }
 
 /* Field items */
 .field-list {
@@ -405,17 +435,17 @@
 }
 
 .field-item {
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--border, #e0e0e0);
     border-radius: 6px;
     padding: 12px 14px;
     margin-bottom: 8px;
-    background: #fafafa;
+    background: var(--surface-2, #fafafa);
     transition: box-shadow 0.15s, opacity 0.15s, border-color 0.15s;
     position: relative;
 }
 
 .field-item:hover {
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08));
 }
 
 /* Field drag-and-drop */
@@ -424,12 +454,12 @@
 }
 
 .field-item.drag-over-top {
-    border-top: 2px solid #00897b;
+    border-top: 2px solid var(--forms-accent, #00897b);
     margin-top: -1px;
 }
 
 .field-item.drag-over-bottom {
-    border-bottom: 2px solid #00897b;
+    border-bottom: 2px solid var(--forms-accent, #00897b);
     margin-bottom: 7px;
 }
 
@@ -442,7 +472,7 @@
 
 .field-drag {
     cursor: grab;
-    color: #bbb;
+    color: var(--text-faint, #bbb);
     padding: 2px;
     touch-action: none;
 }
@@ -454,15 +484,17 @@
 .field-label-input {
     flex: 1;
     padding: 6px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     font-size: 13px;
     font-family: inherit;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
 }
 
 .field-label-input:focus {
     outline: none;
-    border-color: #00897b;
+    border-color: var(--forms-accent, #00897b);
 }
 
 .field-controls {
@@ -476,7 +508,7 @@
     align-items: center;
     gap: 4px;
     font-size: 11px;
-    color: #888;
+    color: var(--text-dim, #888);
     cursor: pointer;
 }
 
@@ -487,23 +519,23 @@
     border: none;
     cursor: pointer;
     padding: 4px;
-    color: #999;
+    color: var(--text-faint, #999);
     border-radius: 3px;
 }
 
-.field-move-btn:hover { color: #333; background: #eee; }
-.field-delete-btn:hover { color: #d32f2f; background: #ffebee; }
+.field-move-btn:hover { color: var(--text, #333); background: var(--surface-hover, #eee); }
+.field-delete-btn:hover { color: var(--danger-text, #d32f2f); background: var(--danger-bg, #ffebee); }
 
 /* Dropdown options */
 .field-options {
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--border-soft, #eee);
 }
 
 .field-options-label {
     font-size: 11px;
-    color: #888;
+    color: var(--text-dim, #888);
     margin-bottom: 6px;
     font-weight: 600;
 }
@@ -522,18 +554,18 @@
 }
 
 .option-item.drag-over-top {
-    border-top: 2px solid #00897b;
+    border-top: 2px solid var(--forms-accent, #00897b);
     padding-top: 2px;
 }
 
 .option-item.drag-over-bottom {
-    border-bottom: 2px solid #00897b;
+    border-bottom: 2px solid var(--forms-accent, #00897b);
     padding-bottom: 2px;
 }
 
 .option-drag {
     cursor: grab;
-    color: #ccc;
+    color: var(--text-faint, #ccc);
     font-size: 12px;
     padding: 0 2px;
     user-select: none;
@@ -543,52 +575,198 @@
 
 .option-drag:active {
     cursor: grabbing;
-    color: #888;
+    color: var(--text-dim, #888);
 }
 
 .option-item input {
     flex: 1;
     padding: 5px 8px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 3px;
     font-size: 12px;
     font-family: inherit;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
 }
 
 .option-item input:focus {
     outline: none;
-    border-color: #00897b;
+    border-color: var(--forms-accent, #00897b);
 }
 
 .option-remove {
     background: none;
     border: none;
     cursor: pointer;
-    color: #ccc;
+    color: var(--text-faint, #ccc);
     padding: 2px;
     font-size: 16px;
 }
 
-.option-remove:hover { color: #d32f2f; }
+.option-remove:hover { color: var(--danger-text, #d32f2f); }
+/* GH #190 phase 4: "counts as an exception" on a choice option. */
+.option-exc { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted, #666); white-space: nowrap; cursor: pointer; margin: 0 4px; }
+.option-exc input { margin: 0; }
 
 .add-option-btn {
     background: none;
-    border: 1px dashed #ccc;
+    border: 1px dashed var(--border, #ccc);
     border-radius: 3px;
     padding: 4px 10px;
     font-size: 12px;
     cursor: pointer;
-    color: #888;
+    color: var(--text-dim, #888);
     width: 100%;
     margin-top: 4px;
 }
 
-.add-option-btn:hover { border-color: #00897b; color: #00897b; }
+.add-option-btn:hover { border-color: var(--forms-accent, #00897b); color: var(--forms-accent, #00897b); }
+
+/* ==========================================================================
+   Sections + conditional visibility
+   ========================================================================== */
+
+/* A section row in the builder — visually the divider it will be on the form,
+   so a long list of fields reads as the groups the author is creating. */
+.field-item.field-item-section {
+    background: var(--surface-2, #f7f9fa);
+    border-left: 3px solid var(--forms-accent, #00897b);
+}
+.field-item.field-item-section .field-label-input {
+    font-weight: 600;
+}
+
+/* What a date field asks for. Lives WITH the field rather than in the add menu,
+   because a field's type can't be changed later but this can. */
+.date-mode-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.date-mode-opt {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text, #333);
+    cursor: pointer;
+}
+
+.date-mode-opt input[type="radio"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;      /* the shared full-width input rule would balloon it (see #924) */
+}
+
+/* The "Only show this when…" editor beneath a field. Mirrors .field-options so
+   the two stacked blocks read as one panel rather than two competing ones. */
+.field-conditions {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-soft, #eee);
+}
+
+.field-conditions .field-options-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cond-match {
+    font-size: 11px;
+    padding: 1px 4px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 3px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font-weight: 600;
+}
+
+.cond-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.cond-row select,
+.cond-row input[type="text"],
+.cond-row input[type="date"],
+.cond-row input[type="time"],
+.cond-row input[type="datetime-local"] {
+    flex: 1 1 0;
+    min-width: 0;               /* let the three controls share the row evenly */
+    padding: 5px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 3px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+}
+
+.cond-row select:focus,
+.cond-row input:focus {
+    outline: none;
+    border-color: var(--forms-accent, #00897b);
+}
+
+/* Preview marker. Conditional fields are shown rather than evaluated in the
+   preview — nothing has been answered there, so every rule would be false and
+   the form would look empty. The badge says "this one comes and goes". */
+.preview-section {
+    margin: 22px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border, #ddd);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.preview-section:first-child { margin-top: 0; }
+.preview-section h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text, #333);
+    margin: 0;
+}
+
+.preview-cond {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--surface-2, #eceff1);
+    color: var(--text-dim, #607d8b);
+    vertical-align: middle;
+    cursor: help;
+}
+
+/* A question that has since been removed from the form. Its column stays in the
+   submissions view because the answers people gave it are still real — this just
+   says "nobody is being asked this any more". */
+.col-retired {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--surface-2, #eceff1);
+    color: var(--text-dim, #78909c);
+    vertical-align: middle;
+    cursor: help;
+}
+
+.subs-table th.th-retired { color: var(--text-dim, #888); font-style: italic; }
 
 .no-fields {
     text-align: center;
     padding: 30px;
-    color: #999;
+    color: var(--text-faint, #999);
     font-size: 13px;
 }
 
@@ -603,14 +781,45 @@
 .preview-title {
     font-size: 18px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin: 0 0 4px;
 }
 
 .preview-desc {
     font-size: 13px;
-    color: #888;
+    color: var(--text-dim, #888);
     margin: 0 0 16px;
+}
+
+/* The preview's 12-column grid. Mirrors .fill-grid in forms/fill.php so the
+   author sees the layout they will actually get — before this, the Preview tab
+   ignored widths entirely and stacked everything full width, which made the one
+   screen whose job is showing you what you built the one screen that did not. */
+.preview-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0 18px;
+    align-items: start;
+}
+/* Anything without a width spans the row, including a type added later. */
+.preview-grid > * { grid-column: span 12; }
+.preview-grid > [data-width="9"] { grid-column: span 9; }
+.preview-grid > [data-width="8"] { grid-column: span 8; }
+.preview-grid > [data-width="6"] { grid-column: span 6; }
+.preview-grid > [data-width="4"] { grid-column: span 4; }
+.preview-grid > [data-width="3"] { grid-column: span 3; }
+
+/* 🔴 ONE COLUMN ON A PHONE, always — the same non-negotiable rule the filler
+   and the portal follow. Equal specificity and later in the file, so it wins
+   without !important. */
+@media (max-width: 768px) {
+    .preview-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .preview-grid > *,
+    .preview-grid > [data-width="9"],
+    .preview-grid > [data-width="8"],
+    .preview-grid > [data-width="6"],
+    .preview-grid > [data-width="4"],
+    .preview-grid > [data-width="3"] { grid-column: span 1; }
 }
 
 .preview-field {
@@ -621,7 +830,7 @@
     display: block;
     font-size: 13px;
     font-weight: 500;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 4px;
 }
 
@@ -635,12 +844,13 @@
 .preview-field select {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     font-size: 13px;
     font-family: inherit;
     box-sizing: border-box;
-    background: #f9f9f9;
+    background: var(--surface-2, #f9f9f9);
+    color: var(--text, #333);
 }
 
 .preview-field textarea { min-height: 60px; resize: vertical; }
@@ -655,7 +865,7 @@
 .preview-empty {
     text-align: center;
     padding: 30px;
-    color: #999;
+    color: var(--text-faint, #999);
     font-size: 13px;
 }
 
@@ -686,21 +896,26 @@
 .confirm-overlay.open { display: flex; }
 
 .confirm-box {
-    background: #fff;
+    background: var(--surface, #fff);
     border-radius: 8px;
     padding: 24px;
     max-width: 400px;
     width: 90%;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    box-shadow: 0 8px 30px var(--shadow, rgba(0,0,0,0.2));
 }
 
 .confirm-box h3 { margin: 0 0 8px; font-size: 16px; }
-.confirm-box p { margin: 0 0 20px; font-size: 14px; color: #666; }
+.confirm-box p { margin: 0 0 20px; font-size: 14px; color: var(--text-muted, #666); }
 
 .confirm-actions {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
+}
+
+/* Dark mode: keep the pale-teal list-item hover from glowing on dark. */
+[data-theme-mode="dark"] .form-list-item:hover {
+    background: var(--forms-accent-soft, #f0f7f6);
 }
 
 /* Preview logo alignment variants */
@@ -715,3 +930,440 @@
 .preview-logo.align-right {
     margin: 0 0 20px auto;
 }
+
+/* =========================================================================
+   "What happens next" tab (discussion #95)
+   Every colour carries a literal fallback, matching the rest of this file:
+   a token that turns out not to exist renders as nothing at all, and an
+   invisible control is worse than an unstyled one.
+   ========================================================================= */
+
+.fa-intro {
+    color: var(--text-muted, #666);
+    margin: 0 0 20px;
+    max-width: 70ch;
+}
+
+.fa-section {
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    background: var(--surface, white);
+}
+
+/* Not hidden when the form has no approval gate — hiding leaves no clue the
+   capability exists, and a section that vanishes takes its configuration's
+   visibility with it. Dimmed and explained instead. */
+.fa-section-inert {
+    opacity: 0.65;
+}
+
+.fa-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.fa-section-head h3 {
+    margin: 0;
+    font-size: 15px;
+    color: var(--text, #333);
+}
+
+.fa-note {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--text-muted, #666);
+}
+
+.fa-gate-warning {
+    background: var(--warning-bg, #fff8e1);
+    border-left: 3px solid #f59e0b;
+    padding: 8px 10px;
+    border-radius: 3px;
+    color: var(--text, #333);
+}
+
+.fa-empty {
+    margin: 0;
+    padding: 10px 0;
+    color: var(--text-muted, #666);
+    font-style: italic;
+    font-size: 13px;
+}
+
+.fa-action {
+    border: 1px solid var(--border-soft, #eee);
+    border-radius: 5px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: var(--app-bg, #fafafa);
+}
+
+.fa-action-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* The number is one-based to match {{steps.1.…}} — a merge code that
+   disagreed with the number printed beside the action would be wrong in the
+   one place people copy it from. */
+.fa-action-num {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--forms-accent, #00897b);
+    color: #fff;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fa-action-head select {
+    flex: 1 1 auto;
+    min-width: 0;          /* or a long action label stops the row shrinking */
+    padding: 6px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    background: var(--surface, white);
+    color: var(--text, #333);
+}
+
+.fa-action-tools {
+    display: flex;
+    gap: 4px;
+}
+
+.fa-action-tools button {
+    border: 1px solid var(--border, #ddd);
+    background: var(--surface, white);
+    color: var(--text, #333);
+    border-radius: 4px;
+    /* 28px, not the 20px this would naturally be: these three sit side by side
+       and are the easiest thing on the tab to mis-tap. */
+    min-width: 28px;
+    height: 28px;
+    cursor: pointer;
+}
+
+.fa-action-tools button[disabled] {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.fa-action-tools .fa-remove:hover {
+    background: var(--danger-bg, #fdecea);
+    border-color: #e57373;
+}
+
+.fa-action-desc {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--text-muted, #666);
+}
+
+.fa-args {
+    margin-top: 10px;
+    display: grid;
+    gap: 10px;
+}
+
+.fa-arg label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text, #333);
+    margin-bottom: 3px;
+}
+
+.fa-arg input[type="text"],
+.fa-arg input[type="number"],
+.fa-arg textarea,
+.fa-arg select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    background: var(--surface, white);
+    color: var(--text, #333);
+    /* 16px on a phone: anything smaller makes iOS Safari zoom in and abandon
+       the page layout. */
+    font-size: 14px;
+}
+
+.fa-arg textarea {
+    resize: vertical;
+    font-family: inherit;
+}
+
+.fa-arg-hint {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-muted, #666);
+}
+
+@media (max-width: 768px) {
+    .fa-section-head {
+        flex-wrap: wrap;
+    }
+    .fa-action-head {
+        flex-wrap: wrap;
+    }
+    .fa-action-head select {
+        flex: 1 1 100%;
+        order: 3;
+    }
+    .fa-arg input[type="text"],
+    .fa-arg input[type="number"],
+    .fa-arg textarea,
+    .fa-arg select {
+        font-size: 16px;
+    }
+}
+
+/* ── A note's settings in the builder ──────────────────────────────────────
+   The style picker and the optional longer text, beneath the field row. */
+.field-note-settings {
+    padding: 10px 14px 12px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.field-note-style {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted, #666);
+}
+
+.field-note-style select {
+    padding: 4px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+}
+
+.field-note-body {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    box-sizing: border-box;
+    resize: vertical;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+}
+
+.field-note-body:focus,
+.field-note-style select:focus {
+    outline: none;
+    border-color: var(--forms-accent, #00897b);
+}
+
+/* ── An image block's settings in the builder ──────────────────────────────
+   The file chooser and the size picker, beneath the field row. */
+.field-image-settings {
+    padding: 10px 14px 12px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.field-image-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.field-image-row input[type="file"] {
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-muted, #666);
+    max-width: 100%;
+}
+
+.field-imagemax-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    white-space: nowrap;
+}
+
+.field-imagemax-picker select {
+    padding: 3px 6px;
+    font-size: 12px;
+    font-family: inherit;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+}
+
+.field-image-name {
+    font-size: 12px;
+    color: var(--text-faint, #999);
+}
+
+/* The badge, matching what an image block actually looks like on the form. */
+.field-type-badge.image { background: var(--surface-3, #f8f8f8); color: var(--text-muted, #666); }
+.field-type-badge.grid  { background: var(--forms-accent-soft, #e0f2f1); color: var(--forms-accent-hover, #00695c); }
+
+/* ── A table question's column editor ──────────────────────────────────────
+   One row per column, beneath the field row. A retired column stays visible,
+   greyed — its id is spoken for forever and an author needs to see that. */
+.field-grid-settings {
+    padding: 10px 14px 12px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.grid-col-head {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-muted, #666);
+}
+
+/* 🔴 A GRID, not a flex row, so every column's controls line up down the list.
+   As flex with an elastic label, a row WITHOUT a choices box (a text, number,
+   tick box or date column) let its label absorb the free space and shoved its
+   type picker far to the right of the rows that had one — so a table mixing a
+   dropdown with a number looked broken. Reported by Ed within minutes of first
+   building one, which is exactly the kind of thing a rendering test does not
+   catch: every element was present and correct, and the arrangement was wrong.
+
+   Fixed tracks: reorder ▲▼ · heading · type · required · choices · retire. The
+   choices cell stays empty rather than collapsing, which is what holds the
+   alignment for the rows that do not have one. */
+.grid-col-row {
+    display: grid;
+    grid-template-columns: auto minmax(120px, 1.2fr) 120px auto minmax(0, 1.4fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+/* Below the editor's comfortable width the six tracks stop fitting, so the row
+   wraps to a simple stack rather than squeezing every control to nothing. */
+@media (max-width: 1100px) {
+    .grid-col-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+    .grid-col-row .grid-col-options { grid-column: 2 / -1; }
+}
+
+.grid-col-row.is-retired {
+    opacity: 0.55;
+}
+
+.grid-col-move { display: inline-flex; flex-direction: column; gap: 1px; }
+.grid-col-move button {
+    border: 1px solid var(--border, #ddd);
+    background: var(--surface, #fff);
+    color: var(--text-muted, #666);
+    border-radius: 3px;
+    font-size: 8px;
+    line-height: 1;
+    padding: 2px 4px;
+    cursor: pointer;
+}
+.grid-col-move button:disabled { opacity: 0.35; cursor: default; }
+
+/* The grid gives these their widths now; min-width only stops a very narrow
+   editor squeezing them to nothing. */
+.grid-col-label   { min-width: 0; }
+.grid-col-options { min-width: 0; }
+/* The placeholder that holds the choices track open on a column type that has
+   no choices. Occupies its cell and draws nothing. */
+.grid-col-options.is-na { display: block; }
+
+.grid-col-row input[type="text"],
+.grid-col-row select {
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    box-sizing: border-box;
+}
+
+.grid-col-required {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    white-space: nowrap;
+}
+
+.grid-col-retire {
+    border: 1px solid var(--border, #ddd);
+    background: var(--surface, #fff);
+    color: var(--text-muted, #666);
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+.grid-col-retire:hover { border-color: var(--danger-border, #f0c2c2); color: var(--danger-text, #991b1b); }
+
+.grid-col-empty,
+.grid-col-count { font-size: 12px; color: var(--text-faint, #999); }
+
+.grid-col-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* ── Who may request a form (GH #145) ──────────────────────────────────────
+   The group picker inside the audience modal. */
+.aud-list {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+}
+
+.aud-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text, #333);
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-soft, #f0f0f0);
+}
+.aud-row:last-child { border-bottom: none; }
+.aud-row:hover { background: var(--surface-hover, #f5f5f5); }
+
+.aud-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* How many CUSTOMERS are in the group. A group of analysts only would restrict
+   the form to nobody, and this is the cheapest way to see that before saving. */
+.aud-count { font-size: 11px; color: var(--text-faint, #999); white-space: nowrap; }
+
+.aud-loading { padding: 12px; font-size: 13px; color: var(--text-faint, #999); }
+
+/* A row icon that is currently "on" — the same treatment the portal toggle
+   uses, so the two read as the same kind of state. */
+.ft-action-btn.is-on { color: var(--info-accent, #0284c7); }

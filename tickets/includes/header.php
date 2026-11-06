@@ -14,7 +14,7 @@ $module_title = function_exists('t') ? t('tickets.title') : 'Tickets';
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 
@@ -71,6 +71,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span><?php echo htmlspecialchars($navLabel('calendar', 'Calendar')); ?></span>
         </a>
+        <?php if (portalModuleOn('rota')): /* GH #217: not while the rota is switched off */ ?>
         <a href="<?php echo BASE_URL; ?>tickets/rota.php" class="nav-btn <?php echo $current_page === 'rota' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars($navLabel('rota', 'Rota')); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -83,12 +84,15 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span><?php echo htmlspecialchars($navLabel('rota', 'Rota')); ?></span>
         </a>
+        <?php endif; ?>
+        <?php if (portalModuleOn('csat')): /* GH #217: not while CSAT is switched off */ ?>
         <a href="<?php echo BASE_URL; ?>tickets/csat/" class="nav-btn <?php echo $current_page === 'csat' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars($navLabel('csat', 'CSAT')); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
             </svg>
             <span><?php echo htmlspecialchars($navLabel('csat', 'CSAT')); ?></span>
         </a>
+        <?php endif; ?>
         <a href="<?php echo BASE_URL; ?>tickets/settings/" class="nav-btn <?php echo $current_page === 'settings' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars($navLabel('settings', 'Settings')); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>

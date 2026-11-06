@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8"><body><pre id="out">…</pre><script>
+/**
+ * Watchtower scope toggle (#58) - the LIVE run.
+ *
+ * ⚠️ Writes ONE thing: the analyst's remembered scope preference, which the
+ * toggle exists to write. It is put back at the end.
+ *
+ *   printf 'analyst_id|i:1;' > c:/wamp64/tmp/sess_rpwt
+ *   .../tests/watchtower-scope-live.html?sid=rpwt
+ */
+const P=new URLSearchParams(location.search);
+if(P.get('sid'))document.cookie='PHPSESSID='+P.get('sid')+'; path=/';
+const L=[];const log=s=>{L.push(s);document.getElementById('out').textContent=L.join('\n');};
+const ok=(w,c,d)=>log((c?'PASS  ':'FAIL  ')+w+(c||!d?'':'  <- '+d));
+const wait=(fn,ms)=>new Promise(r=>{const t0=Date.now();(function p(){let v=null;try{v=fn()}catch(e){}
+  if(v)return r(v); if(Date.now()-t0>ms)return r(null); setTimeout(p,250)})()});
+const f=document.createElement('iframe');
+f.style.cssText='width:1500px;height:1000px;position:absolute;left:-9999px';
+document.body.appendChild(f); f.src='../watchtower/';
+(async()=>{
+  await new Promise(r=>{f.onload=r;setTimeout(r,10000)});
+  const d=()=>f.contentDocument, W=()=>f.contentWindow;
+  const btns=await wait(()=>{const b=[...d().querySelectorAll('.wt-scope-btn')];return b.length===3?b:null;},15000);
+  ok('the toggle renders with three options', !!btns);
+  if(!btns) return;
+  log('  options: '+btns.map(b=>b.textContent.trim()).join(' | '));
+  ok('exactly one is active on first paint',
+     d().querySelectorAll('.wt-scope-btn.active').length===1);
+
+  // The number the toggle is supposed to change.
+  const openTickets=()=>{const el=d().querySelector('#wtTickets .wt-metric-value');
+    return el?el.textContent.trim():null;};
+  const before=await wait(openTickets,15000);
+  log('  open tickets on first paint: '+before);
+
+  btns.find(b=>b.dataset.scope==='mine').click();
+  const after=await wait(()=>{const v=openTickets();return (v&&v!==before)?v:null;},15000);
+  ok('switching to Mine changes the numbers', !!after, 'still showing '+before);
+  if(after) log('  open tickets on Mine: '+after);
+
+  ok('…and Mine is the lit button',
+     (d().querySelector('.wt-scope-btn.active')||{}).dataset.scope==='mine');
+
+  // Impersonal cards must still be there, marked.
+  await new Promise(r=>setTimeout(r,1500));
+  const ss=d().getElementById('wtServiceStatus');
+  ok('an impersonal card is still visible on Mine',
+     ss && ss.offsetParent!==null, 'service status vanished');
+  ok('…and is marked as everyone\'s', ss && ss.classList.contains('wt-everyone'),
+     'no marker, so a team-wide number reads as personal');
+
+  // Remembered?
+  const pref=await fetch('../api/system/get_user_preference.php?key=watchtower_scope')
+      .then(r=>r.json()).catch(()=>({}));
+  ok('the choice is remembered server-side', (pref.value||pref.preference_value)==='mine',
+     JSON.stringify(pref));
+
+  // Put it back.
+  // This page is not a FreeITSM page, so it sends the token the loaded page carries (S4).
+  await fetch('../api/system/set_user_preference.php',{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-CSRF-Token':(d().querySelector('meta[name="csrf-token"]')||{}).content||''},body:JSON.stringify({key:'watchtower_scope',value:'all'})});
+  log('\ncleanup: scope preference set back to "all"');
+})();
+</script></body>

@@ -1,0 +1,31 @@
+# auth/ holds the real login, logout, password-reset and OAuth-callback pages.
+#
+# This directory used to answer 404 to any request that did not arrive through an
+# internal rewrite, so that /auth/login.php could never become a third URL for the
+# login page alongside /login and /login.php. That was a URL-tidiness rule, and it
+# was enforced in a file that only Apache reads.
+#
+# It had to go, because the application's own code has to be able to name the real
+# location of its own login page. Every redirect in the app now points at
+# `auth/login.php` (issue #68): a path that resolves on any web server, with no
+# rewriting of any kind. Blocking it here would have turned every one of those
+# redirects into a 404 on Apache — the same bug, in the opposite direction.
+#
+# The reason behind the old rule is dealt with at source instead: the pages in here
+# no longer use relative asset paths, so they render identically whether they are
+# reached as /login or as /auth/login.php. See the Root-Folder-Tidy wiki page.
+#
+# /login remains the canonical, prettier URL and is what people are shown; the root
+# .htaccess still maps it here, and still 301s /login.php for old bookmarks.
+#
+# What must NOT be reachable from here is anything that is not a page. There are no
+# includes or configuration files in auth/, and this makes sure it stays that way.
+<FilesMatch "\.(inc|ini|log|sql|bak|orig|swp|dist|sample)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

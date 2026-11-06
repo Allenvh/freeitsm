@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ticket_numbering.php';
 require_once '../../includes/tenancy.php';
 require_once '../../includes/messaging/messaging.php';
 
@@ -15,6 +16,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 $ticketId = $_GET['ticket_id'] ?? null;
 
@@ -32,8 +34,10 @@ try {
         exit;
     }
 
+    // body_type matters to the renderer: chat channels store the sender's message
+    // verbatim as 'text', so it must be ESCAPED rather than parsed as markup.
     $sql = "SELECT id, from_address, from_name, to_recipients, received_datetime,
-                   body_content, direction, channel
+                   body_content, body_type, direction, channel
             FROM emails
             WHERE ticket_id = ?
             ORDER BY received_datetime ASC";
@@ -63,15 +67,83 @@ try {
     }
     unset($email);
 
+    /* ---------------------------------------------------------------------
+       NEAR-DUPLICATE MESSAGES  (idea #10 from discussion #104)
+
+       A long ticket is rarely long because one message is long — it is long
+       because the same message arrived five times. A resend, an auto-reply
+       that quotes the whole original, a bounce carrying the message back, a
+       distribution list delivering twice.
+
+       So each message is fingerprinted on its VISIBLE TEXT — tags stripped,
+       whitespace collapsed, lower-cased — and compared with the ones before
+       it. An exact fingerprint match is "identical"; the same length to
+       within 3% with the same opening 300 characters is "nearly identical",
+       which catches the resend that differs only by a timestamp or a
+       signature line.
+
+       ⚠️ It only ever FLAGS. The message is returned in full and the reading
+       pane collapses it by default with a line saying which earlier message
+       it matches — the same rule as everything else here, that being wrong
+       costs a tap and never a fact. Two genuinely different messages that
+       happen to open identically are a mild annoyance; a hidden one is not.
+
+       Done here rather than in the browser because it is O(n²) on the
+       message count and the server has the whole thread in hand anyway.
+       --------------------------------------------------------------------- */
+    if (!empty($emails)) {
+        $fingerprints = [];
+        foreach ($emails as $i => &$email) {
+            $text = strtolower(trim(preg_replace('/\s+/u', ' ',
+                html_entity_decode(strip_tags((string)($email['body_content'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'))));
+            $len  = mb_strlen($text);
+            $email['same_as_id']   = null;
+            $email['same_as_time'] = null;
+            $email['same_kind']    = null;
+
+            // Too short to say anything useful. "Thanks" is not a duplicate of
+            // "Thanks" in any sense worth acting on.
+            if ($len >= 120) {
+                $hash = md5($text);
+                $head = mb_substr($text, 0, 300);
+                foreach ($fingerprints as $prev) {
+                    $kind = null;
+                    if ($prev['hash'] === $hash) {
+                        $kind = 'identical';
+                    } elseif ($prev['head'] === $head && $prev['len'] > 0
+                              && abs($len - $prev['len']) / $prev['len'] <= 0.03) {
+                        $kind = 'near';
+                    }
+                    if ($kind !== null) {
+                        $email['same_as_id']   = $prev['id'];
+                        $email['same_as_time'] = $prev['time'];
+                        $email['same_kind']    = $kind;
+                        break;                       // the FIRST match is the original
+                    }
+                }
+                $fingerprints[] = ['hash' => $hash, 'head' => $head, 'len' => $len,
+                                   'id' => $email['id'], 'time' => $email['received_datetime']];
+            }
+        }
+        unset($email);
+    }
+
     // For channel tickets, expose whether the provider's 24h service window is
     // still open (outside it, only template replies are allowed), plus the channel's
     // provider so the composer can offer the matching templates.
     $windowOpen = false;
     $channelProvider = '';
     if ($ticketChannel !== 'email') {
-        $ts = $conn->prepare("SELECT last_inbound_at FROM tickets WHERE id = ?");
-        $ts->execute([$ticketId]);
-        $windowOpen = channelWindowOpen($ts->fetchColumn() ?: null);
+        // Only WhatsApp has a provider reply window. The list lives in ONE place,
+        // channelHasServiceWindow(), shared with send_message.php and
+        // send_attachment.php - so the composer and the API cannot disagree.
+        if (!channelHasServiceWindow($ticketChannel)) {
+            $windowOpen = true;
+        } else {
+            $ts = $conn->prepare("SELECT last_inbound_at FROM tickets WHERE id = ?");
+            $ts->execute([$ticketId]);
+            $windowOpen = channelWindowOpen($ts->fetchColumn() ?: null);
+        }
 
         try {
             $pp = $conn->prepare(
@@ -100,6 +172,8 @@ try {
 /**
  * Strip quoted/nested thread content from an email body
  * Relies on our own visible marker text, with generic blockquote fallback
+ *
+ * @param mixed $body  an email's HTML body, which may still carry the quoted earlier thread
  */
 function stripQuotedThread($body) {
     $stripped = null;
@@ -117,7 +191,7 @@ function stripQuotedThread($body) {
     }
 
     // 3. Legacy SDREF marker text from older emails
-    if ($stripped === null && preg_match('/\[\*{3}\s*SDREF:[A-Z]{3}-\d{3}-\d{5}\s*REPLY ABOVE THIS LINE\s*\*{3}\]/i', $body, $matches, PREG_OFFSET_CAPTURE)) {
+    if ($stripped === null && preg_match(TicketNumbering::REF_LINE_PATTERN, $body, $matches, PREG_OFFSET_CAPTURE)) {
         $s = trim(substr($body, 0, $matches[0][1]));
         if (!empty($s)) $stripped = $s;
     }

@@ -12,7 +12,16 @@
  */
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ics.php';
+require_once '../../includes/timezone.php';   // naive_now() — calendar events are naive (GH #126)
 
+/**
+ * Sends an HTTP status and a plain-text message, then stops - the feed's only error
+ * path, since a calendar app shows nothing richer.
+ *
+ * @param mixed $code  the HTTP status line after the protocol, e.g. '404 Not Found'
+ * @param mixed $msg  the plain-text body the calendar app receives
+ */
 function feed_deny($code, $msg) {
     header($_SERVER['SERVER_PROTOCOL'] . ' ' . $code);
     header('Content-Type: text/plain; charset=utf-8');
@@ -38,6 +47,14 @@ try {
     if (!$analystId) {
         feed_deny('403 Forbidden', 'Invalid or missing calendar token.');
     }
+    // 🔴 The token's owner must still be allowed to see this. Deactivating an
+    // analyst left their feed links working - nothing checked is_active - and so
+    // did removing the module. analystCanAccessModule() is false for an inactive
+    // or deleted analyst, and checking at use (rather than deleting the token)
+    // means reactivating them restores the link. Reported privately, October 2026.
+    if (!analystCanAccessModule($conn, (int)$analystId, 'calendar')) {
+        feed_deny('403 Forbidden', 'Invalid or missing calendar token.');
+    }
 
     // Shared team calendar. Bound the window (recent past + all future) so the
     // feed stays small no matter how much history accumulates.
@@ -47,107 +64,40 @@ try {
                 c.name AS category_name
          FROM calendar_events e
          LEFT JOIN calendar_categories c ON e.category_id = c.id
-         WHERE COALESCE(e.end_datetime, e.start_datetime) >= (NOW() - INTERVAL 1 YEAR)
+         WHERE COALESCE(e.end_datetime, e.start_datetime) >= (? - INTERVAL 1 YEAR)
          ORDER BY e.start_datetime"
     );
-    $stmt->execute();
+    // ⚠️ A wall clock. A calendar event's times are stored NAIVE — the service
+    // writes them through parseNaiveDatetime(), so "2pm" means 2pm and is never
+    // converted. Comparing that to a UTC instant mixes the two kinds (GH #126).
+    $stmt->execute([naive_now()]);
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     feed_deny('500 Internal Server Error', 'Calendar feed error.');
 }
-
 $tz = date_default_timezone_get() ?: 'UTC';
-
-/** Escape a text value per RFC 5545 (backslash, newline, comma, semicolon). */
-function ics_escape($s) {
-    $s = (string)$s;
-    $s = str_replace('\\', '\\\\', $s);
-    $s = str_replace(["\r\n", "\n", "\r"], '\\n', $s);
-    $s = str_replace(',', '\\,', $s);
-    $s = str_replace(';', '\\;', $s);
-    return $s;
-}
-
-/** Fold a content line to <=75 octets; continuation lines start with a space. */
-function ics_fold($line) {
-    if (strlen($line) <= 75) return $line;
-    $out = '';
-    $first = true;
-    while (strlen($line) > 0) {
-        $take = $first ? 75 : 74;
-        $out .= ($first ? '' : "\r\n ") . substr($line, 0, $take);
-        $line = substr($line, $take);
-        $first = false;
-    }
-    return $out;
-}
 
 $host   = $_SERVER['HTTP_HOST'] ?? 'freeitsm';
 $domain = preg_replace('/[^a-zA-Z0-9.\-]/', '', $host) ?: 'freeitsm';
 
-$lines = [];
-$lines[] = 'BEGIN:VCALENDAR';
-$lines[] = 'VERSION:2.0';
-$lines[] = 'PRODID:-//FreeITSM//Calendar//EN';
-$lines[] = 'CALSCALE:GREGORIAN';
-$lines[] = 'METHOD:PUBLISH';
-$lines[] = 'X-WR-CALNAME:FreeITSM';
-$lines[] = 'X-WR-TIMEZONE:' . $tz;
-$lines[] = 'REFRESH-INTERVAL;VALUE=DURATION:PT6H';
-$lines[] = 'X-PUBLISHED-TTL:PT6H';
+// Escaping, folding and the all-day rule live in includes/ics.php, shared with
+// the analyst's own scheduled-work feed (api/tickets/schedule_feed.php). They
+// have to agree, and DTEND-is-exclusive is exactly the sort of detail that
+// drifts when it is written down twice.
+$lines = icsHeader('FreeITSM', $tz);
 
 foreach ($events as $ev) {
-    try {
-        $start = new DateTime($ev['start_datetime'], new DateTimeZone($tz));
-    } catch (Exception $e) {
-        continue; // skip unparseable rows
-    }
-    $endRaw = !empty($ev['end_datetime']) ? $ev['end_datetime'] : $ev['start_datetime'];
-    try {
-        $end = new DateTime($endRaw, new DateTimeZone($tz));
-    } catch (Exception $e) {
-        $end = clone $start;
-    }
-
-    $stampSrc = $ev['updated_at'] ?: ($ev['created_at'] ?: 'now');
-    $stamp    = gmdate('Ymd\THis\Z', strtotime($stampSrc) ?: time());
-    $uid      = 'event-' . (int)$ev['id'] . '@' . $domain;
-
-    $lines[] = 'BEGIN:VEVENT';
-    $lines[] = 'UID:' . $uid;
-    $lines[] = 'DTSTAMP:' . $stamp;
-
-    if ((int)$ev['all_day'] === 1) {
-        // All-day uses DATE values; DTEND is exclusive (day after the last day).
-        $endExclusive = (clone $end)->modify('+1 day');
-        $lines[] = 'DTSTART;VALUE=DATE:' . $start->format('Ymd');
-        $lines[] = 'DTEND;VALUE=DATE:' . $endExclusive->format('Ymd');
-    } else {
-        $startUtc = (clone $start)->setTimezone(new DateTimeZone('UTC'));
-        $endUtc   = (clone $end)->setTimezone(new DateTimeZone('UTC'));
-        if ($endUtc <= $startUtc) {
-            $endUtc = (clone $startUtc)->modify('+30 minutes');
-        }
-        $lines[] = 'DTSTART:' . $startUtc->format('Ymd\THis\Z');
-        $lines[] = 'DTEND:'   . $endUtc->format('Ymd\THis\Z');
-    }
-
-    $lines[] = ics_fold('SUMMARY:' . ics_escape($ev['title']));
-    if (!empty($ev['description'])) {
-        $lines[] = ics_fold('DESCRIPTION:' . ics_escape($ev['description']));
-    }
-    if (!empty($ev['location'])) {
-        $lines[] = ics_fold('LOCATION:' . ics_escape($ev['location']));
-    }
-    if (!empty($ev['category_name'])) {
-        $lines[] = ics_fold('CATEGORIES:' . ics_escape($ev['category_name']));
-    }
-    $lines[] = 'END:VEVENT';
+    $lines = array_merge($lines, icsEvent([
+        'uid'         => 'event-' . (int)$ev['id'] . '@' . $domain,
+        'summary'     => $ev['title'],
+        'description' => $ev['description'] ?? '',
+        'location'    => $ev['location'] ?? '',
+        'categories'  => $ev['category_name'] ?? '',
+        'start'       => $ev['start_datetime'],
+        'end'         => !empty($ev['end_datetime']) ? $ev['end_datetime'] : $ev['start_datetime'],
+        'all_day'     => (int)$ev['all_day'] === 1,
+        'stamp'       => $ev['updated_at'] ?: ($ev['created_at'] ?: null),
+    ], $tz));
 }
 
-$lines[] = 'END:VCALENDAR';
-
-header('Content-Type: text/calendar; charset=utf-8');
-header('Content-Disposition: inline; filename="freeitsm.ics"');
-header('Cache-Control: private, max-age=300');
-echo implode("\r\n", $lines) . "\r\n";
+icsRespond($lines, 'freeitsm.ics');

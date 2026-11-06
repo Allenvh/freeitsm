@@ -15,6 +15,12 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+// Settings-only: reached from the CMDB AI tab and nowhere else. It had no module check
+// at all. (Found by D005.)
+require_once '../../includes/rbac.php';
+requireModuleAccessJson('cmdb');
+requireCapabilityJson(Cap::CMDB_AI);
+
 try {
     $conn = connectToDatabase();
 

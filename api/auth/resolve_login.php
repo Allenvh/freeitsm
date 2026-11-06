@@ -13,8 +13,10 @@
  *   { mode: 'local' }                             — email + password
  *
  * Resolution order (self-service): a per-user pin (the account is already
- * assigned to a provider) wins; otherwise, on a multi-tenant install, route by
- * the requester's company (email domain), which may have 0, 1 or several IdPs.
+ * assigned to a provider) wins; then a provider whose "Email domains" list holds
+ * the address's domain (GH #147, any install, never for an assigned account);
+ * otherwise, on a multi-tenant install, route by the requester's company (email
+ * domain), which may have 0, 1 or several IdPs.
  *
  * Deliberately returns 'local' for unknown emails too, so this endpoint does
  * not reveal whether a given email has an account.
@@ -35,15 +37,15 @@ if ($email !== '') {
     try {
         $conn = connectToDatabase();
         $ssoOn = (($conn->query("SELECT setting_value FROM system_settings WHERE setting_key = 'sso_enabled'")->fetchColumn()) ?: '0') === '1';
-        // LDAP uses this page's password form, never an OIDC redirect or company picker.
-        $table = $portal === 'self-service' ? 'users' : 'analysts';
-        $directory = $conn->prepare("SELECT p.id FROM $table a JOIN auth_providers p ON p.id=a.auth_provider_id WHERE LOWER(a.email)=? AND p.protocol='ldap'");
-        $directory->execute([$email]);
-        if ($directory->fetchColumn()) { echo json_encode($resp); exit; }
         if ($ssoOn) {
             // (1) Per-user pin — an account already assigned to a provider routes
             // straight there. (This is also what makes "mixed IdPs in one company"
             // automatic after the first login.) Each portal reads its own table.
+            // protocol='oidc' throughout: only OIDC has somewhere to redirect to.
+            // An account pinned to an LDAP provider deliberately falls through to
+            // 'local' — they type their directory password into the ordinary form
+            // and login.php checks it by bind. Routing them to 'sso' would send the
+            // browser to the OIDC flow with no issuer URL to discover.
             if ($portal === 'self-service') {
                 $sql = "SELECT u.auth_provider_id AS pid, p.display_name
                           FROM users u
@@ -68,11 +70,33 @@ if ($email !== '') {
                     'provider_name' => $row['display_name'],
                 ];
             } elseif ($portal === 'self-service') {
-                // (2) Not pinned → on a multi-tenant install, route by the
+                // (2) A provider's own "Email domains" list (GH #147) - on any
+                // install, so a single-company portal can send @company.com
+                // straight to Microsoft on a first visit.
+                //
+                // 🔴 Skipped for anyone already assigned to a provider. Step (1)
+                // only matches ENABLED OIDC pins, so an account pinned to an LDAP
+                // directory (or to a provider that has been switched off) lands
+                // here - and sending a directory user to an identity provider
+                // would strand them: the callback refuses an account assigned to
+                // a different provider.
+                require_once '../../includes/sso_identity.php';
+                $pinned = $conn->prepare("SELECT 1 FROM users WHERE LOWER(email) = ? AND auth_provider_id IS NOT NULL LIMIT 1");
+                $pinned->execute([$email]);
+                $byDomain = $pinned->fetchColumn() ? null : ssoPortalProviderForEmail($conn, $email);
+                if ($byDomain) {
+                    $resp = [
+                        'mode'          => 'sso',
+                        'provider_id'   => $byDomain['id'],
+                        'provider_name' => $byDomain['display_name'],
+                    ];
+                }
+
+                // (3) Otherwise, on a multi-tenant install, route by the
                 // requester's company (email domain). The company may have 0, 1
                 // or several IdPs.
                 require_once '../../includes/tenancy.php';
-                if (isMultiTenant($conn)) {
+                if (!$byDomain && isMultiTenant($conn)) {
                     $tenantId = resolveTenantIdForAddress($conn, $email);
                     if ($tenantId !== null) {
                         $ps = $conn->prepare(

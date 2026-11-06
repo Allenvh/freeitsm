@@ -9,6 +9,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -16,6 +20,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
+requireCapabilityJson(Cap::TICKETS_CSAT);   // settings tab — see docs/design/rbac.md
 
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data) {
@@ -27,6 +33,7 @@ $mode  = $data['mode']  ?? 'off';
 $scale = $data['scale'] ?? 'stars';
 $delay = (int)($data['delay_minutes'] ?? 0);
 $opt   = ($data['one_per_ticket'] ?? '1') === '0' ? '0' : '1';
+$inCh  = ($data['in_channel'] ?? '0') === '1' ? '1' : '0';
 
 if (!in_array($mode, ['off','auto','manual'], true)) {
     echo json_encode(['success' => false, 'error' => 'Invalid mode']);
@@ -49,6 +56,7 @@ try {
     $stmt->execute(['csat_scale', $scale]);
     $stmt->execute(['csat_delay_minutes', (string)$delay]);
     $stmt->execute(['csat_one_per_ticket', $opt]);
+    $stmt->execute(['csat_in_channel', $inCh]);
 
     echo json_encode(['success' => true]);
 } catch (Exception $e) {

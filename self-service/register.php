@@ -10,14 +10,29 @@ if (isset($_SESSION['ss_user_id'])) {
 }
 
 require_once '../config.php';
+require_once '../includes/functions.php';
+require_once '../includes/branding.php';   // the organisation's logo (GH #87)
+require_once '../includes/self_service.php';
 require_once '../includes/i18n.php';
 I18n::initFromSession();
+
+// If self-registration isn't enabled, there's no page to show — send them to login.
+try {
+    if (!selfServiceRegistrationEnabled(connectToDatabase())) {
+        header('Location: login.php');
+        exit;
+    }
+} catch (Exception $e) {
+    header('Location: login.php');
+    exit;
+}
 
 $translationNamespaces = ['common', 'self-service'];
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('self-service.register.title')); ?></title>
@@ -46,6 +61,10 @@ $translationNamespaces = ['common', 'self-service'];
         }
         .login-header img {
             width: 250px;
+            /* Capped for the same reason as login.php: this logo is replaceable,
+               and a customer's own file at 600px would push the card wider than
+               the phone. */
+            max-width: 100%;
             height: auto;
             margin-bottom: 25px;
         }
@@ -72,7 +91,11 @@ $translationNamespaces = ['common', 'self-service'];
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 5px;
-            font-size: 14px;
+            /* 16px, ungated — see login.php for the reasoning. iOS zooms on any
+               field under 16px and stays zoomed, and it depends on the DEVICE,
+               not the viewport width, so a phone breakpoint would miss a handset
+               held sideways. All four fields here come through this one rule. */
+            font-size: 16px;
             transition: border-color 0.3s;
         }
         .form-group input:focus {
@@ -134,7 +157,7 @@ $translationNamespaces = ['common', 'self-service'];
 <body>
     <div class="login-container">
         <div class="login-header">
-            <img src="../assets/images/CompanyLogo.png" alt="Company Logo">
+            <img src="<?php echo htmlspecialchars(brandingLogoUrl()); ?>" alt="Company Logo">
             <h1><?php echo htmlspecialchars(t('self-service.register.heading')); ?></h1>
             <p><?php echo htmlspecialchars(t('self-service.register.subtitle')); ?></p>
         </div>
@@ -169,7 +192,7 @@ $translationNamespaces = ['common', 'self-service'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
     <script>
     async function handleRegister(e) {
         e.preventDefault();
@@ -203,7 +226,12 @@ $translationNamespaces = ['common', 'self-service'];
                 })
             });
             const data = await resp.json();
-            if (data.success) {
+            if (data.success && data.pending) {
+                // Verification required — email sent. Show the message, hide the form.
+                document.getElementById('registerForm').style.display = 'none';
+                successEl.textContent = data.message || 'Check your inbox to confirm your account.';
+                successEl.style.display = 'block';
+            } else if (data.success) {
                 window.location.href = 'index.php';
             } else {
                 errEl.textContent = data.error;

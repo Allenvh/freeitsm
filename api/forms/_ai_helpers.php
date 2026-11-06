@@ -42,6 +42,8 @@ const FORMS_AI_MODEL_OPTIONS = [
 /**
  * Apply the global SSL_VERIFY_PEER kill switch on top of the per-form
  * toggle. Same behaviour as the equivalent helper on Workflow.
+ *
+ * @param bool $perCallVerify  the form's own "verify SSL" setting; the global switch can only turn it off
  */
 function formsEffectiveSslVerify(bool $perCallVerify): bool
 {
@@ -61,7 +63,7 @@ function loadFormsAiConfig(PDO $conn): array
     // Provider / model / key / verify_ssl now come from the shared building
     // block (ns=forms_ai), which adds OpenRouter alongside Anthropic/OpenAI.
     $cfg = aiSettingsLoad($conn, 'forms_ai');
-    if (($cfg['api_key'] ?? '') === '') {
+    if (!aiConfigured($cfg)) {
         throw new Exception('Forms AI is not configured. Set your provider, model and API key under Forms → Settings → AI.');
     }
     return $cfg;

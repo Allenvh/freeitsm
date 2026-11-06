@@ -13,6 +13,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('software');
 
 $widget_id = $_GET['widget_id'] ?? '';
 
@@ -47,10 +48,10 @@ try {
             exit;
         }
 
-        $stmt = $conn->prepare("SELECT COALESCE(d.display_version, 'Unknown') AS label, COUNT(DISTINCT d.host_id) AS value
+        $stmt = $conn->prepare("SELECT COALESCE(NULLIF(d.display_version, ''), 'Not recorded') AS label, COUNT(DISTINCT d.host_id) AS value
                                 FROM software_inventory_detail d
                                 WHERE d.app_id = ?
-                                GROUP BY d.display_version
+                                GROUP BY label
                                 ORDER BY value DESC
                                 LIMIT 20");
         $stmt->execute([$widget['app_id']]);
@@ -80,11 +81,14 @@ try {
     } elseif ($prop === 'publisher_distribution') {
         $excludeWhere = $widget['exclude_system_components'] ? ' AND d.system_component = 0' : '';
 
-        $stmt = $conn->query("SELECT COALESCE(a.publisher, 'Unknown') AS label, COUNT(DISTINCT d.host_id) AS value
+        // NULL and '' both mean "the agent did not report a publisher", so they are
+        // normalised to one label and grouped by that label - grouping by the raw
+        // column split them into two identically named slices.
+        $stmt = $conn->query("SELECT COALESCE(NULLIF(a.publisher, ''), 'Not recorded') AS label, COUNT(DISTINCT d.host_id) AS value
                               FROM software_inventory_apps a
                               INNER JOIN software_inventory_detail d ON d.app_id = a.id
                               WHERE 1=1{$excludeWhere}
-                              GROUP BY a.publisher
+                              GROUP BY label
                               ORDER BY value DESC
                               LIMIT 15");
         $data = $stmt->fetchAll(PDO::FETCH_ASSOC);

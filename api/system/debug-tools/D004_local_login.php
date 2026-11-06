@@ -29,12 +29,38 @@ $DIAG_NAME = 'Local login check';
 // ---- helpers -----------------------------------------------------------
 
 $sections = [];
+/**
+ * Adds one titled section ("=== TITLE ===" and its lines) to the report; $body is a
+ * string or an array of lines.
+ *
+ * @param mixed $sections  the report so far, a list of section strings - appended to by reference
+ * @param mixed $title  the section heading, printed between === marks
+ * @param mixed $body  the section text - a string, or an array of lines
+ */
 function addSection(&$sections, $title, $body) {
     if (is_array($body)) $body = implode("\n", $body);
     $sections[] = "=== {$title} ===\n" . rtrim($body, "\n");
 }
+/**
+ * Formats a boolean as YES or NO for the report.
+ *
+ * @param mixed $v  any value, judged as true or false
+ */
 function yn($v) { return $v ? 'YES' : 'NO'; }
+/**
+ * Formats a boolean as one of two words - OK or MISSING unless others are given.
+ *
+ * @param mixed $v  any value, judged as true or false
+ * @param mixed $ok  the word printed when $v is true
+ * @param mixed $bad  the word printed when $v is false
+ */
 function okbad($v, $ok = 'OK', $bad = 'MISSING') { return $v ? $ok : $bad; }
+/**
+ * Prints every section, separated by blank lines, and stops - the end of the report, and
+ * the early exit when a check cannot go on.
+ *
+ * @param mixed $sections  the report, a list of section strings as built by addSection()
+ */
 function emit_and_exit($sections) {
     if (!headers_sent()) {
         header('Content-Type: text/plain; charset=utf-8');
@@ -47,15 +73,17 @@ function emit_and_exit($sections) {
 /**
  * Classify a stored password hash. Returns:
  *   ['label','php_native'(bool can password_verify check it),'note','raw_algo'(for foreign match test)]
+ *
+ * @param mixed $h  the stored password_hash value; empty means a passwordless account
  */
 function classifyHash($h) {
     $h = (string)$h;
     if ($h === '') return ['label' => '(empty — no password set)', 'php_native' => false, 'note' => 'No hash stored. This is a passwordless account.', 'raw_algo' => null];
     if (preg_match('/^\$2[aby]\$(\d{2})\$/', $h, $m)) return ['label' => 'bcrypt (' . substr($h, 0, 4) . ', cost ' . $m[1] . ')', 'php_native' => true, 'note' => 'FreeITSM-native — password_verify() can check this.', 'raw_algo' => null];
     if (preg_match('/^\$argon2(id|i|d)\$/', $h, $m)) return ['label' => 'argon2' . $m[1], 'php_native' => true, 'note' => 'Argon2 — password_verify() can check this.', 'raw_algo' => null];
-    if (strpos($h, '$1$') === 0)  return ['label' => 'md5crypt ($1$)', 'php_native' => 'maybe', 'note' => 'Unix md5crypt. Verifiable only if the host crypt() supports it — NOT what FreeITSM creates (bcrypt).', 'raw_algo' => null];
-    if (strpos($h, '$5$') === 0)  return ['label' => 'sha256crypt ($5$)', 'php_native' => 'maybe', 'note' => 'Unix sha256crypt — platform-dependent; NOT what FreeITSM creates.', 'raw_algo' => null];
-    if (strpos($h, '$6$') === 0)  return ['label' => 'sha512crypt ($6$)', 'php_native' => 'maybe', 'note' => 'Unix sha512crypt — platform-dependent; NOT what FreeITSM creates.', 'raw_algo' => null];
+    if (str_starts_with($h, '$1$'))  return ['label' => 'md5crypt ($1$)', 'php_native' => 'maybe', 'note' => 'Unix md5crypt. Verifiable only if the host crypt() supports it — NOT what FreeITSM creates (bcrypt).', 'raw_algo' => null];
+    if (str_starts_with($h, '$5$'))  return ['label' => 'sha256crypt ($5$)', 'php_native' => 'maybe', 'note' => 'Unix sha256crypt — platform-dependent; NOT what FreeITSM creates.', 'raw_algo' => null];
+    if (str_starts_with($h, '$6$'))  return ['label' => 'sha512crypt ($6$)', 'php_native' => 'maybe', 'note' => 'Unix sha512crypt — platform-dependent; NOT what FreeITSM creates.', 'raw_algo' => null];
     if (preg_match('/^\$P\$|^\$H\$/', $h)) return ['label' => 'phpass portable ($P$/$H$)', 'php_native' => false, 'note' => 'WordPress/phpBB portable hash. password_verify() CANNOT check this — login will always fail.', 'raw_algo' => null];
     if (preg_match('/^pbkdf2_sha256\$|^pbkdf2_sha1\$|^bcrypt_sha256\$|^sha1\$|^md5\$|^argon2\$/', $h)) return ['label' => 'Django (' . substr($h, 0, strpos($h, '$')) . '$…)', 'php_native' => false, 'note' => 'Django/Werkzeug-style hash. password_verify() CANNOT check this — login will always fail.', 'raw_algo' => null];
     if (preg_match('/^\{(SSHA|SHA|SSHA256|SHA256|MD5)\}/i', $h, $m)) return ['label' => 'LDAP ' . $m[1], 'php_native' => false, 'note' => 'LDAP-style hash. password_verify() CANNOT check this — login will always fail.', 'raw_algo' => null];
@@ -106,8 +134,12 @@ $rootCfg = realpath(__DIR__ . '/../../../config.php');
 $conn = null; $connErr = null;
 try {
     if ($rootCfg) @require_once $rootCfg;
+    // Debug tools are administrators-only (issue #34). Fail closed.
+    require_once __DIR__ . '/../../../includes/functions.php';
+    try { $__dbgAdmin = !empty($_SESSION['analyst_id']) && analystIsAdmin(connectToDatabase(), (int)$_SESSION['analyst_id']); } catch (Throwable $e) { $__dbgAdmin = false; }
+    if (!$__dbgAdmin) { http_response_code(403); if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8'); echo "Administrator access required.\n"; exit; }
     if (defined('DB_SERVER') && defined('DB_NAME') && defined('DB_USERNAME') && defined('DB_PASSWORD')) {
-        $conn = new PDO("mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USERNAME, DB_PASSWORD);
+        $conn = new PDO("mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USERNAME, DB_PASSWORD, dbConnectionOptions());   // UTC session — includes/db.php
         $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } else { $connErr = 'DB constants not defined in config.php'; }
 } catch (Throwable $e) { $connErr = $e->getMessage(); }
@@ -323,7 +355,7 @@ if (!$encLoaded) {
 
     $totpSecret = (string)($row['totp_secret'] ?? '');
     if (!empty($row['totp_enabled']) && $totpSecret !== '') {
-        if (strpos($totpSecret, 'ENC:') === 0) {
+        if (str_starts_with($totpSecret, 'ENC:')) {
             $decOk = false; $decErr = '';
             try { $plain = decryptValue($totpSecret); $decOk = ($plain !== false && $plain !== null && $plain !== ''); }
             catch (Throwable $e) { $decErr = $e->getMessage(); }

@@ -5,22 +5,31 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+requireModuleAccess('assets');
 
 $current_page = 'dashboard';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'asset-management'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('asset-management.dashboard.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('assets', t('asset-management.nav.dashboard'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <style>
         .dashboard-page {
             height: calc(100vh - 48px);
@@ -32,14 +41,14 @@ $translationNamespaces = ['common', 'asset-management'];
             align-items: center;
             justify-content: space-between;
             padding: 16px 24px;
-            background: #fff;
-            border-bottom: 1px solid #e0e0e0;
+            background: var(--surface, #fff);
+            border-bottom: 1px solid var(--border, #e0e0e0);
         }
 
         .dashboard-toolbar h2 {
             margin: 0;
             font-size: 18px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .dashboard-toolbar-actions {
@@ -49,10 +58,10 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .btn {
             padding: 8px 16px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 6px;
-            background: #fff;
-            color: #333;
+            background: var(--surface, #fff);
+            color: var(--text, #333);
             font-size: 13px;
             cursor: pointer;
             display: inline-flex;
@@ -62,18 +71,18 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .btn:hover {
-            background: #f5f5f5;
-            border-color: #ccc;
+            background: var(--app-bg, #f5f5f5);
+            border-color: var(--border, #ccc);
         }
 
         .btn-primary {
-            background: #0078d4;
-            color: #fff;
-            border-color: #0078d4;
+            background: var(--accent, #0078d4);
+            color: var(--on-accent, #fff);
+            border-color: var(--accent, #0078d4);
         }
 
         .btn-primary:hover {
-            background: #106ebe;
+            background: var(--accent-hover, #106ebe);
         }
 
         .btn svg {
@@ -90,8 +99,8 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .widget-card {
-            background: #fff;
-            border: 1px solid #e0e0e0;
+            background: var(--surface, #fff);
+            border: 1px solid var(--border, #e0e0e0);
             border-radius: 8px;
             display: flex;
             flex-direction: column;
@@ -99,7 +108,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .widget-card:hover {
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            box-shadow: var(--shadow, 0 2px 8px rgba(0,0,0,0.08));
         }
 
         .widget-card.dragging {
@@ -107,7 +116,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .widget-card.drag-over {
-            border-color: #0078d4;
+            border-color: var(--accent, #0078d4);
             border-style: dashed;
         }
 
@@ -127,13 +136,13 @@ $translationNamespaces = ['common', 'asset-management'];
             margin: 0;
             font-size: 14px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .widget-header p {
             margin: 4px 0 0 0;
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .widget-actions {
@@ -148,15 +157,15 @@ $translationNamespaces = ['common', 'asset-management'];
             border: none;
             padding: 4px;
             cursor: pointer;
-            color: #999;
+            color: var(--text-faint, #999);
             border-radius: 4px;
             display: flex;
             align-items: center;
         }
 
         .widget-action-btn:hover {
-            color: #333;
-            background: #f0f0f0;
+            color: var(--text, #333);
+            background: var(--surface-hover, #f0f0f0);
         }
 
         .widget-action-btn svg {
@@ -170,11 +179,11 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .widget-filter select {
             padding: 4px 8px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 12px;
-            color: #555;
-            background: #fff;
+            color: var(--text-muted, #555);
+            background: var(--surface, #fff);
         }
 
         .widget-chart {
@@ -194,20 +203,20 @@ $translationNamespaces = ['common', 'asset-management'];
         .dashboard-empty {
             text-align: center;
             padding: 80px 24px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .dashboard-empty svg {
             width: 64px;
             height: 64px;
-            color: #ccc;
+            color: var(--border, #ccc);
             margin-bottom: 16px;
         }
 
         .dashboard-empty h3 {
             margin: 0 0 8px 0;
             font-size: 18px;
-            color: #555;
+            color: var(--text-muted, #555);
         }
 
         .dashboard-empty p {
@@ -221,6 +230,9 @@ $translationNamespaces = ['common', 'asset-management'];
             }
         }
     </style>
+    <?php /* Mobile-friendly opt-in (#937). AFTER this page's own <style> so its
+             @media rules win on ties. Every rule inside is gated at 768px. */ ?>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php require_once '../includes/header.php'; ?>
@@ -560,11 +572,13 @@ $translationNamespaces = ['common', 'asset-management'];
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Init
         init();
     </script>
+    <?php /* Loaded last so it can wrap this page's globals; inert on desktop. */ ?>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

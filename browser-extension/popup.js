@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
+/** Replaces the popup content with the welcome message and a Setup button that opens the options page. */
 function showNotConfigured() {
     document.getElementById('content').innerHTML = `
         <div class="not-configured">
@@ -65,15 +66,26 @@ function showNotConfigured() {
     });
 }
 
+/** Shows the error banner with a message. */
 function showError(msg) {
     document.getElementById('errorBanner').style.display = 'flex';
     document.getElementById('errorText').textContent = msg;
 }
 
+// Status names now reach the popup and are written into innerHTML. They are
+// free text an admin types on a server this extension is pointed at, so they
+// are escaped rather than trusted.
+function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** Hides the error banner. */
 function hideError() {
     document.getElementById('errorBanner').style.display = 'none';
 }
 
+/** Shows when the data was last fetched - "Just now", minutes ago, or a clock time in the browser's own locale. */
 function updateTimestamp(iso) {
     const d = new Date(iso);
     const now = new Date();
@@ -83,11 +95,18 @@ function updateTimestamp(iso) {
     let text;
     if (diffMin < 1) text = 'Just now';
     else if (diffMin < 60) text = diffMin + 'm ago';
+    // DELIBERATE CARVE-OUT from the date-format work (GH #105): every other
+    // date in FreeITSM now follows the analyst's chosen format, published by
+    // Tz::scriptTag() and rendered by assets/js/tz.js. This popup is a browser
+    // extension — no PHP, no session, no access to either — so it stays on the
+    // browser's own locale. Not an oversight; there is nothing here to read the
+    // setting from.
     else text = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     document.getElementById('lastUpdated').textContent = text;
 }
 
+/** Draws every Watchtower card into the popup from the stored dashboard data. */
 function renderDashboard(data) {
     const html = `
         <div class="cards">
@@ -105,18 +124,23 @@ function renderDashboard(data) {
     document.getElementById('content').innerHTML = html;
 }
 
+/** Returns the Checks card - done of total, with not started, needing attention, all completed or remaining. */
 function renderMorningChecks(mc) {
     if (!mc) return '';
     const done = mc.completed_today || 0;
     const total = mc.total_checks || 0;
-    const fails = (mc.statuses && mc.statuses['Fail']) || 0;
+    // Was mc.statuses['Fail'] — a status name FreeITSM has never shipped, and one
+    // an admin can rename anyway. The server now supplies a single count of
+    // checks needing attention, shared with the dashboard and the badge.
+    const fails = mc.attention_count || 0;
     let detail = '';
     if (mc.not_started) {
         detail = '<span class="warn">Not started</span>';
     } else if (fails > 0) {
-        detail = `<span class="highlight">${fails} failed</span>`;
+        detail = `<span class="highlight">${fails} need attention</span>`;
     } else if (done === total && total > 0) {
-        detail = '<span class="good">All passed</span>';
+        // "Completed", not "passed": nothing records which status is a pass.
+        detail = '<span class="good">All completed</span>';
     } else {
         detail = `${total - done} remaining`;
     }
@@ -136,13 +160,22 @@ function renderMorningChecks(mc) {
     `;
 }
 
+/** Returns the Tickets card - total open, with high priority and unassigned counts, or the biggest open status. */
 function renderTickets(tk) {
     if (!tk) return '';
-    const total = (tk.open || 0) + (tk.in_progress || 0) + (tk.on_hold || 0);
+    // Was open + in_progress + on_hold, three hardcoded English status names, so
+    // a ticket in any other open status went uncounted. The server now sends the
+    // real total across every open status.
+    const total = tk.total_open || 0;
     let details = [];
-    if (tk.urgent_high > 0) details.push(`<span class="highlight">${tk.urgent_high} urgent/high</span>`);
+    if (tk.urgent_high > 0) details.push(`<span class="highlight">${tk.urgent_high} high priority</span>`);
     if (tk.unassigned > 0) details.push(`<span class="warn">${tk.unassigned} unassigned</span>`);
-    if (details.length === 0) details.push(`${tk.in_progress || 0} in progress`);
+    if (details.length === 0) {
+        // Name the biggest open status rather than assuming one is called
+        // "In Progress" — it may not exist, and it may not be the interesting one.
+        const biggest = (tk.by_status || []).slice().sort((a, b) => b.count - a.count)[0];
+        details.push(biggest ? `${biggest.count} ${escapeHtml(biggest.name)}` : `${total} open`);
+    }
 
     return `
         <div class="card">
@@ -159,6 +192,7 @@ function renderTickets(tk) {
     `;
 }
 
+/** Returns the Changes card - changes in the next 7 days, with unapproved and in-progress counts. */
 function renderChanges(ch) {
     if (!ch) return '';
     let details = [];
@@ -183,6 +217,7 @@ function renderChanges(ch) {
     `;
 }
 
+/** Returns the Services card - all operational, or the count of degraded services and active incidents. */
 function renderServiceStatus(ss) {
     if (!ss) return '';
     if (ss.all_operational) {
@@ -215,6 +250,7 @@ function renderServiceStatus(ss) {
     `;
 }
 
+/** Returns the Calendar card - events today and this week. */
 function renderCalendar(cal) {
     if (!cal) return '';
     return `
@@ -234,6 +270,7 @@ function renderCalendar(cal) {
     `;
 }
 
+/** Returns the Contracts card - contracts expiring in 90 days, highlighting 30 days and notice periods. */
 function renderContracts(ct) {
     if (!ct) return '';
     let detail = '';
@@ -266,6 +303,7 @@ function renderContracts(ct) {
     `;
 }
 
+/** Returns the Knowledge card - recent articles and any overdue reviews. */
 function renderKnowledge(kb) {
     if (!kb) return '';
     let detail = '';
@@ -290,6 +328,7 @@ function renderKnowledge(kb) {
     `;
 }
 
+/** Returns the Assets card - total assets and how many have not reported in 7 days. */
 function renderAssets(as) {
     if (!as) return '';
     let detail = '';
@@ -315,6 +354,7 @@ function renderAssets(as) {
     `;
 }
 
+/** Returns the Tasks card - open tasks, with overdue or due-today counts. */
 function renderTasks(tk) {
     if (!tk) return '';
     let detail = '';
@@ -326,7 +366,9 @@ function renderTasks(tk) {
         detail = '<span class="good">No overdue tasks</span>';
     }
 
-    const total = (tk.todo || 0) + (tk.in_progress || 0);
+    // Was todo + in_progress by name, which left tasks in any other open status
+    // (Blocked ships as standard) out of the figure entirely.
+    const total = tk.total_open || 0;
 
     return `
         <div class="card">

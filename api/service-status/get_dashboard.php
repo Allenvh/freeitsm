@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/service_impact_levels.php';
 
 header('Content-Type: application/json');
 
@@ -13,31 +14,43 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('service-status');
 
 try {
     $conn = connectToDatabase();
+    // Planned maintenance due to start or end becomes (or stops being) an
+    // incident BEFORE the board is read, so it is on time even with no cron.
+    require_once '../../includes/service_status_planned.php';
+    statusPlannedDue($conn);
 
     // All active services with their worst current status from open incidents.
     // Severity ranking comes from service_impact_levels.severity_order (1 = worst).
+    // No open incident => the configured default impact level, NOT a hardcoded
+    // "Operational" (GH #70 — renaming the level left half the board on the old
+    // name). The colour is returned with it so a renamed OR deactivated level
+    // still paints its badge.
+    $default = defaultImpactLevel($conn);
+
     $svcSql = "SELECT ss.id, ss.name, ss.description, ss.display_order,
-        COALESCE(
-            (SELECT il.name
-             FROM status_incident_services sis
-             JOIN status_incidents si ON sis.incident_id = si.id
-             JOIN service_impact_levels il ON il.id = sis.impact_level_id
-             LEFT JOIN service_incident_statuses sst ON sst.id = si.status_id
-             WHERE sis.service_id = ss.id
-               AND (sst.is_resolved = 0 OR sst.id IS NULL)
-             ORDER BY il.severity_order ASC
-             LIMIT 1),
-            'Operational'
-        ) AS current_status
+        COALESCE(il.name, :def_name)     AS current_status,
+        COALESCE(il.colour, :def_colour) AS current_status_colour
     FROM status_services ss
+    LEFT JOIN service_impact_levels il ON il.id = (
+        SELECT sis.impact_level_id
+        FROM status_incident_services sis
+        JOIN status_incidents si ON sis.incident_id = si.id
+        JOIN service_impact_levels worst ON worst.id = sis.impact_level_id
+        LEFT JOIN service_incident_statuses sst ON sst.id = si.status_id
+        WHERE sis.service_id = ss.id
+          AND (sst.is_resolved = 0 OR sst.id IS NULL)
+        ORDER BY worst.severity_order ASC
+        LIMIT 1
+    )
     WHERE ss.is_active = 1
     ORDER BY ss.display_order, ss.name";
 
     $svcStmt = $conn->prepare($svcSql);
-    $svcStmt->execute();
+    $svcStmt->execute([':def_name' => $default['name'], ':def_colour' => $default['colour']]);
     $services = $svcStmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Recent incidents: active + resolved in last 30 days
@@ -76,7 +89,12 @@ try {
     echo json_encode([
         'success' => true,
         'services' => $services,
-        'incidents' => $incidents
+        'incidents' => $incidents,
+        // Planned maintenance not yet started, and in progress (3.2.0).
+        'planned' => statusPlannedList($conn),
+        // Which level counts as "all clear" — the board uses it to decide whether
+        // a service is healthy without matching on a name that can be renamed.
+        'default_impact' => $default
     ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

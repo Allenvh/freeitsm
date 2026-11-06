@@ -8,6 +8,9 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
@@ -21,6 +24,12 @@ try {
     $conn = connectToDatabase();
 
     // Get vCenter settings from system_settings
+    // Despite the name this SYNCS from vCenter (it writes server records), and it is
+    // called by the operational Servers page — so it stays on module access rather than
+    // the vCenter settings capability, which would break Servers for every non-manager.
+    // It had no module gate at all before this: any logged-in analyst could run it.
+    requireModuleAccessJson('assets', $conn);
+
     $stmt = $conn->prepare("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('vcenter_server', 'vcenter_user', 'vcenter_password')");
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -35,7 +44,9 @@ try {
     $vcPass = $settings['vcenter_password'] ?? '';
 
     if (empty($vcServer) || empty($vcUser) || empty($vcPass)) {
-        echo json_encode(['success' => false, 'error' => 'vCenter settings not configured. Go to Settings to configure vCenter connection.']);
+        // not_configured lets the Servers page tell "no vCenter here" (normal on a
+        // Proxmox-only install) from "vCenter failed".
+        echo json_encode(['success' => false, 'not_configured' => true, 'error' => 'vCenter settings not configured. Go to Settings to configure vCenter connection.']);
         exit;
     }
 
@@ -244,6 +255,10 @@ try {
 
 /**
  * Authenticate with vCenter REST API
+ *
+ * @param mixed $baseUrl  the vCenter address with scheme and no trailing slash, e.g. https://vc.example.com
+ * @param mixed $user  the vCenter user name, sent as HTTP Basic auth
+ * @param mixed $pass  that user's password, in plain text
  */
 function vcenterAuth($baseUrl, $user, $pass) {
     $ch = curl_init($baseUrl . '/api/session');
@@ -252,10 +267,9 @@ function vcenterAuth($baseUrl, $user, $pass) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
         CURLOPT_USERPWD => $user . ':' . $pass,
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
-        CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
         CURLOPT_TIMEOUT => 30
     ]);
+    sslApplyCurl($ch);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -283,6 +297,10 @@ function vcenterAuth($baseUrl, $user, $pass) {
 
 /**
  * GET request to vCenter REST API
+ *
+ * @param mixed $baseUrl  the vCenter address with scheme and no trailing slash
+ * @param mixed $path  the API path to fetch, starting with a slash; /api/ and /rest/ paths both work
+ * @param mixed $sessionToken  the session id returned by vcenterAuth()
  */
 function vcenterGet($baseUrl, $path, $sessionToken) {
     $ch = curl_init($baseUrl . $path);
@@ -292,10 +310,9 @@ function vcenterGet($baseUrl, $path, $sessionToken) {
             'vmware-api-session-id: ' . $sessionToken,
             'Content-Type: application/json'
         ],
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
-        CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
         CURLOPT_TIMEOUT => 60
     ]);
+    sslApplyCurl($ch);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -322,6 +339,9 @@ function vcenterGet($baseUrl, $path, $sessionToken) {
 
 /**
  * Logout from vCenter session
+ *
+ * @param mixed $baseUrl  the vCenter address with scheme and no trailing slash
+ * @param mixed $sessionToken  the session id returned by vcenterAuth(), ended by this call
  */
 function vcenterLogout($baseUrl, $sessionToken) {
     $ch = curl_init($baseUrl . '/api/session');
@@ -331,10 +351,9 @@ function vcenterLogout($baseUrl, $sessionToken) {
         CURLOPT_HTTPHEADER => [
             'vmware-api-session-id: ' . $sessionToken
         ],
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
-        CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
         CURLOPT_TIMEOUT => 10
     ]);
+    sslApplyCurl($ch);
     curl_exec($ch);
     curl_close($ch);
 }

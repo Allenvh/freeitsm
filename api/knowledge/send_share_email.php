@@ -6,6 +6,10 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
+require_once '../../includes/email_log.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -14,6 +18,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('knowledge');
 
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
@@ -44,10 +49,27 @@ try {
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // ⚠️ Decrypt on the way out. knowledge_email_smtp_password ends in _password, so
+    // isEncryptedSettingKey() covers it and Database Verify has encrypted it in place —
+    // and this loop used to hand the raw column straight to sendSmtpEmail(), which then
+    // authenticated to the mail server with the literal string "ENC:…". Sharing an
+    // article stopped working, with an SMTP auth failure rather than anything that
+    // pointed at encryption. The rule decides, so a future secret under this prefix is
+    // handled without anyone remembering to come back here. decryptValue() passes
+    // plaintext through, so an un-migrated row still works.
     $settings = [];
     foreach ($rows as $row) {
-        $key = str_replace('knowledge_email_', '', $row['setting_key']);
-        $settings[$key] = $row['setting_value'];
+        $key   = str_replace('knowledge_email_', '', $row['setting_key']);
+        $value = $row['setting_value'];
+        if (isEncryptedSettingKey($row['setting_key'])) {
+            try {
+                $value = decryptValue($value);
+            } catch (Exception $e) {
+                error_log('knowledge email: could not decrypt ' . $row['setting_key'] . ': ' . $e->getMessage());
+                $value = '';
+            }
+        }
+        $settings[$key] = $value;
     }
 
     $emailMethod = $settings['method'] ?? 'disabled';
@@ -94,6 +116,18 @@ try {
         exit;
     }
 
+    // Every share send is logged, including the SMTP method, which has no configured
+    // mailbox behind it at all. A log that covered only the mailbox route would report
+    // "no failures" for a route it was never watching.
+    $mailboxRow = null;
+    if ($emailMethod === 'mailbox' && !empty($settings['mailbox_id'])) {
+        $mbStmt = $conn->prepare("SELECT * FROM target_mailboxes WHERE id = ?");
+        $mbStmt->execute([$settings['mailbox_id']]);
+        if ($mbRow = $mbStmt->fetch(PDO::FETCH_ASSOC)) $mailboxRow = decryptMailboxRow($mbRow);
+    }
+    emailLogRecord($conn, $mailboxRow, 'share_kb', $toEmail, $subject,
+        !empty($result['success']), $result['error'] ?? null);
+
     echo json_encode($result);
 
 } catch (Exception $e) {
@@ -102,6 +136,13 @@ try {
 
 /**
  * Send email via SMTP
+ *
+ * @param mixed $settings  the email settings keyed by name (smtp_host, smtp_port, smtp_username, smtp_from_email, ...)
+ * @param mixed $toEmail  the recipient address
+ * @param mixed $subject  the email subject
+ * @param mixed $htmlBody  the email body as HTML
+ * @param mixed $pdfData  the PDF to attach, base64-encoded; null sends no attachment
+ * @param mixed $pdfFilename  the attachment's file name; only used with $pdfData
  */
 function sendSmtpEmail($settings, $toEmail, $subject, $htmlBody, $pdfData = null, $pdfFilename = null) {
     $host = $settings['smtp_host'] ?? '';
@@ -160,6 +201,13 @@ function sendSmtpEmail($settings, $toEmail, $subject, $htmlBody, $pdfData = null
 
 /**
  * Send email via Microsoft 365 mailbox using Graph API
+ *
+ * @param mixed $mailboxId  the target_mailboxes id to send from; empty fails with "No mailbox selected"
+ * @param mixed $toEmail  the recipient address
+ * @param mixed $subject  the email subject
+ * @param mixed $htmlBody  the email body as HTML
+ * @param mixed $pdfData  the PDF to attach, base64-encoded; null sends no attachment
+ * @param mixed $pdfFilename  the attachment's file name; only used with $pdfData
  */
 function sendMailboxEmail($conn, $mailboxId, $toEmail, $subject, $htmlBody, $pdfData = null, $pdfFilename = null) {
     if (empty($mailboxId)) {
@@ -235,8 +283,7 @@ function sendMailboxEmail($conn, $mailboxId, $toEmail, $subject, $htmlBody, $pdf
         'Content-Type: application/json'
     ]);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, SSL_VERIFY_PEER ? 2 : 0);
+    sslApplyCurl($ch);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -252,6 +299,9 @@ function sendMailboxEmail($conn, $mailboxId, $toEmail, $subject, $htmlBody, $pdf
 
 /**
  * Get valid access token (refresh if expired)
+ *
+ * @param mixed $mailbox  the target_mailboxes row, decrypted (id and the azure_* columns are used for a refresh)
+ * @param mixed $tokenData  the mailbox's decoded token_data: access_token, refresh_token, expires_at (Unix time)
  */
 function getValidAccessToken($conn, $mailbox, $tokenData) {
     if (!$tokenData || !isset($tokenData['access_token'])) {
@@ -278,6 +328,9 @@ function getValidAccessToken($conn, $mailbox, $tokenData) {
 
 /**
  * Refresh the access token using mailbox configuration
+ *
+ * @param mixed $mailbox  the target_mailboxes row, decrypted - azure_tenant_id, azure_client_id/secret, oauth_scopes
+ * @param mixed $refreshToken  the OAuth refresh token to trade for a new access token
  */
 function refreshAccessToken($mailbox, $refreshToken) {
     $tokenUrl = 'https://login.microsoftonline.com/' . $mailbox['azure_tenant_id'] . '/oauth2/v2.0/token';
@@ -295,8 +348,7 @@ function refreshAccessToken($mailbox, $refreshToken) {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, SSL_VERIFY_PEER ? 2 : 0);
+    sslApplyCurl($ch);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -324,9 +376,13 @@ function refreshAccessToken($mailbox, $refreshToken) {
 
 /**
  * Save token data to database
+ *
+ * @param mixed $mailboxId  the target_mailboxes id to update
+ * @param mixed $tokenData  the token array to store (encrypted) in token_data, as built by refreshAccessToken()
  */
 function saveTokenData($conn, $mailboxId, $tokenData) {
-    $jsonData = json_encode($tokenData);
+    // Encrypted at rest — see ENCRYPTED_MAILBOX_COLUMNS; decryptMailboxRow() reverses it.
+    $jsonData = encryptValue(json_encode($tokenData));
 
     $sql = "UPDATE target_mailboxes SET token_data = ? WHERE id = ?";
     $stmt = $conn->prepare($sql);

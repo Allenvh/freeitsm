@@ -36,7 +36,7 @@ function webhookHeaders(): array
         return $out;
     }
     foreach ($_SERVER as $k => $v) {
-        if (strpos($k, 'HTTP_') === 0) {
+        if (str_starts_with($k, 'HTTP_')) {
             $name = strtolower(str_replace('_', '-', substr($k, 5)));
             $out[$name] = $v;
         }
@@ -48,6 +48,11 @@ function webhookHeaders(): array
 function webhookFullUrl(): string
 {
     $proto = 'http';
+    // ⚠️ Deliberately NOT requestIsHttps() (GH #152): this must rebuild the
+    // EXACT address the provider called, because the provider signs it. Behind a
+    // TLS-terminating proxy without TRUST_PROXY_HTTPS the stricter rule says
+    // http, the signature check fails, and inbound messages stop. Trusting the
+    // header here costs nothing: a forged request still lacks the secret.
     if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) {
         $proto = 'https';
@@ -57,6 +62,12 @@ function webhookFullUrl(): string
     return $proto . '://' . $host . $uri;
 }
 
+/**
+ * Sends an HTTP status and {success: false, error} as JSON, then stops.
+ *
+ * @param int $code  the HTTP status to send
+ * @param string $msg  the error message
+ */
 function webhookFail(int $code, string $msg): void
 {
     http_response_code($code);
@@ -120,6 +131,28 @@ $rawBody = file_get_contents('php://input');
 $headers = webhookHeaders();
 $params  = $_POST;
 
+// ── Slack's one-time endpoint check ──────────────────────────────────────────
+// Handled BEFORE authentication, and only while this channel has no signing
+// secret. Slack tests the request URL at the moment the app is created, which is
+// also the moment the secret first exists — so demanding a signature here is not
+// strict, it is a deadlock: the URL can never be verified, so the secret can
+// never be collected. See SlackProvider::verifyUrlChallenge().
+//
+// ⚠️ This exempts the HANDSHAKE only. A real message is an `event_callback` and
+// falls through to the signature check below like everything else, so no ticket
+// can be injected through this gap.
+if ($provider instanceof SlackProvider && !$provider->hasSigningSecret()) {
+    $rawBodyEarly = file_get_contents('php://input');
+    $challenge = $provider->verifyUrlChallenge($rawBodyEarly);
+    if ($challenge !== null) {
+        error_log('Slack URL verification answered unsigned for channel ' . $channelId
+                  . ' — expected once, during setup, before the signing secret is saved.');
+        header('Content-Type: text/plain');
+        echo $challenge;
+        exit;
+    }
+}
+
 // Authenticate the request per ingress mode.
 $ingress = $channel['ingress_mode'] ?? 'direct';
 if ($ingress === 'relay') {
@@ -131,6 +164,22 @@ if ($ingress === 'relay') {
 } else {
     if (!$provider->verifyWebhook($rawBody, $headers, $params, webhookFullUrl())) {
         webhookFail(403, 'Signature verification failed');
+    }
+}
+
+// Slack's endpoint check. Unlike Meta's it is a POSTed JSON body rather than a
+// GET, so it lands here rather than in the handshake branch above.
+//
+// ⚠️ Deliberately AFTER authentication. Slack signs this request like any other,
+// so echoing the challenge to an unverified caller would let anyone on the
+// internet confirm that this URL is a FreeITSM install — and, worse, complete
+// someone else's app setup against it.
+if ($provider instanceof SlackProvider) {
+    $challenge = $provider->verifyUrlChallenge($rawBody);
+    if ($challenge !== null) {
+        header('Content-Type: text/plain');
+        echo $challenge;
+        exit;
     }
 }
 

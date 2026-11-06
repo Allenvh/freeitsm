@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -13,6 +14,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('knowledge');
+requireCapabilityJson(Cap::KNOWLEDGE_EMAIL);   // Knowledge settings tab — see docs/design/rbac.md
 
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
@@ -56,7 +59,7 @@ try {
 
     // Read server greeting
     $response = fgets($socket, 512);
-    if (strpos($response, '220') !== 0) {
+    if (!str_starts_with($response, '220')) {
         fclose($socket);
         echo json_encode([
             'success' => false,
@@ -77,7 +80,7 @@ try {
     if ($encryption === 'tls') {
         fwrite($socket, "STARTTLS\r\n");
         $response = fgets($socket, 512);
-        if (strpos($response, '220') !== 0) {
+        if (!str_starts_with($response, '220')) {
             fclose($socket);
             echo json_encode([
                 'success' => false,
@@ -111,15 +114,15 @@ try {
         fwrite($socket, "AUTH LOGIN\r\n");
         $response = fgets($socket, 512);
 
-        if (strpos($response, '334') === 0) {
+        if (str_starts_with($response, '334')) {
             fwrite($socket, base64_encode($username) . "\r\n");
             $response = fgets($socket, 512);
 
-            if (strpos($response, '334') === 0) {
+            if (str_starts_with($response, '334')) {
                 fwrite($socket, base64_encode($password) . "\r\n");
                 $response = fgets($socket, 512);
 
-                if (strpos($response, '235') !== 0) {
+                if (!str_starts_with($response, '235')) {
                     fclose($socket);
                     echo json_encode([
                         'success' => false,

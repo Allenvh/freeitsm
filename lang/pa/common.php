@@ -22,7 +22,8 @@ return [
     'copied'       => 'ਨਕਲ ਕੀਤੀ ਗਈ',
     'retry'        => 'ਮੁੜ ਕੋਸ਼ਿਸ਼',
     'export'       => 'ਨਿਰਯਾਤ',
-    'open'         => 'ਖੋਲ੍ਹੋ',
+    'back'         => 'ਵਾਪਸ',
+    'open'         =>  'ਖੋਲ੍ਹੋ',
     'apply'        => 'ਲਾਗੂ ਕਰੋ',
 
     'yes'          => 'ਹਾਂ',
@@ -43,6 +44,7 @@ return [
     'optional'     => 'ਵਿਕਲਪਿਕ',
     'select_one'   => 'ਚੁਣੋ…',
     'search'       => 'ਖੋਜੋ',
+    'filter'       => 'ਫਿਲਟਰ',
 
     'error_generic'       => 'ਕੁਝ ਗਲਤ ਹੋਇਆ।',
     'error_network'       => 'ਨੈੱਟਵਰਕ ਗਲਤੀ',
@@ -140,6 +142,33 @@ return [
             'friday'    => 'ਸ਼ੁੱਕਰਵਾਰ',
             'saturday'  => 'ਸ਼ਨੀਵਾਰ',
             'sunday'    => 'ਐਤਵਾਰ',
+        ],
+
+        // Abbreviated forms, used by the date formatter for the
+        // "25 Aug 2026" family of formats (GH #105).
+        'months_short' => [
+            'january'   => 'ਜਨਵਰੀ',
+            'february'  => 'ਫਰਵਰੀ',
+            'march'     => 'ਮਾਰਚ',
+            'april'     => 'ਅਪ੍ਰੈਲ',
+            'may'       => 'ਮਈ',
+            'june'      => 'ਜੂਨ',
+            'july'      => 'ਜੁਲਾਈ',
+            'august'    => 'ਅਗਸਤ',
+            'september' => 'ਸਤੰਬਰ',
+            'october'   => 'ਅਕਤੂਬਰ',
+            'november'  => 'ਨਵੰਬਰ',
+            'december'  => 'ਦਸੰਬਰ',
+        ],
+
+        'weekdays_short' => [
+            'monday'    => 'ਸੋਮ',
+            'tuesday'   => 'ਮੰਗਲ',
+            'wednesday' => 'ਬੁੱਧ',
+            'thursday'  => 'ਵੀਰ',
+            'friday'    => 'ਸ਼ੁੱਕਰ',
+            'saturday'  => 'ਸ਼ਨੀ',
+            'sunday'    => 'ਐਤ',
         ],
     ],
 ];

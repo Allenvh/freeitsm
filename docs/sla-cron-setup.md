@@ -40,13 +40,27 @@ No auth needed — filesystem permissions already gate who can run it.
 `curl http://your-host/freeitsm-app/cron/sla_breach_check.php?token=<TOKEN>`
 
 The token is auto-generated on first install and stored in `system_settings` under
-the key `sla_cron_token`. Look it up with:
+the key `sla_cron_token`. Read it with:
 
-```sql
-SELECT setting_value FROM system_settings WHERE setting_key = 'sla_cron_token';
+```
+php scripts/cron_token.php sla
 ```
 
-Rotate it anytime by `UPDATE`-ing that row.
+> **Don't read the row directly.** `sla_cron_token` is encrypted at rest, so
+> `SELECT setting_value FROM system_settings …` returns `ENC:…` rather than the token.
+> Pasting that into the URL gets you a `403` from your own install. The command above
+> decrypts it; `php scripts/cron_token.php --url` prints the whole URL ready to paste.
+
+To rotate it, delete the row and run **Database Verification**, which seeds a fresh one
+already encrypted:
+
+```sql
+DELETE FROM system_settings WHERE setting_key = 'sla_cron_token';
+```
+
+`UPDATE`-ing the row with a value of your own also works — the app reads plaintext and
+ciphertext alike — but it leaves the token in cleartext until the next Database
+Verification encrypts it again.
 
 Use the HTTP form when you can't easily run PHP from the shell (some shared
 hosting, or remote cron services like cron-job.org / EasyCron).
@@ -191,7 +205,7 @@ This means:
 |---------|---------|--------|
 | `sla_cron_min_interval_seconds` | 30 | Minimum seconds between successful runs. Even a valid-token request gets a 429 if it arrives sooner |
 | `sla_cron_log_retention_days` | 30 | How long to keep `sla_cron_runs` rows. Pruned automatically at end of every cron run |
-| `sla_cron_token` | random per install | Shared secret for HTTP invocation. Rotate by `UPDATE`-ing this row |
+| `sla_cron_token` | random per install | Shared secret for HTTP invocation. **Encrypted at rest** — read it with `php scripts/cron_token.php sla`, and rotate it by deleting the row and re-running Database Verification |
 
 Edit via SQL:
 ```sql

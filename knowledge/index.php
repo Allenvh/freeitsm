@@ -6,11 +6,21 @@ session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
+require_once '../includes/money.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('knowledge');
 
 $current_page = 'knowledge';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'knowledge'];
+// Domains an article is a runbook for (3.0.0) - Domains' data, so only for
+// analysts who can open Domains.
+$showDomains = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'domains');
+if ($showDomains) $translationNamespaces[] = 'domains';
 
 // Read the per-analyst sidebar preference server-side so the .sidebar-hover
 // class is on the HTML from the first paint — avoids the flash where the
@@ -34,22 +44,35 @@ if (isset($_SESSION['analyst_id'])) {
 $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('knowledge.browser_title.main')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/knowledge.css">
+    <title><?php echo htmlspecialchars(pageTitle('knowledge')); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/knowledge.css?v=27">
+    <link rel="stylesheet" href="../assets/css/domain-links.css?v=1">
+    <link rel="stylesheet" href="../assets/css/project-links.css?v=1">
     <!-- Prism.js for code syntax highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/toolbar/prism-toolbar.min.css">
+    <link rel="stylesheet" href="../assets/css/vendor/prism-tomorrow.min.css">
+    <link rel="stylesheet" href="../assets/css/vendor/prism-toolbar.min.css">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <script src="../assets/js/tinymce/tinymce.min.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <?php echo Money::scriptTag(); ?>
+    <script src="../assets/js/money.js?v=1"></script>
+    <script src="../assets/js/tinymce/tinymce.min.js?v=8.10.0"></script>
+    <!-- Mobile-friendly overrides (LAYER 17). Linked LAST so its @media rules win ties against knowledge.css. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
+    <?php /* The action row (#185): New moved here from the foot of the sidebar - on a phone that was inside the Tags sheet. */ ?>
+    <?php require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('knowledge.title'), [actionRowNew('openCreateArticle()', t('knowledge.sidebar.new_article_tip'))], ['accent' => 'kb']); ?>
 
     <div class="knowledge-container<?php echo $sidebarHoverClass; ?>">
         <!-- Sidebar with search and tags -->
@@ -60,14 +83,27 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                     <input type="text" id="articleSearch" placeholder="<?php echo htmlspecialchars(t('knowledge.sidebar.search_placeholder')); ?>" onkeyup="debounceSearch()">
                 </div>
             </div>
+            <!-- Folders. One tree and one list is what Explorer actually is;
+                 three view modes would be three renderers to build, test, theme
+                 and mobile-proof for one module. -->
+            <div class="sidebar-section" id="kbFolderSection">
+                <h3>
+                    <?php echo htmlspecialchars(t('knowledge.sidebar.folders_heading')); ?>
+                    <button type="button" class="kb-folder-add" id="kbFolderAdd" onclick="createFolderPrompt()" title="<?php echo htmlspecialchars(t('knowledge.folders.new')); ?>">+</button>
+                </h3>
+                <div class="kb-folder-tree" id="kbFolderTree">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
             <div class="sidebar-section">
                 <h3><?php echo htmlspecialchars(t('knowledge.sidebar.tags_heading')); ?></h3>
                 <div class="tag-filter-list" id="tagFilterList">
                     <div class="loading"><div class="spinner"></div></div>
                 </div>
             </div>
-            <div class="sidebar-section">
-                <button class="btn btn-primary btn-full" onclick="openCreateArticle()"><?php echo htmlspecialchars(t('knowledge.sidebar.new_article')); ?></button>
+            <!-- Shown only to someone who may manage access; see knowledge.js. -->
+            <div class="sidebar-section" id="kbExceptionsSection" style="display:none;">
+                <button class="btn btn-secondary btn-full" onclick="openExceptionsModal()"><?php echo htmlspecialchars(t('knowledge.exceptions.button')); ?></button>
             </div>
             <div class="sidebar-section">
                 <button class="btn btn-secondary btn-full recycle-bin-toggle" id="recycleBinToggle" onclick="toggleRecycleBin()">
@@ -79,11 +115,43 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
 
         <!-- Main content area -->
         <div class="knowledge-main">
-            <!-- Article list view -->
-            <div class="article-list-view" id="articleListView">
+            <!-- Article list view. Hidden from the start when the link names an
+                 article, so it does not flash up before the article replaces it
+                 (knowledge.js shows it again if the article cannot be opened). -->
+            <div class="article-list-view" id="articleListView"<?php if (!empty($_GET['article']) || !empty($_GET['id'])) echo ' style="display:none"'; ?>>
+                <!-- Where you are, when you are inside a folder. Hidden at "All
+                     articles", which is not a place you can be inside. -->
+                <nav class="kb-breadcrumb" id="kbBreadcrumb" style="display:none;"></nav>
                 <div class="article-list-header">
                     <h2 id="articleListHeader"><?php echo htmlspecialchars(t('knowledge.list.heading')); ?></h2>
                     <div class="article-count" id="articleCount"></div>
+                    <!-- How the main pane draws things. A toggle rather than only
+                         a setting: unlike WHERE you browse, this is something
+                         people flip during a session. It persists all the same. -->
+                    <div class="kb-layout-toggle">
+                        <button type="button" class="kb-layout-btn active" data-layout="list" onclick="setLayout('list')" title="<?php echo htmlspecialchars(t('knowledge.layout.list')); ?>">☰</button>
+                        <button type="button" class="kb-layout-btn" data-layout="cards" onclick="setLayout('cards')" title="<?php echo htmlspecialchars(t('knowledge.layout.cards')); ?>">▦</button>
+                        <button type="button" class="kb-layout-btn" data-layout="tree" onclick="setLayout('tree')" title="<?php echo htmlspecialchars(t('knowledge.layout.tree')); ?>">🌳</button>
+                        <button type="button" class="kb-layout-btn" data-layout="details" onclick="setLayout('details')" title="<?php echo htmlspecialchars(t('knowledge.layout.details')); ?>">▤</button>
+                    </div>
+                </div>
+
+                <!-- Bulk audience bar. Hidden until something is ticked; selection
+                     survives searching and tag-filtering (see knowledge.js). -->
+                <div class="kb-bulk-bar" id="kbBulkBar" style="display:none;">
+                    <span class="kb-bulk-count" id="kbBulkCount"></span>
+                    <label for="kbBulkAudience"><?php echo htmlspecialchars(t('knowledge.bulk.set_to')); ?></label>
+                    <select id="kbBulkAudience">
+                        <option value="internal"><?php echo htmlspecialchars(t('knowledge.editor.audience_internal')); ?></option>
+                        <option value="customer"><?php echo htmlspecialchars(t('knowledge.editor.audience_customer')); ?></option>
+                        <option value="public"><?php echo htmlspecialchars(t('knowledge.editor.audience_public')); ?></option>
+                    </select>
+                    <button type="button" class="btn btn-primary" id="kbBulkApply" onclick="applyBulkAudience()"><?php echo htmlspecialchars(t('knowledge.bulk.apply')); ?></button>
+                    <label for="kbBulkFolder"><?php echo htmlspecialchars(t('knowledge.bulk.move_to')); ?></label>
+                    <select id="kbBulkFolder"></select>
+                    <button type="button" class="btn btn-primary" id="kbBulkMove" onclick="applyBulkMove()"><?php echo htmlspecialchars(t('knowledge.bulk.move')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="selectAllVisibleArticles()"><?php echo htmlspecialchars(t('knowledge.bulk.select_all')); ?></button>
+                    <button type="button" class="btn btn-secondary" onclick="clearArticleSelection()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
                 </div>
                 <div class="article-list" id="articleList">
                     <div class="loading"><div class="spinner"></div></div>
@@ -104,7 +172,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                                     <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
                                     <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                                 </svg>
-                                <?php echo htmlspecialchars(t('knowledge.detail.share')); ?>
+                                <span class="kb-act-label"><?php echo htmlspecialchars(t('knowledge.detail.share')); ?></span>
                             </button>
                             <div class="share-dropdown-menu" id="shareDropdownMenu">
                                 <a href="#" onclick="shareArticleLink(); return false;">
@@ -133,8 +201,13 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                                 </a>
                             </div>
                         </div>
-                        <button class="btn btn-primary" onclick="editCurrentArticle()"><?php echo htmlspecialchars(t('knowledge.detail.edit')); ?></button>
-                        <button class="btn btn-danger" onclick="deleteCurrentArticle()"><?php echo htmlspecialchars(t('knowledge.detail.archive')); ?></button>
+                        <!-- Shown only to someone who may actually change access;
+                             see kbCanManagePerms in knowledge.js. -->
+                        <button class="btn btn-secondary" onclick="kbMoveCurrentArticle()" title="<?php echo htmlspecialchars(t('knowledge.move.title')); ?>"><span class="kb-act-icon" aria-hidden="true">📁</span><span class="kb-act-label"><?php echo htmlspecialchars(t('knowledge.move.button')); ?></span></button>
+                        <button class="btn btn-secondary" id="kbArticleAuditBtn" style="display:none;" onclick="openArticleAuditModal()" title="<?php echo htmlspecialchars(t('knowledge.audit.title')); ?>"><span class="kb-act-icon" aria-hidden="true">🕘</span><span class="kb-act-label"><?php echo htmlspecialchars(t('knowledge.audit.button')); ?></span></button>
+                        <button class="btn btn-secondary" id="kbArticlePermBtn" style="display:none;" onclick="openArticlePermModal()"><span class="kb-act-icon" aria-hidden="true">🔒</span><span class="kb-act-label"><?php echo htmlspecialchars(t('knowledge.perm.manage')); ?></span></button>
+                        <button class="btn btn-primary" onclick="editCurrentArticle()"><span class="kb-act-icon" aria-hidden="true">✏️</span><span class="kb-act-label"><?php echo htmlspecialchars(t('knowledge.detail.edit')); ?></span></button>
+                        <button class="btn btn-danger" onclick="deleteCurrentArticle()"><span class="kb-act-icon" aria-hidden="true">🗑️</span><span class="kb-act-label"><?php echo htmlspecialchars(t('knowledge.detail.archive')); ?></span></button>
                     </div>
                 </div>
                 <div class="article-content" id="articleContent"></div>
@@ -162,7 +235,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                                 </div>
                                 <div class="form-group tag-form-group" style="flex: 1;">
                                     <div class="tag-label-row">
-                                        <label class="form-label"><?php echo htmlspecialchars(t('knowledge.editor.field_tags')); ?> <small style="display: inline; margin-top: 0; font-weight: normal; color: #888;"><?php echo htmlspecialchars(t('knowledge.editor.tags_hint')); ?></small></label>
+                                        <label class="form-label"><?php echo htmlspecialchars(t('knowledge.editor.field_tags')); ?> <small style="display: inline; margin-top: 0; font-weight: normal; color: var(--text-dim, #888);"><?php echo htmlspecialchars(t('knowledge.editor.tags_hint')); ?></small></label>
                                         <div class="selected-tags" id="selectedTags"></div>
                                     </div>
                                     <div class="tag-input-container">
@@ -183,11 +256,69 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                                     <input type="date" class="form-input" id="articleReviewDate">
                                 </div>
                             </div>
+                            <div class="form-row" style="display: flex; gap: 20px;">
+                                <!-- Who can see this. Always shown: it is orthogonal to
+                                     multi-company, and on a single-company install it is
+                                     still the only thing between an internal runbook and
+                                     an anonymous web chat visitor. -->
+                                <div class="form-group" style="flex: 1;">
+                                    <label class="form-label"><?php echo htmlspecialchars(t('knowledge.editor.field_audience')); ?></label>
+                                    <!-- TWO choices plus an opt-in, not three choices.
+                                         Reaching the open internet is a different KIND of
+                                         decision from the other two, and as the third item
+                                         in a dropdown it looked like their peer. As a
+                                         tickbox it looks like what it is: a deliberate act.
+                                         The stored value is unchanged — ticked means
+                                         audience='public'. See knowledge.js. -->
+                                    <select class="form-input" id="articleAudience">
+                                        <option value="internal"><?php echo htmlspecialchars(t('knowledge.editor.audience_internal')); ?></option>
+                                        <option value="customer"><?php echo htmlspecialchars(t('knowledge.editor.audience_customer')); ?></option>
+                                    </select>
+                                    <label class="kb-audience-public" for="articleAudiencePublic">
+                                        <input type="checkbox" id="articleAudiencePublic" onchange="updateAudienceHint()">
+                                        <span><?php echo htmlspecialchars(t('knowledge.editor.audience_public_toggle')); ?></span>
+                                    </label>
+                                    <!-- Which channels that actually reaches, shown only when
+                                         ticked. Separate from the label on purpose: the label
+                                         states the consequence and never changes, this names
+                                         today's channels and gets updated as they are added. -->
+                                    <small class="field-hint" id="audiencePublicChannels" style="display:none;"><?php echo htmlspecialchars(t('knowledge.editor.audience_public_channels')); ?></small>
+                                    <small class="field-hint" id="audienceHint"></small>
+                                </div>
+                                <!-- Which folder it is filed in. One folder, never
+                                     several — see the design page. -->
+                                <div class="form-group" style="flex: 1;">
+                                    <label class="form-label"><?php echo htmlspecialchars(t('knowledge.editor.field_folder')); ?></label>
+                                    <select class="form-input" id="articleFolder">
+                                        <option value=""><?php echo htmlspecialchars(t('knowledge.folders.root')); ?></option>
+                                    </select>
+                                    <small class="field-hint"><?php echo htmlspecialchars(t('knowledge.editor.folder_hint')); ?></small>
+                                </div>
+                                <!-- Company. Hidden unless the install has more than one
+                                     (the isMultiTenant mirror) — invisible at N=1. -->
+                                <div class="form-group" style="flex: 1; display: none;" id="articleCompanyGroup">
+                                    <label class="form-label"><?php echo htmlspecialchars(t('knowledge.editor.field_company')); ?></label>
+                                    <select class="form-input" id="articleCompany">
+                                        <option value=""><?php echo htmlspecialchars(t('knowledge.editor.company_shared')); ?></option>
+                                    </select>
+                                    <small class="field-hint"><?php echo htmlspecialchars(t('knowledge.editor.company_hint')); ?></small>
+                                </div>
+                            </div>
                         </div>
                         <div class="editor-content">
                             <div class="form-group">
                                 <textarea id="articleBody"></textarea>
                             </div>
+                        </div>
+                        <!-- Attached documents. This is where adding and removing
+                             them lives; the article page itself only LISTS them.
+                             Hidden until the article exists, because an
+                             attachment needs something to attach to. -->
+                        <div class="editor-documents" id="kbEditorDocumentsWrap">
+                            <div id="kbEditorDocuments"></div>
+                            <?php if ($showDomains): ?><div id="kbEditorDomains" style="margin-top:16px;"></div><?php endif; ?>
+                            <div id="kbEditorProjects" style="margin-top:16px;"></div>
+                            <p class="field-hint" id="kbEditorDocumentsHint" style="display:none;"><?php echo htmlspecialchars(t('knowledge.editor.documents_after_save')); ?></p>
                         </div>
                     </div>
                 </div>
@@ -195,12 +326,150 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                     <button class="btn btn-secondary" onclick="cancelEdit()"><?php echo htmlspecialchars(t('knowledge.editor.cancel')); ?></button>
                     <button class="btn btn-primary" onclick="saveArticle()"><?php echo htmlspecialchars(t('knowledge.editor.save')); ?></button>
                     <button class="btn btn-primary" id="btnSaveAsVersion" onclick="saveAsNewVersion()" style="display:none;"><?php echo htmlspecialchars(t('knowledge.editor.version')); ?></button>
+                    <!-- Just the editor, nothing else (desktop only - hidden on a phone in knowledge.css). -->
+                    <button class="btn btn-secondary kb-fullscreen-btn" onclick="kbEditorFullScreen()" title="<?php echo htmlspecialchars(t('knowledge.editor.fullscreen_title')); ?>"><?php echo htmlspecialchars(t('knowledge.editor.fullscreen')); ?></button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Share Email Modal -->
+    <!-- Every tag on one article, from the "+N more" pill on a card. A dialog
+         rather than expanding the pill in place: expanding reflows the card,
+         which re-rags the grid the cap exists to keep even, and leaves no way to
+         put it back. -->
+    <div class="modal" id="kbTagsModal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3 id="kbTagsModalTitle"></h3>
+            </div>
+            <div class="modal-body">
+                <div class="kb-tags-modal-list" id="kbTagsModalList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeTagsModal()"><?php echo htmlspecialchars(t('knowledge.modal.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Asking for a name. A real dialog rather than the browser's prompt():
+         the native one is unstyled, unbranded, says "freeitsm.internal says",
+         cannot be translated, and looks like a phishing box in the middle of an
+         otherwise finished product. -->
+    <!-- Move one article. Until now an article could only be filed by dragging
+         it or right-clicking it in the LIST - so from the article's own page,
+         which is where you are when you notice it is in the wrong place, there
+         was no way to move it at all. -->
+    <div class="modal" id="kbMoveModal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3><?php echo htmlspecialchars(t('knowledge.move.title')); ?></h3>
+            </div>
+            <div class="modal-body">
+                <select class="form-input" id="kbMoveFolder"></select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="kbCloseMoveModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button type="button" class="btn btn-primary" onclick="kbConfirmMoveArticle()"><?php echo htmlspecialchars(t('knowledge.bulk.move')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="kbPromptModal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3 id="kbPromptTitle"></h3>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="form-input" id="kbPromptInput" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="kbPromptCancel()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button type="button" class="btn btn-primary" id="kbPromptOk" onclick="kbPromptAccept()"><?php echo htmlspecialchars(t('knowledge.editor.save')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Everything carrying its own permissions rather than its parent's.
+         An exception is invisible from the tree, so without a list of them the
+         count only goes up and nobody can audit it. -->
+    <div class="modal" id="kbExceptionsModal">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header">
+                <h3><?php echo htmlspecialchars(t('knowledge.exceptions.title')); ?></h3>
+            </div>
+            <div class="modal-body">
+                <p class="field-hint"><?php echo htmlspecialchars(t('knowledge.exceptions.hint')); ?></p>
+                <div class="kb-perm-list" id="kbExceptionsList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeExceptionsModal()"><?php echo htmlspecialchars(t('knowledge.modal.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Who can see this folder / article.
+         A modal rather than a second tab on the left panel: the panel is 280px,
+         and a principal search plus a list of people does not read at that
+         width. The panel idiom is still open as a presentation change on top of
+         exactly this. -->
+    <div class="modal" id="kbPermModal">
+        <div class="modal-content" style="max-width: 560px;">
+            <div class="modal-header">
+                <h3 id="kbPermTitle"><?php echo htmlspecialchars(t('knowledge.perm.title')); ?></h3>
+            </div>
+            <div class="modal-body">
+                <label class="kb-perm-row" for="kbPermInherit">
+                    <input type="checkbox" id="kbPermInherit" onchange="permSetMode()">
+                    <span><?php echo htmlspecialchars(t('knowledge.perm.inherit')); ?></span>
+                </label>
+                <!-- What it inherits, when it inherits: read-only, because these
+                     rules belong to the folder above and editing them here would
+                     change what OTHER things see without saying so. -->
+                <div id="kbPermInherited" style="display:none;"></div>
+                <div id="kbPermOwnRules">
+                    <label class="kb-perm-row" for="kbPermRestricted">
+                        <input type="checkbox" id="kbPermRestricted" onchange="permSetMode(true)">
+                        <span><?php echo htmlspecialchars(t('knowledge.perm.restrict')); ?></span>
+                    </label>
+                    <!-- The list heading changes with the polarity, because the list
+                         means the opposite thing in each mode and a fixed heading
+                         would be wrong half the time. -->
+                    <p class="field-hint" id="kbPermExplain"></p>
+                    <div class="kb-perm-list" id="kbPermList"></div>
+                    <div class="form-group">
+                        <input type="text" class="form-input" id="kbPermSearch"
+                               placeholder="<?php echo htmlspecialchars(t('knowledge.perm.search_placeholder')); ?>"
+                               onkeyup="permSearch()" autocomplete="off">
+                        <div class="kb-perm-results" id="kbPermResults"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePermModal()"><?php echo htmlspecialchars(t('knowledge.modal.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- The history of one folder or article. Fixed height for the same reason
+         the permissions window is: it is read repeatedly in one sitting, and a
+         box that resizes itself as it loads moves the Close button under the
+         cursor. -->
+    <div class="modal" id="kbAuditModal">
+        <div class="modal-content kb-audit-content">
+            <div class="modal-header">
+                <h3 id="kbAuditTitle"><?php echo htmlspecialchars(t('knowledge.audit.title')); ?></h3>
+            </div>
+            <div class="modal-body">
+                <p class="field-hint"><?php echo htmlspecialchars(t('knowledge.audit.hint')); ?></p>
+                <div class="kb-audit-list" id="kbAuditList"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeAuditModal()"><?php echo htmlspecialchars(t('common.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="shareEmailModal">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -241,7 +510,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
                 <h3 id="archivedArticleTitle" style="margin: 0;"></h3>
             </div>
             <div class="modal-body">
-                <div id="archivedArticleMeta" style="font-size: 13px; color: #666; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e0e0e0;"></div>
+                <div id="archivedArticleMeta" style="font-size: 13px; color: var(--text-muted, #666); margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border, #e0e0e0);"></div>
                 <div id="archivedArticleBody" class="article-content-body"></div>
             </div>
             <div class="modal-footer">
@@ -265,7 +534,7 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
         <div class="ai-chat-messages" id="aiChatMessages">
             <div class="ai-chat-welcome">
                 <p><?php echo htmlspecialchars(t('knowledge.ai.welcome')); ?></p>
-                <p style="font-size:12px; color:#999; margin-top:8px;"><?php echo htmlspecialchars(t('knowledge.ai.powered_by')); ?></p>
+                <p style="font-size:12px; color:var(--text-faint, #999); margin-top:8px;"><?php echo htmlspecialchars(t('knowledge.ai.powered_by')); ?></p>
             </div>
         </div>
         <div class="ai-chat-options">
@@ -291,19 +560,24 @@ $sidebarHoverClass = $sidebarMode === 'hover' ? ' sidebar-hover' : '';
     <!-- Link Copied Toast -->
 
     <!-- jsPDF for searchable PDF generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="../assets/js/vendor/jspdf.umd.min.js?v=4.2.1"></script>
     <script>window.API_BASE = '../api/knowledge/';</script>
-    <script src="../assets/js/knowledge.js?v=11"></script>
+    <script>window.KB_SHOW_DOMAINS = <?php echo $showDomains ? 'true' : 'false'; ?>; window.KB_SHOW_PROJECTS = <?php echo analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'projects') ? 'true' : 'false'; ?>; window.KB_BASE = <?php echo json_encode(BASE_URL); ?>;</script>
+    <script src="../assets/js/domain-links.js?v=2"></script>
+    <script src="../assets/js/project-links.js?v=1"></script>
+    <script src="../assets/js/safe-html.js?v=4"></script>   <!-- article bodies are cleaned before display -->
+    <script src="../assets/js/knowledge.js?v=65"></script>
     <!-- Prism.js for code syntax highlighting when viewing articles -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-powershell.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-batch.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-csharp.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/toolbar/prism-toolbar.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/copy-to-clipboard/prism-copy-to-clipboard.min.js"></script>
+    <script src="../assets/js/vendor/prism.min.js?v=1.30.0"></script>
+    <script src="../assets/js/vendor/prism-powershell.min.js"></script>
+    <script src="../assets/js/vendor/prism-bash.min.js"></script>
+    <script src="../assets/js/vendor/prism-batch.min.js"></script>
+    <script src="../assets/js/vendor/prism-sql.min.js"></script>
+    <script src="../assets/js/vendor/prism-python.min.js"></script>
+    <script src="../assets/js/vendor/prism-csharp.min.js"></script>
+    <script src="../assets/js/vendor/prism-json.min.js"></script>
+    <script src="../assets/js/vendor/prism-toolbar.min.js"></script>
+    <script src="../assets/js/vendor/prism-copy-to-clipboard.min.js"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 require_once '../../includes/encryption.php';
 
 header('Content-Type: application/json');
@@ -15,6 +16,12 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// Dumps every raw field vCenter returns, so it belongs to whoever administers the
+// vCenter connection — not to anyone who happens to be logged in. It had no module
+// guard at all before this.
+requireModuleAccessJson('assets');
+requireCapabilityJson(Cap::ASSETS_VCENTER);
 
 set_time_limit(300);
 
@@ -177,6 +184,10 @@ try {
 
 /**
  * Authenticate with vCenter REST API
+ *
+ * @param mixed $baseUrl  the vCenter address with scheme and no trailing slash, e.g. https://vc.example.com
+ * @param mixed $user  the vCenter user name, sent as HTTP Basic auth
+ * @param mixed $pass  that user's password, in plain text
  */
 function vcenterAuth($baseUrl, $user, $pass) {
     $ch = curl_init($baseUrl . '/api/session');
@@ -185,10 +196,9 @@ function vcenterAuth($baseUrl, $user, $pass) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
         CURLOPT_USERPWD => $user . ':' . $pass,
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
-        CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
         CURLOPT_TIMEOUT => 30
     ]);
+    sslApplyCurl($ch);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -212,6 +222,10 @@ function vcenterAuth($baseUrl, $user, $pass) {
 /**
  * Raw GET request - returns decoded JSON without unwrapping 'value' key
  * so we can see the exact API response structure
+ *
+ * @param mixed $baseUrl  the vCenter address with scheme and no trailing slash
+ * @param mixed $path  the API path to fetch, starting with a slash, e.g. /api/vcenter/vm
+ * @param mixed $sessionToken  the session id returned by vcenterAuth()
  */
 function vcenterGetRaw($baseUrl, $path, $sessionToken) {
     $ch = curl_init($baseUrl . $path);
@@ -221,10 +235,9 @@ function vcenterGetRaw($baseUrl, $path, $sessionToken) {
             'vmware-api-session-id: ' . $sessionToken,
             'Content-Type: application/json'
         ],
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
-        CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
         CURLOPT_TIMEOUT => 60
     ]);
+    sslApplyCurl($ch);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -243,6 +256,9 @@ function vcenterGetRaw($baseUrl, $path, $sessionToken) {
 
 /**
  * Logout from vCenter session
+ *
+ * @param mixed $baseUrl  the vCenter address with scheme and no trailing slash
+ * @param mixed $sessionToken  the session id returned by vcenterAuth(), ended by this call
  */
 function vcenterLogout($baseUrl, $sessionToken) {
     $ch = curl_init($baseUrl . '/api/session');
@@ -252,10 +268,9 @@ function vcenterLogout($baseUrl, $sessionToken) {
         CURLOPT_HTTPHEADER => [
             'vmware-api-session-id: ' . $sessionToken
         ],
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
-        CURLOPT_SSL_VERIFYHOST => SSL_VERIFY_PEER ? 2 : 0,
         CURLOPT_TIMEOUT => 10
     ]);
+    sslApplyCurl($ch);
     curl_exec($ch);
     curl_close($ch);
 }

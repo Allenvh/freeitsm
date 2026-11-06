@@ -1,0 +1,176 @@
+/* The action row (includes/action_row.php, discussion #185): one strip under
+   a module's header - what the page is on the left, what you can do on the
+   right, with New always at the far right. Colours are theme tokens only, and
+   the primary button takes the module's own --accent. */
+
+.action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 20px;
+    min-height: 48px;
+    box-sizing: border-box;
+    background: var(--surface-2, #fafafa);
+    border-bottom: 1px solid var(--border, #e0e0e0);
+    flex-shrink: 0;
+}
+
+.action-row-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text, #333);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.action-row-count {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-dim, #888);
+}
+/* The dash belongs to the count, so it vanishes while the count is empty. */
+.action-row-count:not(:empty)::before { content: '\2014\00a0'; }
+
+.action-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.action-row-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border, #e0e0e0);
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.action-row-btn:hover { border-color: var(--accent, #0078d4); color: var(--accent, #0078d4); }
+
+.action-row-btn-primary {
+    background: var(--accent, #0078d4);
+    border-color: var(--accent, #0078d4);
+    color: var(--on-accent, #fff);
+}
+.action-row-btn-primary:hover {
+    background: var(--accent-hover, #005a9e);
+    border-color: var(--accent-hover, #005a9e);
+    color: var(--on-accent, #fff);
+}
+.action-row-btn:active { transform: scale(0.97); }
+/* display: inline-flex above would otherwise beat the hidden attribute. */
+.action-row-btn[hidden] { display: none; }
+.action-row-btn:disabled,
+.action-row-btn:disabled:hover {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+.action-row-btn-primary:disabled:hover { background: var(--accent, #0078d4); border-color: var(--accent, #0078d4); }
+.action-row-btn:not(.action-row-btn-primary):disabled:hover { border-color: var(--border, #e0e0e0); color: var(--text, #333); }
+
+/* A search box in the row (the 'extra' option) for a page without its own
+   .search-box style - CMDB. */
+.action-row-search {
+    padding: 7px 12px;
+    width: 240px;
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 4px;
+    font: inherit;
+    font-size: 13px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+}
+.action-row-search:focus { outline: none; border-color: var(--accent, #0078d4); }
+
+/* The row sits between the header and the page's panes, so the panes take
+   whatever height is left - the same column body the Tickets inbox already
+   uses (inbox.css, body.inbox-page) - instead of each page's calc(100vh - N).
+   Phones already have this column body (mobile.css LAYER 2). */
+@media (min-width: 769px) {
+    body:has(> .action-row) {
+        display: flex;
+        flex-direction: column;
+    }
+    body:has(> .action-row) > .header { flex-shrink: 0; }
+    /* The other page containers are the register pages' own (#185): CMDB,
+       Domains and Contracts each had a calc(100vh - N) of their own. */
+    body:has(> .action-row) > .main-container,
+    body:has(> .action-row) > .dt-page,
+    body:has(> .action-row) > .browse-container,
+    body:has(> .action-row) > .dom-layout,
+    body:has(> .action-row) > .contracts-layout,
+    body:has(> .action-row) > .changes-container,
+    body:has(> .action-row) > .calendar-container,
+    body:has(> .action-row) > .pm-container,
+    body:has(> .action-row) > .tasks-container,
+    body:has(> .action-row) > .knowledge-container,
+    body:has(> .action-row) > .chk-layout,
+    body:has(> .action-row) > .pm-layout,
+    body:has(> .action-row) > .forms-list-container,
+    body:has(> .action-row) > .lms-container,
+    body:has(> .action-row) > .nm-page,
+    body:has(> .action-row) > .prj-layout,
+    body:has(> .action-row) > .status-layout,
+    body:has(> .action-row) > .wr-container {
+        height: auto;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
+/* Phones: the row stays outside every pane and sheet, so New is never tucked
+   inside a Filters panel. Anything extra (a search box) drops to a line of its
+   own at full width, at 16px so iOS does not zoom on focus. */
+@media (max-width: 768px) {
+    .action-row {
+        padding: 8px 12px;
+        gap: 8px 10px;
+        flex-wrap: wrap;
+    }
+    /* The buttons and any extra join the row itself, so New stays on the
+       title's line and a search box takes the line below. */
+    .action-row-actions { display: contents; }
+    .action-row-title { flex: 1 1 0; }
+    .action-row-btn { order: 2; min-height: 40px; padding: 8px 14px; }
+    /* Any other buttons (Domains' Paste list and Import CSV) share a line of
+       their own below, so the title keeps its count and New stays beside it.
+       The ::after is the line break - only drawn when there are such buttons. */
+    .action-row:has(> .action-row-actions > .action-row-btn:not(.action-row-btn-primary))::after {
+        content: '';
+        order: 3;
+        flex-basis: 100%;
+        height: 0;
+    }
+    .action-row-btn:not(.action-row-btn-primary) {
+        order: 4;
+        flex: 1 1 0;
+        justify-content: center;
+    }
+    .action-row-actions > input,
+    .action-row-actions > .search-box,
+    .action-row-actions > .action-row-search {
+        order: 3;
+        flex: 1 1 100%;
+        width: 100%;
+        font-size: 16px;
+        min-height: 44px;
+    }
+}

@@ -4,14 +4,25 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 require_once '../../includes/ai_settings_panel.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../../login.php');
+    header('Location: ../../auth/login.php');
     exit;
 }
+require_once '../../includes/settings_manifest.php';
+requireModuleAccess('cmdb');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered.
+$settingsManifest = settingsManifestFor('cmdb');
+$visibleTabs      = settingsVisibleTabs(connectToDatabase(), (int) $_SESSION['analyst_id'], $settingsManifest);
+$activeTabId      = settingsFirstTabId($visibleTabs);
 
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 $current_page = 'settings';
@@ -19,31 +30,35 @@ $path_prefix = '../../';
 $translationNamespaces = ['common', 'cmdb'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FreeITSM - <?php echo htmlspecialchars(t('cmdb.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('cmdb', t('cmdb.nav.settings'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <style>
-        body { background: #f5f5f5; --accent: #be185d; }
+        body { background: var(--app-bg,#f5f5f5); --accent: var(--cmdb-accent); }
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 24px 0; padding: 0 20px; }
         /* Tabs + tab-content come from inbox.css (canonical). Only the
            module-accent colour is overridden here so the active tab + hover
            read as CMDB-magenta. */
-        .tab:hover { color: #be185d; }
-        .tab.active { color: #be185d; border-bottom-color: #be185d; }
+        .tab:hover { color: var(--cmdb-accent,#be185d); }
+        .tab.active { color: var(--cmdb-accent,#be185d); border-bottom-color: var(--cmdb-accent,#be185d); }
         .section-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 16px;
         }
-        .section-header h2 { font-size: 18px; color: #111827; margin: 0; }
+        .section-header h2 { font-size: 18px; color: var(--text,#111827); margin: 0; }
         .add-btn {
-            background: #be185d;
+            background: var(--cmdb-accent,#be185d);
             color: white;
             border: none;
             padding: 8px 16px;
@@ -52,7 +67,7 @@ $translationNamespaces = ['common', 'cmdb'];
             font-weight: 500;
             font-size: 13px;
         }
-        .add-btn:hover { background: #9d174d; }
+        .add-btn:hover { background: var(--cmdb-accent-hover,#9d174d); }
 
         table { width: 100%; border-collapse: collapse; }
         thead th {
@@ -60,17 +75,17 @@ $translationNamespaces = ['common', 'cmdb'];
             padding: 10px 12px;
             font-size: 12px;
             text-transform: uppercase;
-            color: #6b7280;
-            border-bottom: 1px solid #e5e7eb;
+            color: var(--text-muted,#6b7280);
+            border-bottom: 1px solid var(--border,#e5e7eb);
             font-weight: 600;
         }
-        tbody td { padding: 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #1f2937; }
-        tbody tr:hover { background: #fafafa; }
+        tbody td { padding: 12px; border-bottom: 1px solid var(--border-soft,#f3f4f6); font-size: 14px; color: var(--text,#1f2937); }
+        tbody tr:hover { background: var(--surface-2,#fafafa); }
 
         .action-btn {
             background: none;
-            border: 1px solid #ddd;
-            color: #666;
+            border: 1px solid var(--border,#ddd);
+            color: var(--text-muted,#666);
             cursor: pointer;
             padding: 6px;
             margin-right: 4px;
@@ -79,7 +94,8 @@ $translationNamespaces = ['common', 'cmdb'];
             align-items: center;
             justify-content: center;
         }
-        .action-btn:hover { background: #fdf2f8; border-color: #be185d; color: #be185d; }
+        .action-btn:hover { background: #fdf2f8; border-color: var(--cmdb-accent,#be185d); color: var(--cmdb-accent,#be185d); }
+        [data-theme-mode="dark"] .action-btn:hover { background: rgba(190,24,93,0.18); }
         .action-btn.delete { color: #d13438; }
         .action-btn.delete:hover { background: #fdf3f3; border-color: #d13438; color: #a00; }
         .action-btn svg { width: 14px; height: 14px; }
@@ -89,13 +105,14 @@ $translationNamespaces = ['common', 'cmdb'];
             padding: 2px 8px;
             font-size: 12px;
             border-radius: 999px;
-            background: #f3f4f6;
-            color: #374151;
+            background: var(--surface-3, #f3f4f6);
+            color: var(--text, #374151);
         }
         .badge.active { background: #dcfce7; color: #166534; }
         .badge.inactive { background: #fee2e2; color: #991b1b; }
         .badge.clickable { cursor: pointer; }
-        .badge.clickable:hover { background: #fce7f3; color: #be185d; }
+        .badge.clickable:hover { background: #fce7f3; color: var(--cmdb-accent, #be185d); }
+        [data-theme-mode="dark"] .badge.clickable:hover { background: rgba(190, 24, 93, 0.18); }
         .badge.type { background: #ede9fe; color: #6d28d9; font-family: 'Consolas', monospace; }
 
         /* Modal sizing — base modal / form / .btn / .btn-secondary CSS lives in
@@ -107,17 +124,17 @@ $translationNamespaces = ['common', 'cmdb'];
         .form-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
         .form-check input[type="checkbox"] { width: auto; }
 
-        .btn-primary { background: #be185d; color: white; }
-        .btn-primary:hover { background: #9d174d; }
+        .btn-primary { background: var(--cmdb-accent,#be185d); color: white; }
+        .btn-primary:hover { background: var(--cmdb-accent-hover,#9d174d); }
         .btn-test { background: #6b7280; color: white; }
         .btn-test:hover { background: #4b5563; }
 
-        .empty-row { text-align: center; padding: 30px; color: #9ca3af; font-style: italic; }
-        .key-hint { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: #6b7280; }
+        .empty-row { text-align: center; padding: 30px; color: var(--text-dim,#9ca3af); font-style: italic; }
+        .key-hint { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: var(--text-muted,#6b7280); }
 
         .test-result { margin-top: 16px; padding: 10px 14px; border-radius: 4px; font-size: 13px; display: none; }
-        .test-result.success { background: #dcfce7; color: #166534; display: block; }
-        .test-result.error { background: #fee2e2; color: #991b1b; display: block; }
+        .test-result.success { background: var(--success-bg,#dcfce7); color: var(--success-text,#166534); display: block; }
+        .test-result.error { background: var(--danger-bg,#fee2e2); color: var(--danger-text,#991b1b); display: block; }
 
         /* AI tab: two-column form so Custom instructions sits next to API key + Model
            and gets vertical room for a longer textarea without scrolling the page. */
@@ -153,10 +170,10 @@ $translationNamespaces = ['common', 'cmdb'];
         /* AI Suggest modal */
         .ai-stage { display: none; }
         .ai-stage.active { display: block; }
-        .ai-loading { padding: 40px; text-align: center; color: #6b7280; font-size: 14px; }
+        .ai-loading { padding: 40px; text-align: center; color: var(--text-muted,#6b7280); font-size: 14px; }
         .ai-loading .spinner-dot {
             display: inline-block; width: 8px; height: 8px; margin: 0 3px;
-            background: #be185d; border-radius: 50%; animation: aiblink 1.4s infinite both;
+            background: var(--cmdb-accent,#be185d); border-radius: 50%; animation: aiblink 1.4s infinite both;
         }
         .ai-loading .spinner-dot:nth-child(2) { animation-delay: 0.2s; }
         .ai-loading .spinner-dot:nth-child(3) { animation-delay: 0.4s; }
@@ -166,51 +183,54 @@ $translationNamespaces = ['common', 'cmdb'];
             margin-bottom: 18px;
             padding: 14px;
             background: #fdf2f8;
-            border-left: 3px solid #be185d;
+            border-left: 3px solid var(--cmdb-accent,#be185d);
             border-radius: 0 4px 4px 0;
         }
-        .ai-question label { font-weight: 500; color: #1f2937; display: block; margin-bottom: 6px; font-size: 14px; }
-        .ai-question .examples { color: #6b7280; font-size: 12px; font-style: italic; margin-bottom: 8px; }
-        .ai-question input { width: 100%; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 13px; }
-        .ai-question input:focus { outline: none; border-color: #be185d; }
+        [data-theme-mode="dark"] .ai-question { background: rgba(190,24,93,0.14); }
+        .ai-question label { font-weight: 500; color: var(--text,#1f2937); display: block; margin-bottom: 6px; font-size: 14px; }
+        .ai-question .examples { color: var(--text-muted,#6b7280); font-size: 12px; font-style: italic; margin-bottom: 8px; }
+        .ai-question input { width: 100%; padding: 8px 10px; border: 1px solid var(--border,#e5e7eb); border-radius: 4px; font-size: 13px; }
+        .ai-question input:focus { outline: none; border-color: var(--cmdb-accent,#be185d); }
 
         .ai-suggestion {
             display: flex;
             gap: 12px;
             padding: 12px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--border,#e5e7eb);
             border-radius: 6px;
             margin-bottom: 8px;
             transition: background 0.15s;
         }
-        .ai-suggestion:hover { background: #fafafa; }
-        .ai-suggestion input[type="checkbox"] { margin-top: 4px; flex-shrink: 0; transform: scale(1.2); accent-color: #be185d; }
+        .ai-suggestion:hover { background: var(--surface-2,#fafafa); }
+        .ai-suggestion input[type="checkbox"] { margin-top: 4px; flex-shrink: 0; transform: scale(1.2); accent-color: var(--cmdb-accent,#be185d); }
         .ai-suggestion .sug-body { flex: 1; min-width: 0; }
         .ai-suggestion .sug-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
-        .ai-suggestion .sug-label { font-weight: 600; color: #1f2937; font-size: 14px; }
-        .ai-suggestion .sug-key { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: #6b7280; }
-        .ai-suggestion .sug-why { color: #4b5563; font-size: 13px; line-height: 1.4; margin-top: 4px; }
-        .ai-suggestion .sug-meta { color: #6b7280; font-size: 12px; margin-top: 4px; }
+        .ai-suggestion .sug-label { font-weight: 600; color: var(--text,#1f2937); font-size: 14px; }
+        .ai-suggestion .sug-key { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: var(--text-muted,#6b7280); }
+        .ai-suggestion .sug-why { color: var(--text-muted,#4b5563); font-size: 13px; line-height: 1.4; margin-top: 4px; }
+        .ai-suggestion .sug-meta { color: var(--text-muted,#6b7280); font-size: 12px; margin-top: 4px; }
     </style>
+    <!-- Mobile layer: after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<!-- 🔑 data-mobile-page="settings" is the FOURTH part of opting a settings screen
+     in, and the one that is silent when missing: the entire shared settings layer
+     is keyed on it. Two modules have shipped without it and gone on squeezing a
+     five-column table (Techniques, "Opting a page in has THREE parts, not two"). -->
+<body data-mobile-module="cmdb" data-mobile-page="settings">
     <?php include '../includes/header.php'; ?>
 
     <div class="container">
-        <div class="tabs">
-            <button class="tab active" data-tab="classes" onclick="switchTab('classes')"><?php echo htmlspecialchars(t('cmdb.settings.tab_classes')); ?></button>
-            <button class="tab" data-tab="relationship-types" onclick="switchTab('relationship-types')"><?php echo htmlspecialchars(t('cmdb.settings.tab_rel_types')); ?></button>
-            <button class="tab" data-tab="ai" onclick="switchTab('ai')"><?php echo htmlspecialchars(t('cmdb.settings.tab_ai')); ?></button>
-            <button class="tab" data-tab="left-panel" onclick="switchTab('left-panel')"><?php echo htmlspecialchars(t('common.left_panel.tab')); ?></button>
-        </div>
+        <?php renderSettingsTabBar($visibleTabs, $activeTabId); ?>
 
         <!-- Classes Tab -->
-        <div class="tab-content active" id="classes-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'classes')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'classes' ? ' active' : ''; ?>" id="classes-tab" data-capability="<?php echo capKey(Cap::CMDB_CLASSES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('cmdb.settings.classes_heading')); ?></h2>
                 <button class="add-btn" onclick="openClassModal()"><?php echo htmlspecialchars(t('cmdb.settings.add')); ?></button>
             </div>
-            <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px; max-width: 720px;">
+            <p style="color: var(--text-muted,#6b7280); font-size: 13px; margin-bottom: 16px; max-width: 720px;">
                 <?php echo t('cmdb.settings.classes_intro'); ?>
             </p>
             <table>
@@ -232,12 +252,15 @@ $translationNamespaces = ['common', 'cmdb'];
         </div>
 
         <!-- Relationship Types Tab -->
-        <div class="tab-content" id="relationship-types-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'relationship-types')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'relationship-types' ? ' active' : ''; ?>" id="relationship-types-tab" data-capability="<?php echo capKey(Cap::CMDB_RELATIONSHIP_TYPES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('cmdb.settings.rel_types_heading')); ?></h2>
                 <button class="add-btn" onclick="openRelTypeModal()"><?php echo htmlspecialchars(t('cmdb.settings.add')); ?></button>
             </div>
-            <p style="color: #6b7280; font-size: 13px; margin-bottom: 16px; max-width: 720px;">
+            <p style="color: var(--text-muted,#6b7280); font-size: 13px; margin-bottom: 16px; max-width: 720px;">
                 <?php echo t('cmdb.settings.rel_types_intro'); ?>
             </p>
             <table>
@@ -246,26 +269,80 @@ $translationNamespaces = ['common', 'cmdb'];
                         <th><?php echo htmlspecialchars(t('cmdb.settings.col_verb')); ?></th>
                         <th><?php echo htmlspecialchars(t('cmdb.settings.col_inverse_verb')); ?></th>
                         <th><?php echo htmlspecialchars(t('cmdb.settings.col_description')); ?></th>
+                        <th><?php echo htmlspecialchars(t('cmdb.settings.col_impact')); ?></th>
                         <th><?php echo htmlspecialchars(t('cmdb.settings.col_order')); ?></th>
                         <th><?php echo htmlspecialchars(t('cmdb.settings.col_active')); ?></th>
                         <th style="width: 130px;"><?php echo htmlspecialchars(t('cmdb.settings.col_actions')); ?></th>
                     </tr>
                 </thead>
                 <tbody id="relTypesTableBody">
-                    <tr><td colspan="6" class="empty-row"><?php echo htmlspecialchars(t('cmdb.settings.loading')); ?></td></tr>
+                    <tr><td colspan="7" class="empty-row"><?php echo htmlspecialchars(t('cmdb.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
 
+        <?php endif; ?>
+
+        <?php /* GH #199 Part C: what impact analysis assumes about members with no recorded state. */ ?>
+        <?php if (settingsTabVisible($visibleTabs, 'impact')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'impact' ? ' active' : ''; ?>" id="impact-tab" data-capability="<?php echo capKey(Cap::CMDB_IMPACT); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('cmdb.settings.impact_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted,#6b7280); font-size: 13px; margin-bottom: 16px; max-width: 720px;">
+                <?php echo htmlspecialchars(t('cmdb.settings.impact_intro')); ?>
+            </p>
+            <form id="impactForm" onsubmit="saveImpactSettings(event)" style="max-width: 640px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px;"><?php echo htmlspecialchars(t('cmdb.settings.impact_unknown_label')); ?></label>
+                <label style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; cursor: pointer;">
+                    <input type="radio" name="impactUnknown" value="assume" style="margin-top: 3px;">
+                    <span><strong><?php echo htmlspecialchars(t('cmdb.settings.impact_unknown_assume')); ?></strong><br><small style="color: var(--text-muted,#6b7280);"><?php echo htmlspecialchars(t('cmdb.settings.impact_unknown_assume_hint')); ?></small></span>
+                </label>
+                <label style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; cursor: pointer;">
+                    <input type="radio" name="impactUnknown" value="unknown" style="margin-top: 3px;">
+                    <span><strong><?php echo htmlspecialchars(t('cmdb.settings.impact_unknown_unknown')); ?></strong><br><small style="color: var(--text-muted,#6b7280);"><?php echo htmlspecialchars(t('cmdb.settings.impact_unknown_unknown_hint')); ?></small></span>
+                </label>
+                <div style="margin-top: 12px;">
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('cmdb.settings.asset_card_save')); ?></button>
+                </div>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <?php /* GH #201: which details of a linked asset a CI's Asset card shows. */ ?>
+        <?php if (settingsTabVisible($visibleTabs, 'asset-card')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'asset-card' ? ' active' : ''; ?>" id="asset-card-tab" data-capability="<?php echo capKey(Cap::CMDB_ASSET_CARD); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('cmdb.settings.asset_card_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted,#6b7280); font-size: 13px; margin-bottom: 16px; max-width: 720px;">
+                <?php echo htmlspecialchars(t('cmdb.settings.asset_card_intro')); ?>
+            </p>
+            <form id="assetCardForm" onsubmit="saveAssetCard(event)" style="max-width: 640px;">
+                <?php require_once '../../includes/services/asset_ci_links.php'; foreach (AssetCiLinkService::CARD_FIELDS as $cf): ?>
+                <label style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; cursor: pointer;">
+                    <input type="checkbox" name="assetCardField" value="<?php echo htmlspecialchars($cf); ?>" style="margin-top: 3px;">
+                    <span><?php echo htmlspecialchars(t('cmdb.settings.asset_card_' . $cf)); ?></span>
+                </label>
+                <?php endforeach; ?>
+                <div style="margin-top: 12px;">
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('cmdb.settings.asset_card_save')); ?></button>
+                </div>
+            </form>
+        </div>
+
         <!-- AI Integration Tab -->
-        <div class="tab-content" id="ai-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'ai')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'ai' ? ' active' : ''; ?>" id="ai-tab" data-capability="<?php echo capKey(Cap::CMDB_AI); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('cmdb.settings.ai_heading')); ?></h2>
             </div>
-            <p style="color: #555; font-size: 14px;">
+            <p style="color: var(--text-muted,#555); font-size: 14px;">
                 <?php echo t('cmdb.settings.ai_intro1'); ?>
             </p>
-            <p style="color: #555; font-size: 14px;">
+            <p style="color: var(--text-muted,#555); font-size: 14px;">
                 <?php echo htmlspecialchars(t('cmdb.settings.ai_intro2')); ?>
             </p>
 
@@ -273,9 +350,9 @@ $translationNamespaces = ['common', 'cmdb'];
             <?php renderAiSettingsPanel('cmdb_ai'); ?>
 
             <!-- CMDB-specific custom instructions, saved separately. -->
-            <form id="cmdbAiExtrasForm" onsubmit="saveCmdbAiExtras(event)" style="max-width: 640px; margin-top: 28px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+            <form id="cmdbAiExtrasForm" onsubmit="saveCmdbAiExtras(event)" style="max-width: 640px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border,#e0e0e0);">
                 <div class="form-group">
-                    <label for="aiCustomInstructions"><?php echo htmlspecialchars(t('cmdb.settings.ai_custom')); ?> <span style="color: #999; font-weight: normal;"><?php echo htmlspecialchars(t('cmdb.settings.ai_custom_optional')); ?></span></label>
+                    <label for="aiCustomInstructions"><?php echo htmlspecialchars(t('cmdb.settings.ai_custom')); ?> <span style="color: var(--text-dim,#999); font-weight: normal;"><?php echo htmlspecialchars(t('cmdb.settings.ai_custom_optional')); ?></span></label>
                     <textarea id="aiCustomInstructions" maxlength="4000"
                               placeholder="<?php echo htmlspecialchars(t('cmdb.settings.ai_custom_placeholder')); ?>"></textarea>
                     <small><?php echo htmlspecialchars(t('cmdb.settings.ai_custom_help')); ?></small>
@@ -287,26 +364,29 @@ $translationNamespaces = ['common', 'cmdb'];
         </div>
 
         <!-- Left panel tab — per-analyst preference -->
-        <div class="tab-content" id="left-panel-tab">
+        <?php endif; ?>
+
+        <!-- Left panel — per-analyst display preference; no capability. -->
+        <div class="tab-content<?php echo $activeTabId === 'left-panel' ? ' active' : ''; ?>" id="left-panel-tab" data-capability="none">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('common.left_panel.tab')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 20px;"><?php echo htmlspecialchars(t('cmdb.settings.left_panel_intro')); ?></p>
+            <p style="color: var(--text-muted,#666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('cmdb.settings.left_panel_intro')); ?></p>
 
             <form id="leftPanelForm" autocomplete="off" onsubmit="event.preventDefault();">
                 <div class="form-group">
-                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: #333;"><?php echo htmlspecialchars(t('common.left_panel.visibility')); ?></label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: var(--text,#333);"><?php echo htmlspecialchars(t('common.left_panel.visibility')); ?></label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border,#ddd); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
                         <input type="radio" name="cmdbSidebarMode" value="always" onchange="saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('common.left_panel.always')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-muted,#777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('cmdb.settings.left_panel_always_desc')); ?>
                         </span>
                     </label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border,#ddd); border-radius: 6px; cursor: pointer;">
                         <input type="radio" name="cmdbSidebarMode" value="hover" onchange="saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('common.left_panel.hover')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-muted,#777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('cmdb.settings.left_panel_hover_desc')); ?>
                         </span>
                     </label>
@@ -336,21 +416,18 @@ $translationNamespaces = ['common', 'cmdb'];
                         <input type="text" id="classKey" maxlength="100" placeholder="<?php echo htmlspecialchars(t('cmdb.settings.class_key_placeholder')); ?>">
                         <small class="key-hint"><?php echo htmlspecialchars(t('cmdb.settings.class_key_help')); ?></small>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="classDisplayOrder"><?php echo htmlspecialchars(t('cmdb.settings.class_display_order')); ?></label>
-                            <input type="number" id="classDisplayOrder" value="0">
-                        </div>
-                        <div class="form-group">
-                            <label>&nbsp;</label>
-                            <label class="toggle-label">
-                                <span class="toggle-switch">
-                                    <input type="checkbox" id="classIsActive" checked>
-                                    <span class="toggle-slider"></span>
-                                </span>
-                                <?php echo htmlspecialchars(t('cmdb.settings.class_active')); ?>
-                            </label>
-                        </div>
+                    <div class="form-group">
+                        <label for="classDisplayOrder"><?php echo htmlspecialchars(t('cmdb.settings.class_display_order')); ?></label>
+                        <input type="number" id="classDisplayOrder" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <span class="toggle-switch">
+                                <input type="checkbox" id="classIsActive" checked>
+                                <span class="toggle-slider"></span>
+                            </span>
+                            <?php echo htmlspecialchars(t('cmdb.settings.class_active')); ?>
+                        </label>
                     </div>
                 </form>
             </div>
@@ -452,6 +529,13 @@ $translationNamespaces = ['common', 'cmdb'];
                             <input type="checkbox" id="propertyIsRequired"> <?php echo htmlspecialchars(t('cmdb.settings.prop_required')); ?>
                         </label>
                     </div>
+                    <!-- Object references only: shown/hidden alongside targetClassGroup. -->
+                    <div class="form-group" id="spreadsImpactGroup" style="display: none;">
+                        <label class="form-check">
+                            <input type="checkbox" id="propertySpreadsImpact"> <?php echo htmlspecialchars(t('cmdb.settings.prop_spreads_impact')); ?>
+                        </label>
+                        <small><?php echo htmlspecialchars(t('cmdb.settings.prop_spreads_impact_help')); ?></small>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -470,33 +554,52 @@ $translationNamespaces = ['common', 'cmdb'];
                     <input type="hidden" id="relTypeId">
                     <div class="form-group">
                         <label for="relTypeVerb"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_verb')); ?></label>
-                        <input type="text" id="relTypeVerb" required maxlength="100" placeholder="<?php echo htmlspecialchars(t('cmdb.settings.rel_type_verb_placeholder')); ?>">
+                        <input type="text" id="relTypeVerb" required maxlength="100" oninput="syncRelTypeImpactOptions()" placeholder="<?php echo htmlspecialchars(t('cmdb.settings.rel_type_verb_placeholder')); ?>">
                         <small><?php echo htmlspecialchars(t('cmdb.settings.rel_type_verb_help')); ?></small>
                     </div>
                     <div class="form-group">
                         <label for="relTypeInverseVerb"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_inverse')); ?></label>
-                        <input type="text" id="relTypeInverseVerb" required maxlength="100" placeholder="<?php echo htmlspecialchars(t('cmdb.settings.rel_type_inverse_placeholder')); ?>">
+                        <input type="text" id="relTypeInverseVerb" required maxlength="100" oninput="syncRelTypeImpactOptions()" placeholder="<?php echo htmlspecialchars(t('cmdb.settings.rel_type_inverse_placeholder')); ?>">
                         <small><?php echo htmlspecialchars(t('cmdb.settings.rel_type_inverse_help')); ?></small>
                     </div>
                     <div class="form-group">
                         <label for="relTypeDescription"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_description')); ?></label>
                         <textarea id="relTypeDescription" rows="2" maxlength="500" placeholder="<?php echo htmlspecialchars(t('cmdb.settings.rel_type_description_placeholder')); ?>"></textarea>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="relTypeDisplayOrder"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_display_order')); ?></label>
-                            <input type="number" id="relTypeDisplayOrder" value="0">
-                        </div>
-                        <div class="form-group">
-                            <label>&nbsp;</label>
-                            <label class="toggle-label">
-                                <span class="toggle-switch">
-                                    <input type="checkbox" id="relTypeIsActive" checked>
-                                    <span class="toggle-slider"></span>
-                                </span>
-                                <?php echo htmlspecialchars(t('cmdb.settings.rel_type_active')); ?>
-                            </label>
-                        </div>
+                    <div class="form-group">
+                        <label for="relTypeImpactDirection"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_impact')); ?></label>
+                        <select id="relTypeImpactDirection">
+                            <!-- Option text is rewritten from the live verb fields by
+                                 syncRelTypeImpactOptions() so it always reads in the
+                                 analyst's own words. -->
+                            <option value="none"></option>
+                            <option value="to_from"></option>
+                            <option value="from_to"></option>
+                        </select>
+                        <small><?php echo htmlspecialchars(t('cmdb.settings.rel_type_impact_hint')); ?></small>
+                    </div>
+                    <?php /* GH #199 Part C: what a failure along this relationship means. */ ?>
+                    <div class="form-group">
+                        <label for="relTypeRedundancy"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_redundancy')); ?></label>
+                        <select id="relTypeRedundancy">
+                            <option value="none"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_redundancy_none')); ?></option>
+                            <option value="membership"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_redundancy_membership')); ?></option>
+                            <option value="placement"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_redundancy_placement')); ?></option>
+                        </select>
+                        <small><?php echo htmlspecialchars(t('cmdb.settings.rel_type_redundancy_hint')); ?></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="relTypeDisplayOrder"><?php echo htmlspecialchars(t('cmdb.settings.rel_type_display_order')); ?></label>
+                        <input type="number" id="relTypeDisplayOrder" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <span class="toggle-switch">
+                                <input type="checkbox" id="relTypeIsActive" checked>
+                                <span class="toggle-slider"></span>
+                            </span>
+                            <?php echo htmlspecialchars(t('cmdb.settings.rel_type_active')); ?>
+                        </label>
                     </div>
                 </form>
             </div>
@@ -529,7 +632,7 @@ $translationNamespaces = ['common', 'cmdb'];
 
                 <!-- Stage 1: questions form -->
                 <div class="ai-stage" id="aiStageQuestions">
-                    <p style="color: #4b5563; font-size: 13px; margin-bottom: 16px;">
+                    <p style="color: var(--text-muted,#4b5563); font-size: 13px; margin-bottom: 16px;">
                         <?php echo t('cmdb.ai_suggest.questions_intro'); ?>
                     </p>
                     <div id="aiQuestionsList"></div>
@@ -547,7 +650,7 @@ $translationNamespaces = ['common', 'cmdb'];
 
                 <!-- Stage 3: suggestions list -->
                 <div class="ai-stage" id="aiStageSuggestions">
-                    <p style="color: #4b5563; font-size: 13px; margin-bottom: 16px;">
+                    <p style="color: var(--text-muted,#4b5563); font-size: 13px; margin-bottom: 16px;">
                         <?php echo t('cmdb.ai_suggest.suggestions_intro'); ?>
                     </p>
                     <div id="aiSuggestionsList"></div>
@@ -562,7 +665,7 @@ $translationNamespaces = ['common', 'cmdb'];
                 <!-- Error stage -->
                 <div class="ai-stage" id="aiStageError">
                     <div style="padding: 30px; text-align: center;">
-                        <p style="color: #b91c1c; font-size: 14px; margin-bottom: 12px;" id="aiErrorMessage"></p>
+                        <p style="color: var(--danger-text,#b91c1c); font-size: 14px; margin-bottom: 12px;" id="aiErrorMessage"></p>
                         <button class="btn btn-secondary" onclick="closeAiSuggestModal()"><?php echo htmlspecialchars(t('cmdb.ai_suggest.close')); ?></button>
                     </div>
                 </div>
@@ -574,8 +677,9 @@ $translationNamespaces = ['common', 'cmdb'];
         </div>
     </div>
 
-    <script src="../../assets/js/ai-settings.js"></script>
-    <script src="../options-editor.js?v=1"></script>
-    <script src="settings.js?v=7"></script>
+    <script src="../../assets/js/ai-settings.js?v=4"></script>
+    <script src="../options-editor.js?v=3"></script>
+    <script src="settings.js?v=9"></script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

@@ -1,8 +1,12 @@
 /**
- * Tickets Calendar Styles
- * Used by tickets/calendar.php for viewing scheduled tickets.
- * Month / Week / Day views — structure mirrors itsm_calendar.css with the
- * Tickets-module blue theme (var(--accent, #0078d4)) instead of the Calendar-module orange.
+ * Tickets Calendar Styles — used by tickets/calendar.php for viewing scheduled
+ * tickets (month / week / day).
+ *
+ * The structural grid skeleton (scroll bodies, time + day columns, slots, month
+ * grid) is shared with the other calendars in assets/css/calendar-grid.css —
+ * load that FIRST. This file holds only the Tickets-specific layer: the nav
+ * chrome, the solid-accent (blue, var(--accent, #0078d4)) week/day headers, the
+ * today/weekend tints, the priority-coloured ticket pills, and the ticket modal.
  */
 
 /* Main container */
@@ -24,7 +28,7 @@
     padding: 15px 20px;
     background: var(--surface, #fff);
     border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px var(--shadow, rgba(0, 0, 0, 0.1));
     margin-bottom: 12px;
     flex-shrink: 0;
 }
@@ -103,22 +107,49 @@
     flex-grow: 1;
     background: var(--surface, #fff);
     border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px var(--shadow, rgba(0, 0, 0, 0.1));
     overflow: auto;
     min-height: 0;
 }
 
 /* ============================================================
-   Month view
+   Month view (month grid is module-specific; only the week/day inner
+   body is shared via calendar-grid.css)
    ============================================================ */
+/* minmax(0, 1fr), never plain 1fr: `1fr` means `minmax(auto, 1fr)`, so a column
+   cannot shrink below its own content and one long event title widens its day
+   while the empty ones collapse. The pills already carry text-overflow:
+   ellipsis; it never fired, because the column grew instead. */
 .month-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     height: 100%;
 }
 
-.month-header {
-    display: contents;
+.month-header { display: contents; }
+.month-body { display: contents; }
+
+.month-day {
+    border-right: 1px solid var(--border, #e0e0e0);
+    border-bottom: 1px solid var(--border, #e0e0e0);
+    padding: 6px;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface, #fff);
+    overflow: hidden;
+    /* The other half of the fix above: a grid ITEM defaults to min-width auto,
+       so allowing the track to shrink is not enough on its own. */
+    min-width: 0;
+}
+
+.month-day:nth-child(7n) { border-right: none; }
+
+.day-number {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text, #333);
+    margin-bottom: 6px;
 }
 
 .month-header-cell {
@@ -130,25 +161,6 @@
     text-transform: uppercase;
     background: var(--surface-2, #f9f9f9);
     border-bottom: 1px solid var(--border, #e0e0e0);
-}
-
-.month-body {
-    display: contents;
-}
-
-.month-day {
-    border-right: 1px solid var(--border, #e0e0e0);
-    border-bottom: 1px solid var(--border, #e0e0e0);
-    padding: 6px;
-    min-height: 100px;
-    display: flex;
-    flex-direction: column;
-    background: var(--surface, #fff);
-    overflow: hidden;
-}
-
-.month-day:nth-child(7n) {
-    border-right: none;
 }
 
 .month-day.other-month {
@@ -180,13 +192,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.day-number {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text, #333);
-    margin-bottom: 6px;
 }
 
 .day-tickets {
@@ -241,44 +246,8 @@
 }
 
 /* ============================================================
-   Week view
+   Week view — Tickets theming (solid-accent header)
    ============================================================ */
-.week-grid {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
-.week-header {
-    display: flex;
-    border-bottom: 1px solid var(--border, #e0e0e0);
-    flex-shrink: 0;
-    /* Reserve space for the scrollbar so the header columns align with
-       the scrolling body columns underneath. */
-    overflow-y: scroll;
-    scrollbar-color: transparent transparent;
-}
-
-.week-header::-webkit-scrollbar {
-    width: 17px;
-    background: transparent;
-}
-
-.week-header::-webkit-scrollbar-thumb,
-.week-header::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.week-header-time {
-    width: 60px;
-    flex-shrink: 0;
-}
-
-.week-header-days {
-    display: flex;
-    flex-grow: 1;
-}
-
 .week-header-day {
     flex: 1;
     text-align: center;
@@ -321,69 +290,12 @@
     justify-content: center;
 }
 
-.week-body {
-    display: flex;
-    flex-grow: 1;
-    overflow-y: scroll;
-    min-height: 0;
-}
-
-.week-body::-webkit-scrollbar {
-    width: 17px;
-}
-
-.week-body::-webkit-scrollbar-track {
-    background: var(--surface-2, #f5f5f5);
-}
-
-.week-body::-webkit-scrollbar-thumb {
-    background: var(--border, #ccc);
-    border-radius: 8px;
-    border: 4px solid var(--border-soft, #f5f5f5);
-}
-
-.week-body::-webkit-scrollbar-thumb:hover {
-    background: var(--text-faint, #aaa);
-}
-
-.week-time-column {
-    width: 60px;
-    flex-shrink: 0;
-}
-
-.week-time-slot-label {
-    height: 60px;
-    font-size: 11px;
-    color: var(--text-muted, #666);
-    text-align: right;
-    padding-right: 8px;
-    position: relative;
-    top: -8px;
-}
-
-.week-days-container {
-    display: flex;
-    flex-grow: 1;
-    position: relative;
-}
-
-.week-day-column {
-    flex: 1;
-    border-left: 1px solid var(--border, #e0e0e0);
-    position: relative;
-}
-
 .week-day-column.weekend {
     background: var(--surface-2, #fafafa);
 }
 
 .week-day-column.today {
     background: var(--accent-soft, #f5fafd);
-}
-
-.week-time-slot {
-    height: 60px;
-    border-bottom: 1px solid var(--border-soft, #f0f0f0);
 }
 
 .week-event {
@@ -425,14 +337,8 @@
 }
 
 /* ============================================================
-   Day view
+   Day view — Tickets theming (solid-accent header)
    ============================================================ */
-.day-grid {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
-
 .day-header {
     display: flex;
     border-bottom: 1px solid var(--border, #e0e0e0);
@@ -456,47 +362,6 @@
     font-size: 14px;
     opacity: 0.85;
     margin-top: 4px;
-}
-
-.day-body {
-    display: flex;
-    flex-grow: 1;
-    overflow-y: scroll;
-    min-height: 0;
-}
-
-.day-body::-webkit-scrollbar {
-    width: 17px;
-}
-
-.day-body::-webkit-scrollbar-track {
-    background: var(--surface-2, #f5f5f5);
-}
-
-.day-body::-webkit-scrollbar-thumb {
-    background: var(--border, #ccc);
-    border-radius: 8px;
-    border: 4px solid var(--border-soft, #f5f5f5);
-}
-
-.day-body::-webkit-scrollbar-thumb:hover {
-    background: var(--text-faint, #aaa);
-}
-
-.day-time-column {
-    width: 60px;
-    flex-shrink: 0;
-}
-
-.day-events-column {
-    flex-grow: 1;
-    border-left: 1px solid var(--border, #e0e0e0);
-    position: relative;
-}
-
-.day-time-slot {
-    height: 60px;
-    border-bottom: 1px solid var(--border-soft, #f0f0f0);
 }
 
 .day-event {
@@ -539,7 +404,7 @@
 }
 
 /* ============================================================
-   Modal (unchanged from original)
+   Ticket detail modal
    ============================================================ */
 .modal {
     position: fixed;
@@ -561,7 +426,7 @@
 .modal-content {
     background: var(--surface, #fff);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 10px 40px var(--shadow, rgba(0, 0, 0, 0.2));
     width: 500px;
     max-width: 90vw;
 }
@@ -681,4 +546,165 @@
 [data-theme="dark"] .week-header-day,
 [data-theme="dark"] .day-header {
     box-shadow: inset 0 0 0 2000px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Whose work: Mine / Everyone, and the owner legend (#1162) ──────────────
+   The scope toggle reuses .view-toggle / .view-btn wholesale — it is the same
+   kind of control as the view switcher sitting next to it, so it should not be
+   a second thing that looks nearly the same. Only the gap between the two
+   groups is new. */
+.calendar-header .scope-toggle {
+    margin-right: 10px;
+}
+
+/* The two toggles share the right-hand side of the header. */
+.calendar-header > .view-toggle:first-of-type {
+    margin-left: auto;
+}
+
+/* Legend of who is on screen. Only rendered in Everyone — in Mine every ticket
+   belongs to the person reading it, so a one-entry legend would be noise. */
+.owner-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    align-items: center;
+    padding: 8px 20px;
+    margin-bottom: 12px;
+    background: var(--surface, #fff);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px var(--shadow, rgba(0, 0, 0, 0.1));
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    flex-shrink: 0;
+}
+
+.owner-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+/* A filled block, because in Everyone the owner colour is the event's FILL —
+   the swatch should be a sample of what you actually see on the grid, not a
+   thin bar it no longer resembles. */
+.owner-legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* An all-day ticket is a slim bar at the top of its day rather than a
+   full-height column (see scheduledBlockHeight). At 22px the stacked
+   title-over-time layout has nowhere to go, so they sit on one line. */
+.week-event.is-allday,
+.day-event.is-allday {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.week-event.is-allday .week-event-title,
+.day-event.is-allday .day-event-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.week-event.is-allday .week-event-time,
+.day-event.is-allday .day-event-time {
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+/* ─── Reschedule in place (#1163) ────────────────────────────────────────────
+   The calendar detail modal was read-only; clicking an entry and being unable
+   to move it is not what a calendar leads anyone to expect. Same fields as the
+   inbox's Schedule modal, laid out for the narrower dialog. */
+.cal-reschedule {
+    padding: 0 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.cal-reschedule-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.cal-reschedule label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    flex: 1 1 140px;
+}
+
+/* All day is a checkbox, so its caption belongs beside it, not above. */
+.cal-reschedule label.cal-allday {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-end;
+    padding-bottom: 8px;
+    flex: 0 0 auto;
+}
+
+.cal-reschedule input[type="date"],
+.cal-reschedule input[type="time"],
+.cal-reschedule select {
+    padding: 7px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font-size: 13px;
+    font-family: inherit;
+}
+
+/* Pushes the destructive + primary actions away from Close / Open in Inbox, so
+   Clear schedule is never the button you hit reaching for Close. */
+.modal-footer-spacer {
+    flex: 1 1 auto;
+}
+
+/* --danger-accent is a real token; a bare --danger is NOT (theme.css). */
+.btn-danger {
+    background: var(--danger-accent, #d13438);
+    color: #fff;
+}
+
+.btn-danger:hover {
+    filter: brightness(1.08);
+}
+
+/* ─── Drag to reschedule (#1166) ─────────────────────────────────────────────
+   grab/grabbing so it is discoverable: an event you can move should say so
+   before you try, not after. */
+.calendar-ticket, .week-event, .day-event { cursor: grab; }
+.calendar-ticket:active, .week-event:active, .day-event:active { cursor: grabbing; }
+
+/* The block being dragged stays visible but recedes, so you can see the day
+   underneath it — the thing you are aiming at. */
+.calendar-ticket.is-dragging, .week-event.is-dragging, .day-event.is-dragging {
+    opacity: 0.4;
+}
+
+/* Where it would land. Deliberately a tint plus an inset outline rather than a
+   border: a border changes the box size and makes the whole grid twitch as you
+   move across it. */
+.month-day.drop-target,
+.week-day-column.drop-target,
+.day-events-column.drop-target {
+    background: var(--accent-soft, rgba(43, 136, 216, 0.14));
+    outline: 2px solid var(--accent, #2b88d8);
+    outline-offset: -2px;
 }

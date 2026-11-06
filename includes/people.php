@@ -1,0 +1,1361 @@
+<?php
+/**
+ * People (#153 step 2) — one page per person and per company.
+ *
+ * Reads only. A person is a row in `users`; a company is a row in `tenants`.
+ * Nothing here is stored: every section is read from the module that owns it,
+ * at the moment the page is opened, so nothing is copied and nothing can drift.
+ *
+ * 🔑 TWO GATES ON EVERY SECTION, AND BOTH ARE THE OWNING MODULE'S.
+ *   1. The module: a person's tickets appear only for an analyst who can open
+ *      Tickets, their courses only for one who can open the LMS, and so on.
+ *      A section the reader may not see is ABSENT from the result, not empty -
+ *      "no tickets" and "you cannot see tickets" are different answers.
+ *   2. The company: each section applies the same company rule its own module
+ *      does - tickets, assets and domains by the companies the analyst can
+ *      access, contracts by contractVisibilitySql(). The page as a whole needs
+ *      analystCanAccessUser() / analystCanAccessTenant() first; out of reach
+ *      reads exactly like "no such person".
+ *
+ * Accessible companies, not the ACTIVE one: a person page is reached by id from
+ * anywhere (a contract, a domain, search), and showing nothing because the
+ * header's company picker points elsewhere would read as "this person has no
+ * tickets". Every company shown is one the analyst may already open.
+ *
+ * SUPPLIERS AND THEIR CONTACTS (#153 step 3, #162). Shown here, not moved here:
+ * they stay in `suppliers` and `contacts`, owned and edited by Contracts, so a
+ * supplier's contact never becomes somebody who can sign in, raise a ticket or
+ * be swept up by directory sync. Contracts owns them, so their pages need
+ * Contracts as well as People (peopleCanSeeSuppliers). They have no company -
+ * they are install-wide, as in Contracts - but every section on their pages
+ * still applies its own module's company rule.
+ */
+
+require_once __DIR__ . '/tenancy.php';
+require_once __DIR__ . '/entity_links.php';
+
+const PEOPLE_SECTION_LIMIT = 50;
+
+/**
+ * " AND (<col> IN (accessible) [OR <col> IS NULL])", or '' on a single-company install.
+ *
+ * @param string $qualified  the company column to filter on, alias included, e.g. 'u.tenant_id'
+ */
+function peopleScope(PDO $conn, int $analystId, string $qualified): array
+{
+    if (!isMultiTenant($conn)) return ['', []];
+    return allAccessibleTenantsFilter($conn, $analystId, $qualified);
+}
+
+/**
+ * " AND <col> = ?" for one company - NULL counts as the Default company's.
+ *
+ * @param string $qualified  the company column to match, alias included, e.g. 't.tenant_id'
+ */
+function peopleCompanyMatch(PDO $conn, int $tenantId, string $qualified): array
+{
+    if (!isMultiTenant($conn)) return ['', []];
+    if ($tenantId === getDefaultTenantId($conn)) return [" AND ($qualified = ? OR $qualified IS NULL)", [$tenantId]];
+    return [" AND $qualified = ?", [$tenantId]];
+}
+
+/**
+ * The name to show for a person: preferred name, then display name, email, username, or #id.
+ *
+ * @param array $r  a users row - preferred_name, display_name, email, username and id are read
+ */
+function peopleName(array $r): string
+{
+    foreach (['preferred_name', 'display_name', 'email', 'username'] as $k) {
+        $v = trim((string)($r[$k] ?? ''));
+        if ($v !== '') return $v;
+    }
+    return '#' . (int)($r['id'] ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+//  Lists
+// ---------------------------------------------------------------------------
+
+/**
+ * People the analyst can see, newest-relevant first by name.
+ * @param array $f q, company (tenant id), status ('active' default | 'leavers' | 'all')
+ * @param int $limit  the most rows to return
+ */
+function peopleListRows(PDO $conn, int $analystId, array $f = [], int $limit = 200): array
+{
+    [$scope, $args] = peopleScope($conn, $analystId, 'u.tenant_id');
+    $where = '1=1' . $scope;
+    if (!empty($f['company'])) {
+        $co = (int)$f['company'];
+        if (!analystCanAccessTenant($conn, $analystId, $co)) return [];
+        [$m, $mArgs] = peopleCompanyMatch($conn, $co, 'u.tenant_id');
+        $where .= $m; $args = array_merge($args, $mArgs);
+    }
+    $status = $f['status'] ?? 'active';
+    if ($status === 'active')  $where .= ' AND u.is_active = 1';
+    if ($status === 'leavers') $where .= ' AND u.is_active = 0';
+    $q = trim((string)($f['q'] ?? ''));
+    if ($q !== '') {
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+        $where .= ' AND (u.display_name LIKE ? OR u.preferred_name LIKE ? OR u.email LIKE ? OR u.username LIKE ?
+                         OR u.job_title LIKE ? OR u.department LIKE ? OR u.employee_id LIKE ?)';
+        array_push($args, $like, $like, $like, $like, $like, $like, $like);
+    }
+    $st = $conn->prepare(
+        "SELECT u.id, u.display_name, u.preferred_name, u.email, u.username, u.job_title, u.department,
+                u.is_active, u.tenant_id, tn.name AS company_name
+           FROM users u LEFT JOIN tenants tn ON tn.id = u.tenant_id
+          WHERE $where
+          ORDER BY (COALESCE(NULLIF(u.preferred_name, ''), NULLIF(u.display_name, ''), u.email) IS NULL),
+                   COALESCE(NULLIF(u.preferred_name, ''), NULLIF(u.display_name, ''), u.email)
+          LIMIT " . (int)$limit
+    );
+    $st->execute($args);
+    // No company means the Default company, as everywhere else - say so.
+    $defaultName = isMultiTenant($conn) ? (getTenantById($conn, getDefaultTenantId($conn))['name'] ?? null) : null;
+    return array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => peopleName($r), 'email' => $r['email'],
+        'job_title' => $r['job_title'], 'department' => $r['department'],
+        'company' => $r['company_name'] ?? $defaultName, 'is_active' => (int)$r['is_active'] === 1,
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+}
+
+/** The companies this analyst can access, with how many people are in each. */
+function peopleCompanies(PDO $conn, int $analystId): array
+{
+    $default = getDefaultTenantId($conn);
+    $ids = isMultiTenant($conn) ? array_map('intval', getAccessibleTenantIds($conn, $analystId)) : [$default];
+    if (!$ids) return [];
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = $conn->prepare("SELECT id, name, is_active, is_default FROM tenants WHERE id IN ($in) ORDER BY is_default DESC, name");
+    $st->execute($ids);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    $counts = $conn->query("SELECT COALESCE(tenant_id, $default) AS t, COUNT(*) AS n FROM users WHERE is_active = 1 GROUP BY COALESCE(tenant_id, $default)")
+                   ->fetchAll(PDO::FETCH_KEY_PAIR);
+    return array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => $r['name'], 'is_active' => (int)$r['is_active'] === 1,
+        'is_default' => (int)$r['is_default'] === 1, 'people' => (int)($counts[$r['id']] ?? 0),
+    ], $rows);
+}
+
+/**
+ * The companies page's cards: peopleCompanies() plus a few figures for each.
+ *
+ * One grouped query per figure rather than companyDetail() per company. Each
+ * figure obeys the company page's own rules, so a card and the page it opens
+ * cannot disagree: a module's figure only for an analyst who can open that
+ * module (null, not 0, otherwise - "no tickets" would be a claim), limited to
+ * the companies they can access, and a record with no company counted under
+ * the Default company, as peopleCompanyMatch() does.
+ */
+function peopleCompanyCards(PDO $conn, int $analystId): array
+{
+    $cards = peopleCompanies($conn, $analystId);
+    if (!$cards) return [];
+    $default = getDefaultTenantId($conn);
+    $can = fn(string $m) => analystCanAccessModule($conn, $analystId, $m);
+    $grouped = function (string $sql, array $args) use ($conn): array {
+        $st = $conn->prepare($sql);
+        $st->execute($args);
+        $out = [];
+        foreach ($st->fetchAll(PDO::FETCH_NUM) as $r) $out[(int)$r[0]] = array_map('intval', array_slice($r, 1));
+        return $out;
+    };
+
+    $tickets = null;
+    if ($can('tickets')) {
+        [$scope, $args] = peopleScope($conn, $analystId, 't.tenant_id');
+        $tickets = $grouped(
+            "SELECT COALESCE(t.tenant_id, $default), SUM(COALESCE(ts.is_closed, 0) = 0)
+               FROM tickets t LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
+              WHERE t.deleted_datetime IS NULL $scope GROUP BY 1", $args);
+    }
+    $assets = null;
+    if ($can('assets')) {
+        [$scope, $args] = peopleScope($conn, $analystId, 'a.tenant_id');
+        $assets = $grouped("SELECT COALESCE(a.tenant_id, $default), COUNT(*) FROM assets a WHERE 1=1 $scope GROUP BY 1", $args);
+    }
+
+    // Everyone, leavers included: the company page's People figure counts its
+    // list, which shows leavers (marked). peopleCompanies() counts current only.
+    $everyone = $grouped("SELECT COALESCE(tenant_id, $default), COUNT(*) FROM users GROUP BY 1", []);
+
+    $codes = [];
+    foreach ($conn->query("SELECT id, ticket_code FROM tenants")->fetchAll(PDO::FETCH_KEY_PAIR) as $id => $code) $codes[(int)$id] = $code;
+    $domains = [];
+    try {
+        foreach ($conn->query("SELECT tenant_id, COUNT(*) FROM tenant_domains GROUP BY tenant_id")->fetchAll(PDO::FETCH_KEY_PAIR) as $id => $n) $domains[(int)$id] = (int)$n;
+    } catch (Throwable) { /* routing domains are optional */ }
+
+    foreach ($cards as &$c) {
+        $c['people']       = $everyone[$c['id']][0] ?? 0;
+        $c['ticket_code']  = $codes[$c['id']] ?? null;
+        $c['domains']      = $domains[$c['id']] ?? 0;
+        $c['open_tickets'] = $tickets === null ? null : ($tickets[$c['id']][0] ?? 0);
+        $c['assets']       = $assets === null ? null : ($assets[$c['id']][0] ?? 0);
+    }
+    return $cards;
+}
+
+// ---------------------------------------------------------------------------
+//  One person
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything about one person this analyst may see, or null (unknown or out of reach).
+ *
+ * @param int $userId  the users id of the person
+ */
+function personDetail(PDO $conn, int $analystId, int $userId): ?array
+{
+    if ($userId <= 0 || !analystCanAccessUser($conn, $analystId, $userId)) return null;
+    require_once __DIR__ . '/cost_centre_assign.php';
+    $st = $conn->prepare(
+        "SELECT u.id, u.email, u.username, u.display_name, u.preferred_name, u.job_title, u.department,
+                u.office, u.phone, u.mobile, u.employee_id, u.manager_id, u.is_active, u.is_managed,
+                u.deactivated_datetime, u.created_at, u.tenant_id, tn.name AS company_name,
+                ap.display_name AS source_name" . costCentreSelectSql($conn, 'users', 'u') . "
+           FROM users u
+      LEFT JOIN tenants tn ON tn.id = u.tenant_id
+      LEFT JOIN auth_providers ap ON ap.id = u.auth_provider_id
+          WHERE u.id = ?"
+    );
+    $st->execute([$userId]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$u) return null;
+
+    $person = [
+        'id' => (int)$u['id'], 'name' => peopleName($u),
+        'display_name' => $u['display_name'], 'email' => $u['email'], 'username' => $u['username'],
+        'job_title' => $u['job_title'], 'department' => $u['department'], 'office' => $u['office'],
+        'phone' => $u['phone'], 'mobile' => $u['mobile'], 'employee_id' => $u['employee_id'],
+        'cost_centre' => $u['cost_centre_label'] ?: null,   // GH #160: "CODE Name"
+        'is_active' => (int)$u['is_active'] === 1, 'is_managed' => (int)$u['is_managed'] === 1,
+        'deactivated_datetime' => $u['deactivated_datetime'], 'created_at' => $u['created_at'],
+        'company_id' => $u['tenant_id'] !== null ? (int)$u['tenant_id'] : getDefaultTenantId($conn),
+        'company' => $u['company_name'] ?? (getTenantById($conn, getDefaultTenantId($conn))['name'] ?? null),
+        'source' => $u['source_name'],
+        'manager' => null, 'reports' => [],
+    ];
+    // The manager and the reports are people too: each is shown only if the
+    // reader could open THEIR page (a manager can sit in another company).
+    if ($u['manager_id'] !== null && analystCanAccessUser($conn, $analystId, (int)$u['manager_id'])) {
+        $m = $conn->prepare("SELECT id, display_name, preferred_name, email, username FROM users WHERE id = ?");
+        $m->execute([(int)$u['manager_id']]);
+        if ($mr = $m->fetch(PDO::FETCH_ASSOC)) $person['manager'] = ['id' => (int)$mr['id'], 'name' => peopleName($mr)];
+    }
+    [$rs, $rArgs] = peopleScope($conn, $analystId, 'r.tenant_id');
+    $r = $conn->prepare("SELECT r.id, r.display_name, r.preferred_name, r.email, r.username, r.is_active
+                           FROM users r WHERE r.manager_id = ? $rs
+                          ORDER BY r.is_active DESC, COALESCE(NULLIF(r.display_name, ''), r.email) LIMIT 200");
+    $r->execute(array_merge([$userId], $rArgs));
+    foreach ($r->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $person['reports'][] = ['id' => (int)$row['id'], 'name' => peopleName($row), 'is_active' => (int)$row['is_active'] === 1];
+    }
+
+    $sections = [];
+    $can = fn(string $m) => analystCanAccessModule($conn, $analystId, $m);
+    $who = ['user' => $userId];
+    if ($can('tickets'))   $sections['tickets']   = peopleTickets($conn, $analystId, $who);
+    if ($can('assets'))    $sections['assets']    = peopleAssets($conn, $analystId, $who);
+    if ($can('contracts')) $sections['contracts'] = peopleContracts($conn, $analystId, $who);
+    if ($can('domains'))   $sections['domains']   = peopleDomains($conn, $analystId, $who);
+    if ($can('lms'))       $sections['courses']   = peopleCoursesForPerson($conn, $userId);
+    if ($can('forms'))     $sections['forms']     = peopleForms($conn, $analystId, $who);
+    if ($can('projects'))  $sections['projects']  = peopleProjects($conn, $analystId, $who);
+    // 4.6.0: joining, moving, leaving - the Starters & leavers service answers for itself.
+    if ($can('starters')) {
+        require_once __DIR__ . '/starters/service.php';
+        $rows = StartersService::casesForPerson($conn, $analystId, $userId);
+        $sections['starters'] = ['rows' => $rows, 'total' => count($rows)];
+    }
+    return ['person' => $person, 'sections' => $sections];
+}
+
+// ---------------------------------------------------------------------------
+//  One company
+// ---------------------------------------------------------------------------
+
+/** Everything about one company this analyst may see, or null. */
+function companyDetail(PDO $conn, int $analystId, int $tenantId): ?array
+{
+    $multi = isMultiTenant($conn);
+    if ($tenantId <= 0) return null;
+    if ($multi && !analystCanAccessTenant($conn, $analystId, $tenantId)) return null;
+    if (!$multi && $tenantId !== getDefaultTenantId($conn)) return null;
+    $t = getTenantById($conn, $tenantId);
+    if (!$t) return null;
+
+    $domains = [];
+    try {
+        $d = $conn->prepare("SELECT domain FROM tenant_domains WHERE tenant_id = ? ORDER BY domain");
+        $d->execute([$tenantId]);
+        $domains = $d->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable) { /* routing domains are optional */ }
+
+    [$m, $mArgs] = peopleCompanyMatch($conn, $tenantId, 'u.tenant_id');
+    $cnt = $conn->prepare("SELECT SUM(u.is_active = 1), SUM(u.is_active = 0) FROM users u WHERE 1=1 $m");
+    $cnt->execute($mArgs);
+    [$active, $leavers] = array_map('intval', $cnt->fetch(PDO::FETCH_NUM) ?: [0, 0]);
+
+    $company = [
+        'id' => (int)$t['id'], 'name' => $t['name'], 'ticket_code' => $t['ticket_code'] ?? null,
+        'is_default' => (int)($t['is_default'] ?? 0) === 1, 'is_active' => (int)($t['is_active'] ?? 1) === 1,
+        'email_domains' => $domains, 'people_active' => $active, 'people_leavers' => $leavers,
+        'multi_company' => $multi,
+    ];
+
+    $sections = ['people' => peopleListRows($conn, $analystId, ['company' => $multi ? $tenantId : null, 'status' => 'all'], 500)];
+    $can = fn(string $mod) => analystCanAccessModule($conn, $analystId, $mod);
+    $who = ['company' => $tenantId];
+    if ($can('tickets'))   $sections['tickets']   = peopleTickets($conn, $analystId, $who);
+    if ($can('assets'))    $sections['assets']    = peopleAssets($conn, $analystId, $who);
+    if ($can('contracts')) $sections['contracts'] = peopleContracts($conn, $analystId, $who);
+    if ($can('domains'))   $sections['domains']   = peopleDomains($conn, $analystId, $who);
+    if ($can('lms'))       $sections['courses']   = peopleCoursesForCompany($conn, $tenantId);
+    if ($can('forms'))     $sections['forms']     = peopleForms($conn, $analystId, $who);
+    if ($can('projects'))  $sections['projects']  = peopleProjects($conn, $analystId, $who);
+    return ['company' => $company, 'sections' => $sections];
+}
+
+// ---------------------------------------------------------------------------
+//  Sections - each takes $who = ['user' => id] or ['company' => id]
+// ---------------------------------------------------------------------------
+
+/**
+ * Tickets raised by the person / in the company: the latest, and how many are open.
+ *
+ * @param array $who  ['user' => users id] for one person, or ['company' => tenant id] for a company
+ */
+function peopleTickets(PDO $conn, int $analystId, array $who): array
+{
+    [$scope, $args] = peopleScope($conn, $analystId, 't.tenant_id');
+    if (isset($who['user'])) {
+        $match = ' AND t.user_id = ?'; $mArgs = [(int)$who['user']];
+    } else {
+        [$match, $mArgs] = peopleCompanyMatch($conn, (int)$who['company'], 't.tenant_id');
+    }
+    $base = "FROM tickets t LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
+             WHERE t.deleted_datetime IS NULL $match $scope";
+    $all = array_merge($mArgs, $args);
+
+    $c = $conn->prepare("SELECT COUNT(*), SUM(COALESCE(ts.is_closed, 0) = 0) $base");
+    $c->execute($all);
+    [$total, $open] = array_map('intval', $c->fetch(PDO::FETCH_NUM) ?: [0, 0]);
+
+    $st = $conn->prepare(
+        "SELECT t.id, t.ticket_number, t.subject, t.created_datetime, ts.name AS status, ts.colour AS status_colour,
+                COALESCE(ts.is_closed, 0) AS is_closed, tp.name AS priority, a.full_name AS analyst,
+                COALESCE(NULLIF(u.display_name, ''), u.email) AS requester
+           FROM tickets t
+      LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
+      LEFT JOIN ticket_priorities tp ON tp.id = t.priority_id
+      LEFT JOIN analysts a ON a.id = t.assigned_analyst_id
+      LEFT JOIN users u ON u.id = t.user_id
+          WHERE t.deleted_datetime IS NULL $match $scope
+          ORDER BY COALESCE(ts.is_closed, 0), t.created_datetime DESC
+          LIMIT " . PEOPLE_SECTION_LIMIT
+    );
+    $st->execute($all);
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'number' => $r['ticket_number'], 'subject' => $r['subject'],
+        'created' => $r['created_datetime'], 'status' => $r['status'], 'status_colour' => $r['status_colour'],
+        'is_closed' => (int)$r['is_closed'] === 1, 'priority' => $r['priority'], 'analyst' => $r['analyst'],
+        'requester' => $r['requester'], 'url' => entityLink('ticket', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => $total, 'open' => $open, 'rows' => $rows];
+}
+
+/**
+ * Assets the person holds now / assets belonging to the company.
+ *
+ * @param array $who  ['user' => users id] for what the person holds, or ['company' => tenant id]
+ */
+function peopleAssets(PDO $conn, int $analystId, array $who): array
+{
+    [$scope, $args] = peopleScope($conn, $analystId, 'a.tenant_id');
+    $cols = "a.id, a.hostname, a.manufacturer, a.model, a.service_tag, a.asset_tag, at.name AS asset_type, ast.name AS asset_status";
+    $joins = "LEFT JOIN asset_types at ON at.id = a.asset_type_id LEFT JOIN asset_status_types ast ON ast.id = a.asset_status_id";
+    if (isset($who['user'])) {
+        $from = "FROM users_assets ua JOIN assets a ON a.id = ua.asset_id $joins WHERE ua.user_id = ? $scope";
+        $cols .= ", ua.assigned_datetime";
+        $all = array_merge([(int)$who['user']], $args);
+    } else {
+        [$match, $mArgs] = peopleCompanyMatch($conn, (int)$who['company'], 'a.tenant_id');
+        $from = "FROM assets a $joins WHERE 1=1 $match $scope";
+        $cols .= ", (SELECT COALESCE(NULLIF(hu.display_name, ''), hu.email) FROM users_assets hua JOIN users hu ON hu.id = hua.user_id WHERE hua.asset_id = a.id ORDER BY hua.id LIMIT 1) AS holder";
+        $all = array_merge($mArgs, $args);
+    }
+    $c = $conn->prepare("SELECT COUNT(*) $from");
+    $c->execute($all);
+    $total = (int)$c->fetchColumn();
+    $st = $conn->prepare("SELECT $cols $from ORDER BY at.name, a.hostname LIMIT " . PEOPLE_SECTION_LIMIT);
+    $st->execute($all);
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => $r['hostname'] ?: ($r['asset_tag'] ?: '#' . $r['id']),
+        'type' => $r['asset_type'], 'status' => $r['asset_status'],
+        'model' => trim(($r['manufacturer'] ?? '') . ' ' . ($r['model'] ?? '')), 'serial' => $r['service_tag'],
+        'tag' => $r['asset_tag'], 'assigned' => $r['assigned_datetime'] ?? null, 'holder' => $r['holder'] ?? null,
+        'url' => entityLink('asset', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => $total, 'rows' => $rows];
+}
+
+/**
+ * Contracts where the person / the company is the CUSTOMER (#153 step 1).
+ *
+ * @param array $who  ['user' => users id] or ['company' => tenant id] - the contract's customer
+ */
+function peopleContracts(PDO $conn, int $analystId, array $who): array
+{
+    require_once __DIR__ . '/contract_party.php';
+    if (!contractPartyReady($conn)) return ['total' => 0, 'rows' => []];
+    [$vis, $vArgs] = contractVisibilitySql($conn, $analystId, 'c');
+    if (isset($who['user'])) {
+        $match = 'c.customer_user_id = ?'; $mArgs = [(int)$who['user']];
+    } else {
+        $expr = contractCustomerTenantExpr('c');
+        $tid = (int)$who['company'];
+        $match = $tid === getDefaultTenantId($conn) ? "($expr = ? OR $expr IS NULL)" : "$expr = ?";
+        $mArgs = [$tid];
+    }
+    [$partyCols, $partyJoins] = contractPartySql($conn, 'c');
+    $st = $conn->prepare(
+        "SELECT c.id, c.contract_number, c.title, c.contract_start, c.contract_end, c.notice_date, c.is_active,
+                c.contract_value, c.currency, st.name AS status, NULL AS supplier_name, NULL AS supplier_trading_name
+                $partyCols
+           FROM contracts c
+      LEFT JOIN contract_statuses st ON st.id = c.contract_status_id
+                $partyJoins
+          WHERE c.party_type = 'customer' AND $match $vis
+          ORDER BY c.is_active DESC, c.contract_end IS NULL, c.contract_end
+          LIMIT " . PEOPLE_SECTION_LIMIT
+    );
+    $st->execute(array_merge($mArgs, $vArgs));
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'number' => $r['contract_number'], 'title' => $r['title'],
+        'start' => $r['contract_start'], 'end' => $r['contract_end'], 'notice' => $r['notice_date'],
+        'is_active' => (int)$r['is_active'] === 1, 'status' => $r['status'],
+        'value' => $r['contract_value'] !== null ? (float)$r['contract_value'] : null, 'currency' => $r['currency'],
+        'party' => contractPartyLabel($r), 'url' => entityLink('contract', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/**
+ * Domains the person is the customer for / the company holds.
+ *
+ * @param array $who  ['user' => users id] (domain customer) or ['company' => tenant id]
+ */
+function peopleDomains(PDO $conn, int $analystId, array $who): array
+{
+    [$scope, $args] = peopleScope($conn, $analystId, 'd.tenant_id');
+    if (isset($who['user'])) {
+        require_once __DIR__ . '/domains/customer.php';
+        if (!domainCustomerReady($conn)) return ['total' => 0, 'rows' => []];
+        $match = ' AND d.customer_user_id = ?'; $mArgs = [(int)$who['user']];
+    } else {
+        [$match, $mArgs] = peopleCompanyMatch($conn, (int)$who['company'], 'd.tenant_id');
+    }
+    $st = $conn->prepare(
+        "SELECT d.id, d.domain_name, d.display_name, d.expiry_date, d.security_grade, s.name AS status, s.colour AS status_colour
+           FROM domains d LEFT JOIN domain_statuses s ON s.id = d.status_id
+          WHERE 1=1 $match $scope
+          ORDER BY d.expiry_date IS NULL, d.expiry_date, d.domain_name
+          LIMIT " . PEOPLE_SECTION_LIMIT
+    );
+    $st->execute(array_merge($mArgs, $args));
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => $r['display_name'] ?: $r['domain_name'], 'domain' => $r['domain_name'],
+        'expiry' => $r['expiry_date'], 'grade' => $r['security_grade'], 'status' => $r['status'],
+        'status_colour' => $r['status_colour'], 'url' => entityLink('domain', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/**
+ * Projects (3.2.0): for a person, the projects they are a member of (People
+ * tab of a project) with their role and their RACI duties ("Accountable for
+ * Phones working on day one"); for a company, its projects. Live ones first.
+ * Limited to the companies the analyst can access, like Projects itself.
+ *
+ * @param array $who  ['user' => users id] for projects they are a member of, or ['company' => tenant id]
+ */
+function peopleProjects(PDO $conn, int $analystId, array $who): array
+{
+    require_once __DIR__ . '/projects/methodologies.php';
+    if (!projectsSchemaReady($conn)) return ['total' => 0, 'rows' => []];
+    require_once __DIR__ . '/projects/read.php';
+    [$scope, $args] = peopleScope($conn, $analystId, 'p.tenant_id');
+    // Members-only projects (3.3.0).
+    require_once __DIR__ . '/projects/visibility.php';
+    [$vSql, $vArgs] = projectVisibleSql($conn, $analystId, 'p');
+    $scope .= $vSql; $args = array_merge($args, $vArgs);
+    if (isset($who['user'])) {
+        if (!projectsPhase2Ready($conn)) return ['total' => 0, 'rows' => []];
+        $sql = "SELECT p.*, a.full_name AS owner_name, GROUP_CONCAT(DISTINCT r.name ORDER BY r.display_order SEPARATOR ', ') AS role_names
+                  FROM project_members m JOIN projects p ON p.id = m.project_id
+             LEFT JOIN project_roles r ON r.id = m.role_id
+             LEFT JOIN analysts a ON a.id = p.owner_analyst_id
+                 WHERE m.user_id = ? $scope GROUP BY p.id";
+        $mArgs = [(int)$who['user']];
+    } else {
+        [$match, $mArgs] = peopleCompanyMatch($conn, (int)$who['company'], 'p.tenant_id');
+        $sql = "SELECT p.*, a.full_name AS owner_name, NULL AS role_names
+                  FROM projects p LEFT JOIN analysts a ON a.id = p.owner_analyst_id
+                 WHERE 1=1 $match $scope";
+    }
+    $st = $conn->prepare($sql . " ORDER BY FIELD(p.status, 'active', 'proposed', 'on_hold', 'closed', 'cancelled'), p.name LIMIT " . PEOPLE_SECTION_LIMIT);
+    $st->execute(array_merge($mArgs, $args));
+    $raw = $st->fetchAll(PDO::FETCH_ASSOC);
+    $stats = projectTaskStats($conn, array_column($raw, 'id'));
+    $cfg = projectHealthConfig($conn);
+    // A person's RACI duties per project: letter => the deliverables, in scope order.
+    $duties = [];
+    if (isset($who['user']) && $raw) {
+        $in = implode(',', array_map('intval', array_column($raw, 'id')));
+        $dq = $conn->prepare("SELECT m.project_id, x.letter, i.title
+                                FROM project_raci x
+                                JOIN project_members m ON m.id = x.member_id
+                                JOIN project_items i ON i.id = x.item_id
+                               WHERE m.user_id = ? AND m.project_id IN ($in) AND i.status <> 'dropped'
+                            ORDER BY FIELD(x.letter, 'A', 'R', 'C', 'I'), i.position, i.id");
+        $dq->execute([(int)$who['user']]);
+        foreach ($dq->fetchAll(PDO::FETCH_ASSOC) as $d) $duties[(int)$d['project_id']][$d['letter']][] = $d['title'];
+    }
+    $rows = array_map(function ($r) use ($stats, $cfg, $duties) {
+        $d = projectDecorate($r, $stats[(int)$r['id']] ?? [], $cfg);
+        return ['id' => (int)$d['id'], 'code' => $d['code'], 'name' => $d['name'], 'status' => $d['status'],
+                'colour' => projectColourHex($d['colour']), 'health' => $d['shown_health'], 'progress' => (int)$d['progress'],
+                'owner' => $d['owner_name'], 'role' => $r['role_names'], 'duties' => $duties[(int)$d['id']] ?? [], 'target_end_date' => $d['target_end_date'],
+                'url' => entityLink('project', (int)$d['id'])];
+    }, $raw);
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/**
+ * The person's courses - exactly what their own My courses page shows.
+ *
+ * @param int $userId  the users id of the learner
+ */
+function peopleCoursesForPerson(PDO $conn, int $userId): array
+{
+    require_once __DIR__ . '/lms_access.php';
+    $learner = LmsLearner::user($userId);
+    if (!$learner) return ['total' => 0, 'rows' => []];
+    try { $courses = lmsMyCourses($conn, $learner); } catch (Throwable) { return ['total' => 0, 'rows' => []]; }
+    $rows = array_map(fn($c) => [
+        'id' => (int)$c['id'], 'title' => $c['title'], 'status' => (string)$c['status'],
+        'deadline' => $c['deadline'] ?? null, 'completed' => $c['completion_datetime'] ?? null,
+        'is_overdue' => !empty($c['is_overdue']),
+        'lesson_position' => (int)($c['lesson_position'] ?? 0), 'lesson_count' => (int)($c['lesson_count'] ?? 0),
+    ], $courses);
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/** Per course, how many people in the company have finished it and how many are part-way. */
+function peopleCoursesForCompany(PDO $conn, int $tenantId): array
+{
+    [$m, $mArgs] = peopleCompanyMatch($conn, $tenantId, 'u.tenant_id');
+    try {
+        $st = $conn->prepare(
+            "SELECT c.id, c.title,
+                    SUM(p.status IN ('completed', 'passed')) AS finished,
+                    SUM(p.status NOT IN ('completed', 'passed', 'not_started')) AS in_progress
+               FROM lms_progress p
+               JOIN users u ON u.id = p.learner_id
+               JOIN lms_courses c ON c.id = p.course_id
+              WHERE p.learner_type = 'user' $m
+              GROUP BY c.id, c.title
+              ORDER BY c.title"
+        );
+        $st->execute($mArgs);
+    } catch (Throwable) {
+        return ['total' => 0, 'rows' => []];
+    }
+    $rows = array_map(fn($r) => ['id' => (int)$r['id'], 'title' => $r['title'], 'finished' => (int)$r['finished'], 'in_progress' => (int)$r['in_progress']],
+                      $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/**
+ * Forms the person submitted / people in the company submitted (from the portal).
+ *
+ * @param array $who  ['user' => users id] for the submitter, or ['company' => tenant id]
+ */
+function peopleForms(PDO $conn, int $analystId, array $who): array
+{
+    if (isset($who['user'])) {
+        $match = 's.submitted_by_user_id = ?'; $mArgs = [(int)$who['user']];
+    } else {
+        [$cm, $mArgs] = peopleCompanyMatch($conn, (int)$who['company'], 'u.tenant_id');
+        $match = 's.submitted_by_user_id IS NOT NULL' . $cm;
+    }
+    // A submission linked to a ticket in a company the reader cannot see still
+    // shows (forms have no company), but without the ticket link.
+    try {
+        $st = $conn->prepare(
+            "SELECT s.id, s.form_id, f.title AS form_title, s.submitted_date, s.approval_status, s.ticket_id,
+                    t.ticket_number, COALESCE(NULLIF(u.display_name, ''), u.email) AS submitter
+               FROM form_submissions s
+               JOIN forms f ON f.id = s.form_id
+               JOIN users u ON u.id = s.submitted_by_user_id
+          LEFT JOIN tickets t ON t.id = s.ticket_id
+              WHERE $match
+              ORDER BY s.submitted_date DESC
+              LIMIT " . PEOPLE_SECTION_LIMIT
+        );
+        $st->execute($mArgs);
+    } catch (Throwable) {
+        return ['total' => 0, 'rows' => []];
+    }
+    $canTickets = analystCanAccessModule($conn, $analystId, 'tickets');
+    $rows = array_map(function ($r) use ($conn, $analystId, $canTickets) {
+        $ticketOk = $r['ticket_id'] !== null && $canTickets && analystCanAccessTicket($conn, $analystId, (int)$r['ticket_id']);
+        return [
+            'id' => (int)$r['id'], 'form' => $r['form_title'], 'submitted' => $r['submitted_date'],
+            'approval' => $r['approval_status'], 'submitter' => $r['submitter'],
+            'ticket' => $ticketOk ? $r['ticket_number'] : null,
+            'ticket_url' => $ticketOk ? entityLink('ticket', (int)$r['ticket_id']) : null,
+            'url' => 'forms/submissions.php?id=' . (int)$r['form_id'],
+        ];
+    }, $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+// ---------------------------------------------------------------------------
+//  Suppliers and supplier contacts (#153 step 3, #162)
+// ---------------------------------------------------------------------------
+
+/** Suppliers and contacts are Contracts' records: their pages need Contracts too. */
+function peopleCanSeeSuppliers(PDO $conn, int $analystId): bool
+{
+    return analystCanAccessModule($conn, $analystId, 'people') && analystCanAccessModule($conn, $analystId, 'contracts');
+}
+
+/**
+ * The name to show for a supplier: trading name, else legal name, else #id.
+ *
+ * @param array $r  a suppliers row - trading_name, legal_name and id are read
+ */
+function peopleSupplierName(array $r): string
+{
+    $t = trim((string)($r['trading_name'] ?? ''));
+    return $t !== '' ? $t : (string)($r['legal_name'] ?? ('#' . (int)($r['id'] ?? 0)));
+}
+
+/**
+ * The name to show for a supplier contact: first name and surname, else email, else #id.
+ *
+ * @param array $r  a contacts row - first_name, surname, email and id are read
+ */
+function peopleContactName(array $r): string
+{
+    $n = trim(($r['first_name'] ?? '') . ' ' . ($r['surname'] ?? ''));
+    return $n !== '' ? $n : ($r['email'] ?: '#' . (int)($r['id'] ?? 0));
+}
+
+/**
+ * Every supplier, with how many contacts and contracts each has.
+ * @param array $f q, status ('active' default | 'all')
+ */
+function peopleSupplierRows(PDO $conn, int $analystId, array $f = []): array
+{
+    require_once __DIR__ . '/contract_party.php';
+    $where = '1=1'; $args = [];
+    if (($f['status'] ?? 'active') === 'active') $where .= ' AND s.is_active = 1';
+    $q = trim((string)($f['q'] ?? ''));
+    if ($q !== '') {
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
+        // A supplier is found by one of its contacts' names too.
+        $where .= " AND (s.legal_name LIKE ? OR s.trading_name LIKE ? OR s.city LIKE ?
+                         OR EXISTS (SELECT 1 FROM contacts c WHERE c.supplier_id = s.id AND (CONCAT(c.first_name, ' ', c.surname) LIKE ? OR c.email LIKE ?)))";
+        array_push($args, $like, $like, $like, $like, $like);
+    }
+    [$vis, $vArgs] = contractVisibilitySql($conn, $analystId, 'k');
+    $st = $conn->prepare(
+        "SELECT s.id, s.legal_name, s.trading_name, s.city, s.country, s.is_active,
+                st.name AS type_name, ss.name AS status_name,
+                (SELECT COUNT(*) FROM contacts c WHERE c.supplier_id = s.id AND c.is_active = 1) AS contacts,
+                (SELECT GROUP_CONCAT(CONCAT_WS(' ', c.first_name, c.surname, c.email) SEPARATOR ' ') FROM contacts c WHERE c.supplier_id = s.id) AS contact_text,
+                (SELECT COUNT(*) FROM contracts k WHERE k.supplier_id = s.id$vis) AS contracts
+           FROM suppliers s
+      LEFT JOIN supplier_types st ON st.id = s.supplier_type_id
+      LEFT JOIN supplier_statuses ss ON ss.id = s.supplier_status_id
+          WHERE $where
+          ORDER BY COALESCE(NULLIF(s.trading_name, ''), s.legal_name)
+          LIMIT 500"
+    );
+    // The visibility args sit inside the SELECT list, so they come first.
+    $st->execute(array_merge($vArgs, $args));
+    return array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => peopleSupplierName($r), 'legal_name' => $r['legal_name'],
+        'type' => $r['type_name'], 'status' => $r['status_name'], 'is_active' => (int)$r['is_active'] === 1,
+        'place' => implode(', ', array_filter([$r['city'], $r['country']])),
+        'contacts' => (int)$r['contacts'], 'contracts' => (int)$r['contracts'],
+        'contact_text' => (string)$r['contact_text'],
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+}
+
+/**
+ * Everything about one supplier this analyst may see, or null.
+ *
+ * @param int $supplierId  the suppliers id
+ */
+function supplierDetail(PDO $conn, int $analystId, int $supplierId): ?array
+{
+    if ($supplierId <= 0 || !peopleCanSeeSuppliers($conn, $analystId)) return null;
+    $st = $conn->prepare(
+        "SELECT s.*, st.name AS type_name, ss.name AS status_name
+           FROM suppliers s
+      LEFT JOIN supplier_types st ON st.id = s.supplier_type_id
+      LEFT JOIN supplier_statuses ss ON ss.id = s.supplier_status_id
+          WHERE s.id = ?"
+    );
+    $st->execute([$supplierId]);
+    $s = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$s) return null;
+
+    $supplier = [
+        'id' => (int)$s['id'], 'name' => peopleSupplierName($s),
+        'legal_name' => $s['legal_name'], 'trading_name' => $s['trading_name'],
+        'reg_number' => $s['reg_number'], 'vat_number' => $s['vat_number'],
+        'type' => $s['type_name'], 'status' => $s['status_name'], 'is_active' => (int)$s['is_active'] === 1,
+        'address' => array_values(array_filter([$s['address_line_1'], $s['address_line_2'], $s['city'], $s['county'], $s['postcode'], $s['country']])),
+        'supplies_assets' => (int)$s['supplies_assets'] === 1,
+    ];
+
+    $c = $conn->prepare("SELECT id, first_name, surname, email, mobile, job_title, direct_dial, switchboard, is_active
+                           FROM contacts WHERE supplier_id = ? ORDER BY is_active DESC, first_name, surname");
+    $c->execute([$supplierId]);
+    $sections = ['contacts' => array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => peopleContactName($r), 'email' => $r['email'], 'job_title' => $r['job_title'],
+        'phone' => $r['direct_dial'] ?: ($r['mobile'] ?: $r['switchboard']), 'is_active' => (int)$r['is_active'] === 1,
+    ], $c->fetchAll(PDO::FETCH_ASSOC))];
+
+    $can = fn(string $m) => analystCanAccessModule($conn, $analystId, $m);
+    $sections['contracts'] = peopleSupplierContracts($conn, $analystId, $supplierId);
+    if ($can('assets'))  $sections['assets']  = peopleSupplierAssets($conn, $analystId, $supplierId);
+    if ($can('domains')) $sections['domains'] = peopleSupplierDomains($conn, $analystId, ['supplier' => $supplierId]);
+    if ($can('tasks'))   $sections['tasks']   = peopleContractorTasks($conn, $analystId, ['supplier' => $supplierId]);
+    return ['supplier' => $supplier, 'sections' => $sections];
+}
+
+/**
+ * Everything about one supplier contact this analyst may see, or null.
+ *
+ * @param int $contactId  the contacts id (a supplier contact)
+ */
+function supplierContactDetail(PDO $conn, int $analystId, int $contactId): ?array
+{
+    if ($contactId <= 0 || !peopleCanSeeSuppliers($conn, $analystId)) return null;
+    $st = $conn->prepare(
+        "SELECT c.*, s.legal_name, s.trading_name
+           FROM contacts c LEFT JOIN suppliers s ON s.id = c.supplier_id
+          WHERE c.id = ?"
+    );
+    $st->execute([$contactId]);
+    $c = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$c) return null;
+    $contact = [
+        'id' => (int)$c['id'], 'name' => peopleContactName($c), 'email' => $c['email'], 'job_title' => $c['job_title'],
+        'mobile' => $c['mobile'], 'direct_dial' => $c['direct_dial'], 'switchboard' => $c['switchboard'],
+        'is_active' => (int)$c['is_active'] === 1, 'created' => $c['created_datetime'],
+        'supplier_id' => $c['supplier_id'] !== null ? (int)$c['supplier_id'] : null,
+        'supplier' => $c['supplier_id'] !== null ? peopleSupplierName(['id' => $c['supplier_id'], 'legal_name' => $c['legal_name'], 'trading_name' => $c['trading_name']]) : null,
+    ];
+    $sections = [];
+    if (analystCanAccessModule($conn, $analystId, 'domains')) {
+        $sections['domains'] = peopleSupplierDomains($conn, $analystId, ['contact' => $contactId]);
+    }
+    if (analystCanAccessModule($conn, $analystId, 'tasks')) {
+        $sections['tasks'] = peopleContractorTasks($conn, $analystId, ['contact' => $contactId]);
+    }
+    return ['contact' => $contact, 'sections' => $sections];
+}
+
+/**
+ * Tasks given to a supplier, or to one person there, as a contractor (3.3.0,
+ * includes/task_contractors.php) - open first. In companies the analyst can
+ * access; a task in a members-only project they cannot see is left out.
+ *
+ * @param array $who  ['supplier' => suppliers id] for the whole supplier, or ['contact' => contacts id] for one person there
+ */
+function peopleContractorTasks(PDO $conn, int $analystId, array $who): array
+{
+    require_once __DIR__ . '/task_contractors.php';
+    if (!tasksContractorReady($conn)) return ['total' => 0, 'open' => 0, 'rows' => []];
+    [$scope, $args] = peopleScope($conn, $analystId, 't.tenant_id');
+    $hide = '';
+    try {
+        require_once __DIR__ . '/projects/visibility.php';
+        [$vSql, $vArgs] = projectVisibleSql($conn, $analystId, 'p');
+        if ($vSql !== '') { $hide = " AND (t.project_id IS NULL OR EXISTS (SELECT 1 FROM projects p WHERE p.id = t.project_id $vSql))"; $args = array_merge($args, $vArgs); }
+    } catch (Throwable) { /* no Projects tables */ }
+    $col = isset($who['contact']) ? 't.assigned_contact_id' : 't.assigned_supplier_id';
+    $st = $conn->prepare(
+        "SELECT t.id, t.title, t.due_date, t.project_id, ts.name AS status, ts.colour AS status_colour, COALESCE(ts.is_closed, 0) AS is_closed,
+                an.full_name AS owner, TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.surname, ''))) AS contact_name,
+                (SELECT name FROM projects px WHERE px.id = t.project_id) AS project_name
+           FROM tasks t
+      LEFT JOIN task_statuses ts ON ts.id = t.status_id
+      LEFT JOIN analysts an ON an.id = t.assigned_analyst_id
+      LEFT JOIN contacts c ON c.id = t.assigned_contact_id
+          WHERE $col = ? $scope $hide
+       ORDER BY COALESCE(ts.is_closed, 0), t.due_date IS NULL, t.due_date, t.id DESC LIMIT " . PEOPLE_SECTION_LIMIT);
+    $st->execute(array_merge([(int)($who['contact'] ?? $who['supplier'])], $args));
+    $today = gmdate('Y-m-d');
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'title' => $r['title'], 'status' => $r['status'], 'status_colour' => $r['status_colour'], 'closed' => (int)$r['is_closed'] === 1,
+        'due_date' => $r['due_date'], 'late' => !(int)$r['is_closed'] && $r['due_date'] && $r['due_date'] < $today,
+        'owner' => $r['owner'], 'contact' => $r['contact_name'] ?: null, 'project' => $r['project_name'],
+        'project_url' => $r['project_id'] ? entityLink('project', (int)$r['project_id']) : null, 'url' => entityLink('task', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'open' => count(array_filter($rows, fn($r) => !$r['closed'])), 'rows' => $rows];
+}
+
+/**
+ * Contracts with the supplier - the ordinary, "we buy from them" kind.
+ *
+ * @param int $supplierId  the suppliers id
+ */
+function peopleSupplierContracts(PDO $conn, int $analystId, int $supplierId): array
+{
+    require_once __DIR__ . '/contract_party.php';
+    [$vis, $vArgs] = contractVisibilitySql($conn, $analystId, 'c');
+    $st = $conn->prepare(
+        "SELECT c.id, c.contract_number, c.title, c.contract_start, c.contract_end, c.notice_date, c.is_active,
+                c.contract_value, c.currency, st.name AS status
+           FROM contracts c
+      LEFT JOIN contract_statuses st ON st.id = c.contract_status_id
+          WHERE c.supplier_id = ? $vis
+          ORDER BY c.is_active DESC, c.contract_end IS NULL, c.contract_end
+          LIMIT " . PEOPLE_SECTION_LIMIT
+    );
+    $st->execute(array_merge([$supplierId], $vArgs));
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'number' => $r['contract_number'], 'title' => $r['title'],
+        'start' => $r['contract_start'], 'end' => $r['contract_end'], 'notice' => $r['notice_date'],
+        'is_active' => (int)$r['is_active'] === 1, 'status' => $r['status'],
+        'value' => $r['contract_value'] !== null ? (float)$r['contract_value'] : null, 'currency' => $r['currency'],
+        'party' => null, 'url' => entityLink('contract', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/**
+ * Assets bought from the supplier, in companies the analyst can access.
+ *
+ * @param int $supplierId  the suppliers id, matched on assets.supplier_id
+ */
+function peopleSupplierAssets(PDO $conn, int $analystId, int $supplierId): array
+{
+    [$scope, $args] = peopleScope($conn, $analystId, 'a.tenant_id');
+    $from = "FROM assets a LEFT JOIN asset_types at ON at.id = a.asset_type_id LEFT JOIN asset_status_types ast ON ast.id = a.asset_status_id
+             WHERE a.supplier_id = ? $scope";
+    $all = array_merge([$supplierId], $args);
+    try {
+        $c = $conn->prepare("SELECT COUNT(*) $from");
+        $c->execute($all);
+        $total = (int)$c->fetchColumn();
+        $st = $conn->prepare("SELECT a.id, a.hostname, a.manufacturer, a.model, a.service_tag, a.asset_tag, at.name AS asset_type, ast.name AS asset_status,
+                                     (SELECT COALESCE(NULLIF(hu.display_name, ''), hu.email) FROM users_assets hua JOIN users hu ON hu.id = hua.user_id WHERE hua.asset_id = a.id ORDER BY hua.id LIMIT 1) AS holder
+                              $from ORDER BY at.name, a.hostname LIMIT " . PEOPLE_SECTION_LIMIT);
+        $st->execute($all);
+    } catch (Throwable) {
+        return ['total' => 0, 'rows' => []];   // assets.supplier_id arrives with Database Verification
+    }
+    $rows = array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => $r['hostname'] ?: ($r['asset_tag'] ?: '#' . $r['id']),
+        'type' => $r['asset_type'], 'status' => $r['asset_status'],
+        'model' => trim(($r['manufacturer'] ?? '') . ' ' . ($r['model'] ?? '')), 'serial' => $r['service_tag'],
+        'tag' => $r['asset_tag'], 'assigned' => null, 'holder' => $r['holder'],
+        'url' => entityLink('asset', (int)$r['id']),
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => $total, 'rows' => $rows];
+}
+
+/**
+ * Domains a supplier or a contact is involved in, and how: registrar, customer,
+ * technical contact. $who = ['supplier' => id] or ['contact' => id]. A domain
+ * belongs to a company, so only companies the analyst can access count.
+ *
+ * @param array $who  ['supplier' => suppliers id] or ['contact' => contacts id]
+ */
+function peopleSupplierDomains(PDO $conn, int $analystId, array $who): array
+{
+    require_once __DIR__ . '/domains/customer.php';
+    $parties = domainPartiesReady($conn);
+    [$scope, $args] = peopleScope($conn, $analystId, 'd.tenant_id');
+    if (isset($who['supplier'])) {
+        $id = (int)$who['supplier'];
+        $roles = ["(d.registrar_supplier_id = ?)" => 'registrar'];
+        if ($parties) $roles["(d.customer_supplier_id = ?)"] = 'customer';
+        // Through its contacts: the agency or host named as technical contact.
+        $roles["(d.tech_contact_id IN (SELECT id FROM contacts WHERE supplier_id = ?))"] = 'tech';
+    } else {
+        $id = (int)$who['contact'];
+        $roles = ["(d.tech_contact_id = ?)" => 'tech'];
+        if ($parties) $roles["(d.customer_contact_id = ?)"] = 'customer';
+    }
+    $cols = []; $colArgs = [];
+    foreach ($roles as $cond => $role) { $cols[] = "$cond AS is_$role"; $colArgs[] = $id; }
+    $where = implode(' OR ', array_keys($roles));
+    $whereArgs = array_fill(0, count($roles), $id);
+    $st = $conn->prepare(
+        "SELECT d.id, d.domain_name, d.display_name, d.expiry_date, d.security_grade, s.name AS status, s.colour AS status_colour,
+                " . implode(', ', $cols) . "
+           FROM domains d LEFT JOIN domain_statuses s ON s.id = d.status_id
+          WHERE ($where) $scope
+          ORDER BY d.expiry_date IS NULL, d.expiry_date, d.domain_name
+          LIMIT " . PEOPLE_SECTION_LIMIT
+    );
+    $st->execute(array_merge($colArgs, $whereArgs, $args));
+    $rows = array_map(function ($r) use ($roles) {
+        $as = [];
+        foreach ($roles as $role) if (!empty($r['is_' . $role])) $as[] = $role;
+        return [
+            'id' => (int)$r['id'], 'name' => $r['display_name'] ?: $r['domain_name'], 'domain' => $r['domain_name'],
+            'expiry' => $r['expiry_date'], 'grade' => $r['security_grade'], 'status' => $r['status'],
+            'status_colour' => $r['status_colour'], 'roles' => array_values(array_unique($as)),
+            'url' => entityLink('domain', (int)$r['id']),
+        ];
+    }, $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['total' => count($rows), 'rows' => $rows];
+}
+
+/**
+ * A bare date (a contract end, a domain expiry, a deadline) - shown as stored, never shifted by a timezone.
+ *
+ * @param ?string $d  a 'Y-m-d' date (anything after the first 10 characters is ignored); null or '' gives ''
+ */
+function peopleBareDate(?string $d): string
+{
+    if ($d === null || $d === '') return '';
+    try {
+        $dt = new DateTime(substr($d, 0, 10) . ' 00:00:00', new DateTimeZone('UTC'));
+        return DateFmt::render($dt, DateFmt::DATE_TEMPLATES[DateFmt::dateKey()]);
+    } catch (Throwable) {
+        return (string)$d;
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  Organisation chart
+// ---------------------------------------------------------------------------
+//
+// The reporting lines in users.manager_id, read one level at a time. Stored once,
+// pointing UP, so a level is "who has this person as their manager".
+//
+// 🔑 ONE RULE FOR EVERY ANSWER. A node is somebody this analyst could open
+// (peopleScope()), and the tree and the chart are the same data drawn twice.
+//  - A manager in a company the reader cannot access is not named: the people
+//    under them simply start a branch of their own, as if they had no manager.
+//  - Leavers are hidden unless asked for, EXCEPT a leaver who still has active
+//    people reporting to them - hiding that one would hide the gap.
+//  - Nothing here writes. Reporting lines are changed where they always were.
+//
+// @wiki Organisation-Chart-Developer-Guide
+
+/** How far a reporting line is walked upwards - a bound real data never reaches, so bad data cannot loop. */
+const PEOPLE_ORG_MAX_DEPTH = 32;
+/** The chart draws one branch: this many levels below the person it starts from, unless the reader picks another... */
+const PEOPLE_ORG_CHART_LEVELS = 3;
+/** ...or every level ("all"), which is as far as a reporting line is ever walked... */
+const PEOPLE_ORG_CHART_LEVELS_MAX = PEOPLE_ORG_MAX_DEPTH;
+/** ...with these offered in the chart's Levels menu, besides All and a number of the reader's own. */
+const PEOPLE_ORG_CHART_LEVELS_PRESETS = [1, 2, 3, 4, 5, 8, 10];
+/** ...and never more boxes than this, past which a chart is no longer readable. */
+const PEOPLE_ORG_CHART_MAX = 150;
+/**
+ * The levels a chart is drawn to: what the reader asked for, held between 1 and
+ * PEOPLE_ORG_CHART_LEVELS_MAX - "all" and 0 (no limit, however written: '00' too) are that - and
+ * PEOPLE_ORG_CHART_LEVELS when they asked for nothing, or for something that is
+ * not a level. However deep, PEOPLE_ORG_CHART_MAX still caps the boxes.
+ *
+ * @param mixed $asked  the request's levels: a string, or null when it has none
+ */
+function peopleOrgChartLevels($asked): int
+{
+    // ?levels[]=5 arrives as an array: not a level, and casting it would warn.
+    $asked = is_scalar($asked) ? trim((string)$asked) : '';
+    if ($asked === 'all') return PEOPLE_ORG_CHART_LEVELS_MAX;
+    if (!ctype_digit($asked)) return PEOPLE_ORG_CHART_LEVELS;
+    $n = (int)$asked;
+    return $n === 0 ? PEOPLE_ORG_CHART_LEVELS_MAX : min($n, PEOPLE_ORG_CHART_LEVELS_MAX);
+}
+
+/** The most people one level of the tree returns. */
+const PEOPLE_ORG_LEVEL_LIMIT = 500;
+/** The most people each list of gaps names. */
+const PEOPLE_ORG_GAPS_LIMIT = 50;
+
+/**
+ * " AND <shown>" for the person aliased $a: always true with leavers, otherwise
+ * active, or a leaver with an active person still reporting to them.
+ *
+ * @param string $a  the users alias, e.g. 'u'
+ * @param bool $leavers  true to show everybody, leavers included
+ */
+function peopleOrgShownSql(PDO $conn, int $analystId, string $a, bool $leavers): array
+{
+    if ($leavers) return ['', []];
+    [$scope, $args] = peopleScope($conn, $analystId, "{$a}k.tenant_id");
+    return [" AND ($a.is_active = 1 OR EXISTS (SELECT 1 FROM users {$a}k WHERE {$a}k.manager_id = $a.id AND {$a}k.is_active = 1$scope))", $args];
+}
+
+/**
+ * People as chart nodes: who they are, and how many people the reader would see under them.
+ *
+ * @param string $where  the condition on `u`, e.g. 'u.manager_id = ?'
+ * @param array $whereArgs  its placeholders
+ * @param bool $leavers  true to show leavers too
+ * @param int $limit  the most rows to return
+ * @param string $having  an optional HAVING on the result, e.g. 'reports > 0'
+ */
+function peopleOrgNodes(PDO $conn, int $analystId, string $where, array $whereArgs, bool $leavers, int $limit, string $having = ''): array
+{
+    [$scopeU, $argsU] = peopleScope($conn, $analystId, 'u.tenant_id');
+    [$showU, $argsS]  = peopleOrgShownSql($conn, $analystId, 'u', $leavers);
+    [$scopeR, $argsR] = peopleScope($conn, $analystId, 'r.tenant_id');
+    [$showR, $argsSR] = peopleOrgShownSql($conn, $analystId, 'r', $leavers);
+    $st = $conn->prepare(
+        "SELECT u.id, u.display_name, u.preferred_name, u.email, u.username, u.job_title, u.department,
+                u.is_active, u.manager_id, tn.name AS company_name,
+                (SELECT COUNT(*) FROM users r WHERE r.manager_id = u.id AND r.id <> u.id $scopeR $showR) AS reports
+           FROM users u LEFT JOIN tenants tn ON tn.id = u.tenant_id
+          WHERE $where $scopeU $showU" . ($having !== '' ? " HAVING $having" : '') . "
+          ORDER BY (COALESCE(NULLIF(u.preferred_name, ''), NULLIF(u.display_name, ''), u.email) IS NULL),
+                   COALESCE(NULLIF(u.preferred_name, ''), NULLIF(u.display_name, ''), u.email)
+          LIMIT " . (int)$limit
+    );
+    // The subquery in the SELECT list comes before the WHERE, and so do its placeholders.
+    $st->execute(array_merge($argsR, $argsSR, $whereArgs, $argsU, $argsS));
+    // Asked once per request: a chart asks for a level per manager drawn.
+    static $company = null;
+    if ($company === null) {
+        $multi = isMultiTenant($conn);
+        $company = [$multi, $multi ? (getTenantById($conn, getDefaultTenantId($conn))['name'] ?? null) : null];
+    }
+    [$multi, $defaultName] = $company;
+    return array_map(fn($r) => [
+        'id' => (int)$r['id'], 'name' => peopleName($r),
+        'job_title' => $r['job_title'], 'department' => $r['department'],
+        'company' => $multi ? ($r['company_name'] ?? $defaultName) : null,
+        'is_active' => (int)$r['is_active'] === 1, 'reports' => (int)$r['reports'],
+    ], $st->fetchAll(PDO::FETCH_ASSOC));
+}
+
+/**
+ * One level of the tree: the people who report to $managerId, or the top when it is 0.
+ *
+ * The top is everybody who manages somebody the reader can see and has no
+ * manager the reader can see - nobody above them, or nobody they may know about.
+ *
+ * @param int $managerId  users.id of the manager, or 0 for the top of the chart
+ * @param bool $leavers  true to show leavers too
+ * @return array ['people' => nodes, 'more' => bool]
+ */
+function peopleOrgLevel(PDO $conn, int $analystId, int $managerId, bool $leavers): array
+{
+    if ($managerId > 0) {
+        if (!analystCanAccessUser($conn, $analystId, $managerId)) return ['people' => [], 'more' => false];
+        $rows = peopleOrgNodes($conn, $analystId, 'u.manager_id = ? AND u.id <> ?', [$managerId, $managerId], $leavers, PEOPLE_ORG_LEVEL_LIMIT + 1);
+    } else {
+        [$scopeM, $argsM] = peopleScope($conn, $analystId, 'm.tenant_id');
+        [$showM, $argsSM] = peopleOrgShownSql($conn, $analystId, 'm', $leavers);
+        $rows = peopleOrgNodes($conn, $analystId,
+            "(u.manager_id IS NULL OR u.manager_id = u.id
+              OR NOT EXISTS (SELECT 1 FROM users m WHERE m.id = u.manager_id $scopeM $showM))",
+            array_merge($argsM, $argsSM), $leavers, PEOPLE_ORG_LEVEL_LIMIT + 1, 'reports > 0');
+    }
+    $more = count($rows) > PEOPLE_ORG_LEVEL_LIMIT;
+    return ['people' => array_slice($rows, 0, PEOPLE_ORG_LEVEL_LIMIT), 'more' => $more];
+}
+
+/**
+ * The reporting line from the top of the reader's chart down to one person, or null if out of reach.
+ *
+ * Walked upwards, bounded and with a visited set, and stopped at the first
+ * manager the reader may not see - the same place the tree starts their branch.
+ * With leavers hidden it also stops at a manager the tree would not show (a
+ * leaver nobody current reports to), for the same reason: the tree starts below them.
+ *
+ * @param int $userId  users.id of the person
+ * @param bool $leavers  true to show leavers too
+ * @return array|null ['ids' => users.id top first, ending with $userId, 'is_active' => bool, 'name' => string]
+ */
+function peopleOrgPath(PDO $conn, int $analystId, int $userId, bool $leavers = true): ?array
+{
+    if ($userId <= 0 || !analystCanAccessUser($conn, $analystId, $userId)) return null;
+    $st = $conn->prepare("SELECT id, manager_id, is_active, display_name, preferred_name, email, username FROM users WHERE id = ?");
+    $st->execute([$userId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return null;
+    $active = (int)$row['is_active'] === 1;
+    $name = peopleName($row);
+
+    [$show, $showArgs] = peopleOrgShownSql($conn, $analystId, 'u', $leavers);
+    $shown = $leavers ? null : $conn->prepare("SELECT 1 FROM users u WHERE u.id = ?$show");
+    $ids = [$userId];
+    $seen = [$userId => true];
+    $cur = (int)($row['manager_id'] ?? 0);
+    for ($i = 0; $i < PEOPLE_ORG_MAX_DEPTH && $cur > 0 && !isset($seen[$cur]); $i++) {
+        if (!analystCanAccessUser($conn, $analystId, $cur)) break;
+        if ($shown) {
+            $shown->execute(array_merge([$cur], $showArgs));
+            if (!$shown->fetchColumn()) break;
+        }
+        $seen[$cur] = true;
+        array_unshift($ids, $cur);
+        $st->execute([$cur]);
+        $cur = (int)($st->fetch(PDO::FETCH_ASSOC)['manager_id'] ?? 0);
+    }
+    return ['ids' => $ids, 'is_active' => $active, 'name' => $name];
+}
+
+/**
+ * What the chart's side panel shows about one person: how to reach them and the
+ * few details that say who they are. Null when out of reach, as everywhere here.
+ *
+ * Only what the person page already shows the same reader (personDetail()), so
+ * the panel tells nobody anything new.
+ *
+ * @param int $userId  users.id of the person
+ */
+function peopleOrgPerson(PDO $conn, int $analystId, int $userId): ?array
+{
+    if ($userId <= 0 || !analystCanAccessUser($conn, $analystId, $userId)) return null;
+    $st = $conn->prepare(
+        "SELECT u.email, u.phone, u.mobile, u.office, u.employee_id, u.deactivated_datetime, tn.name AS company_name
+           FROM users u LEFT JOIN tenants tn ON tn.id = u.tenant_id WHERE u.id = ?"
+    );
+    $st->execute([$userId]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$u) return null;
+    $multi = isMultiTenant($conn);
+    return [
+        'email' => $u['email'], 'phone' => $u['phone'], 'mobile' => $u['mobile'],
+        'office' => $u['office'], 'employee_id' => $u['employee_id'],
+        'company' => $multi ? ($u['company_name'] ?? (getTenantById($conn, getDefaultTenantId($conn))['name'] ?? null)) : null,
+        'left' => $u['deactivated_datetime'],
+    ];
+}
+
+/**
+ * One branch for the chart: a person and up to $levels levels below them,
+ * never more than PEOPLE_ORG_CHART_MAX people in all.
+ *
+ * Every node carries 'children' (drawn) and 'more' (people under them that
+ * were not drawn), so the chart can say what it left out.
+ *
+ * $rootId 0 is the whole organisation, as the tree shows it: a root that is
+ * nobody (id 0, no name), whose children are the people at the top. It is not
+ * a person, so it does not count towards the limit.
+ *
+ * @param int $rootId  users.id of the person the branch starts from, or 0 for the whole organisation
+ * @param bool $leavers  true to show leavers too
+ * @param int $levels  how many levels below them, already through peopleOrgChartLevels()
+ * @return array|null ['root' => node, 'manager' => ['id','name']|null, 'total' => int, 'truncated' => bool]
+ */
+function peopleOrgBranch(PDO $conn, int $analystId, int $rootId, bool $leavers, int $levels = PEOPLE_ORG_CHART_LEVELS): ?array
+{
+    if ($rootId === 0) {
+        // Its count is the top row, set below from the first level asked for.
+        $root = ['id' => 0, 'name' => '', 'job_title' => null, 'department' => null, 'company' => null,
+                 'is_active' => true, 'reports' => 0];
+        $total = 0;
+    } else {
+        if ($rootId < 0 || !analystCanAccessUser($conn, $analystId, $rootId)) return null;
+        // The root is shown even as a leaver: somebody asked for them by name.
+        $root = peopleOrgNodes($conn, $analystId, 'u.id = ?', [$rootId], true, 1)[0] ?? null;
+        if (!$root) return null;
+        $total = 1;
+    }
+
+    $truncated = false;
+    $seen = [$rootId => true];
+    $nodes = [$rootId => $root];
+    $children = [];
+    $level = [$rootId];
+    // The whole organisation's root is nobody, so the top row does not use up a level.
+    $levels += $rootId === 0 ? 1 : 0;
+    for ($depth = 0; $depth < $levels && $level; $depth++) {
+        $next = [];
+        foreach ($level as $pid) {
+            $kids = [];
+            $under = peopleOrgLevel($conn, $analystId, $pid, $leavers);
+            if ($pid === $rootId) {
+                // What is under the root follows the reader's leavers choice, whoever
+                // the root is - the level just asked for is exactly that.
+                $nodes[$rootId]['reports'] = max(count($under['people']), $under['more'] ? $nodes[$rootId]['reports'] : 0);
+            }
+            if ($under['more']) $truncated = true;
+            foreach ($under['people'] as $kid) {
+                if (isset($seen[$kid['id']])) continue;            // a loop in bad data
+                if ($total >= PEOPLE_ORG_CHART_MAX) {
+                    // Full: nobody else is drawn, so nobody else is asked for.
+                    $truncated = true;
+                    $children[$pid] = $kids;
+                    break 3;
+                }
+                $seen[$kid['id']] = true;
+                $nodes[$kid['id']] = $kid;
+                $kids[] = $kid['id'];
+                $next[] = $kid['id'];
+                $total++;
+            }
+            $children[$pid] = $kids;
+        }
+        $level = $next;
+    }
+    if ($level) $truncated = $truncated || array_sum(array_map(fn($id) => $nodes[$id]['reports'], $level)) > 0;
+
+    $build = function (int $id) use (&$build, &$nodes, &$children): array {
+        $n = $nodes[$id];
+        $n['children'] = array_map($build, $children[$id] ?? []);
+        $n['more'] = max(0, $n['reports'] - count($n['children']));
+        return $n;
+    };
+
+    $manager = null;
+    $st = $conn->prepare("SELECT m.id, m.display_name, m.preferred_name, m.email, m.username
+                            FROM users u JOIN users m ON m.id = u.manager_id WHERE u.id = ? AND m.id <> u.id");
+    $st->execute([$rootId]);
+    if (($m = $st->fetch(PDO::FETCH_ASSOC)) && analystCanAccessUser($conn, $analystId, (int)$m['id'])) {
+        $manager = ['id' => (int)$m['id'], 'name' => peopleName($m)];
+    }
+    return ['root' => $build($rootId), 'manager' => $manager, 'total' => $total, 'truncated' => $truncated];
+}
+
+/** In a person's place in the organisation, how many of each team on the way up are drawn beside the line. */
+const PEOPLE_ORG_CONTEXT_PEERS = 12;
+
+/**
+ * A person in the organisation: the line from the top down to them, each
+ * manager's team beside it, and their own branch below - so the chart can show
+ * where somebody sits, not only who is under them.
+ *
+ * Up the line, only the people on it are opened; their colleagues are drawn
+ * closed, at most PEOPLE_ORG_CONTEXT_PEERS per team besides the one on the line
+ * (the rest count as "more"). Below the person, peopleOrgBranch() as usual.
+ * The top is where peopleOrgPath() stops: a manager the reader may not see is
+ * never drawn, as everywhere here.
+ *
+ * @param int $userId  users.id of the person
+ * @param bool $leavers  true to show leavers too
+ * @param int $levels  how many levels below them, already through peopleOrgChartLevels()
+ * @return array|null ['root' => node, 'focus' => $userId, 'manager' => null, 'total' => int, 'truncated' => bool]
+ */
+function peopleOrgContext(PDO $conn, int $analystId, int $userId, bool $leavers, int $levels = PEOPLE_ORG_CHART_LEVELS): ?array
+{
+    $path = peopleOrgPath($conn, $analystId, $userId, $leavers);
+    $branch = $path ? peopleOrgBranch($conn, $analystId, $userId, $leavers, $levels) : null;
+    if (!$branch) return null;
+
+    $node = $branch['root'];
+    $total = $branch['total'];
+    $truncated = $branch['truncated'];
+    $ids = $path['ids'];
+    for ($i = count($ids) - 2; $i >= 0; $i--) {
+        // Counted the way the reader asked, so hidden leavers are not "more" -
+        // but drawn all the same if hidden: they are on the line.
+        $boss = peopleOrgNodes($conn, $analystId, 'u.id = ?', [$ids[$i]], $leavers, 1)[0]
+             ?? peopleOrgNodes($conn, $analystId, 'u.id = ?', [$ids[$i]], true, 1)[0] ?? null;
+        if (!$boss) break;
+        $team = peopleOrgLevel($conn, $analystId, $ids[$i], $leavers)['people'];
+        $children = [];
+        $peers = 0;
+        $onLine = false;
+        foreach ($team as $member) {
+            if ($member['id'] === $node['id']) { $children[] = $node; $onLine = true; continue; }
+            if ($peers >= PEOPLE_ORG_CONTEXT_PEERS) { $truncated = true; continue; }
+            $member['children'] = [];
+            $member['more'] = $member['reports'];
+            $children[] = $member;
+            $peers++;
+            $total++;
+        }
+        // Somebody on the line hidden by the leavers choice is drawn all the same: they ARE the line.
+        if (!$onLine) $children[] = $node;
+        $boss['reports'] = max($boss['reports'], count($team));
+        $boss['children'] = $children;
+        $boss['more'] = max(0, $boss['reports'] - count($children));
+        $node = $boss;
+        $total++;
+    }
+    return ['root' => $node, 'focus' => $userId, 'manager' => null, 'total' => $total, 'truncated' => $truncated];
+}
+
+/**
+ * The departments of the current people the reader can see, in order - what the
+ * chart's colours are handed out by, so each one keeps its colour wherever it
+ * appears and no two of the first few share one.
+ *
+ * @return string[]  department names, sorted, at most 200
+ */
+function peopleOrgDepartments(PDO $conn, int $analystId): array
+{
+    [$scope, $args] = peopleScope($conn, $analystId, 'u.tenant_id');
+    $st = $conn->prepare(
+        "SELECT DISTINCT TRIM(u.department) AS d FROM users u
+          WHERE u.is_active = 1 AND u.department IS NOT NULL AND TRIM(u.department) <> '' $scope
+          ORDER BY d LIMIT 200"
+    );
+    $st->execute($args);
+    return array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * The gaps a chart makes visible, limited to the people the reader can see.
+ *
+ *  - no_manager: current people a directory keeps up to date (is_managed) who
+ *    have no manager and manage nobody - the directory has no reporting line
+ *    for them. People typed in by hand, often customers, are left out: for
+ *    them no manager is normal, not a gap.
+ *  - left_with_reports: leavers who still have current people reporting to them.
+ *
+ * @return array ['no_manager' => ['total', 'people'], 'left_with_reports' => ['total', 'people']]
+ */
+function peopleOrgGaps(PDO $conn, int $analystId): array
+{
+    [$scopeU, $argsU] = peopleScope($conn, $analystId, 'u.tenant_id');
+    [$scopeR, $argsR] = peopleScope($conn, $analystId, 'r.tenant_id');
+    $list = function (string $where, array $args) use ($conn): array {
+        $st = $conn->prepare("SELECT COUNT(*) FROM users u WHERE $where");
+        $st->execute($args);
+        $total = (int)$st->fetchColumn();
+        $st = $conn->prepare(
+            "SELECT u.id, u.display_name, u.preferred_name, u.email, u.username, u.job_title, u.department
+               FROM users u WHERE $where
+              ORDER BY COALESCE(NULLIF(u.preferred_name, ''), NULLIF(u.display_name, ''), u.email)
+              LIMIT " . PEOPLE_ORG_GAPS_LIMIT
+        );
+        $st->execute($args);
+        $people = array_map(fn($r) => [
+            'id' => (int)$r['id'], 'name' => peopleName($r), 'job_title' => $r['job_title'],
+            'department' => $r['department'], 'reports' => null,
+        ], $st->fetchAll(PDO::FETCH_ASSOC));
+        return ['total' => $total, 'people' => $people];
+    };
+
+    $noManager = $list(
+        "u.is_active = 1 AND u.is_managed = 1 AND u.manager_id IS NULL $scopeU
+         AND NOT EXISTS (SELECT 1 FROM users r WHERE r.manager_id = u.id $scopeR)",
+        array_merge($argsU, $argsR));
+    $left = $list(
+        "u.is_active = 0 $scopeU AND EXISTS (SELECT 1 FROM users r WHERE r.manager_id = u.id AND r.is_active = 1 $scopeR)",
+        array_merge($argsU, $argsR));
+    // How many current people each one still has under them.
+    if ($left['people']) {
+        $cnt = $conn->prepare("SELECT COUNT(*) FROM users r WHERE r.manager_id = ? AND r.is_active = 1 $scopeR");
+        foreach ($left['people'] as &$p) {
+            $cnt->execute(array_merge([$p['id']], $argsR));
+            $p['reports'] = (int)$cnt->fetchColumn();
+        }
+        unset($p);
+    }
+    return ['no_manager' => $noManager, 'left_with_reports' => $left];
+}

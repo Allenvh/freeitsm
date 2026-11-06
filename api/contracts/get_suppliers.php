@@ -1,4 +1,9 @@
 <?php
+/**
+ * API: every supplier, with its type and status names, sorted by legal name.
+ *
+ * @output {success, suppliers: [...]}
+ */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
@@ -9,6 +14,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('contracts');
 
 try {
     $conn = connectToDatabase();

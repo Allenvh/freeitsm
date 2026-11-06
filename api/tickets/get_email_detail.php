@@ -7,6 +7,7 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/phone_dial.php';   // the requester's Call links
 
 header('Content-Type: application/json');
 
@@ -15,6 +16,9 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// Reading an email on a ticket — everyday work. It had NO module check.
+requireModuleAccessJson('tickets');
 
 // Get email ID or ticket ID from request
 $emailId = $_GET['id'] ?? null;
@@ -28,6 +32,21 @@ if (!$emailId && !$ticketId) {
 try {
     // Connect to database
     $conn = connectToDatabase();
+
+    // ⚠️ NEVER name work_end_datetime / work_all_day unguarded here. They are new
+    // (#1161), and on an install that has pulled the code but not yet run
+    // Database Verification an unguarded reference does not degrade — it makes
+    // OPENING ANY TICKET fail, which is the whole product. Same guard the inbox
+    // list uses; a NULL end simply means "no duration recorded".
+    require_once '../../includes/ticket_snooze.php';
+    $schedCols = scheduleSchemaReady($conn)
+        ? "t.work_end_datetime, t.work_all_day,"
+        : "NULL AS work_end_datetime, 0 AS work_all_day,";
+    // Normal / Confidential (discussion #62), guarded the same way.
+    require_once '../../includes/ticket_sensitivity.php';
+    $sensCol = ticketSensitivityReady($conn) ? "t.sensitivity," : "'normal' AS sensitivity,";
+    require_once '../../includes/ticket_workspace.php';
+    $workspaceCol = ticketWorkspaceReady($conn) ? 't.is_workspace,' : '0 AS is_workspace,';
 
     // Query full email details with ticket information
     $sql = "SELECT
@@ -44,7 +63,7 @@ try {
                 e.has_attachments,
                 e.importance,
                 e.is_read,
-                e.ticket_id,
+                t.id AS ticket_id,
                 e.is_initial,
                 e.direction,
                 t.ticket_number,
@@ -54,33 +73,60 @@ try {
                 t.priority_id,
                 t.department_id,
                 t.ticket_type_id,
+                -- Classification (#1540). Ids only: the reading pane resolves the
+                -- names from the same list it renders the dropdowns from, so a
+                -- joined name here would just be a second copy that could disagree.
+                t.category_id,
+                t.closure_category_id,
+                t.resolution_code_id,
+                t.assigned_team_id,
+                $sensCol
+                $workspaceCol
                 t.assigned_analyst_id,
                 t.origin_id,
                 t.first_time_fix,
                 t.it_training_provided,
                 t.owner_id,
                 t.work_start_datetime,
+                $schedCols
                 t.tenant_id,
                 t.user_id,
                 u.email AS requester_email,
+                u.phone AS requester_phone,
+                u.mobile AS requester_mobile,
                 t.created_datetime as ticket_created,
                 t.updated_datetime as ticket_updated,
                 t.deleted_datetime
-            FROM emails e
-            INNER JOIN tickets t ON e.ticket_id = t.id
+            __FROM_CLAUSE__
             LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
             LEFT JOIN ticket_priorities tp ON tp.id = t.priority_id
             LEFT JOIN users u ON u.id = t.user_id
             WHERE ";
 
-    // Look up by email ID or by ticket ID (gets the initial email for the ticket)
+    // 🔴 THE TWO LOOKUPS NEED DIFFERENT JOINS, and conflating them is a trap.
+    //
+    // By EMAIL id, an email certainly exists and may be any message on the
+    // thread, so the query is driven from `emails` exactly as it always was.
+    // Restricting that side to `is_initial = 1` would break every reply.
+    //
+    // By TICKET id, the ticket is the thing that must exist and the email is
+    // optional: a merge moves the emails to the surviving ticket, so a
+    // merged-away or otherwise email-less ticket has none. This used to be
+    // `FROM emails INNER JOIN tickets`, which meant such a ticket could not be
+    // opened by ANY route - it was missing from the inbox list and unreachable
+    // if you found it another way.
     if ($emailId) {
-        $sql .= "e.id = ?";
+        $from = "FROM emails e
+                 INNER JOIN tickets t ON t.id = e.ticket_id";
+        $where = "e.id = ?";
         $param = $emailId;
     } else {
-        $sql .= "e.ticket_id = ? AND e.is_initial = 1";
+        $from = "FROM tickets t
+                 LEFT JOIN emails e ON e.ticket_id = t.id AND e.is_initial = 1";
+        $where = "t.id = ?";
         $param = $ticketId;
     }
+    $sql = str_replace('__FROM_CLAUSE__', $from, $sql) . $where;
 
     $stmt = $conn->prepare($sql);
     $stmt->execute([$param]);
@@ -111,6 +157,15 @@ try {
     }
 
     // Convert bit fields to boolean
+    // The requester's numbers, each with its Call link - only when click-to-call
+    // is on, so the reading pane is unchanged on an install without it.
+    $dial = phoneDialTemplate($conn);
+    $email['requester_dial'] = [];
+    foreach (['requester_phone', 'requester_mobile'] as $col) {
+        $href = phoneDialHref($dial, $email[$col] ?? null);
+        if ($href !== '') $email['requester_dial'][] = ['number' => (string)$email[$col], 'href' => $href];
+    }
+    unset($email['requester_phone'], $email['requester_mobile']);
     $email['is_read'] = (bool)$email['is_read'];
     $email['has_attachments'] = (bool)$email['has_attachments'];
     $email['first_time_fix'] = $email['first_time_fix'] === null ? null : (bool)$email['first_time_fix'];
@@ -159,7 +214,7 @@ try {
     // Problem Management: problems this incident is linked to (badge + link in the
     // reading pane). Degrades to [] if the module's tables aren't present yet.
     $email['problems'] = [];
-    try {
+    if (moduleIsEnabled($conn, 'problems')) try {   // GH #217: none while Problems is switched off
         $pq = $conn->prepare(
             "SELECT p.id, p.problem_number, p.title, ps.name AS status
              FROM problem_tickets pt
@@ -170,6 +225,94 @@ try {
         $pq->execute([(int) $email['ticket_id']]);
         $email['problems'] = $pq->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) { /* module not installed yet */ }
+
+    // Change Management: changes this incident is linked to (badge + link in the
+    // reading pane). Degrades to [] if the module's tables aren't present yet.
+    // change_number is derived (CHG-####) from the id, so only id/title/status here.
+    $email['changes'] = [];
+    if (moduleIsEnabled($conn, 'changes')) try {   // GH #217: none while Changes is switched off
+        $cq = $conn->prepare(
+            "SELECT c.id, c.title, cs.name AS status
+             FROM change_tickets ct
+             JOIN changes c ON c.id = ct.change_id
+             LEFT JOIN change_statuses cs ON cs.id = c.status_id
+             WHERE ct.ticket_id = ? ORDER BY c.created_datetime DESC"
+        );
+        $cq->execute([(int) $email['ticket_id']]);
+        $email['changes'] = $cq->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) { /* module not installed yet */ }
+
+    // Ticket-to-ticket links (parent / children / duplicates / related), grouped
+    // from this ticket's perspective. Degrades to empty if the table is absent.
+    $email['linked_tickets'] = ['parent' => null, 'children' => [], 'duplicate_of' => null, 'duplicates' => [], 'related' => []];
+    try {
+        require_once '../../includes/ticket_links.php';
+        $email['linked_tickets'] = ticketLinksFor($conn, (int) $email['ticket_id']);
+    } catch (Exception $e) { /* table not present yet */ }
+
+    // External issue trackers (#950). Issues this ticket has been escalated to,
+    // with the status cached at the last poll. Degrades to an empty list on an
+    // install that has not run Database Verification, so "not set up" looks like
+    // "not linked" rather than an error in the middle of the ticket view.
+    //
+    // ⚠️ No credentials here, and no live call to the tracker: rendering a ticket
+    // must never wait on somebody else's API being up. The status shown is
+    // whatever the poll last recorded.
+    $email['tracker_links'] = [];
+    try {
+        require_once '../../includes/integrations/integrations.php';
+        foreach (integrationsLinksFor($conn, 'ticket', (int) $email['ticket_id']) as $l) {
+            $email['tracker_links'][] = [
+                'id'              => (int) $l['id'],
+                'provider'        => $l['provider'],
+                'connection_name' => $l['connection_name'],
+                'external_key'    => $l['external_key'],
+                'external_url'    => $l['external_url'],
+                'status_name'     => $l['status_name'],
+                'status_category' => $l['status_category'],
+                'assignee_name'   => $l['assignee_name'],
+                'synced'          => $l['last_synced_datetime'],
+            ];
+        }
+    } catch (Exception $e) { /* tables not present yet */ }
+
+    // Merge state, both directions. `merged_away` is what drives the banner telling
+    // an analyst that this ticket is a redirect and where it points — the answer to
+    // "whatever happened to ABC?". `merged_in` lists what was folded INTO this one,
+    // so the surviving ticket can show which references it now answers for.
+    $email['merged_away'] = null;
+    $email['merged_in']   = [];
+    try {
+        require_once '../../includes/ticket_merge.php';
+        $email['merged_away'] = mergedAwayInfo($conn, (int) $email['ticket_id']);
+
+        $ms = $conn->prepare(
+            "SELECT source_ticket_id, source_ticket_number, merged_datetime
+               FROM ticket_merges WHERE target_ticket_id = ? ORDER BY id"
+        );
+        $ms->execute([(int) $email['ticket_id']]);
+        $email['merged_in'] = $ms->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) { /* pre-upgrade install */ }
+
+    // Split state, both directions: what was split OUT of this ticket, and whether
+    // this ticket was itself split off another one.
+    $email['split_out']  = [];
+    $email['split_from'] = null;
+    try {
+        require_once '../../includes/ticket_split.php';
+        $si = splitInfoFor($conn, (int) $email['ticket_id']);
+        $email['split_out']  = $si['split_out'];
+        $email['split_from'] = $si['split_from'];
+    } catch (Exception $e) { /* pre-upgrade install */ }
+
+    // Snooze state (#933). Null unless the ticket is asleep RIGHT NOW — the helper
+    // tests snoozed_until > UTC_TIMESTAMP(), so an expired snooze produces no
+    // banner without anything having had to clear the columns.
+    $email['snooze'] = null;
+    try {
+        require_once '../../includes/ticket_snooze.php';
+        $email['snooze'] = snoozeStateFor($conn, (int) $email['ticket_id']);
+    } catch (Exception $e) { /* pre-upgrade install */ }
 
     // Screen recordings attached to the ticket
     $recordings = [];
@@ -183,6 +326,12 @@ try {
     } catch (Exception $e) {
         // Table may not exist on installs that haven't run db_verify yet
     }
+
+    // Record the view (discussion #62, step 2) - after every check above has
+    // passed, so a refused request is never counted as someone having looked.
+    // One row per analyst per day; it cannot fail the request.
+    require_once '../../includes/ticket_views.php';
+    ticketViewRecord($conn, (int)$email['ticket_id'], 'analyst', (int)$_SESSION['analyst_id']);
 
     echo json_encode([
         'success' => true,

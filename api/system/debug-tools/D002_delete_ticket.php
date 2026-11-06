@@ -27,12 +27,31 @@ $DIAG_NAME = 'Delete Ticket (with full SQL trace)';
 // ---- helpers -----------------------------------------------------------
 
 $sections = [];
+/**
+ * Adds one titled section ("=== TITLE ===" and its lines) to the report; $body is a
+ * string or an array of lines.
+ *
+ * @param mixed $sections  the report so far, a list of section strings - appended to by reference
+ * @param mixed $title  the section heading, printed between === marks
+ * @param mixed $body  the section text - a string, or an array of lines
+ */
 function addSection(&$sections, $title, $body) {
     if (is_array($body)) $body = implode("\n", $body);
     $sections[] = "=== {$title} ===\n" . rtrim($body, "\n");
 }
+/**
+ * Formats a boolean as YES or NO for the report.
+ *
+ * @param mixed $v  any value, judged as true or false
+ */
 function bool_str($v) { return $v ? 'YES' : 'NO'; }
 
+/**
+ * Prints every section, separated by blank lines, and stops - the end of the report, and
+ * the early exit when a check cannot go on.
+ *
+ * @param mixed $sections  the report, a list of section strings as built by addSection()
+ */
 function emit_and_exit($sections) {
     if (!headers_sent()) {
         header('Content-Type: text/plain; charset=utf-8');
@@ -72,10 +91,17 @@ $rootCfg = realpath(__DIR__ . '/../../../config.php');
 $conn = null; $connErr = null;
 try {
     if ($rootCfg) @require_once $rootCfg;
+    // Debug tools are administrators-only (issue #34). Fail closed.
+    require_once __DIR__ . '/../../../includes/functions.php';
+    try { $__dbgAdmin = !empty($_SESSION['analyst_id']) && analystIsAdmin(connectToDatabase(), (int)$_SESSION['analyst_id']); } catch (Throwable $e) { $__dbgAdmin = false; }
+    if (!$__dbgAdmin) { http_response_code(403); if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8'); echo "Administrator access required.\n"; exit; }
+    // Deletes a ticket: never on a GET, which a link on another site can send
+    // (csrf.php). The tool page runs it as a POST - see 'method' in tools.php.
+    csrfRequireWriteMethod();
     if (defined('DB_SERVER') && defined('DB_NAME') && defined('DB_USERNAME') && defined('DB_PASSWORD')) {
         $conn = new PDO(
             "mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-            DB_USERNAME, DB_PASSWORD
+            DB_USERNAME, DB_PASSWORD, dbConnectionOptions()   // UTC session — includes/db.php
         );
         $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } else {
@@ -155,6 +181,7 @@ $relevant = [
     'ticket_recordings'   => ['id','ticket_id'],
     'ticket_csat_responses' => ['id','ticket_id'],
     'ticket_cmdb_objects' => ['id','ticket_id'],
+    'ticket_assets'       => ['id','ticket_id'],
     'sla_notifications_sent' => ['id','ticket_id'],
     'tasks'               => ['id','ticket_id'],
     'tickets'             => ['id','ticket_number'],
@@ -317,6 +344,7 @@ $counts = [
     'ticket_recordings (cascade)'    => ["SELECT COUNT(*) FROM ticket_recordings WHERE ticket_id = ?", [$ticketId]],
     'ticket_csat_responses (cascade)'=> ["SELECT COUNT(*) FROM ticket_csat_responses WHERE ticket_id = ?", [$ticketId]],
     'ticket_cmdb_objects (cascade)'  => ["SELECT COUNT(*) FROM ticket_cmdb_objects WHERE ticket_id = ?", [$ticketId]],
+    'ticket_assets (cascade)'        => ["SELECT COUNT(*) FROM ticket_assets WHERE ticket_id = ?", [$ticketId]],
     'sla_notifications_sent (cascade)'=> ["SELECT COUNT(*) FROM sla_notifications_sent WHERE ticket_id = ?", [$ticketId]],
     'tasks (set null)'               => ["SELECT COUNT(*) FROM tasks WHERE ticket_id = ?", [$ticketId]],
 ];

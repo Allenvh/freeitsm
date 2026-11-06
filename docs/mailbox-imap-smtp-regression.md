@@ -1,3 +1,5 @@
+> **Historical fork documentation.** The full 4.10 upgrade replaces these custom screens and mail paths with upstream implementations. Use [the current upgrade guide](upstream-4.10-upgrade.md).
+
 # IMAP/SMTP mailbox regression checks
 
 Use these checks after changing Generic IMAP/SMTP mailbox saving or D005 diagnostics.

@@ -1,0 +1,305 @@
+<?php
+/**
+ * Time-based workflow triggers.
+ *
+ * Every other trigger in the engine hangs off a WRITE PATH: someone saved a
+ * ticket, submitted a form, approved a change — so there is a moment to call
+ * dispatch() from. These ones don't. "The SLA is about to breach" and "this
+ * contract expires in 30 days" are not events at all: nothing happened, TIME
+ * PASSED. There is nothing to hang a dispatch() off, so something has to go
+ * LOOKING.
+ *
+ * That creates a problem the write-path triggers never have: the detector runs
+ * every few minutes, and the condition it detects STAYS TRUE. A breached SLA is
+ * still breached on the next run, and the one after that. Naively dispatching
+ * on detection would re-fire the same escalation every few minutes, forever —
+ * which would be worse than no feature at all.
+ *
+ * So the heart of this file is not the detectors. It's workflowEmitOnce():
+ * an atomic, database-backed ledger that guarantees a given (event, thing,
+ * state) fires exactly once, even if two cron runs overlap.
+ */
+
+require_once __DIR__ . '/../workflow/includes/engine.php';
+require_once __DIR__ . '/contract_party.php';   // who a contract is with (#153)
+require_once __DIR__ . '/timezone.php';   // naive_today_sql() — expiry dates are bare dates (GH #126)
+require_once __DIR__ . '/asset_retirement.php';   // retired assets get no warranty reminder
+
+/**
+ * Dispatch a time-based event — but only the FIRST time this exact situation is
+ * seen. Returns true if it fired, false if it had already fired.
+ *
+ * The three keys:
+ *   $event       the trigger, e.g. 'sla.breached'
+ *   $entityKey   WHAT it's about, e.g. 'ticket:183:response'
+ *   $fingerprint the STATE it's about — a value that changes if the underlying
+ *                deadline changes.
+ *
+ * The fingerprint is what makes this re-arm correctly. If a ticket's priority
+ * changes, its SLA target changes, and the fingerprint changes with it — so the
+ * new deadline can breach and fire again, rather than being suppressed forever
+ * by an emission recorded against the OLD deadline. Same for a contract whose
+ * end date is pushed back. Without it, "fire once" would quietly mean "fire once
+ * ever, even if the thing you were watching changed underneath you".
+ *
+ * Atomicity: the ledger has a UNIQUE key over all three, and we INSERT IGNORE.
+ * Only the insert that actually created a row dispatches. Two overlapping cron
+ * runs therefore cannot double-fire — the database, not the application, is the
+ * arbiter.
+ *
+ * @param string $event  the trigger event key, e.g. 'sla.breached'
+ * @param string $entityKey  what it is about, e.g. 'ticket:183:response'
+ * @param string $fingerprint  the state it is about; a new value re-arms the emission
+ * @param array $payload  the event payload handed to WorkflowEngine::dispatch()
+ */
+function workflowEmitOnce(PDO $conn, string $event, string $entityKey, string $fingerprint, array $payload): bool
+{
+    // Nobody listening? Then record NOTHING.
+    //
+    // This is not an optimisation — it's a correctness fix. If we wrote a ledger
+    // row when no workflow was active, the ledger would say "already fired" for
+    // every contract currently inside its window. Switch on a renewal workflow
+    // tomorrow and it would stay silent for all of them, because the emission was
+    // burned on an audience of nobody. Enabling a workflow would appear to do
+    // nothing at all, and the reason would be invisible.
+    //
+    // Skipping the ledger means the next run after you activate a workflow fires
+    // for everything currently in-window — which is what anyone would expect.
+    try {
+        $listening = $conn->prepare("SELECT COUNT(*) FROM workflows WHERE trigger_event = ? AND is_active = 1");
+        $listening->execute([$event]);
+        if ((int)$listening->fetchColumn() === 0) {
+            return false;
+        }
+    } catch (Exception $e) {
+        return false;
+    }
+
+    try {
+        $stmt = $conn->prepare(
+            "INSERT IGNORE INTO workflow_scheduled_emissions
+             (trigger_event, entity_key, fingerprint, emitted_datetime)
+             VALUES (?, ?, ?, UTC_TIMESTAMP())"
+        );
+        $stmt->execute([$event, $entityKey, $fingerprint]);
+        if ($stmt->rowCount() !== 1) {
+            return false;   // already emitted for this exact state
+        }
+    } catch (Exception $e) {
+        // Ledger unavailable (pre-Database-Verify). Emitting anyway would risk
+        // re-firing an escalation every few minutes, which is far worse than not
+        // firing — so we stay silent and say so in the log.
+        error_log('[workflow_scheduled] emission ledger unavailable, NOT dispatching ' . $event . ': ' . $e->getMessage());
+        return false;
+    }
+
+    try {
+        WorkflowEngine::dispatch($event, $payload);
+    } catch (Exception $e) {
+        // The engine swallows its own errors; this is belt and braces.
+        error_log('[workflow_scheduled] dispatch failed for ' . $event . ': ' . $e->getMessage());
+    }
+    return true;
+}
+
+/**
+ * The windows we announce an expiry at. A contract expiring in 45 days crosses
+ * the 90-day window today and the 30-day window in a fortnight — two separate
+ * emissions, each carrying `window_days`, so a workflow can say "only tell me at
+ * 30 days" with a plain condition rather than needing its own scheduling.
+ */
+function workflowExpiryWindows(): array
+{
+    return [90, 30, 7, 1];
+}
+
+/**
+ * Contracts approaching their end date → `contract.expiring`.
+ */
+function workflowEmitContractExpiries(PDO $conn): int
+{
+    $fired = 0;
+    $windows = workflowExpiryWindows();
+    $maxWindow = max($windows);
+    $today = naive_today_sql();
+
+    [$partyCols, $partyJoins] = contractPartySql($conn, 'c');
+    $rows = $conn->prepare(
+        // Suppliers have no single `name`: trading_name is what people call them,
+        // legal_name is what's on the contract. Prefer the former, fall back.
+        // ⚠️ naive_today_sql(), not CURDATE(). contract_end is a BARE DATE and
+        // days_remaining decides which reminder window fires (30/14/7). CURDATE()
+        // is the UTC date now that the connection is pinned (GH #126), so for the
+        // hour before local midnight it would count a day too many and send the
+        // 30-day reminder on day 31. This job runs from cron with no session, so
+        // the wall clock is the installation's own zone, which is right.
+        "SELECT c.id, c.contract_number, c.title, c.contract_end, c.supplier_id,
+                COALESCE(NULLIF(s.trading_name, ''), s.legal_name) AS supplier_name,
+                s.legal_name AS supplier_legal_name, s.trading_name AS supplier_trading_name,
+                DATEDIFF(c.contract_end, $today) AS days_remaining
+                $partyCols
+           FROM contracts c
+      LEFT JOIN suppliers s ON s.id = c.supplier_id
+                $partyJoins
+          WHERE c.is_active = 1
+            AND c.contract_end IS NOT NULL
+            AND c.contract_end >= $today
+            AND c.contract_end <= DATE_ADD($today, INTERVAL ? DAY)"
+    );
+    $rows->execute([$maxWindow]);
+
+    foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $days = (int)$c['days_remaining'];
+        foreach ($windows as $w) {
+            if ($days > $w) continue;   // hasn't entered this window yet
+
+            $fired += workflowEmitOnce(
+                $conn,
+                'contract.expiring',
+                'contract:' . (int)$c['id'] . ':' . $w,
+                // End date is the fingerprint: renew the contract and the new
+                // date re-arms every window, so next year's reminders still fire.
+                (string)$c['contract_end'],
+                [
+                    'contract' => [
+                        'id'              => (int)$c['id'],
+                        'number'          => $c['contract_number'],
+                        'title'           => $c['title'],
+                        'end_date'        => $c['contract_end'],
+                        'days_remaining'  => $days,
+                        'supplier_id'     => $c['supplier_id'] !== null ? (int)$c['supplier_id'] : null,
+                        'supplier_name'   => $c['supplier_name'],
+                        // Who it is WITH (#153): supplier or customer, and a name either way.
+                        'party_type'         => $c['party_type'] ?? 'supplier',
+                        'party_name'         => contractPartyLabel(['supplier_name' => $c['supplier_legal_name'], 'supplier_trading_name' => $c['supplier_trading_name']] + $c),
+                        'customer_tenant_id' => isset($c['customer_tenant_id']) ? (int)$c['customer_tenant_id'] : null,
+                        'customer_user_id'   => isset($c['customer_user_id']) ? (int)$c['customer_user_id'] : null,
+                    ],
+                    'window_days' => $w,
+                ]
+            ) ? 1 : 0;
+        }
+    }
+    return $fired;
+}
+
+/**
+ * Asset warranties approaching expiry → `asset.warranty_expiring`.
+ */
+function workflowEmitWarrantyExpiries(PDO $conn): int
+{
+    $fired = 0;
+    $windows = workflowExpiryWindows();
+    $maxWindow = max($windows);
+    $today = naive_today_sql();
+
+    $rows = $conn->prepare(
+        // A bare date and a reminder window, exactly as above (GH #126).
+        "SELECT a.id, a.hostname, a.warranty_expiry,
+                DATEDIFF(a.warranty_expiry, $today) AS days_remaining
+           FROM assets a
+          WHERE a.warranty_expiry IS NOT NULL
+            AND a.warranty_expiry >= $today
+            AND a.warranty_expiry <= DATE_ADD($today, INTERVAL ? DAY)"
+          . assetNotRetiredSql($conn, 'a')   // a retired asset's warranty is nobody's business now
+    );
+    $rows->execute([$maxWindow]);
+
+    foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $a) {
+        $days = (int)$a['days_remaining'];
+        foreach ($windows as $w) {
+            if ($days > $w) continue;
+
+            $fired += workflowEmitOnce(
+                $conn,
+                'asset.warranty_expiring',
+                'asset:' . (int)$a['id'] . ':' . $w,
+                (string)$a['warranty_expiry'],
+                [
+                    'asset' => [
+                        'id'             => (int)$a['id'],
+                        'hostname'       => $a['hostname'],
+                        'warranty_end'   => $a['warranty_expiry'],
+                        'days_remaining' => $days,
+                    ],
+                    'window_days' => $w,
+                ]
+            ) ? 1 : 0;
+        }
+    }
+    return $fired;
+}
+
+/**
+ * Everything the scheduled-trigger cron runs. SLA events are NOT here — they're
+ * emitted from sla_run_breach_check(), which already walks every open ticket and
+ * computes its SLA state, so emitting from there costs nothing and cannot drift
+ * from what the SLA emails think is true.
+ */
+function workflowScheduledRun(PDO $conn, ?array &$parts = null): array
+{
+    // #182: each part reports whether it WORKED, not just a count. A part that
+    // threw used to be logged and counted as 0, so the cron printed "OK" while
+    // planned maintenance had stopped starting - the job's three parts are now
+    // its three sources, and one failing makes the run PARTIAL, named.
+    $parts = [];
+    $part = function (string $key, callable $fn) use (&$parts) {
+        try {
+            $n = $fn();
+            $parts[$key] = ['ok' => true, 'error' => null];
+            return $n;
+        } catch (Throwable $e) {
+            error_log('[workflow_scheduled] ' . $key . ': ' . $e->getMessage());
+            $parts[$key] = ['ok' => false, 'error' => $e->getMessage()];
+            return 0;
+        }
+    };
+    // GH #217. Each part belongs to a module and does nothing while it is switched
+    // off - and records nothing, so its fire-once ledger is not filled with events
+    // nobody was told about. Back on, whatever is still inside its window is
+    // announced then; what passed while it was off is not sent as a backlog.
+    $on = fn(string $module) => moduleIsEnabled($conn, $module);
+    $expiries = $part('expiries', fn() => [
+        $on('contracts') ? workflowEmitContractExpiries($conn) : 0,
+        $on('assets')    ? workflowEmitWarrantyExpiries($conn) : 0,
+    ]);
+    return [
+        'contract_expiring'        => is_array($expiries) ? $expiries[0] : 0,
+        'asset_warranty_expiring'  => is_array($expiries) ? $expiries[1] : 0,
+        // Service Status planned maintenance (3.2.0): start what is due, finish
+        // what has ended. Not a workflow trigger itself - the incident it makes is.
+        'planned_maintenance'      => $part('planned_maintenance', function () use ($conn, $on) {
+            if (!$on('service-status')) return 0;
+            require_once __DIR__ . '/service_status_planned.php';
+            return array_sum(statusPlannedRun($conn));
+        }),
+        // Projects keep their own fire-once state (includes/projects/alerts.php):
+        // health and tolerance changes, and stages ending soon.
+        'projects'                 => $part('projects', function () use ($conn, $on) {
+            if (!$on('projects')) return 0;
+            require_once __DIR__ . '/projects/alerts.php';
+            return array_sum(projectAlertsRun($conn));   // the cron prints one number per entry
+        }),
+    ];
+}
+
+/**
+ * Drop ledger rows for events long past. Keeping them forever would grow without
+ * bound; a year is far longer than any window we announce, so nothing can be
+ * resurrected by a prune.
+ *
+ * @param int $keepDays  ledger rows older than this many days are deleted
+ */
+function workflowPruneEmissions(PDO $conn, int $keepDays = 365): int
+{
+    try {
+        $stmt = $conn->prepare(
+            "DELETE FROM workflow_scheduled_emissions
+              WHERE emitted_datetime < UTC_TIMESTAMP() - INTERVAL ? DAY"
+        );
+        $stmt->execute([$keepDays]);
+        return $stmt->rowCount();
+    } catch (Exception) {
+        return 0;
+    }
+}

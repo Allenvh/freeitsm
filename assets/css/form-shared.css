@@ -1,0 +1,368 @@
+/*
+ * Form presentation shared by all three surfaces.
+ *
+ * 🔑 WHY ITS OWN FILE. The three places a form is drawn (forms/fill.php,
+ * self-service/catalogue.php, forms/edit/index.php) load three different
+ * stylesheets and share only theme.css, which is a token registry with no
+ * component classes in it and should stay that way.
+ *
+ * ⚠️ WHAT BELONGS HERE, AND WHAT DOES NOT. Their INPUTS look deliberately
+ * different — real controls, portal controls, disabled previews — and merging
+ * those would change how every existing form renders. What belongs here is the
+ * presentation that has no reason to differ:
+ *
+ *   1. BLOCKS — items that are read rather than answered. A notice panel is a
+ *      notice panel on all three.
+ *   2. LABEL POSITION — whether a label sits above its control or beside it.
+ *      That is one authored decision and must produce the same shape everywhere,
+ *      even though the markup it applies to differs per surface.
+ *   3. HOW WIDE THE FORM ITSELF IS. Same argument: an author lays a form out
+ *      against a width, and a field's twelfths only mean something relative to
+ *      it. Held as ONE token below rather than a number in each surface.
+ *
+ * (This file was briefly called form-blocks.css. Label position is a property of
+ * a QUESTION, not a block, so the name was already lying one commit in.)
+ *
+ * 🔴 STYLES ARE NAMED, NEVER PICKED. An author chooses "Warning", not a colour.
+ * Every value here is a theme token that is already defined for light AND dark;
+ * a hex an author typed can only be right in one of them.
+ */
+
+/* How wide a form may draw, on the analyst filler and on the portal alike.
+ *
+ * 🔑 ONE NUMBER, because a form is laid out ONCE by its author and then read by
+ * two different audiences. It used to be 860px on the filler and 720px on the
+ * portal, so the same form was 140px narrower for the customer it was written
+ * for — the same complaint that turned out to be #1841, arriving from the other
+ * direction.
+ *
+ * ⚠️ WHY IT IS NOT SMALLER. A field's width is in twelfths, so the narrow ones
+ * are only as usable as the card is wide. At 720px a quarter-width field came to
+ * 167px, which a `dd/mm/yyyy` input with its calendar button very nearly fills —
+ * fine for "Fecha", not fine for "Fälligkeitsdatum". The builder was offering a
+ * width the portal could not really honour. At 1040px a quarter is 247px.
+ *
+ * ⚠️ AND WHY NOT WIDER. Past about 1200px a half-width field becomes a 590px
+ * text box, which reads as a wall rather than a form.
+ *
+ * 🔴 A4 IS NOT THE CONSTRAINT HERE. Neither filling page has print styles; the
+ * pages that are actually printed are forms/submissions.php and
+ * forms/collection.php, which carry their own @media print. If a blank form ever
+ * needs printing, that wants a print stylesheet, not a narrow screen. */
+:root {
+    --form-card-max: 1040px;
+}
+
+.form-note {
+    border: 1px solid var(--border, #ddd);
+    border-left-width: 4px;
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: var(--surface-2, #fafafa);
+    color: var(--text, #333);
+    font-size: 14px;
+    line-height: 1.5;
+    box-sizing: border-box;
+}
+
+.form-note .form-note-title {
+    font-weight: 600;
+    margin: 0;
+}
+
+/* The optional longer text, beneath the title. Margin only when it exists, so a
+   one-line note has no dangling space under it. */
+.form-note .form-note-body {
+    margin: 6px 0 0;
+    white-space: pre-wrap;   /* an author's line breaks are meaningful */
+}
+
+/* ── The named styles ────────────────────────────────────────────────────────
+   Each is a bg / text / border triple that theme.css defines twice, once per
+   mode. 'plain' deliberately has no rule: it is the base above. */
+.form-note[data-note-style="info"] {
+    background: var(--info-bg, #e0f2fe);
+    color: var(--info-text, #075985);
+    border-color: var(--info-border, #b9def5);
+    border-left-color: var(--info-accent, #0284c7);
+}
+.form-note[data-note-style="warning"] {
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border-color: var(--warning-border, #f0d9a8);
+    /* Warning has no --*-accent pair in the theme; its text colour is the
+       strongest thing it owns and reads correctly in both modes. */
+    border-left-color: var(--warning-text, #92400e);
+}
+.form-note[data-note-style="danger"] {
+    background: var(--danger-bg, #fee2e2);
+    color: var(--danger-text, #991b1b);
+    border-color: var(--danger-border, #f0c2c2);
+    border-left-color: var(--danger-accent, #d13438);
+}
+.form-note[data-note-style="success"] {
+    background: var(--success-bg, #dcfce7);
+    color: var(--success-text, #166534);
+    border-color: var(--success-border, #b7e1c4);
+    border-left-color: var(--success-accent, #16a34a);
+}
+
+/* Conditionally hidden, set by applyVisibility() as answers change. The two
+   live surfaces each have their own is-hidden rule for fields; a block is drawn
+   by the shared file so it carries its own. */
+.form-note.is-hidden { display: none; }
+
+/* A block sits in the same 12-column grid as everything else, so it needs the
+   same bottom spacing a field has or a note butts against the question under it. */
+.form-note { margin-bottom: 18px; }
+
+/* The builder's preview draws at a smaller scale than the real thing. */
+.preview-field .form-note,
+.preview-slot .form-note { font-size: 13px; padding: 10px 12px; margin-bottom: 14px; }
+
+/* What FormRender draws for a field type a surface cannot render. Deliberately
+   not an input — see assets/js/form-render.js. */
+.form-field-unsupported {
+    border: 1px dashed var(--danger-border, #f0c2c2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 18px;
+    background: var(--danger-bg, #fee2e2);
+    color: var(--danger-text, #991b1b);
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+/* ══ 2. Label position ══════════════════════════════════════════════════════
+   `data-label-pos="beside"` on a field's wrapper puts its label in a first
+   column and its control in a second, which is what produces a row reading
+   | First name | [input] | Surname | [input] |
+   out of two half-width questions — no cell editor required.
+
+   ⚠️ The three surfaces nest differently, so this needs one selector each. The
+   DECISION is shared (FormLogic.labelPosition, applied once in FormRender's
+   ctx.wrapAttrs); only the markup it lands on differs. That is the same split
+   the renderers themselves follow.
+
+   'above' is the default and writes NO attribute at all, so every existing
+   field is untouched and the default lives in one place. */
+
+/* The analyst filler: label, control, then an error message under the control. */
+.form-field[data-label-pos="beside"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    align-items: start;
+    column-gap: 12px;
+}
+.form-field[data-label-pos="beside"] > label {
+    margin-bottom: 0;
+    /* Nudged down so the text sits on the control's baseline rather than the
+       top of its border box. */
+    padding-top: 10px;
+}
+/* The error belongs under the CONTROL, not under the label, or it reads as a
+   comment on the question rather than on the answer. */
+.form-field[data-label-pos="beside"] > .field-error { grid-column: 2; }
+
+/* A single checkbox already draws its label beside the box, so 'beside' would
+   make it a two-column grid containing a two-column row. Left alone. */
+.form-field.checkbox-field[data-label-pos="beside"] { display: flex; }
+
+/* The portal. */
+.cat-field[data-label-pos="beside"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    align-items: start;
+    column-gap: 12px;
+}
+.cat-field[data-label-pos="beside"] > .cat-label { margin-bottom: 0; padding-top: 10px; }
+
+/* The builder preview, where the attribute is on the SLOT and the label and
+   control sit one level further in. */
+.preview-slot[data-label-pos="beside"] > .preview-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    align-items: start;
+    column-gap: 12px;
+}
+.preview-slot[data-label-pos="beside"] > .preview-field > label {
+    margin-bottom: 0;
+    padding-top: 8px;
+}
+
+/* 🔴 BESIDE COLLAPSES TO ABOVE ON A PHONE, always — the same non-negotiable
+   rule that makes every width full below this breakpoint, for the same reason:
+   a label beside an input at 360px leaves roughly 200px for the control, and a
+   label long enough to be worth reading wraps to three lines first.
+   Later in the file and equal specificity, so it wins without !important. */
+@media (max-width: 768px) {
+    .form-field[data-label-pos="beside"],
+    .cat-field[data-label-pos="beside"],
+    .preview-slot[data-label-pos="beside"] > .preview-field {
+        display: block;
+    }
+    .form-field[data-label-pos="beside"] > label,
+    .cat-field[data-label-pos="beside"] > .cat-label,
+    .preview-slot[data-label-pos="beside"] > .preview-field > label {
+        margin-bottom: 5px;
+        padding-top: 0;
+    }
+    .form-field.checkbox-field[data-label-pos="beside"] { display: flex; }
+}
+
+/* ══ 3. The image block ═════════════════════════════════════════════════════
+   A picture on the form — a logo, a diagram, a floor plan. Shared across the
+   three surfaces for the same reason a notice panel is: it is presentational,
+   so there is no reason for it to look different in three places. */
+.form-image {
+    margin-bottom: 18px;
+    box-sizing: border-box;
+}
+
+/* 🔑 max-width, never width. A picture smaller than its column is drawn at its
+   own size rather than stretched — upscaling a 200px logo to fill a row makes
+   it blurry, and nobody asked for it to be bigger. height:auto keeps the
+   aspect ratio whatever the column does. */
+.form-image img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+/* An author holding a large picture back, as a percentage of its column rather
+   than in pixels: everything else on a form is sized in twelfths and reflows,
+   and "480px" is right on one screen and wrong on the next. */
+.form-image[data-image-max="75"] img { max-width: 75%; }
+.form-image[data-image-max="50"] img { max-width: 50%; }
+.form-image[data-image-max="25"] img { max-width: 25%; }
+
+/* A block with nothing uploaded yet — the normal state of one just added.
+   Shown rather than hidden, so the author can see where it will sit. */
+.form-image.is-empty {
+    border: 1px dashed var(--border, #ddd);
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-faint, #999);
+    background: var(--surface-2, #fafafa);
+}
+
+.form-image.is-hidden { display: none; }
+
+/* 🔴 A held-back picture goes back to full width on a phone. At 25% of a
+   360px column a diagram is 90px wide, which is not a diagram. The reason to
+   hold one back is that it looked silly stretched across a desktop row; that
+   reason does not exist here. */
+@media (max-width: 768px) {
+    .form-image[data-image-max="75"] img,
+    .form-image[data-image-max="50"] img,
+    .form-image[data-image-max="25"] img { max-width: 100%; }
+}
+
+/* ══ 4. A table question ════════════════════════════════════════════════════
+   One question whose answer is many rows. Shared across the surfaces for the
+   same reason the other blocks are — a table of answers looks the same
+   everywhere; only the controls inside it differ, and those come from each
+   surface's own styling. */
+.form-table-wrap {
+    /* 🔴 The table scrolls SIDEWAYS rather than squeezing. Six columns in a
+       360px viewport is four characters each, which is not a table. Letting it
+       overflow keeps every column readable and keeps the page itself from
+       growing a horizontal scrollbar. */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+}
+
+.form-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 100%;
+}
+
+.form-table th,
+.form-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border, #ddd);
+    text-align: left;
+    vertical-align: top;
+    font-size: 13px;
+}
+
+.form-table thead th {
+    background: var(--surface-2, #fafafa);
+    font-weight: 600;
+    color: var(--text, #333);
+    white-space: nowrap;
+}
+
+.form-table tbody tr:last-child td { border-bottom: none; }
+
+/* A cell's control fills its column. width:auto on the checkbox, or a tick box
+   stretches to the full column and looks like a bug. */
+.form-table td input[type="text"],
+.form-table td input[type="number"],
+.form-table td input[type="date"],
+.form-table td select {
+    width: 100%;
+    min-width: 90px;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    box-sizing: border-box;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+}
+.form-table td input[type="checkbox"],
+.form-table td input[type="radio"] { width: auto; min-width: 0; }
+
+.form-table .grid-radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 10px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* The remove-row column: as narrow as its button. */
+.form-table .form-table-rowaction { width: 1%; white-space: nowrap; }
+
+.form-table-remove {
+    border: 1px solid var(--border, #ddd);
+    background: var(--surface, #fff);
+    color: var(--text-muted, #666);
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    font-size: 15px;
+    cursor: pointer;
+}
+.form-table-remove:hover {
+    border-color: var(--danger-border, #f0c2c2);
+    color: var(--danger-text, #991b1b);
+}
+
+.form-table-actions { margin-top: 8px; }
+
+.form-table-empty {
+    border: 1px dashed var(--border, #ddd);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 13px;
+    color: var(--text-faint, #999);
+    background: var(--surface-2, #fafafa);
+}
+
+/* A table question is one place a wide field genuinely earns the whole row,
+   so it never sits beside anything on a phone. */
+@media (max-width: 768px) {
+    .form-table th, .form-table td { font-size: 12px; padding: 5px 6px; }
+}

@@ -17,8 +17,13 @@ session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
 require_once __DIR__ . '/includes/engine.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('workflow');
 
 $current_page = 'workflow';
 $path_prefix = '../';
@@ -30,9 +35,39 @@ $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $triggers   = WorkflowEngine::availableTriggers();
 $ops        = WorkflowEngine::availableOperators();
 $actionDefs = WorkflowEngine::availableActions();
+// GH #217. Only switched-on modules' triggers and actions are offered - except the
+// ones this workflow already uses, so a workflow on a switched-off module still
+// opens, shows what it was, and saves.
+try {
+    $edConn = connectToDatabase();
+    $keepTrigger = null;
+    $keepActions = [];
+    if ($id > 0) {
+        $own = $edConn->prepare('SELECT trigger_event, actions FROM workflows WHERE id = ?');
+        $own->execute([$id]);
+        if ($ownRow = $own->fetch(PDO::FETCH_ASSOC)) {
+            $keepTrigger = $ownRow['trigger_event'];
+            $keepActions = array_column(json_decode((string)$ownRow['actions'], true) ?: [], 'type');
+        }
+    }
+    $allTriggers = $triggers;
+    $allActions  = $actionDefs;
+    $triggers   = WorkflowEngine::withoutSwitchedOff($edConn, $triggers, false);
+    $actionDefs = WorkflowEngine::withoutSwitchedOff($edConn, $actionDefs, true);
+    if ($keepTrigger !== null && isset($allTriggers[$keepTrigger])) $triggers[$keepTrigger] = $allTriggers[$keepTrigger];
+    foreach ($keepActions as $k) {
+        if (isset($allActions[$k])) $actionDefs[$k] = $allActions[$k];
+    }
+} catch (Throwable $e) { /* the full lists - the engine still refuses a switched-off module */ }
 $fieldsByTrigger = [];
+$varsByTrigger   = [];
+$varPrefixesByTrigger = [];
 foreach (array_keys($triggers) as $t) {
     $fieldsByTrigger[$t] = WorkflowEngine::availableFields($t);
+    // The merge codes this trigger can actually resolve — drives the variable
+    // picker, so a knowledge.published workflow is never offered {{ticket.subject}}.
+    $varsByTrigger[$t]   = WorkflowEngine::availableVariables($t);
+    $varPrefixesByTrigger[$t] = WorkflowEngine::variablePrefixes($t);
 }
 
 // Lookup values per normalised-id field — built once at page load and
@@ -71,19 +106,44 @@ foreach ($actionDefs as $actionKey => $def) {
         }
     }
 }
+
+// GH #209. Which company the workflow runs for - offered only once there are
+// companies. "All companies" only for someone who can see every company:
+// a shared workflow acts on all of them. A new workflow starts shared for
+// them and in the switched-to company for anyone else, as save.php does.
+$wfConn = connectToDatabase();
+$wfCompanyPicker = workflowTenancyActive($wfConn);
+$wfCompanies = [];
+$wfCanShare = true;
+$wfDefaultCompany = '';
+if ($wfCompanyPicker) {
+    $wfAid = (int)$_SESSION['analyst_id'];
+    $wfCanShare = analystHasAllTenantAccess($wfConn, $wfAid);
+    $wfMine = getAccessibleTenantIds($wfConn, $wfAid);
+    foreach (getAllTenants($wfConn) as $tn) {
+        if (in_array((int)$tn['id'], $wfMine, true)) $wfCompanies[] = ['id' => (int)$tn['id'], 'name' => (string)$tn['name']];
+    }
+    $wfDefaultCompany = $wfCanShare ? '' : (string)getActiveTenantId($wfConn, $wfAid);
+}
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($id ? t('workflow.editor.edit_title') : t('workflow.editor.new_title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/workflow.css?v=4">
+    <title><?php echo htmlspecialchars(pageTitle('workflow', $id ? t('workflow.editor.edit_title') : t('workflow.editor.new_title'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/workflow.css?v=11">
+    <!-- Mobile layer LAST, after workflow.css (Techniques §9). -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
 </head>
-<body>
+<body data-mobile-module="workflow" data-mobile-page="wf-editor">
     <?php include 'includes/header.php'; ?>
 
     <div class="wf-layout">
@@ -111,11 +171,15 @@ foreach ($actionDefs as $actionKey => $def) {
             </div>
             <div class="wf-toolbar-right">
                 <span class="wf-status" id="wfStatus" aria-live="polite"></span>
+                <button class="wf-tool-btn" id="dryRunBtn" onclick="WFE.dryRun()" title="<?php echo htmlspecialchars(t('workflow.editor.dry_run_hint')); ?>" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span><?php echo htmlspecialchars(t('workflow.editor.dry_run')); ?></span>
+                </button>
                 <button class="wf-tool-btn" id="testFireBtn" onclick="WFE.testFire()" title="<?php echo htmlspecialchars(t('workflow.editor.test_fire_hint')); ?>" disabled>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     <span><?php echo htmlspecialchars(t('workflow.editor.test_fire')); ?></span>
                 </button>
-                <button class="wf-tool-btn wf-tool-primary" onclick="WFE.save()">
+                <button class="wf-tool-btn wf-tool-primary" id="wfSaveBtn" onclick="WFE.save()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                     <span><?php echo htmlspecialchars(t('common.save')); ?></span>
                 </button>
@@ -139,6 +203,9 @@ foreach ($actionDefs as $actionKey => $def) {
 
                 <!-- Workflow-level (default — shown when nothing is selected) -->
                 <div class="wf-detail-body" id="wfBodyWorkflow">
+                    <!-- Populated when a workflow is cloned from a starter template
+                         and the template couldn't fill in every value for this install. -->
+                    <div class="wf-needs-config" id="wfNeedsConfig" style="display: none;"></div>
                     <div class="form-group">
                         <label for="wfName"><?php echo htmlspecialchars(t('workflow.editor.name_label')); ?></label>
                         <input type="text" id="wfName" maxlength="255" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('workflow.editor.name_placeholder')); ?>" required>
@@ -152,9 +219,22 @@ foreach ($actionDefs as $actionKey => $def) {
                             <input type="checkbox" id="wfActive" checked> <?php echo htmlspecialchars(t('workflow.editor.active_label')); ?>
                         </label>
                     </div>
-                    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
-                    <h4 style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #888;">Recent runs</h4>
-                    <div id="execList" style="font-size: 13px; color: #666;">
+                    <?php if ($wfCompanyPicker): ?>
+                    <div class="form-group">
+                        <label for="wfCompany"><?php echo htmlspecialchars(t('workflow.editor.company_label')); ?></label>
+                        <select id="wfCompany" class="form-input" data-default="<?php echo htmlspecialchars($wfDefaultCompany); ?>">
+                            <?php if ($wfCanShare): ?><option value=""><?php echo htmlspecialchars(t('workflow.editor.company_shared')); ?></option><?php endif; ?>
+                            <?php foreach ($wfCompanies as $c): ?>
+                            <option value="<?php echo (int)$c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small style="display:block; color:var(--text-muted, #666); margin-top:6px; line-height:1.5;"><?php echo htmlspecialchars(t('workflow.editor.company_help')); ?></small>
+                    </div>
+                    <?php endif; ?>
+                    <div class="wf-needs-config" id="wfReadOnly" style="display: none;"></div>
+                    <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border, #e0e0e0);">
+                    <h4 style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim, #888);">Recent runs</h4>
+                    <div id="execList" style="font-size: 13px; color: var(--text-muted, #666);">
                         <em>Save the workflow first, then test-fire it to see runs here.</em>
                     </div>
                 </div>
@@ -163,12 +243,15 @@ foreach ($actionDefs as $actionKey => $def) {
                 <div class="wf-detail-body" id="wfBodyTrigger" style="display: none;">
                     <div class="form-group">
                         <label for="wfTrigger"><?php echo htmlspecialchars(t('workflow.editor.trigger_label')); ?></label>
-                        <select id="wfTrigger" onchange="WFE.updateTriggerFromDetail()">
+                        <input type="text" id="wfTriggerSearch" placeholder="Search triggers…" autocomplete="off"
+                               oninput="WFTriggerFilter(this.value)"
+                               style="width:100%; box-sizing:border-box; margin-bottom:6px; padding:6px 8px; border:1px solid var(--border, #ccc); border-radius:6px;">
+                        <select id="wfTrigger" size="8" onchange="WFE.updateTriggerFromDetail()" style="width:100%;">
                             <?php foreach ($triggers as $k => $label): ?>
                             <option value="<?php echo htmlspecialchars($k); ?>"><?php echo htmlspecialchars($label); ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <small style="display: block; color: #666; margin-top: 4px;"><?php echo htmlspecialchars(t('workflow.editor.trigger_hint')); ?></small>
+                        <small style="display: block; color: var(--text-muted, #666); margin-top: 4px;"><?php echo htmlspecialchars(t('workflow.editor.trigger_hint')); ?></small>
                     </div>
                 </div>
 
@@ -209,7 +292,7 @@ foreach ($actionDefs as $actionKey => $def) {
                             <option value="<?php echo htmlspecialchars($k); ?>"><?php echo htmlspecialchars($def['label']); ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <small id="wfActDesc" style="display: block; color: #666; margin-top: 4px;"></small>
+                        <small id="wfActDesc" style="display: block; color: var(--text-muted, #666); margin-top: 4px;"></small>
                     </div>
                     <!-- JS builds a per-arg form here based on
                          WF_ACTION_DEFS[type].args (text / textarea /
@@ -226,51 +309,80 @@ foreach ($actionDefs as $actionKey => $def) {
         </div>
     </div>
 
+    <!-- Big editor for any action arg that supports {{variables}} — a roomy
+         writing surface plus a searchable list of the merge codes THIS trigger
+         can actually resolve. Opened by the Expand button beside the field. -->
+    <div class="modal" id="wfVarModal">
+        <div class="modal-content wf-var-modal">
+            <div class="modal-header" id="wfVarTitle"><?php echo htmlspecialchars(t('workflow.vars.title')); ?></div>
+            <div class="modal-body wf-var-body">
+                <div class="wf-var-editor">
+                    <textarea id="wfVarText" spellcheck="true"></textarea>
+                    <div class="wf-var-warn" id="wfVarWarn" style="display: none;"></div>
+                    <div class="wf-var-preview-wrap">
+                        <label><?php echo htmlspecialchars(t('workflow.vars.preview')); ?></label>
+                        <div class="wf-var-preview" id="wfVarPreview"></div>
+                    </div>
+                </div>
+                <aside class="wf-var-picker">
+                    <label for="wfVarSearch"><?php echo htmlspecialchars(t('workflow.vars.picker_heading')); ?></label>
+                    <p class="wf-var-picker-hint"><?php echo htmlspecialchars(t('workflow.vars.picker_hint')); ?></p>
+                    <input type="text" id="wfVarSearch" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('workflow.vars.search_placeholder')); ?>">
+                    <div class="wf-var-list" id="wfVarList"></div>
+                </aside>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="WFE.closeVarModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" onclick="WFE.applyVarModal()"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <!-- AI co-author modal — opened from the toolbar button -->
     <div class="modal" id="wfAiModal">
         <div class="modal-content wf-ai-modal">
             <div class="modal-header">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span class="wf-ai-spark" aria-hidden="true">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#f59e0b" stroke="none"><path d="M12 2l1.7 4.6L18 8l-4.3 1.4L12 14l-1.7-4.6L6 8l4.3-1.4z"/></svg>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--wf-accent, #f59e0b)" stroke="none"><path d="M12 2l1.7 4.6L18 8l-4.3 1.4L12 14l-1.7-4.6L6 8l4.3-1.4z"/></svg>
                     </span>
                     <span><?php echo htmlspecialchars(t('workflow.ai.modal_title')); ?></span>
                 </div>
             </div>
             <div style="padding: 22px 26px; overflow-y: auto;">
-                <p style="margin: 0 0 16px; color: #555; line-height: 1.55;"><?php echo htmlspecialchars(t('workflow.ai.intro')); ?></p>
+                <p style="margin: 0 0 16px; color: var(--text-muted, #555); line-height: 1.55;"><?php echo htmlspecialchars(t('workflow.ai.intro')); ?></p>
 
                 <div class="form-group">
                     <label for="wfAiPrompt"><?php echo htmlspecialchars(t('workflow.ai.prompt_label')); ?></label>
-                    <textarea id="wfAiPrompt" rows="4" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('workflow.ai.prompt_placeholder')); ?>" style="width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:5px; font-family: inherit; font-size: 14px; resize: vertical; box-sizing: border-box;"></textarea>
-                    <small id="wfAiIterateHint" style="display: none; color: #6b7280; margin-top: 6px;"><?php echo htmlspecialchars(t('workflow.ai.iterate_hint')); ?></small>
+                    <textarea id="wfAiPrompt" rows="4" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('workflow.ai.prompt_placeholder')); ?>" style="width:100%; padding:10px 12px; border:1px solid var(--border, #ddd); border-radius:5px; font-family: inherit; font-size: 14px; resize: vertical; box-sizing: border-box;"></textarea>
+                    <small id="wfAiIterateHint" style="display: none; color: var(--text-muted, #6b7280); margin-top: 6px;"><?php echo htmlspecialchars(t('workflow.ai.iterate_hint')); ?></small>
                 </div>
 
-                <p style="font-size: 12px; color: #92400e; background: #fef3c7; padding: 8px 12px; border-radius: 4px; margin: 0 0 16px;">
+                <p style="font-size: 12px; color: var(--warning-text, #92400e); background: var(--wf-accent-soft, #fef3c7); padding: 8px 12px; border-radius: 4px; margin: 0 0 16px;">
                     <?php echo htmlspecialchars(t('workflow.ai.only_log_message')); ?>
                 </p>
 
                 <!-- Result region — populated after a successful Generate. -->
                 <div id="wfAiResult" style="display: none;">
-                    <hr style="margin: 14px 0; border: none; border-top: 1px solid #e0e0e0;">
+                    <hr style="margin: 14px 0; border: none; border-top: 1px solid var(--border, #e0e0e0);">
 
                     <div class="form-group">
                         <label><?php echo htmlspecialchars(t('workflow.ai.explanation_label')); ?></label>
-                        <div id="wfAiExplanation" style="padding: 12px 14px; background: #f8fafc; border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 13px; line-height: 1.5; color: #374151;"></div>
+                        <div id="wfAiExplanation" style="padding: 12px 14px; background: var(--surface-2, #f8fafc); border-left: 3px solid var(--wf-accent, #f59e0b); border-radius: 4px; font-size: 13px; line-height: 1.5; color: var(--text, #374151);"></div>
                     </div>
 
                     <div class="form-group">
                         <label><?php echo htmlspecialchars(t('workflow.ai.preview_label')); ?></label>
-                        <div id="wfAiPreview" style="font-size: 13px; color: #374151;"></div>
+                        <div id="wfAiPreview" style="font-size: 13px; color: var(--text, #374151);"></div>
                     </div>
 
                     <div id="wfAiWarnings" style="display: none;" class="form-group">
                         <label><?php echo htmlspecialchars(t('workflow.ai.warnings_label')); ?></label>
-                        <ul id="wfAiWarningsList" style="font-size: 12px; color: #92400e; background: #fef9c3; padding: 8px 12px 8px 28px; border-radius: 4px; margin: 0;"></ul>
+                        <ul id="wfAiWarningsList" style="font-size: 12px; color: var(--warning-text, #92400e); background: var(--warning-bg, #fef9c3); padding: 8px 12px 8px 28px; border-radius: 4px; margin: 0;"></ul>
                     </div>
                 </div>
             </div>
-            <div class="modal-actions" style="padding: 14px 26px; border-top: 1px solid #eee;">
+            <div class="modal-actions" style="padding: 14px 26px; border-top: 1px solid var(--border-soft, #eee);">
                 <button type="button" class="btn btn-secondary" onclick="WFE.closeAiModal()"><?php echo htmlspecialchars(t('workflow.ai.close')); ?></button>
                 <button type="button" class="btn btn-secondary" id="wfAiDiscardBtn" style="display: none;" onclick="WFE.aiDiscard()"><?php echo htmlspecialchars(t('workflow.ai.discard')); ?></button>
                 <button type="button" class="btn btn-primary wf-ai-primary" id="wfAiGenerateBtn" onclick="WFE.aiGenerate()"><?php echo htmlspecialchars(t('workflow.ai.generate')); ?></button>
@@ -285,6 +397,14 @@ foreach ($actionDefs as $actionKey => $def) {
         window.WF_OPS            = <?php echo json_encode($ops); ?>;
         window.WF_ACTION_DEFS    = <?php echo json_encode($actionDefs); ?>;
         window.WF_FIELDS_BY_TRIG = <?php echo json_encode($fieldsByTrigger); ?>;
+        // Merge codes ({{variables}}) per trigger — {path, label, note}. The
+        // engine resolves an unknown path to an empty string, so the picker
+        // only ever offers codes THIS trigger can actually fill in.
+        window.WF_VARS_BY_TRIG   = <?php echo json_encode($varsByTrigger); ?>;
+        // Open-ended prefixes (e.g. submission.fields.) — anything beneath one
+        // is valid even though it can't be listed, so the unknown-variable
+        // warning doesn't cry wolf over {{submission.fields.Start date}}.
+        window.WF_VAR_PREFIXES   = <?php echo json_encode($varPrefixesByTrigger); ?>;
         // Normalised id fields → list of {id, label} pairs from their lookup
         // table. Drives the condition value control's dropdown / multi-select.
         // Fields not in this map are free-text and use a plain input.
@@ -297,9 +417,39 @@ foreach ($actionDefs as $actionKey => $def) {
         // (status, priority, analyst, department, etc.). Mirrors
         // WF_LOOKUP_VALUES but keyed by lookup name rather than field path.
         window.WF_ACTION_LOOKUPS = <?php echo json_encode($actionLookupValues); ?>;
+        // Webhook message formats — each carries a url_pattern (so we can warn when
+        // the URL doesn't look like it belongs to the chosen platform: pasting a
+        // Discord URL with the format on Slack is a 400 waiting to happen) and a
+        // markdown_hint (Discord's **bold** vs Slack's *bold*), shown where you type.
+        window.WF_FORMATS = <?php echo json_encode(WorkflowEngine::webhookFormats()); ?>;
         window.WF_ID             = <?php echo (int)$id; ?>;
         window.WF_API            = '../api/workflow/';
+        // Full trigger catalogue {event: label} — drives the searchable picker.
+        window.WF_TRIGGERS       = <?php echo json_encode($triggers); ?>;
+        // Filter the trigger <select> down to matches as the user types. Keeps the
+        // currently-selected option present so its value is never lost, and only
+        // fires onchange when the selection actually changes.
+        window.WFTriggerFilter = function (query) {
+            var sel = document.getElementById('wfTrigger');
+            if (!sel) return;
+            var current = sel.value;
+            var q = (query || '').trim().toLowerCase();
+            sel.innerHTML = '';
+            Object.keys(window.WF_TRIGGERS).forEach(function (key) {
+                var label = window.WF_TRIGGERS[key];
+                if (q && key.toLowerCase().indexOf(q) === -1 && String(label).toLowerCase().indexOf(q) === -1 && key !== current) {
+                    return;
+                }
+                var opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = label;
+                if (key === current) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        };
     </script>
-    <script src="../assets/js/workflow-editor.js?v=9"></script>
+    <script src="../checklists/search_scoring.js?v=1"></script>
+    <script src="../assets/js/workflow-editor.js?v=22"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

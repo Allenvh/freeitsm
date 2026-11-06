@@ -13,6 +13,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tasks');
 
 try {
     $conn = connectToDatabase();
@@ -31,11 +32,53 @@ try {
     if (!isset($settings['calendar_span_mode'])) {
         $settings['calendar_span_mode'] = 'deadline';
     }
+    // Where time is offered (GH #112). Defaults to everywhere: the feature is
+    // additive, and an empty Time section on a task nobody logs time against
+    // costs nothing, whereas defaulting to off would hide a requested feature
+    // behind a setting nobody knew to look for.
+    if (!isset($settings['time_scope'])) {
+        $settings['time_scope'] = 'both';
+    }
+    // Per-person completion on a task (GH #89). OFF by default, and the opposite
+    // call to time_scope's above for a reason: what was asked for was to SEE who
+    // else is on a task, which needs no setting and is always on. A tick box each
+    // is a heavier, more procedural thing, so it is offered rather than imposed.
+    if (!isset($settings['collaborator_completion'])) {
+        $settings['collaborator_completion'] = '0';
+    }
+    // Checklists on tasks (discussion #138). OFF by default, for the same reason
+    // as the per-person tick: it adds procedure to a module some teams use as a
+    // simple to-do board.
+    if (!isset($settings['checklists_enabled'])) {
+        $settings['checklists_enabled'] = '0';
+    }
+    // Forms on tasks (GH #190). Off by default, like checklists.
+    $settings['forms_enabled'] = (string)($settings['forms_enabled'] ?? '0') === '1' ? '1' : '0';
+    // Procedures on tasks (GH #190 phase 2). Off by default.
+    $settings['procedures_enabled'] = (string)($settings['procedures_enabled'] ?? '0') === '1' ? '1' : '0';
+    // Repeating task evidence (#181) - each defaults to the forgiving choice.
+    $settings['evidence_completed_checklist'] = ($settings['evidence_completed_checklist'] ?? '') === 'refuse' ? 'refuse' : 'allow';
+    $settings['evidence_delete_occurrence']   = ($settings['evidence_delete_occurrence'] ?? '') === 'refuse' ? 'refuse' : 'allow';
+    $settings['evidence_report_access']       = ($settings['evidence_report_access'] ?? '') === 'permission' ? 'permission' : 'anyone';
+    $settings['evidence_skip_status_id']      = (string)($settings['evidence_skip_status_id'] ?? '');
+    $settings['evidence_open_followups']      = in_array($settings['evidence_open_followups'] ?? '', ['warn', 'block'], true) ? $settings['evidence_open_followups'] : 'allow';
+    // The closed statuses to choose from, and which one an unset choice falls back to.
+    require_once '../../includes/services/tasks.php';
+    $settings['evidence_closed_statuses'] = $conn->query(
+        "SELECT id, name FROM task_statuses WHERE is_closed = 1 AND is_active = 1 ORDER BY display_order, id"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    $settings['evidence_skip_status_effective'] = TasksService::skipStatusId($conn);
 
     // card_fields — which extras show on board cards. Stored as JSON;
     // always returned as a complete object so callers needn't merge defaults.
+    //
+    // `priority` is the one entry that is NOT a boolean: it holds a placement —
+    // off / dot / pill / border — because discussion #108 asked to choose how
+    // priority reads on a card, not merely whether it appears. It stays inside
+    // card_fields rather than becoming a second setting so that "how priority
+    // shows on a card" has one home. Legacy rows hold the old 1/0 and are read
+    // as dot/off, which is exactly what those installs render today.
     $cardDefaults = [
-        'priority'    => 1,
         'assignee'    => 1,
         'team'        => 0,
         'start_date'  => 0,
@@ -44,12 +87,24 @@ try {
         'subtasks'    => 1,
         'links'       => 1,
     ];
+    $priorityStyles  = ['off', 'dot', 'pill', 'border'];
+    $priorityDefault = 'dot';
+
     $cardFields = $cardDefaults;
+    $cardFields['priority'] = $priorityDefault;
     if (isset($settings['card_fields'])) {
         $decoded = json_decode($settings['card_fields'], true);
         if (is_array($decoded)) {
             foreach ($cardDefaults as $k => $v) {
                 $cardFields[$k] = empty($decoded[$k]) ? 0 : 1;
+            }
+            if (array_key_exists('priority', $decoded)) {
+                $p = $decoded['priority'];
+                if (is_string($p) && in_array($p, $priorityStyles, true)) {
+                    $cardFields['priority'] = $p;
+                } else {
+                    $cardFields['priority'] = empty($p) ? 'off' : 'dot';
+                }
             }
         }
     }

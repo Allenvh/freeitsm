@@ -9,6 +9,8 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
 require_once '../../includes/ai_settings.php';
+require_once '../../includes/tenancy.php';
+require_once '../../includes/knowledge/visibility.php';
 
 header('Content-Type: application/json');
 
@@ -16,6 +18,10 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// Reachable from more than one module, so a single-module gate would break the others —
+// but it had NO module check at all, and it spends the AI budget. (Found by D005.)
+requireAnyModuleAccessJson(['knowledge', 'tickets'], null, 'knowledge');   // owner: GH #217
 
 $input = json_decode(file_get_contents('php://input'), true);
 $question = trim($input['question'] ?? '');
@@ -26,8 +32,29 @@ if (empty($question)) {
     exit;
 }
 
+// Asked from a TICKET ("Ask AI" in the inbox), the question carries that
+// ticket's text - so the ticket comes too, and a confidential one is refused
+// here, on the server (discussion #62). Asked from Knowledge, there is none.
+if (!empty($input['ticket_id'])) {
+    require_once '../../includes/tenancy.php';
+    require_once '../../includes/ticket_sensitivity.php';
+    $aiConn = connectToDatabase();
+    $aiTicket = (int)$input['ticket_id'];
+    if (!analystCanAccessTicket($aiConn, (int)$_SESSION['analyst_id'], $aiTicket)) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
+    if (!ticketAiAllowed($aiConn, $aiTicket)) {
+        echo json_encode(['success' => false, 'confidential' => true, 'error' => TICKET_AI_CONFIDENTIAL_ERROR]);
+        exit;
+    }
+}
+
 /**
  * Calculate cosine similarity between two vectors
+ *
+ * @param mixed $vec1  an embedding, as a list of floats
+ * @param mixed $vec2  another embedding; only the length both share is compared
  */
 function cosineSimilarity($vec1, $vec2) {
     $dotProduct = 0;
@@ -47,6 +74,9 @@ function cosineSimilarity($vec1, $vec2) {
 
 /**
  * Generate embedding for text using OpenAI API
+ *
+ * @param mixed $text  the text to embed; cut to 30,000 bytes
+ * @param mixed $apiKey  the OpenAI API key, in plain text
  */
 function generateEmbedding($text, $apiKey) {
     // Truncate if too long
@@ -67,7 +97,7 @@ function generateEmbedding($text, $apiKey) {
         'Content-Type: application/json',
         'Authorization: Bearer ' . $apiKey
     ]);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
+    sslApplyCurl($ch);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
     $response = curl_exec($ch);
@@ -88,7 +118,7 @@ try {
     // Load the configured chat provider/model/key (Anthropic / OpenAI / OpenRouter)
     // via the shared AI settings building block.
     $aiCfg = aiSettingsLoad($conn, 'knowledge_ai');
-    if (($aiCfg['api_key'] ?? '') === '') {
+    if (!aiConfigured($aiCfg)) {
         echo json_encode(['success' => false, 'error' => 'AI API key not configured. Please add it in Knowledge Settings.']);
         exit;
     }
@@ -100,11 +130,30 @@ try {
     $openaiRow = $openaiStmt->fetch(PDO::FETCH_ASSOC);
     $openaiApiKey = decryptValue($openaiRow['setting_value'] ?? '');
 
-    // Check if we have articles with embeddings
-    $archiveFilter = $includeArchived ? '' : ' AND (is_archived = 0 OR is_archived IS NULL)';
-    $embeddingCountSql = "SELECT COUNT(*) as count FROM knowledge_articles WHERE is_published = 1" . $archiveFilter . " AND embedding IS NOT NULL AND LENGTH(embedding) > 0";
+    // NOTE: this file still carries its own copy of the embedding/cosine code that
+    // includes/knowledge/kb_ai.php factored out (see the note at the top of that
+    // file). Still not consolidated — kbRetrieveArticles has no include-archived
+    // mode, and rewriting a working AI path is not this change's job. What IS
+    // consolidated is the part that matters: the VISIBILITY, which now comes from
+    // includes/knowledge/visibility.php in both copies rather than being
+    // hand-assembled here. That is what makes this retrieval path inherit the
+    // access list when it lands, instead of quietly becoming the way around it.
+    //
+    // This is an ANALYST asking, so the audience ladder contributes nothing — it
+    // only holds back customers and the public — and the clause is the tenant
+    // filter plus lifecycle, exactly as before.
+    $viewer = KnowledgeViewer::forAnalyst($conn, (int)$_SESSION['analyst_id']);
+    $lc = $includeArchived ? 'published' : 'live';
+    [$scopeSql, $scopeParams] = knowledgeVisibilitySql($conn, $viewer, '', ['lifecycle' => $lc]);
+
+    // The two stats below deliberately count on DIFFERENT lifecycles, so each
+    // asks for its own rather than sharing one and patching it afterwards.
+    [$anySql,  $anyParams]  = knowledgeVisibilitySql($conn, $viewer, '', ['lifecycle' => 'any']);
+    [$pubSql,  $pubParams]  = knowledgeVisibilitySql($conn, $viewer, '', ['lifecycle' => 'published']);
+
+    $embeddingCountSql = "SELECT COUNT(*) as count FROM knowledge_articles WHERE 1=1" . $scopeSql . " AND embedding IS NOT NULL AND LENGTH(embedding) > 0";
     $embeddingCountStmt = $conn->prepare($embeddingCountSql);
-    $embeddingCountStmt->execute();
+    $embeddingCountStmt->execute($scopeParams);
     $embeddingCount = $embeddingCountStmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     $useVectorSearch = !empty($openaiApiKey) && $embeddingCount > 0;
@@ -122,9 +171,9 @@ try {
             // Fetch all articles with embeddings
             $articleSql = "SELECT id, title, body, embedding
                           FROM knowledge_articles
-                          WHERE is_published = 1" . $archiveFilter . " AND embedding IS NOT NULL AND LENGTH(embedding) > 0";
+                          WHERE 1=1" . $scopeSql . " AND embedding IS NOT NULL AND LENGTH(embedding) > 0";
             $articleStmt = $conn->prepare($articleSql);
-            $articleStmt->execute();
+            $articleStmt->execute($scopeParams);
             $allArticles = $articleStmt->fetchAll(PDO::FETCH_ASSOC);
 
             // Calculate similarity scores
@@ -158,28 +207,30 @@ try {
     if (!$useVectorSearch) {
         // Fallback: fetch all published articles
         $searchMethod = 'all';
-        $articleSql = "SELECT id, title, body FROM knowledge_articles WHERE is_published = 1" . $archiveFilter . " ORDER BY title";
+        $articleSql = "SELECT id, title, body FROM knowledge_articles WHERE 1=1" . $scopeSql . " ORDER BY title";
         $articleStmt = $conn->prepare($articleSql);
-        $articleStmt->execute();
+        $articleStmt->execute($scopeParams);
         $articles = $articleStmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     if (empty($articles)) {
-        // Check if there are any articles at all (regardless of published status)
-        $totalSql = "SELECT COUNT(*) as total FROM knowledge_articles";
+        // These counts are reported back to the user in the messages below, so they
+        // must be scoped too — an unscoped count tells one company how many articles
+        // another company has.
+        $totalSql = "SELECT COUNT(*) as total FROM knowledge_articles WHERE 1=1" . $anySql;
         $totalStmt = $conn->prepare($totalSql);
-        $totalStmt->execute();
+        $totalStmt->execute($anyParams);
         $totalCount = $totalStmt->fetch(PDO::FETCH_ASSOC)['total'];
 
-        $publishedSql = "SELECT COUNT(*) as published FROM knowledge_articles WHERE is_published = 1";
+        $publishedSql = "SELECT COUNT(*) as published FROM knowledge_articles WHERE 1=1" . $pubSql;
         $publishedStmt = $conn->prepare($publishedSql);
-        $publishedStmt->execute();
+        $publishedStmt->execute($pubParams);
         $publishedCount = $publishedStmt->fetch(PDO::FETCH_ASSOC)['published'];
 
         // Check how many are available after the archive filter
-        $availableSql = "SELECT COUNT(*) as available FROM knowledge_articles WHERE is_published = 1" . $archiveFilter;
+        $availableSql = "SELECT COUNT(*) as available FROM knowledge_articles WHERE 1=1" . $scopeSql;
         $availableStmt = $conn->prepare($availableSql);
-        $availableStmt->execute();
+        $availableStmt->execute($scopeParams);
         $availableCount = $availableStmt->fetch(PDO::FETCH_ASSOC)['available'];
 
         if ($totalCount == 0) {

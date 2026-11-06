@@ -4,7 +4,11 @@
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
+require_once '../../includes/admin_api_guard.php'; // System admins only (issue #34)
 require_once '../../includes/functions.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -26,8 +30,9 @@ $id = (int)$data['id'];
 $password = $data['password'];
 
 // Validation
-if (strlen($password) < 6) {
-    echo json_encode(['success' => false, 'error' => 'Password must be at least 6 characters']);
+require_once __DIR__ . '/../../includes/password_policy.php';   // the one rule for a new password
+if ($why = passwordPolicyError((string)$password)) {
+    echo json_encode(['success' => false, 'error' => $why]);
     exit;
 }
 

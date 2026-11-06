@@ -9,19 +9,33 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 $analystId = (int)$_SESSION['analyst_id'];
 
 try {
     $conn = connectToDatabase();
 
-    // Trashed tickets in the active company (no-op tenant filter at N=1).
-    list($ttSql, $ttParams) = ticketTenantFilter($conn, $analystId, 't');
+    // 🔴 NEVER EMPTIES THE TRASH ACROSS COMPANIES (#1554).
+    //
+    // This endpoint shares ticketTenantFilter() with every ticket LIST, and that
+    // filter widens to the whole accessible set in the consolidated view. For a
+    // list that is the point; here it would turn one button into a permanent
+    // deletion across all three schools at once, which is not what anybody
+    // clicking "empty trash" while looking at a combined board expects — and it
+    // cannot be undone.
+    //
+    // So this one deliberately does NOT follow the view. It always scopes to the
+    // single active company, and the UI tells the analyst which that is.
+    list($ttSql, $ttParams) = ticketTenantFilter($conn, $analystId, 't', true);   // true = one company only
     $idStmt = $conn->prepare("SELECT t.id FROM tickets t WHERE t.deleted_datetime IS NOT NULL" . $ttSql);
     $idStmt->execute($ttParams);
     $ids = array_map('intval', $idStmt->fetchAll(PDO::FETCH_COLUMN));
@@ -40,7 +54,24 @@ try {
     $pathStmt->execute($ids);
     $attachmentPaths = $pathStmt->fetchAll(PDO::FETCH_COLUMN);
 
+    // Document links on the notes about to be deleted (discussion #69).
+    // ⚠️ MUST run before the notes go — document_links.parent_id is polymorphic,
+    // so no foreign key cleans up after it, and once the note rows are gone
+    // there is nothing left to match the links against. The nightly orphan sweep
+    // in documentsCollectOrphans() would catch them either way, but a link that
+    // resolves to nothing should not survive the transaction that made it so.
+    require_once '../../includes/documents.php';
+    $noteIdStmt = $conn->prepare("SELECT id FROM ticket_notes WHERE ticket_id IN ($place)");
+    $noteIdStmt->execute($ids);
+    $noteIds = $noteIdStmt->fetchAll(PDO::FETCH_COLUMN);
+
     $conn->beginTransaction();
+    foreach ($noteIds as $noteId) {
+        documentsDetachParent($conn, 'ticket_note', (int) $noteId);
+    }
+    foreach ($ids as $tid) {
+        documentsDetachParent($conn, 'ticket', (int) $tid);
+    }
     // FK-safe order (mirrors permanently_delete_ticket.php).
     $conn->prepare("DELETE FROM email_attachments WHERE email_id IN (SELECT id FROM emails WHERE ticket_id IN ($place))")->execute($ids);
     $conn->prepare("DELETE FROM emails WHERE ticket_id IN ($place)")->execute($ids);

@@ -6,6 +6,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -13,6 +17,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
+requireCapabilityJson(Cap::TICKETS_PRIORITIES);   // settings tab — see docs/design/rbac.md
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -37,9 +43,11 @@ try {
         throw new Exception("Cannot delete: this priority is used by $count ticket(s). Reassign them or set the priority to inactive instead.");
     }
 
+    $name = $conn->query("SELECT name FROM ticket_priorities WHERE id = " . (int)$id)->fetchColumn() ?: null;
     $stmt = $conn->prepare("DELETE FROM ticket_priorities WHERE id = ?");
     $stmt->execute([$id]);
 
+    wf_emit('ticket_priority', 'deleted', (int)$id, $name);
     echo json_encode(['success' => true]);
 
 } catch (Exception $e) {

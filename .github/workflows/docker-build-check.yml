@@ -1,0 +1,77 @@
+# Build the Docker image on every change to it - without publishing anything.
+#
+# GH #207: the official image shipped without the ldap, zip and intl extensions,
+# and nothing noticed until somebody ran LDAP in it. The Dockerfile now refuses to
+# finish if any extension in docker/php-extensions.txt does not load, but the only
+# workflow that built the image was the release one, so a broken Dockerfile would
+# only have been found while publishing a release. This builds it as soon as it
+# changes, and then asks the finished image directly.
+#
+# amd64 only: the release workflow builds arm64 too, under emulation, and that
+# half takes the time. The extensions are the same on both.
+
+name: Docker build check
+
+on:
+  push:
+    paths:
+      - 'Dockerfile'
+      - 'docker/**'
+      - '.dockerignore'
+      - '.github/workflows/docker-build-check.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker/**'
+      - '.dockerignore'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The Dockerfile's own smoke-check step runs here - a missing extension
+      # fails this step.
+      - name: Build the image (not published)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: freeitsm:check
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: The extensions load in the finished image
+        run: |
+          docker run --rm --entrypoint php freeitsm:check -r '
+            foreach (["pdo_mysql", "ldap", "zip", "intl"] as $e) {
+              echo str_pad($e, 10), extension_loaded($e) ? "loaded" : "MISSING", "\n";
+              if (!extension_loaded($e)) exit(1);
+            }
+            foreach (["ldap_connect", "ldap_start_tls", "ldap_bind", "idn_to_ascii"] as $f) {
+              if (!function_exists($f)) { echo "missing function $f\n"; exit(1); }
+            }
+            if (!class_exists("ZipArchive")) { echo "no ZipArchive\n"; exit(1); }
+            echo "PHP ", PHP_VERSION, "\n";'
+
+      # Apache must still start: the entrypoint runs, and the setup page answers.
+      - name: The container starts and serves a page
+        run: |
+          docker run -d --name fit -p 8080:80 freeitsm:check
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/setup/ || true)
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+          echo "setup page: HTTP $code"
+          docker logs fit | tail -20
+          [ "$code" = "200" ]

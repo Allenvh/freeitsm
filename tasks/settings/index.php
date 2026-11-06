@@ -4,13 +4,26 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../../login.php');
+    header('Location: ../../auth/login.php');
     exit;
 }
+
+require_once '../../includes/settings_manifest.php';
+requireModuleAccess('tasks');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered — a tab they lack is
+// never emitted, so there is nothing to un-hide. Administrators hold everything.
+$settingsManifest = settingsManifestFor('tasks');
+$visibleTabs      = settingsVisibleTabs(connectToDatabase(), (int) $_SESSION['analyst_id'], $settingsManifest);
+$activeTabId      = settingsFirstTabId($visibleTabs);
 
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 $current_page = 'settings';
@@ -18,95 +31,119 @@ $path_prefix = '../../';
 $translationNamespaces = ['common', 'tasks'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('tasks.title') . ' ' . t('tasks.nav.settings')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/tasks.css?v=10">
+    <title><?php echo htmlspecialchars(pageTitle('tasks', t('tasks.nav.settings'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../../assets/css/tasks.css?v=58">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <script src="../../assets/js/tasks-priority.js?v=1"></script>
     <style>
-        body { display: block; --accent: #9333ea; }
+        body { display: block; --accent: var(--tsk-accent, #7c3aed); }
 
         .container { height: calc(100vh - 48px); overflow-y: auto; max-width: none; margin: 0; padding: 30px; }
 
-        /* Tasks-purple theme for tabs */
-        .tab:hover { color: #9333ea; }
-        .tab.active { color: #9333ea; border-bottom-color: #9333ea; }
+        /* Tasks-violet theme for tabs */
+        .tab:hover { color: var(--tsk-accent, #7c3aed); }
+        .tab.active { color: var(--tsk-accent, #7c3aed); border-bottom-color: var(--tsk-accent, #7c3aed); }
 
-        .section-header h2 { margin: 0 0 8px; font-size: 18px; color: #333; }
+        .section-header h2 { margin: 0 0 8px; font-size: 18px; color: var(--text, #333); }
         .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 
         .lookup-table { width: 100%; border-collapse: collapse; }
-        .lookup-table th, .lookup-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-        .lookup-table th { font-weight: 600; color: #666; background: #fafafa; }
+        .lookup-table th, .lookup-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border-soft, #f0f0f0); font-size: 14px; }
+        .lookup-table th { font-weight: 600; color: var(--text-muted, #666); background: var(--surface-2, #fafafa); }
         .badge-yes { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #f3e8ff; color: #7e22ce; font-size: 11px; font-weight: 600; }
-        .badge-no { color: #999; }
+        .badge-no { color: var(--text-dim, #999); }
         /* Active/Inactive uses the shared .status-badge / .status-active / .status-inactive classes from inbox.css (canonical green/red). */
-        .swatch { display: inline-block; width: 18px; height: 18px; border-radius: 3px; vertical-align: middle; border: 1px solid #ddd; margin-right: 6px; }
-        .action-btn { background: none; border: none; cursor: pointer; padding: 4px; color: #666; }
-        .action-btn:hover { color: #9333ea; }
-        .action-btn.delete:hover { color: #c62828; }
+        .swatch { display: inline-block; width: 18px; height: 18px; border-radius: 3px; vertical-align: middle; border: 1px solid var(--border, #ddd); margin-right: 6px; }
+        .action-btn { background: none; border: none; cursor: pointer; padding: 4px; color: var(--text-muted, #666); }
+        .action-btn:hover { color: var(--tsk-accent, #7c3aed); }
+        .action-btn.delete:hover { color: var(--danger-accent, #c62828); }
         .actions-cell { white-space: nowrap; }
         .actions-cell .action-btn { display: inline-flex; vertical-align: middle; }
-        .add-btn { background: #9333ea; color: white; padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; }
-        .add-btn:hover { background: #7e22ce; }
+        .add-btn { background: var(--tsk-accent, #7c3aed); color: #fff; padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; }
+        .add-btn:hover { background: var(--tsk-accent-hover, #6d28d9); }
 
         /* Modal sizing — base modal / form CSS lives in inbox.css. */
         .modal-content { padding: 20px; max-width: 500px; }
-        .modal-header { padding: 0; border-bottom: none; margin-bottom: 20px; font-size: 20px; font-weight: 600; color: #333; }
+        .modal-header { padding: 0; border-bottom: none; margin-bottom: 20px; font-size: 20px; font-weight: 600; color: var(--text, #333); }
         .modal-actions { margin-top: 20px; }
         .btn { padding: 10px 20px; border-radius: 4px; font-size: 14px; cursor: pointer; border: none; transition: all 0.2s; }
-        .btn-primary { background: #9333ea; color: white; }
-        .btn-primary:hover { background: #7e22ce; }
-        .btn-secondary { background: #e0e0e0; color: #333; }
-        .btn-secondary:hover { background: #bdbdbd; }
+        .btn-primary { background: var(--tsk-accent, #7c3aed); color: #fff; }
+        .btn-primary:hover { background: var(--tsk-accent-hover, #6d28d9); }
+        .btn-secondary { background: var(--surface-3, #e0e0e0); color: var(--text, #333); }
+        .btn-secondary:hover { background: var(--surface-hover, #bdbdbd); }
 
-        /* Toast */
-        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 18px; border-radius: 4px; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 1100; }
+        /* Toast — dark pill, reads on both modes */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 18px; border-radius: 4px; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 1100; }
         .toast.show { opacity: 1; }
-        .toast.toast-error { background: #c62828; }
+        .toast.toast-error { background: var(--danger-accent, #c62828); }
 
         /* Calendar span-mode options */
         .span-mode-options { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
-        .span-mode-card { display: flex; gap: 12px; padding: 14px 16px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; transition: all 0.15s; }
-        .span-mode-card:hover { border-color: #9333ea; }
-        .span-mode-card.selected { border-color: #9333ea; background: #faf5ff; }
-        .span-mode-card input { margin-top: 2px; accent-color: #9333ea; width: 16px; height: 16px; cursor: pointer; }
-        .span-mode-name { font-weight: 600; font-size: 14px; color: #333; margin-bottom: 3px; }
-        .span-mode-desc { font-size: 13px; color: #777; line-height: 1.45; }
+        .span-mode-card { display: flex; gap: 12px; padding: 14px 16px; border: 1px solid var(--border, #ddd); border-radius: 8px; cursor: pointer; transition: all 0.15s; }
+        .span-mode-card:hover { border-color: var(--tsk-accent, #7c3aed); }
+        .span-mode-card.selected { border-color: var(--tsk-accent, #7c3aed); background: #faf5ff; }
+        .span-mode-card input { margin-top: 2px; accent-color: var(--tsk-accent, #7c3aed); width: 16px; height: 16px; cursor: pointer; }
+        .span-mode-name { font-weight: 600; font-size: 14px; color: var(--text, #333); margin-bottom: 3px; }
+        .span-mode-desc { font-size: 13px; color: var(--text-muted, #777); line-height: 1.45; }
 
         /* Card field toggles */
         .card-field-options { display: flex; flex-direction: column; gap: 2px; max-width: 640px; }
         .card-field-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 14px; border-radius: 8px; cursor: pointer; transition: background 0.12s; }
         .card-field-row:hover { background: #faf5ff; }
-        .card-field-row input { margin-top: 1px; accent-color: #9333ea; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
-        .card-field-name { font-weight: 600; font-size: 14px; color: #333; }
-        .card-field-desc { font-size: 13px; color: #888; margin-top: 2px; line-height: 1.4; }
+        .card-field-row input { margin-top: 1px; accent-color: var(--tsk-accent, #7c3aed); width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+        .card-field-row-static { cursor: default; }
+        .card-field-row-static:hover { background: transparent; }
+        .cp-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .cp-option {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border: 1px solid var(--border, #d5dbe1);
+            border-radius: 6px; font-size: 13px; cursor: pointer;
+            background: var(--surface, #fff); transition: border-color .15s, background .15s;
+        }
+        .cp-option:hover { border-color: var(--tsk-accent, #7c3aed); }
+        .cp-option:has(input:checked) { border-color: var(--tsk-accent, #7c3aed); background: #faf5ff; }
+        .cp-option input { width: 14px; height: 14px; margin: 0; accent-color: var(--tsk-accent, #7c3aed); }
+        .cp-preview-wrap { margin-top: 14px; }
+        .cp-preview-label { font-size: 12px; color: var(--text-dim, #888); margin-bottom: 6px; }
+        .cp-preview { background: var(--bg-subtle, #f4f5f7); border-radius: 8px; padding: 12px; max-width: 280px; }
+        [data-theme-mode="dark"] .cp-option:has(input:checked) { background: #241b3d; }
+        [data-theme-mode="dark"] .cp-preview { background: #1b1830; }
+        .card-field-name { font-weight: 600; font-size: 14px; color: var(--text, #333); }
+        .card-field-desc { font-size: 13px; color: var(--text-dim, #888); margin-top: 2px; line-height: 1.4; }
+
+        /* Dark-mode overrides for the pale-violet tints (yes-badge + selected/hover
+           cards) — their light values differ from --tsk-accent-soft, so they stay
+           hardcoded above and flip here to avoid glowing on the dark surface. */
+        [data-theme-mode="dark"] .badge-yes { background: #2a2145; color: #c4b5fd; }
+        [data-theme-mode="dark"] .span-mode-card.selected { background: #241b3d; }
+        [data-theme-mode="dark"] .card-field-row:hover { background: #241b3d; }
     </style>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="settings">
     <?php include '../includes/header.php'; ?>
 
     <div class="container">
-        <div class="tabs">
-            <button class="tab active" data-tab="statuses" onclick="switchTab('statuses')"><?php echo htmlspecialchars(t('tasks.settings.tab_statuses')); ?></button>
-            <button class="tab" data-tab="priorities" onclick="switchTab('priorities')"><?php echo htmlspecialchars(t('tasks.settings.tab_priorities')); ?></button>
-            <button class="tab" data-tab="calendar" onclick="switchTab('calendar')"><?php echo htmlspecialchars(t('tasks.settings.tab_calendar')); ?></button>
-            <button class="tab" data-tab="card" onclick="switchTab('card')"><?php echo htmlspecialchars(t('tasks.settings.tab_card')); ?></button>
-            <button class="tab" data-tab="tags" onclick="switchTab('tags')"><?php echo htmlspecialchars(t('tasks.settings.tab_tags')); ?></button>
-            <button class="tab" data-tab="left-panel" onclick="switchTab('left-panel')"><?php echo htmlspecialchars(t('common.left_panel.tab')); ?></button>
-        </div>
+        <?php renderSettingsTabBar($visibleTabs, $activeTabId); ?>
 
         <!-- Statuses Tab -->
-        <div class="tab-content active" id="statuses-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'statuses')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'statuses' ? ' active' : ''; ?>" id="statuses-tab" data-capability="<?php echo capKey(Cap::TASKS_STATUSES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tasks.settings.statuses_heading')); ?></h2>
                 <button class="add-btn" onclick="openLookupModal('status')"><?php echo htmlspecialchars(t('tasks.settings.add')); ?></button>
             </div>
-            <p style="color: #666; margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.statuses_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.statuses_intro')); ?></p>
             <table class="lookup-table">
                 <thead><tr>
                     <th><?php echo htmlspecialchars(t('tasks.settings.col_name')); ?></th>
@@ -122,12 +159,15 @@ $translationNamespaces = ['common', 'tasks'];
         </div>
 
         <!-- Priorities Tab -->
-        <div class="tab-content" id="priorities-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'priorities')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'priorities' ? ' active' : ''; ?>" id="priorities-tab" data-capability="<?php echo capKey(Cap::TASKS_PRIORITIES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tasks.settings.priorities_heading')); ?></h2>
                 <button class="add-btn" onclick="openLookupModal('priority')"><?php echo htmlspecialchars(t('tasks.settings.add')); ?></button>
             </div>
-            <p style="color: #666; margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.priorities_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.priorities_intro')); ?></p>
             <table class="lookup-table">
                 <thead><tr>
                     <th><?php echo htmlspecialchars(t('tasks.settings.col_name')); ?></th>
@@ -142,11 +182,14 @@ $translationNamespaces = ['common', 'tasks'];
         </div>
 
         <!-- Calendar Tab -->
-        <div class="tab-content" id="calendar-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'calendar')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'calendar' ? ' active' : ''; ?>" id="calendar-tab" data-capability="<?php echo capKey(Cap::TASKS_CALENDAR); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tasks.settings.calendar_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.calendar_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.calendar_intro')); ?></p>
             <div class="span-mode-options">
                 <label class="span-mode-card">
                     <input type="radio" name="spanMode" value="deadline" onchange="saveSpanMode(this.value)">
@@ -172,20 +215,169 @@ $translationNamespaces = ['common', 'tasks'];
             </div>
         </div>
 
+        <?php endif; ?>
+
+        <!-- Time Tab (GH #112) -->
+        <?php if (settingsTabVisible($visibleTabs, 'time')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'time' ? ' active' : ''; ?>" id="time-tab" data-capability="<?php echo capKey(Cap::TASKS_TIME); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tasks.settings.time_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.time_desc')); ?></p>
+            <div class="span-mode-options">
+                <?php foreach ([
+                    'both'     => 'tasks.settings.time_both',
+                    'tasks'    => 'tasks.settings.time_tasks',
+                    'subtasks' => 'tasks.settings.time_subtasks',
+                    'off'      => 'tasks.settings.time_off',
+                ] as $value => $labelKey): ?>
+                <label class="span-mode-card">
+                    <input type="radio" name="timeScope" value="<?php echo $value; ?>" onchange="saveTimeScope(this.value)">
+                    <div class="span-mode-body">
+                        <div class="span-mode-name"><?php echo htmlspecialchars(t($labelKey)); ?></div>
+                    </div>
+                </label>
+                <?php endforeach; ?>
+            </div>
+            <!-- Said plainly, because "will this delete the hours my team logged?"
+                 is the first thing anybody narrowing this will want to know. -->
+            <p style="color: var(--text-muted, #666); margin-top: 16px;"><?php echo htmlspecialchars(t('tasks.settings.time_note')); ?></p>
+        </div>
+        <?php endif; ?>
+
+        <!-- Involved Tab — who else is on a task (GH #89) -->
+        <?php if (settingsTabVisible($visibleTabs, 'involved')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'involved' ? ' active' : ''; ?>" id="involved-tab" data-capability="<?php echo capKey(Cap::TASKS_INVOLVED); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tasks.settings.involved_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.involved_desc')); ?></p>
+            <label class="card-field-row">
+                <input type="checkbox" id="collaboratorCompletion" onchange="saveCollaboratorCompletion(this.checked)">
+                <div>
+                    <div class="card-field-name"><?php echo htmlspecialchars(t('tasks.settings.involved_completion_name')); ?></div>
+                    <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.involved_completion_desc')); ?></div>
+                </div>
+            </label>
+            <!-- Said plainly, because "does this stop me closing the task?" is the
+                 first thing anybody switching it on will want to know. -->
+            <p style="color: var(--text-muted, #666); margin-top: 16px;"><?php echo htmlspecialchars(t('tasks.settings.involved_note')); ?></p>
+
+            <!-- GH #218: the Contractor and Contact there pair. Saved on change, like the tick above. -->
+            <h3 style="margin: 28px 0 6px;"><?php echo htmlspecialchars(t('tasks.settings.contractor_fields_heading')); ?></h3>
+            <p style="color: var(--text-muted, #666); margin-bottom: 12px;"><?php echo htmlspecialchars(t('tasks.settings.contractor_fields_desc')); ?></p>
+            <select id="contractorFieldsDefault" class="settings-table-select" style="max-width: 320px;" disabled>
+                <option value="1"><?php echo htmlspecialchars(t('tasks.settings.contractor_fields_show')); ?></option>
+                <option value="0"><?php echo htmlspecialchars(t('tasks.settings.contractor_fields_hide')); ?></option>
+            </select>
+            <table class="settings-table" id="contractorFieldsCompanies" style="margin-top: 14px; max-width: 560px;" hidden>
+                <thead><tr><th><?php echo htmlspecialchars(t('tasks.settings.contractor_fields_company')); ?></th><th><?php echo htmlspecialchars(t('tasks.settings.contractor_fields_heading')); ?></th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+
+        <!-- Checklists Tab — checklists on tasks (discussion #138) -->
+        <?php if (settingsTabVisible($visibleTabs, 'checklists')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'checklists' ? ' active' : ''; ?>" id="checklists-tab" data-capability="<?php echo capKey(Cap::TASKS_CHECKLISTS); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tasks.settings.checklists_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.checklists_desc')); ?></p>
+            <label class="card-field-row">
+                <input type="checkbox" id="taskChecklistsEnabled" onchange="saveTaskChecklistsEnabled(this.checked)">
+                <div>
+                    <div class="card-field-name"><?php echo htmlspecialchars(t('tasks.settings.checklists_enabled_name')); ?></div>
+                    <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.checklists_enabled_desc')); ?></div>
+                </div>
+            </label>
+            <!-- Said plainly, because "does this stop me completing a task?" and
+                 "what happens if I switch it off again?" are the two questions. -->
+            <p style="color: var(--text-muted, #666); margin-top: 16px;"><?php echo htmlspecialchars(t('tasks.settings.checklists_note')); ?></p>
+
+            <!-- Forms on tasks (GH #190): a task can need forms from the Forms module,
+                 filled in for that occurrence and checked by the same completion gate. -->
+            <label class="card-field-row" style="margin-top: 16px;">
+                <input type="checkbox" id="taskFormsEnabled" onchange="saveTaskFormsEnabled(this.checked)">
+                <div>
+                    <div class="card-field-name"><?php echo htmlspecialchars(t('tasks.settings.forms_enabled_name')); ?></div>
+                    <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.forms_enabled_desc')); ?></div>
+                </div>
+            </label>
+            <label class="card-field-row" style="margin-top: 16px;">
+                <input type="checkbox" id="taskProceduresEnabled" onchange="saveTaskSwitch('procedures_enabled', this.checked)">
+                <div>
+                    <div class="card-field-name"><?php echo htmlspecialchars(t('tasks.settings.procedures_enabled_name')); ?></div>
+                    <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.procedures_enabled_desc')); ?></div>
+                </div>
+            </label>
+        </div>
+        <?php endif; ?>
+
+        <!-- Evidence Tab — repeating task evidence (#181) -->
+        <?php if (settingsTabVisible($visibleTabs, 'evidence')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'evidence' ? ' active' : ''; ?>" id="evidence-tab" data-capability="<?php echo capKey(Cap::TASKS_EVIDENCE); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tasks.settings.evidence_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.evidence_desc')); ?></p>
+            <?php foreach ([
+                ['evidence_completed_checklist', 'evidence_checklist', ['allow' => 'evidence_checklist_allow', 'refuse' => 'evidence_checklist_refuse']],
+                ['evidence_delete_occurrence',   'evidence_delete',    ['allow' => 'evidence_delete_allow', 'refuse' => 'evidence_delete_refuse']],
+                ['evidence_report_access',       'evidence_access',    ['anyone' => 'evidence_access_anyone', 'permission' => 'evidence_access_permission']],
+                // GH #190 decision 5: open follow-ups at completion - allowed by default.
+                ['evidence_open_followups',      'evidence_followups', ['allow' => 'evidence_followups_allow', 'warn' => 'evidence_followups_warn', 'block' => 'evidence_followups_block']],
+            ] as [$evKey, $evLabel, $evOptions]): ?>
+            <div class="card-field-row" style="display:block;">
+                <label class="card-field-name" for="ev_<?php echo $evKey; ?>"><?php echo htmlspecialchars(t('tasks.settings.' . $evLabel . '_name')); ?></label>
+                <select id="ev_<?php echo $evKey; ?>" class="ev-setting" data-key="<?php echo $evKey; ?>" disabled onchange="saveEvidenceSetting(this)" style="margin:6px 0;">
+                    <?php foreach ($evOptions as $v => $k): ?>
+                    <option value="<?php echo $v; ?>"><?php echo htmlspecialchars(t('tasks.settings.' . $k)); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.' . $evLabel . '_desc')); ?></div>
+            </div>
+            <?php endforeach; ?>
+            <div class="card-field-row" style="display:block;">
+                <label class="card-field-name" for="ev_evidence_skip_status_id"><?php echo htmlspecialchars(t('tasks.settings.evidence_skip_status_name')); ?></label>
+                <select id="ev_evidence_skip_status_id" class="ev-setting" data-key="evidence_skip_status_id" disabled onchange="saveEvidenceSetting(this)" style="margin:6px 0;"></select>
+                <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.evidence_skip_status_desc')); ?></div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Card Tab -->
-        <div class="tab-content" id="card-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'card')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'card' ? ' active' : ''; ?>" id="card-tab" data-capability="<?php echo capKey(Cap::TASKS_CARD); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tasks.settings.card_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.card_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tasks.settings.card_intro')); ?></p>
             <div class="card-field-options">
-                <label class="card-field-row">
-                    <input type="checkbox" data-field="priority" onchange="saveCardFields()">
-                    <div>
+                <!-- Priority is a placement, not a tick (discussion #108 asked to
+                     choose how it reads, not just whether it shows). The options are
+                     generated from PRIORITY_STYLES so the form cannot offer a value
+                     the server will refuse to store. -->
+                <div class="card-field-row card-field-row-static">
+                    <div style="width:100%">
                         <div class="card-field-name"><?php echo htmlspecialchars(t('tasks.settings.card_priority_name')); ?></div>
                         <div class="card-field-desc"><?php echo htmlspecialchars(t('tasks.settings.card_priority_desc')); ?></div>
+                        <div class="cp-options" data-field="priority">
+                            <?php foreach (['off', 'dot', 'pill', 'border'] as $cpStyle): ?>
+                            <label class="cp-option">
+                                <input type="radio" name="cp_priority"
+                                       value="<?php echo htmlspecialchars($cpStyle); ?>"
+                                       onchange="saveCardFields()">
+                                <span><?php echo htmlspecialchars(t('tasks.settings.card_priority_style.' . $cpStyle)); ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="cp-preview-wrap">
+                            <div class="cp-preview-label"><?php echo htmlspecialchars(t('tasks.settings.card_preview')); ?></div>
+                            <div class="cp-preview" id="cpPreview"></div>
+                        </div>
                     </div>
-                </label>
+                </div>
                 <label class="card-field-row">
                     <input type="checkbox" data-field="assignee" onchange="saveCardFields()">
                     <div>
@@ -239,13 +431,16 @@ $translationNamespaces = ['common', 'tasks'];
         </div>
 
         <!-- Tags Tab -->
-        <div class="tab-content" id="tags-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'tags')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'tags' ? ' active' : ''; ?>" id="tags-tab" data-capability="<?php echo capKey(Cap::TASKS_TAGS); ?>">
             <div class="settings-group">
                 <div class="section-header">
                     <h3><?php echo htmlspecialchars(t('tasks.settings.tags_heading')); ?></h3>
                     <button class="add-btn" onclick="openLookupModal('tag')"><?php echo htmlspecialchars(t('tasks.settings.add')); ?></button>
                 </div>
-                <p style="color: #666; margin-bottom: 14px;"><?php echo htmlspecialchars(t('tasks.settings.tags_intro')); ?></p>
+                <p style="color: var(--text-muted, #666); margin-bottom: 14px;"><?php echo htmlspecialchars(t('tasks.settings.tags_intro')); ?></p>
                 <table class="lookup-table">
                     <thead><tr>
                         <th><?php echo htmlspecialchars(t('tasks.settings.col_name')); ?></th>
@@ -300,25 +495,28 @@ $translationNamespaces = ['common', 'tasks'];
         </div>
 
         <!-- Left panel tab — per-analyst preference -->
-        <div class="tab-content" id="left-panel-tab">
+        <?php endif; ?>
+
+        <!-- Left panel — a per-analyst display preference; declares no capability. -->
+        <div class="tab-content<?php echo $activeTabId === 'left-panel' ? ' active' : ''; ?>" id="left-panel-tab" data-capability="none">
             <div class="settings-group">
                 <div class="section-header">
                     <h3><?php echo htmlspecialchars(t('common.left_panel.tab')); ?></h3>
                 </div>
-                <p style="color: #666; margin-bottom: 14px;"><?php echo htmlspecialchars(t('tasks.settings.left_panel_intro')); ?></p>
+                <p style="color: var(--text-muted, #666); margin-bottom: 14px;"><?php echo htmlspecialchars(t('tasks.settings.left_panel_intro')); ?></p>
                 <form id="leftPanelForm" autocomplete="off" onsubmit="event.preventDefault();">
-                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: #333;"><?php echo htmlspecialchars(t('common.left_panel.visibility')); ?></label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: var(--text, #333);"><?php echo htmlspecialchars(t('common.left_panel.visibility')); ?></label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
                         <input type="radio" name="tasksSidebarMode" value="always" onchange="saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('common.left_panel.always')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-muted, #777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('tasks.settings.left_panel_always_desc')); ?>
                         </span>
                     </label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; cursor: pointer;">
                         <input type="radio" name="tasksSidebarMode" value="hover" onchange="saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('common.left_panel.hover')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-muted, #777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('tasks.settings.left_panel_hover_desc')); ?>
                         </span>
                     </label>
@@ -440,11 +638,45 @@ $translationNamespaces = ['common', 'tasks'];
         document.addEventListener('DOMContentLoaded', () => {
             for (const kind of Object.keys(LOOKUP_KINDS)) loadLookup(kind);
             loadSpanMode();
+            loadTimeScope();
+            loadCollaboratorCompletion();
+            loadTaskChecklistsEnabled();
+            loadEvidenceSettings();
             loadCardFields();
             loadTagSettings();
             const tabFromHash = location.hash.replace('#', '');
-            if (['calendar', 'card', 'tags'].includes(tabFromHash)) switchTab(tabFromHash);
+            if (['calendar', 'time', 'involved', 'checklists', 'evidence', 'card', 'tags'].includes(tabFromHash)) switchTab(tabFromHash);
         });
+
+        // Repeating task evidence (#181). Disabled until loaded - a select that
+        // shows its first option before the saved value arrives reads as the
+        // saved value, and one careless click would then save it.
+        async function loadEvidenceSettings() {
+            const boxes = document.querySelectorAll('.ev-setting');
+            if (!boxes.length) return;
+            try {
+                const data = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
+                if (!data.success) return;
+                const s = data.settings;
+                const skip = document.getElementById('ev_evidence_skip_status_id');
+                const effective = (s.evidence_closed_statuses || []).find(x => Number(x.id) === Number(s.evidence_skip_status_effective));
+                skip.innerHTML = `<option value="">${escapeHtml(t('tasks.settings.evidence_skip_status_auto', { name: effective ? effective.name : '-' }))}</option>`
+                    + (s.evidence_closed_statuses || []).map(x => `<option value="${Number(x.id)}">${escapeHtml(x.name)}</option>`).join('');
+                boxes.forEach(b => { b.value = String(s[b.dataset.key] ?? ''); b.disabled = false; });
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveEvidenceSetting(box) {
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { [box.dataset.key]: box.value } })
+                });
+                const data = await res.json();
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+        }
 
         // ── Tag display settings ──
         const TAG_SETTINGS = ['allow_create', 'surface_card', 'surface_filter',
@@ -508,9 +740,192 @@ $translationNamespaces = ['common', 'tasks'];
             });
         }
 
+        // ── Where time is recorded (GH #112) ──
+        async function loadTimeScope() {
+            try {
+                const data = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
+                const scope = (data.success && data.settings.time_scope) || 'both';
+                const radio = document.querySelector(`input[name="timeScope"][value="${scope}"]`);
+                if (radio) radio.checked = true;
+            } catch (e) { console.error(e); }
+            markSelectedCard();
+        }
+
+        async function saveTimeScope(value) {
+            markSelectedCard();
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { time_scope: value } })
+                });
+                const data = await res.json();
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+        }
+
+        // ── Who else is on a task (GH #89) ──
+        // ⚠️ An unloaded checkbox looks EXACTLY like an unticked one, and Save
+        // would then write the guess back as fact. So the box starts disabled and
+        // is only enabled once a real value has come back; a failed fetch leaves
+        // it disabled rather than showing a confident "off".
+        async function loadCollaboratorCompletion() {
+            const box = document.getElementById('collaboratorCompletion');
+            if (!box) return;
+            box.disabled = true;
+            try {
+                const data = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
+                if (!data.success) return;
+                box.checked  = String(data.settings.collaborator_completion || '0') === '1';
+                box.disabled = false;
+            } catch (e) { console.error(e); }
+        }
+
+        // Checklists on tasks (discussion #138). Same disabled-until-loaded rule
+        // as the per-person tick above, for the same reason.
+        async function loadTaskChecklistsEnabled() {
+            const box = document.getElementById('taskChecklistsEnabled');
+            if (!box) return;
+            box.disabled = true;
+            try {
+                const data = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
+                if (!data.success) return;
+                box.checked  = String(data.settings.checklists_enabled || '0') === '1';
+                box.disabled = false;
+                const forms = document.getElementById('taskFormsEnabled');
+                if (forms) forms.checked = String(data.settings.forms_enabled || '0') === '1';
+                const procs = document.getElementById('taskProceduresEnabled');
+                if (procs) procs.checked = String(data.settings.procedures_enabled || '0') === '1';
+            } catch (e) { console.error(e); }
+        }
+
+        async function saveTaskChecklistsEnabled(on) {
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { checklists_enabled: on ? '1' : '0' } })
+                });
+                const data = await res.json();
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+        }
+
+        /** One of the Checklists tab's on/off switches (GH #190), saved on its own. */
+        async function saveTaskSwitch(key, on) {
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { [key]: on ? '1' : '0' } })
+                });
+                const data = await res.json();
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+        }
+
+        /** Forms on tasks (GH #190), saved on its own like the checklists switch. */
+        async function saveTaskFormsEnabled(on) {
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { forms_enabled: on ? '1' : '0' } })
+                });
+                const data = await res.json();
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+        }
+
+        async function saveCollaboratorCompletion(on) {
+            try {
+                const res = await fetch(API_BASE + 'save_settings.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ settings: { collaborator_completion: on ? '1' : '0' } })
+                });
+                const data = await res.json();
+                if (data.success) showToast(t('tasks.toast.saved'), 'success');
+                else showToast(data.error || t('tasks.toast.save_failed'), 'error');
+            } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+        }
+
+        // ── Contractor fields on tasks, per company (GH #218) ──
+        // A company row's '' = follow the install default (its answer is deleted).
+        // TRAP: the default select stays disabled until the load succeeds, so a failed
+        // fetch can never be read as "Show" and saved back as a decision.
+        (function () {
+            const def = document.getElementById('contractorFieldsDefault');
+            const table = document.getElementById('contractorFieldsCompanies');
+            if (!def || !table) return;
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const save = async body => {
+                try {
+                    const d = await (await fetch(API_BASE + 'contractor_fields.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                    })).json();
+                    showToast(d.success ? t('tasks.toast.saved') : (d.error || t('tasks.toast.save_failed')), d.success ? 'success' : 'error');
+                } catch (e) { showToast(t('tasks.toast.save_failed'), 'error'); }
+            };
+            fetch(API_BASE + 'contractor_fields.php').then(r => r.json()).then(d => {
+                if (!d.success) return;
+                def.value = d.default ? '1' : '0';
+                def.disabled = false;
+                if (d.multi_tenant && d.companies.length) {
+                    const opt = (v, cur, label) => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
+                    table.querySelector('tbody').innerHTML = d.companies.map(c => {
+                        const cur = c.value === null ? '' : (c.value ? '1' : '0');
+                        return `<tr data-id="${c.id}"><td>${esc(c.name)}</td><td><select class="settings-table-select">
+                            ${opt('', cur, t('tasks.settings.contractor_fields_follow'))}${opt('1', cur, t('tasks.settings.contractor_fields_show'))}${opt('0', cur, t('tasks.settings.contractor_fields_hide'))}
+                        </select></td></tr>`;
+                    }).join('');
+                    table.hidden = false;
+                }
+            }).catch(() => {});
+            def.addEventListener('change', () => save({ default: def.value === '1' }));
+            table.addEventListener('change', e => {
+                const tr = e.target.closest('tr[data-id]');
+                if (tr) save({ companies: [{ id: Number(tr.dataset.id), value: e.target.value === '' ? null : e.target.value === '1' }] });
+            });
+        })();
+
         // ── Card field toggles ──
-        const CARD_FIELDS = ['priority', 'assignee', 'team', 'start_date',
+        // priority is deliberately absent: it holds a placement, not a boolean,
+        // and is read from / written to its own radio group.
+        const CARD_FIELDS = ['assignee', 'team', 'start_date',
                              'due_date', 'description', 'subtasks', 'links'];
+
+        function cpSelected() {
+            const r = document.querySelector('input[name="cp_priority"]:checked');
+            return r ? r.value : 'dot';
+        }
+
+        /**
+         * The preview uses the REAL card markup, the REAL stylesheet and the REAL
+         * TasksPriority renderer, so it cannot drift from the board the way a
+         * hand-drawn mock-up would.
+         *
+         * It also previews the install's OWN default priority rather than the word
+         * "High", which is the whole point of #108: a German site that renamed its
+         * priorities sees "Hoch" here in its configured colour, and can tell at a
+         * glance that the indicator now follows the name and the swatch they set.
+         */
+        function cpRenderPreview() {
+            const el = document.getElementById('cpPreview');
+            if (!el) return;
+            const list = lookupCache.priority || [];
+            const p = list.find(x => x.is_default && x.is_active)
+                   || list.find(x => x.is_active)
+                   || { name: 'High', colour: '#f59e0b' };
+            const style = cpSelected();
+            el.innerHTML =
+                `<div class="task-card"${TasksPriority.accentAttrs(p.name, p.colour, style)}>
+                    <div class="task-card-title">${escapeHtml(t('tasks.settings.card_preview_title'))}</div>
+                    <div class="task-card-meta">
+                        ${TasksPriority.markup(p.name, p.colour, style)}
+                        <span class="assignee-badge">EM</span>
+                    </div>
+                </div>`;
+        }
 
         async function loadCardFields() {
             try {
@@ -520,11 +935,24 @@ $translationNamespaces = ['common', 'tasks'];
                     const cb = document.querySelector(`input[data-field="${f}"]`);
                     if (cb) cb.checked = !!cf[f];
                 });
+                const style = TasksPriority.normaliseStyle(cf.priority);
+                const radio = document.querySelector(`input[name="cp_priority"][value="${style}"]`);
+                if (radio) radio.checked = true;
+                // The lookups populate the preview's name and colour; if that tab
+                // has not been opened yet the cache is empty, so fetch it here too.
+                if (!(lookupCache.priority || []).length) {
+                    try {
+                        const pd = await fetch(API_BASE + 'get_task_priorities.php').then(r => r.json());
+                        if (pd.success) lookupCache.priority = pd.priorities || [];
+                    } catch (e) { /* preview falls back to a sample */ }
+                }
+                cpRenderPreview();
             } catch (e) { console.error(e); }
         }
 
         async function saveCardFields() {
-            const cf = {};
+            cpRenderPreview();
+            const cf = { priority: cpSelected() };
             CARD_FIELDS.forEach(f => {
                 const cb = document.querySelector(`input[data-field="${f}"]`);
                 cf[f] = (cb && cb.checked) ? 1 : 0;
@@ -600,7 +1028,7 @@ $translationNamespaces = ['common', 'tasks'];
             if (text == null) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         function openLookupModal(kind) {
@@ -688,5 +1116,6 @@ $translationNamespaces = ['common', 'tasks'];
         });
 
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

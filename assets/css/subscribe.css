@@ -1,0 +1,93 @@
+/**
+ * The shared "add this calendar to your phone" dialogue.
+ *
+ * Markup: includes/subscribe_modal.php  Behaviour: assets/js/subscribe.js
+ *
+ * Lifted out of itsm_calendar.css so the Calendar module and Preferences can
+ * both use the component — the styles have to travel with it, or the dialogue
+ * renders unstyled on whichever page does not happen to load that module's CSS.
+ * Depends on the canonical .modal / .modal-content / .modal-body / .modal-footer
+ * from inbox.css, which both pages already load.
+ */
+
+.subscribe-intro {
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    margin: 0 0 12px 0;
+    line-height: 1.4;
+}
+.subscribe-modal { max-width: 420px; }
+.subscribe-modal .form-hint {
+    font-size: 11px;
+    color: var(--text-dim, #888);
+    margin: 6px 0 0 0;
+    line-height: 1.4;
+}
+.subscribe-qr {
+    text-align: center;
+    margin: 4px 0 16px 0;
+}
+.subscribe-qr img {
+    width: 100%;
+    max-width: 190px;
+    height: auto;
+    image-rendering: pixelated;
+    border: 1px solid var(--border-soft, #eee);
+    border-radius: 6px;
+    padding: 8px;
+    background: var(--surface, #fff);
+    box-sizing: border-box;
+}
+.subscribe-url-row {
+    display: flex;
+    gap: 6px;
+}
+.subscribe-url {
+    flex: 1;
+    min-width: 0;
+    /* Monospaced: a long opaque token is far easier to check and to select
+       accurately when the characters line up. */
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    color: var(--text-muted, #555);
+    background: var(--surface-3, #f8f8f8);
+}
+.subscribe-hint {
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    margin: 0 0 8px 0;
+    line-height: 1.45;
+}
+.subscribe-hint strong { color: var(--text, #333); }
+.subscribe-reset {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--text-faint, #999);
+    cursor: pointer;
+    text-decoration: underline;
+}
+.subscribe-reset:hover { color: #d13438; }
+
+/* Shown only over plain HTTP. The token in the URL is the ONLY thing protecting
+   the feed's contents; without TLS it crosses the network in clear on every
+   refresh. The Calendar module's dialogue never said so — sharing the component
+   is how it gained the warning. */
+.subscribe-warn {
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border: 1px solid var(--warning-border, #f0d9a8);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+}
+
+/* "Treat this like a password." Sits directly under the URL it is about. */
+.subscribe-hint.subscribe-secret {
+    color: var(--text-muted, #666);
+    margin-top: 4px;
+    margin-bottom: 12px;
+}

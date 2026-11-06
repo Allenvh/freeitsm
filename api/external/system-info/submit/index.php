@@ -3,10 +3,17 @@
  * External API: System Info / Asset Inventory Ingest
  *
  * Accepts a JSON POST with full hardware inventory from the PowerShell
- * collection script and upserts the asset record plus related tables
- * (disks, network adapters, software inventory).
+ * collection script and upserts the asset record; the volumes, physical drives,
+ * network adapters and software go through AssetInventoryService::agentReport(),
+ * the one inventory implementation the REST API shares.
+ *
+ * report_version 2 (agent from 3.15.0): every section is sent, an empty list
+ * means "collected, and empty", and collection_failures names the sections the
+ * agent tried and could not collect. Without it, an empty section is skipped.
  *
  * Auth: Authorization header with API key (validated against apikeys table).
+ *
+ * @wiki Inventory-Freshness-Developer-Guide
  */
 header('Content-Type: application/json');
 
@@ -43,20 +50,36 @@ if (!$authKey) {
     exit;
 }
 
+$keyTenant = null;  // multi-tenancy: the company this agent's assets belong to
 try {
-    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM apikeys WHERE apikey = ? AND active = 1");
-    $stmt->execute([$authKey]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$row || (int)$row['cnt'] === 0) {
+    // Fetch the key's company alongside validating it. A missing tenant_id column
+    // (part-migrated install) simply leaves $keyTenant null → the Default company.
+    try {
+        $stmt = $conn->prepare("SELECT tenant_id FROM apikeys WHERE apikey = ? AND active = 1");
+        $stmt->execute([$authKey]);
+        $keyRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        $stmt = $conn->prepare("SELECT id FROM apikeys WHERE apikey = ? AND active = 1");
+        $stmt->execute([$authKey]);
+        $keyRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    if (!$keyRow) {
         http_response_code(403);
         echo json_encode(['error' => 'Invalid authorization key']);
         exit;
     }
+    // NULL = the Default company. Scopes the hostname upsert below so two
+    // companies may each legitimately hold a "LAPTOP-01".
+    $keyTenant = isset($keyRow['tenant_id']) && $keyRow['tenant_id'] !== null ? (int)$keyRow['tenant_id'] : null;
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to validate API key']);
     exit;
 }
+
+// GH #217: an agent's report is refused while its module is switched off for the
+// install - the device is not recorded, and nothing is queued to arrive later.
+requireModuleOnJson($conn, 'assets');
 
 // --------------------------------------------------
 // Parse JSON payload (with UTF-8 normalization)
@@ -87,6 +110,9 @@ if (!isset($data['hostname']) || trim($data['hostname']) === '') {
 $hostname = trim($data['hostname']);
 
 // Helper: get string value or null
+// @param mixed $data  one section of the agent's decoded JSON report (untrusted)
+// @param mixed $key  the field to read from it
+// @param mixed $maxLen  the most characters to keep (the column length); null or 0 keeps it all
 function strOrNull($data, $key, $maxLen = null) {
     $val = $data[$key] ?? null;
     if ($val === null || (is_string($val) && trim($val) === '')) return null;
@@ -96,6 +122,8 @@ function strOrNull($data, $key, $maxLen = null) {
 }
 
 // Helper: get int/bigint value or null
+// @param mixed $data  one section of the agent's decoded JSON report (untrusted)
+// @param mixed $key  the field to read; anything not numeric comes back as null
 function intOrNull($data, $key) {
     return isset($data[$key]) && is_numeric($data[$key]) ? (int)$data[$key] : null;
 }
@@ -136,19 +164,45 @@ if (!empty($data['tpm']) && is_array($data['tpm'])) {
 }
 
 try {
-    // Check if asset exists
-    $stmt = $conn->prepare("SELECT id FROM assets WHERE hostname = ?");
-    $stmt->execute([$hostname]);
-    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+    require_once __DIR__ . '/../../../../includes/services/assets.php';
 
-    if ($existing) {
-        $hostId = (int)$existing['id'];
+    // Which asset is this machine? Serial first, then hostname (PR #164) - so a
+    // renamed machine is recognised instead of arriving as a duplicate. Scoped
+    // to this key's company (NULL-safe, so a Default-company key matches
+    // NULL-tenant assets). A rename it reports is applied here, by the service.
+    $agentCtx = ActorContext::system('Inventory agent');
+    $reconcileRes = AssetsService::reconcileAsset(
+        $conn,
+        $agentCtx,
+        ['service_tag' => strOrNull($data, 'service_tag', 50), 'hostname' => $hostname],
+        $keyTenant,
+        'inventory agent'
+    );
+
+    if ($reconcileRes['asset_id'] !== null && $reconcileRes['retired']) {
+        // A retired asset still reporting: it has left the estate, so its record is
+        // kept as it was when it left. Only "last seen" moves - a retired machine
+        // that is still on the network is worth noticing - and nothing else is
+        // written, nor a duplicate created.
+        $conn->prepare("UPDATE assets SET last_seen = UTC_TIMESTAMP() WHERE id = ?")->execute([(int)$reconcileRes['asset_id']]);
+        echo json_encode(['success' => true, 'asset_id' => (int)$reconcileRes['asset_id'], 'retired' => true,
+                          'message' => 'This asset is retired in FreeITSM: the report was not applied.']);
+        exit;
+    }
+    if ($reconcileRes['asset_id'] !== null) {
+        $hostId = (int)$reconcileRes['asset_id'];
+
+        // GH #200 part D: a manufacturer or model a person protected is not overwritten;
+        // what the agent reports is kept beside it for the asset page to show.
+        require_once __DIR__ . '/../../../../includes/services/asset_protection.php';
+        $makeModel = ['manufacturer' => strOrNull($data, 'manufacturer', 50), 'model' => strOrNull($data, 'model', 50)];
+        $mayWrite = AssetProtectionService::filterReported($conn, $hostId, $makeModel, 'the agent');
 
         // Update all fields
         $stmt = $conn->prepare("
             UPDATE assets SET
-                manufacturer     = ?,
-                model            = ?,
+                manufacturer     = IF(?, manufacturer, ?),
+                model            = IF(?, model, ?),
                 memory           = ?,
                 service_tag      = ?,
                 operating_system = ?,
@@ -167,8 +221,8 @@ try {
             WHERE id = ?
         ");
         $stmt->execute([
-            strOrNull($data, 'manufacturer', 50),
-            strOrNull($data, 'model', 50),
+            (int)!array_key_exists('manufacturer', $mayWrite), $makeModel['manufacturer'],
+            (int)!array_key_exists('model', $mayWrite), $makeModel['model'],
             intOrNull($data, 'memory'),
             strOrNull($data, 'service_tag', 50),
             strOrNull($data, 'operating_system', 50),
@@ -188,273 +242,94 @@ try {
     } else {
         $isNew = true;
 
-        $stmt = $conn->prepare("
-            INSERT INTO assets (
-                hostname, manufacturer, model, memory, service_tag,
-                operating_system, feature_release, build_number, cpu_name, speed,
-                bios_version, first_seen, last_seen,
-                domain, logged_in_user, last_boot_utc,
-                tpm_version, bitlocker_status, gpu_name
-            ) VALUES (
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(),
-                ?, ?, ?,
-                ?, ?, ?
-            )
-        ");
-        $stmt->execute([
-            mb_substr($hostname, 0, 50),
-            strOrNull($data, 'manufacturer', 50),
-            strOrNull($data, 'model', 50),
-            intOrNull($data, 'memory'),
-            strOrNull($data, 'service_tag', 50),
-            strOrNull($data, 'operating_system', 50),
-            strOrNull($data, 'feature_release', 10),
-            strOrNull($data, 'build_number', 50),
-            strOrNull($data, 'cpu_name', 250),
-            intOrNull($data, 'speed'),
-            strOrNull($data, 'bios_version', 20),
-            strOrNull($data, 'domain', 100),
-            strOrNull($data, 'logged_in_user', 100),
-            strOrNull($data, 'last_boot_utc'),
-            $tpmVersion,
-            $bitlockerStatus ? mb_substr($bitlockerStatus, 0, 20) : null,
-            $gpuName
-        ]);
-
-        $hostId = (int)$conn->lastInsertId();
+        // One write path for every inventory source: the tag (if the company
+        // generates them), the transaction and the history row (PR #164).
+        $hostId = AssetsService::createDiscoveredAsset($conn, $agentCtx, [
+            'hostname'         => mb_substr($hostname, 0, 50),
+            'manufacturer'     => strOrNull($data, 'manufacturer', 50),
+            'model'            => strOrNull($data, 'model', 50),
+            'memory'           => intOrNull($data, 'memory'),
+            'service_tag'      => strOrNull($data, 'service_tag', 50),
+            'operating_system' => strOrNull($data, 'operating_system', 50),
+            'feature_release'  => strOrNull($data, 'feature_release', 10),
+            'build_number'     => strOrNull($data, 'build_number', 50),
+            'cpu_name'         => strOrNull($data, 'cpu_name', 250),
+            'speed'            => intOrNull($data, 'speed'),
+            'bios_version'     => strOrNull($data, 'bios_version', 20),
+            'domain'           => strOrNull($data, 'domain', 100),
+            'logged_in_user'   => strOrNull($data, 'logged_in_user', 100),
+            'last_boot_utc'    => strOrNull($data, 'last_boot_utc'),
+            'tpm_version'      => $tpmVersion,
+            'bitlocker_status' => $bitlockerStatus ? mb_substr($bitlockerStatus, 0, 20) : null,
+            'gpu_name'         => $gpuName,
+        ], $keyTenant, 'the inventory agent', $reconcileRes['hostname_reused']);
     }
 } catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Failed to upsert asset', 'detail' => $e->getMessage()]);
+    exit;
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to upsert asset', 'detail' => $e->getMessage()]);
     exit;
 }
 
 // --------------------------------------------------
-// 2. Sync disks (delete + reinsert)
+// 2. Volumes, physical drives, network adapters and software
 // --------------------------------------------------
-$disksSynced = 0;
+//
+// ONE implementation (GH #200 Part B, the #194 follow-up): the same service the REST
+// API reports through reconciles the rows and records, per section, what this report
+// came to - succeeded, empty, skipped or failed - so the asset page can say how fresh
+// each list is. Device Manager arrives separately (device-manager/submit) the same way.
+//
+// 🔴 AN EMPTY LIST FROM AN OLD AGENT IS "I DID NOT FIND OUT", NOT "THERE IS NOTHING".
+// A WMI blip once emptied 226 Device Manager rows this way. Only an agent that sends
+// report_version 2 can say "collected, and empty" - AssetInventoryService::agentState()
+// draws that line, and an older agent's empty section is skipped and named in
+// left_unchanged, as before.
+require_once __DIR__ . '/../../../../includes/services/asset_inventory.php';
+
+$v2 = (int)($data['report_version'] ?? 1) >= 2;
+$failures = is_array($data['collection_failures'] ?? null) ? $data['collection_failures'] : [];
+$disks = is_array($data['disks'] ?? null) ? $data['disks'] : [];
 
 try {
-    // Wipe all rows for this asset (any source) — the agent has authoritative
-    // per-drive data, so it owns asset_disks for any host it reports for.
-    $conn->prepare("DELETE FROM asset_disks WHERE asset_id = ?")->execute([$hostId]);
-
-    if (!empty($data['disks']['logical']) && is_array($data['disks']['logical'])) {
-        $stmt = $conn->prepare("
-            INSERT INTO asset_disks (asset_id, drive, label, file_system, size_bytes, free_bytes, used_percent, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'agent')
-        ");
-
-        foreach ($data['disks']['logical'] as $disk) {
-            $stmt->execute([
-                $hostId,
-                mb_substr($disk['drive'] ?? '', 0, 10),
-                mb_substr($disk['label'] ?? '', 0, 100),
-                mb_substr($disk['file_system'] ?? '', 0, 20),
-                isset($disk['size_bytes']) && is_numeric($disk['size_bytes']) ? (int)$disk['size_bytes'] : null,
-                isset($disk['free_bytes']) && is_numeric($disk['free_bytes']) ? (int)$disk['free_bytes'] : null,
-                isset($disk['used_percent']) && is_numeric($disk['used_percent']) ? round((float)$disk['used_percent'], 1) : null
-            ]);
-            $disksSynced++;
-        }
-    }
-} catch (PDOException $e) {
+    $sections = AssetInventoryService::agentReport($conn, $hostId, [
+        'disks'            => AssetInventoryService::agentState($disks['logical'] ?? null, $v2, $failures['disks'] ?? null),
+        'physical_disks'   => AssetInventoryService::agentState($disks['physical'] ?? null, $v2, $failures['physical_disks'] ?? null),
+        'network_adapters' => AssetInventoryService::agentState($data['network_adapters'] ?? null, $v2, $failures['network_adapters'] ?? null),
+        'software'         => AssetInventoryService::agentState($data['software'] ?? null, $v2, $failures['software'] ?? null),
+    ]);
+} catch (Throwable $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Failed to sync disks', 'detail' => $e->getMessage()]);
+    echo json_encode(['error' => 'Failed to sync inventory', 'detail' => $e->getMessage()]);
     exit;
 }
 
-// --------------------------------------------------
-// 3. Sync network adapters (delete + reinsert)
-// --------------------------------------------------
-$adaptersSynced = 0;
+$applied = fn(string $name, string $count) => ($sections[$name]['result'] ?? '') === 'applied' ? (int)$sections[$name][$count] : 0;
+$leftUnchanged = array_keys(array_filter($sections, fn($s) => $s['result'] !== 'applied'));
+$failed = array_filter($sections, fn($s) => $s['result'] === 'failed');
+$software = $sections['software'] ?? [];
 
-try {
-    $conn->prepare("DELETE FROM asset_network_adapters WHERE asset_id = ?")->execute([$hostId]);
-
-    if (!empty($data['network_adapters']) && is_array($data['network_adapters'])) {
-        $stmt = $conn->prepare("
-            INSERT INTO asset_network_adapters (asset_id, name, mac_address, ip_address, subnet_mask, gateway, dhcp_enabled)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        foreach ($data['network_adapters'] as $adapter) {
-            // Extract first IPv4 address from ip_addresses array
-            $ipv4 = null;
-            if (!empty($adapter['ip_addresses']) && is_array($adapter['ip_addresses'])) {
-                foreach ($adapter['ip_addresses'] as $ip) {
-                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                        $ipv4 = $ip;
-                        break;
-                    }
-                }
-            }
-
-            // Extract first subnet mask
-            $subnet = null;
-            if (!empty($adapter['subnet_masks']) && is_array($adapter['subnet_masks'])) {
-                $subnet = $adapter['subnet_masks'][0] ?? null;
-            }
-
-            // Extract first gateway
-            $gateway = null;
-            if (!empty($adapter['gateway']) && is_array($adapter['gateway'])) {
-                $gateway = $adapter['gateway'][0] ?? null;
-            }
-
-            $stmt->execute([
-                $hostId,
-                mb_substr($adapter['name'] ?? '', 0, 255),
-                mb_substr($adapter['mac_address'] ?? '', 0, 17),
-                $ipv4 ? mb_substr($ipv4, 0, 45) : null,
-                $subnet ? mb_substr($subnet, 0, 45) : null,
-                $gateway ? mb_substr($gateway, 0, 45) : null,
-                isset($adapter['dhcp_enabled']) ? ($adapter['dhcp_enabled'] ? 1 : 0) : null
-            ]);
-            $adaptersSynced++;
-        }
-    }
-} catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Failed to sync network adapters', 'detail' => $e->getMessage()]);
-    exit;
-}
-
-// --------------------------------------------------
-// 4. Process software inventory (if present)
-// --------------------------------------------------
-$softwareProcessed = 0;
-$insertedApps = 0;
-$insertedDetails = 0;
-$updatedDetails = 0;
-$deletedDetails = 0;
-
-if (!empty($data['software']) && is_array($data['software'])) {
-    try {
-        // Load existing host/app mappings — scoped to source='agent' so the
-        // delete-of-orphans below only touches our own rows. Intune-sourced
-        // rows for the same host stay untouched.
-        $existingAppIds = [];
-        $stmt = $conn->prepare("SELECT app_id FROM software_inventory_detail WHERE host_id = ? AND source = 'agent'");
-        $stmt->execute([$hostId]);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $existingAppIds[(int)$row['app_id']] = true;
-        }
-
-        $seenAppIds = [];
-        $appCache = [];
-
-        foreach ($data['software'] as $item) {
-            $displayName = isset($item['display_name']) ? trim($item['display_name']) : '';
-            if ($displayName === '') continue;
-
-            $publisher        = isset($item['publisher']) && trim($item['publisher']) !== '' ? trim($item['publisher']) : null;
-            $displayVersion   = $item['display_version'] ?? null;
-            $installDate      = $item['install_date'] ?? null;
-            $uninstallString  = $item['uninstall_string'] ?? null;
-            $installLocation  = $item['install_location'] ?? null;
-            $estimatedSize    = $item['estimated_size'] ?? null;
-            $systemComponent  = !empty($item['system_component']) ? 1 : 0;
-
-            $appKey = strtolower($displayName) . '|' . strtolower($publisher ?? '');
-            $appId = null;
-
-            if (isset($appCache[$appKey])) {
-                $appId = $appCache[$appKey];
-            } else {
-                // Look up or insert app
-                $stmt = $conn->prepare("
-                    SELECT id FROM software_inventory_apps
-                    WHERE display_name = ? AND (publisher IS NULL OR publisher = ?)
-                ");
-                $stmt->execute([$displayName, $publisher]);
-                $appRow = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($appRow) {
-                    $appId = (int)$appRow['id'];
-                } else {
-                    $stmt = $conn->prepare("INSERT INTO software_inventory_apps (display_name, publisher) VALUES (?, ?)");
-                    $stmt->execute([$displayName, $publisher]);
-                    $appId = (int)$conn->lastInsertId();
-                    $insertedApps++;
-                }
-
-                $appCache[$appKey] = $appId;
-            }
-
-            $seenAppIds[$appId] = true;
-
-            // Upsert detail row — every read/write here is scoped to source='agent'
-            // so the agent only ever touches its own rows. Intune-sourced rows
-            // for the same (host_id, app_id) coexist as separate detail rows.
-            $stmt = $conn->prepare("SELECT id FROM software_inventory_detail WHERE host_id = ? AND app_id = ? AND source = 'agent'");
-            $stmt->execute([$hostId, $appId]);
-            $detailRow = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($detailRow) {
-                $stmt = $conn->prepare("
-                    UPDATE software_inventory_detail SET
-                        display_version = ?, install_date = ?, uninstall_string = ?,
-                        install_location = ?, estimated_size = ?, system_component = ?,
-                        last_seen = UTC_TIMESTAMP()
-                    WHERE host_id = ? AND app_id = ? AND source = 'agent'
-                ");
-                $stmt->execute([$displayVersion, $installDate, $uninstallString, $installLocation, $estimatedSize, $systemComponent, $hostId, $appId]);
-                $updatedDetails++;
-            } else {
-                $stmt = $conn->prepare("
-                    INSERT INTO software_inventory_detail
-                        (host_id, app_id, display_version, install_date, uninstall_string, install_location, estimated_size, system_component, created_at, last_seen, source)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), 'agent')
-                ");
-                $stmt->execute([$hostId, $appId, $displayVersion, $installDate, $uninstallString, $installLocation, $estimatedSize, $systemComponent]);
-                $insertedDetails++;
-            }
-
-            $softwareProcessed++;
-        }
-
-        // Delete agent-owned mappings for software no longer present in the submit
-        $toDelete = array_diff_key($existingAppIds, $seenAppIds);
-        if (!empty($toDelete)) {
-            $stmt = $conn->prepare("DELETE FROM software_inventory_detail WHERE host_id = ? AND app_id = ? AND source = 'agent'");
-            foreach ($toDelete as $appId => $_) {
-                $stmt->execute([$hostId, $appId]);
-                $deletedDetails++;
-            }
-        }
-
-    } catch (PDOException $e) {
-        // Software processing failed but asset/disks/network already saved — report partial success
-        echo json_encode([
-            'status'    => 'partial',
-            'hostname'  => $hostname,
-            'asset_id'  => $hostId,
-            'is_new'    => $isNew,
-            'disks_synced'     => $disksSynced,
-            'adapters_synced'  => $adaptersSynced,
-            'error'     => 'Software processing failed: ' . $e->getMessage()
-        ]);
-        exit;
-    }
-}
-
-// --------------------------------------------------
-// Success response
-// --------------------------------------------------
-echo json_encode([
-    'status'             => 'ok',
+$response = [
+    'status'             => $failed ? 'partial' : 'ok',
     'hostname'           => $hostname,
     'asset_id'           => $hostId,
     'is_new'             => $isNew,
-    'disks_synced'       => $disksSynced,
-    'adapters_synced'    => $adaptersSynced,
-    'software_processed' => $softwareProcessed,
-    'software_new_apps'  => $insertedApps,
-    'software_new_links' => $insertedDetails,
-    'software_updated'   => $updatedDetails,
-    'software_removed'   => $deletedDetails,
-    'message'            => 'Asset inventory synchronized'
-]);
+    'disks_synced'       => $applied('disks', 'added') + $applied('disks', 'updated'),
+    'physical_disks_synced' => $applied('physical_disks', 'added'),
+    'left_unchanged'     => $leftUnchanged,
+    'adapters_synced'    => $applied('network_adapters', 'added') + $applied('network_adapters', 'updated'),
+    'software_processed' => $applied('software', 'added') + $applied('software', 'updated'),
+    'software_new_links' => $applied('software', 'added'),
+    'software_updated'   => $applied('software', 'updated'),
+    'software_removed'   => $applied('software', 'removed'),
+    // Per section: applied (with added / updated / removed), skipped or failed (with its error).
+    'sections'           => $sections,
+    'message'            => 'Asset inventory synchronized',
+];
+if ($failed) {
+    $response['error'] = implode('; ', array_map(fn($n, $s) => "$n: {$s['error']}", array_keys($failed), $failed));
+}
+echo json_encode($response);

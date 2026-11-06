@@ -1,11 +1,12 @@
 <?php
 /**
- * API Endpoint: Save Software Licence
- * Creates or updates a licence record
+ * API Endpoint: Save Software Licence.
+ * Thin UI adapter over SoftwareService — creates or updates a licence record.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/services/software.php';
 
 header('Content-Type: application/json');
 
@@ -13,70 +14,20 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
-
-$input = json_decode(file_get_contents('php://input'), true);
-
-$id = isset($input['id']) ? (int)$input['id'] : null;
-$app_id = isset($input['app_id']) ? (int)$input['app_id'] : null;
-$licence_type = trim($input['licence_type'] ?? '');
-$licence_key = trim($input['licence_key'] ?? '');
-$quantity = isset($input['quantity']) && $input['quantity'] !== '' ? (int)$input['quantity'] : null;
-$renewal_date = !empty($input['renewal_date']) ? $input['renewal_date'] : null;
-$notice_period_days = isset($input['notice_period_days']) && $input['notice_period_days'] !== '' ? (int)$input['notice_period_days'] : null;
-$portal_url = trim($input['portal_url'] ?? '');
-$cost = isset($input['cost']) && $input['cost'] !== '' ? (float)$input['cost'] : null;
-$currency = trim($input['currency'] ?? 'GBP');
-$purchase_date = !empty($input['purchase_date']) ? $input['purchase_date'] : null;
-$vendor_contact = trim($input['vendor_contact'] ?? '');
-$notes = trim($input['notes'] ?? '');
-$status = trim($input['status'] ?? 'Active');
-
-if (!$app_id) {
-    echo json_encode(['success' => false, 'error' => 'Application is required']);
-    exit;
-}
-
-if (empty($licence_type)) {
-    echo json_encode(['success' => false, 'error' => 'Licence type is required']);
-    exit;
-}
+requireModuleAccessJson('software');
 
 try {
-    $conn = connectToDatabase();
-
-    if ($id) {
-        $sql = "UPDATE software_licences
-                SET app_id = ?, licence_type = ?, licence_key = ?, quantity = ?,
-                    renewal_date = ?, notice_period_days = ?, portal_url = ?,
-                    cost = ?, currency = ?, purchase_date = ?, vendor_contact = ?,
-                    notes = ?, status = ?, updated_at = UTC_TIMESTAMP()
-                WHERE id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->execute([
-            $app_id, $licence_type, $licence_key, $quantity,
-            $renewal_date, $notice_period_days, $portal_url,
-            $cost, $currency, $purchase_date, $vendor_contact,
-            $notes, $status, $id
-        ]);
-
-        echo json_encode(['success' => true, 'message' => 'Licence updated', 'id' => $id]);
-    } else {
-        $sql = "INSERT INTO software_licences
-                (app_id, licence_type, licence_key, quantity, renewal_date,
-                 notice_period_days, portal_url, cost, currency, purchase_date,
-                 vendor_contact, notes, status, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $conn->prepare($sql);
-        $stmt->execute([
-            $app_id, $licence_type, $licence_key, $quantity, $renewal_date,
-            $notice_period_days, $portal_url, $cost, $currency, $purchase_date,
-            $vendor_contact, $notes, $status, $_SESSION['analyst_id']
-        ]);
-        $newId = $conn->lastInsertId();
-
-        echo json_encode(['success' => true, 'message' => 'Licence created', 'id' => $newId]);
-    }
-
+    $conn  = connectToDatabase();
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    // The UI already sends canonical snake_case keys (id, app_id, licence_type,
+    // licence_key, quantity, cost, currency, purchase_date, renewal_date,
+    // notice_period_days, status, portal_url, vendor_contact, notes).
+    $res = SoftwareService::saveLicence($conn, ActorContext::fromSession($conn), $input);
+    echo json_encode([
+        'success' => true,
+        'message' => $res['created'] ? 'Licence created' : 'Licence updated',
+        'id'      => $res['id'],
+    ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

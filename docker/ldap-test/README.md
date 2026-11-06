@@ -1,0 +1,174 @@
+# LDAP test directories
+
+Throwaway directory servers for developing and testing FreeITSM's LDAP sign-in
+(System → Authentication → Type: *LDAP / Active Directory*). **Development only
+— never run these anywhere real.** The passwords below are public.
+
+> **Full walkthrough:** [Setting up OpenLDAP & Samba AD in Docker](https://github.com/edmozley/freeitsm/wiki/Setting-up-LDAP-with-Docker)
+> on the wiki takes you from nothing to a working LDAP login, step by step. This
+> file is the quick reference for people who already have the repo checked out.
+
+Two servers, deliberately:
+
+| Service | Port | Base DN | What it's for |
+|---|---|---|---|
+| `samba-ad` | 3891 | `DC=ad,DC=freeitsm,DC=test` | **Real Active Directory semantics** — `sAMAccountName`, `memberOf`, nested groups, referrals, binary `objectGUID`, disabled accounts. This is what most users actually have. |
+| `openldap` | 3890 | `dc=freeitsm,dc=test` | A genuinely different flavour — `uid`, `entryUUID`, `groupOfNames`, no nested groups. |
+| `phpldapadmin` | [8091](http://localhost:8091) | — | Browse **either** directory in a GUI — pick the server from the dropdown on the login page. |
+
+Testing against **both** is the point. Build against one and the code silently
+grows that one's assumptions — nested groups and `sAMAccountName` simply don't
+exist on OpenLDAP, and `memberOf` doesn't exist there at all without the
+`memberof` overlay.
+
+## Start
+
+```bash
+docker compose -f docker/ldap-test/docker-compose.yml up -d
+```
+
+Then seed:
+
+```bash
+# OpenLDAP: entries, then the ACL that lets the service account read them
+docker cp docker/ldap-test/seed.ldif freeitsm-ldap:/tmp/seed.ldif
+docker exec freeitsm-ldap ldapadd -x -H ldap://localhost \
+  -D "cn=admin,dc=freeitsm,dc=test" -w adminpass -f /tmp/seed.ldif
+docker cp docker/ldap-test/acl.ldif freeitsm-ldap:/tmp/acl.ldif
+docker exec freeitsm-ldap ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/acl.ldif
+
+# Samba AD: simple users, then a realistic company, then a population to sync
+bash docker/ldap-test/seed-ad.sh
+bash docker/ldap-test/seed-ad-company.sh
+bash docker/ldap-test/seed-ad-people.sh
+```
+
+The three build on each other:
+
+| Script | Gives you | For testing |
+|---|---|---|
+| `seed-ad.sh` | 4 users, 3 groups, one nested | sign-in, group gating |
+| `seed-ad-company.sh` | Northwind Ltd — 10 staff in per-department OUs, a disabled leaver, an account with no mailbox | realistic sign-in journeys |
+| `seed-ad-people.sh` | Grows it to **~30 people across 8 OUs**, all carrying `manager`, `physicalDeliveryOfficeName`, `telephoneNumber`, `mobile` and `employeeID` | **directory sync** |
+
+`seed-ad-people.sh` exists because sync is a different problem from sign-in and
+needs a fixture that is awkward on purpose:
+
+- **`OU=Contractors` must NOT be synced** — so "which OUs" is a real question
+- **two different people with the same display name** (`j.smith` and `j.smith2`,
+  both "John Smith") — matching must not fall back to names
+- **`a.hall-jones`'s email is another person's username** — a near miss for any
+  sloppy matching rule
+- **three people with no `mail` attribute at all** — the warehouse case
+- **`q.deleon` is disabled but still in Sales**, while `y.tanaka` is disabled and
+  moved to Leavers — "disabled" and "moved" are different states
+- **a manager chain three deep**, and Amy Chen (IT) reporting to Ciara Doherty
+  (Finance) — a sync that assumes managers share a department gets it wrong
+- non-ASCII names, an apostrophe, a double-barrelled surname, a deeply nested OU
+
+⚠️ Two flags that look interchangeable and are not: **`samba-tool ou create`
+takes a FULL DN**, while **`user create --userou` takes a RELATIVE one**. Getting
+them the wrong way round fails silently per user and creates nobody.
+
+⚠️ On Git Bash, prefix any `docker exec` that names a container path with
+`MSYS_NO_PATHCONV=1`, or `/var/lib/samba/private/sam.ldb` is rewritten to
+`C:/Program Files/Git/var/lib/...` before the container ever sees it.
+
+The containers have **no restart policy** and **no volumes** — they survive
+`docker stop`/`start` but a `docker rm` loses everything. Re-seed with the above.
+
+## Looking around with a GUI
+
+Open **<http://localhost:8091>**, choose the server in the dropdown, and log in:
+
+| Server | Login DN | Password |
+|---|---|---|
+| `openldap` | `cn=admin,dc=freeitsm,dc=test` | `adminpass` |
+| `samba-ad` | `Administrator@AD.FREEITSM.TEST` | `Passw0rd!2026` |
+
+Active Directory accepts a UPN (`user@domain`) for a simple bind, which is why
+the AD login isn't a DN. Expand `DC=ad,DC=freeitsm,DC=test` → `OU=Northwind` to
+see the seeded company.
+
+Prefer the command line? No GUI needed:
+
+```bash
+# every person and group in the company
+docker exec freeitsm-samba-ad ldapsearch -x -H ldap://localhost \
+  -D "Administrator@AD.FREEITSM.TEST" -w 'Passw0rd!2026' \
+  -b "OU=Northwind,DC=ad,DC=freeitsm,DC=test" \
+  "(|(objectClass=user)(objectClass=group))" dn
+
+# who is in a group, walking nested membership like FreeITSM does
+docker exec freeitsm-samba-ad ldapsearch -x -H ldap://localhost \
+  -D "Administrator@AD.FREEITSM.TEST" -w 'Passw0rd!2026' \
+  -b "OU=Northwind,DC=ad,DC=freeitsm,DC=test" \
+  "(&(objectClass=group)(member:1.2.840.113556.1.4.1941:=CN=Raj Patel,OU=IT,OU=Staff,OU=Northwind,DC=ad,DC=freeitsm,DC=test))" cn
+
+# samba-tool is the admin CLI: list users, add one, disable one
+docker exec freeitsm-samba-ad samba-tool user list
+docker exec freeitsm-samba-ad samba-tool group listmembers "NW-IT-Support"
+```
+
+> **Changing a phpLDAPadmin env var appears to do nothing.** The osixia image
+> declares an anonymous volume on `/var/www/phpldapadmin` and generates its
+> config on **first** run, so a plain `up -d` or even `--force-recreate` keeps
+> the old config. Drop the volume:
+> ```bash
+> docker compose -f docker/ldap-test/docker-compose.yml rm -fsv phpldapadmin
+> docker compose -f docker/ldap-test/docker-compose.yml up -d phpldapadmin
+> ```
+> Only ever do this to `phpldapadmin`. The directories hold their data in the
+> container, so removing **their** volumes loses everything you seeded.
+
+## Credentials
+
+**OpenLDAP** (`127.0.0.1:3890`, base `dc=freeitsm,dc=test`)
+- admin: `cn=admin,dc=freeitsm,dc=test` / `adminpass`
+- service account: `cn=svc-freeitsm,dc=freeitsm,dc=test` / `svcpass`
+- users: `alice`/`alicepass`, `bob`/`bobpass`, `carol`/`carolpass`
+
+**Samba AD** (`127.0.0.1:3891`, realm `AD.FREEITSM.TEST`)
+- admin: `Administrator@AD.FREEITSM.TEST` / `Passw0rd!2026`
+- simple users (base `DC=ad,DC=freeitsm,DC=test`): `alice`/`Passw0rd!alice`, `bob`, `carol`;
+  service account `svc-freeitsm@AD.FREEITSM.TEST` / `Passw0rd!svc`
+- **Northwind company** (base `OU=Northwind,DC=ad,DC=freeitsm,DC=test`):
+  service account `svc-ldap@AD.FREEITSM.TEST` / `Nw!Svc2026`
+
+## The Northwind company — why it exists
+
+`seed-ad-company.sh` builds a small business rather than flat test users,
+because the cases that break LDAP code only exist in a realistic tree:
+
+| Who | Password | Why they're there |
+|---|---|---|
+| `r.patel` | `Nw!Patel2026` | Ordinary analyst, in `NW-IT-Support`, nested under `OU=IT,OU=Staff` |
+| `a.chen` | `Nw!Chen2026` | In `NW-IT-Admins` **only** — an admins group is *not* automatically your analyst group |
+| `s.oconnor` | `Nw!Conn2026` | `Siobhan O'Connor` — an **apostrophe** in the DN |
+| `j.muller` | `Nw!Mull2026` | `Jürgen Müller` — **UTF-8** round-tripping |
+| `l.garcia` | `Nw!Garc2026` | `Lucía García` — same |
+| `t.brooks` | `Nw!Broo2026` | Sales — gate him to the self-service user group, not analyst |
+| `p.ndlovu` | `Nw!Ndlo2026` | Finance — in **neither** ITSM group, so must be **denied despite a correct password** |
+| `w.noemail` | `Nw!NoMa2026` | Has **no email attribute**, and is in **`NW-Sales`** (the self-service group). The whole no-mailbox journey: JIT must provision her, she must reach the **portal**, and she must be able to **raise a ticket** — `users.email` and `emails.from_address` are both nullable for her sake (GitHub #47). She was in *no* group until #902, which only ever exercised the gate-off path and left this untestable |
+| `x.leaver` | `Nw!Leav2026` | **Disabled** — must never sign in, even with the right password |
+
+Groups live in `OU=Groups,OU=Northwind`: `NW-IT-Support`, `NW-IT-Admins`,
+`NW-Sales`, `NW-Finance`, and `NW-All-Staff` — which contains the **other
+groups**, not people. Nobody has `NW-All-Staff` in `memberOf`; only AD's
+chain-matching rule finds it. Gate on it to test nested groups.
+
+## Gotchas these rigs exist to catch
+
+- **OpenLDAP's default ACL denies reads**, and an unreadable subtree is reported
+  as `No such object` — which looks exactly like a missing user. `acl.ldif`
+  grants the service account read (deliberately *not* on `userPassword`).
+- **Samba needs `privileged: true`** and `INSECURELDAP=true`, the latter relaxing
+  `ldap server require strong auth` so simple binds work over plain 389 in
+  testing. Real AD usually wants LDAPS.
+- **Neither rig reproduces the empty-password "unauthenticated bind"** — both
+  correctly reject it. The guard in `includes/ldap.php` therefore cannot be
+  proven by these containers and must never be removed on the strength of a
+  green test run.
+
+See the [LDAP Developer Guide](https://github.com/edmozley/freeitsm/wiki/LDAP-Developer-Guide)
+on the wiki for the implementation and the full list of traps.

@@ -16,10 +16,78 @@
 return [
     'portal' => 'Self-Service Portal',
 
+    // Raising a ticket and requesting something are ACTIONS, not destinations, so
+    // they are buttons on the dashboard rather than nav items. 'new_ticket' is kept
+    // because the pages still use it for their own headings.
+    // The portal end of the LMS. The tab only appears for somebody who actually
+    // has a course assigned — see self-service/includes/header.php.
+    // ── My equipment (the assets assigned to this person) ───────────────
+    'equipment' => [
+        'title'       => 'My equipment',
+        'subtitle'    => 'The equipment assigned to you. If something here is wrong, or you have kit that is not listed, raise a ticket and the service desk will sort it out.',
+        'none'        => 'No equipment is assigned to you at the moment.',
+        'load_failed' => 'Your equipment could not be loaded just now. Please try again in a minute.',
+        'unnamed'     => 'Unnamed item',
+        'asset_tag'   => 'Asset tag',
+        'serial'      => 'Serial number',
+        'make'        => 'Make and model',
+    ],
+    'training' => [
+        'title'    => 'Training',
+        'heading'  => 'My training',
+        'subtitle' => 'Courses you have been asked to complete.',
+        // No 'loading' string: the page shows nothing at all until it knows what
+        // to say. A "Loading…" box is on screen for a couple of hundred
+        // milliseconds — long enough to flicker, not long enough to read.
+        'none'     => 'You have no training to do at the moment.',
+        'failed'   => 'Your courses could not be loaded. Please try again shortly.',
+        'start'    => 'Start',
+        'resume'   => 'Continue',
+        'review'   => 'Review',
+        'back'     => 'Back to training',
+        'due'      => 'Due {date}',
+        // "Lesson 2 of 3". Nothing stores a percentage, so the position in the
+        // list is what is shown beside the bar rather than a made-up figure.
+        'step'     => 'Lesson {current} of {total}',
+        'unplayable' => 'This course cannot be opened. Please tell the service desk.',
+        'status' => [
+            'not_started' => 'Not started',
+            'in_progress' => 'In progress',
+            'completed'   => 'Completed',
+            'passed'      => 'Passed',
+            'failed'      => 'Not passed',
+            'overdue'     => 'Overdue',
+        ],
+    ],
+
     'nav' => [
         'dashboard'   => 'Dashboard',
-        'new_ticket'  => 'New Ticket',
+        'tickets'     => 'My Tickets',
+        'team_tickets' => 'Team tickets',   // shown only to managers (discussion #62)
+        'help_centre' => 'Knowledge',
+        'equipment'   => 'My equipment',
+        'training'    => 'Training',
         'help'        => 'Help',
+        // Screen-reader label for the phone nav drawer's toggle.
+        'menu'        => 'Menu',
+    ],
+
+    'catalogue' => [
+        'title'       => 'Self-Service Portal — Request Something',
+        'heading'     => 'Request something',
+        'lede'        => 'Pick what you need and fill in a few details. The IT team will pick it up from there.',
+        'loading'     => 'Loading...',
+        'back'        => 'Back to all requests',
+        'submit'      => 'Submit request',
+        'submitting'  => 'Submitting...',
+        'required'    => 'Required',
+        'yes'         => 'Yes',
+        'not_found'   => 'That request form is not available.',
+        'failed'      => 'Your request could not be submitted. Please try again.',
+        'sent'        => 'Request submitted',
+        'sent_hint'   => 'The IT team has your request and will be in touch. You can close this page.',
+        'empty'       => 'Nothing to request yet',
+        'empty_hint'  => 'The IT team has not published any request forms yet. Raise a ticket and they will help you directly.',
     ],
 
     'login' => [
@@ -28,11 +96,14 @@ return [
         'subtitle'           => 'Sign in to view your tickets',
         'subtitle_mfa'       => 'Multi-factor authentication',
         'email'              => 'Email',
+        'identifier'         => 'Email or username',
         'password'           => 'Password',
         'sign_in'            => 'Sign In',
         'signing_in'         => 'Signing in...',
+        'forgot_password'    => 'Forgot your password?',
         'create_account'     => 'Create an account',
         'analyst_login'      => 'Analyst login',
+        'powered_by'         => 'Powered by FreeITSM',
         'login_failed'       => 'Login failed. Please try again.',
         'mfa_desc'           => 'Enter the 6-digit code from your authenticator app',
         'verify'             => 'Verify',
@@ -47,6 +118,40 @@ return [
         'no_sso_for_email'   => 'No single sign-on provider is set up for that email. Please contact your service desk.',
     ],
 
+
+    // Setting a password from an emailed link (GH #134). Two blocks, because the
+    // two pages are separate: asking for the link, and using it.
+    //
+    // ⚠️ The wording says SET rather than RESET throughout. For most people who
+    // see these pages this is the FIRST password they have had — their account
+    // was created for them by the service desk — and being told to "reset" one
+    // they never set reads as a mistake or a scam.
+    'forgot' => [
+        'title'           => 'Self-Service Portal - Set your password',
+        'heading'         => 'Set your password',
+        'subtitle'        => 'Enter your email address and we will send you a link',
+        'email'           => 'Email',
+        'submit'          => 'Send me a link',
+        'sending'         => 'Sending...',
+        'back_to_login'   => 'Back to sign in',
+        'failed'          => 'Could not send the link. Please try again shortly.',
+    ],
+
+    'reset' => [
+        'title'              => 'Self-Service Portal - Choose a password',
+        'heading'            => 'Choose a password',
+        'subtitle'           => 'Pick a password for your self-service account',
+        'password'           => 'New password',
+        'password_hint'      => 'At least 8 characters',
+        'confirm_password'   => 'Confirm password',
+        'submit'             => 'Save password',
+        'saving'             => 'Saving...',
+        'passwords_mismatch' => 'The two passwords do not match',
+        'failed'             => 'Could not save your password. Please try again shortly.',
+        'back_to_login'      => 'Back to sign in',
+        'no_token'           => 'This link is not valid. It may have been copied incompletely from your email.',
+        'request_new'        => 'Ask for a new link',
+    ],
     'register' => [
         'title'              => 'Self-Service Portal - Register',
         'heading'            => 'Create Account',
@@ -63,11 +168,50 @@ return [
         'register_failed'    => 'Registration failed. Please try again.',
     ],
 
+    // Incidents on the status panel (#99)
+    'status' => [
+        'incidents_heading'   => 'What is happening',
+        // Planned maintenance (3.2.0)
+        'planned_heading'     => 'Planned maintenance',
+        'planned_range'       => '{start} to {end}',
+        'planned_open'        => 'From {start}',
+        'show_updates'        => 'Show updates ({n})',
+        'hide_updates'        => 'Hide updates',
+        'loading'             => 'Loading…',
+        'no_updates'          => 'Nothing has been posted about this yet.',
+        'load_failed'         => 'Those updates could not be loaded.',
+    ],
+
     'dashboard' => [
         'title'              => 'Self-Service Portal',
         'welcome'            => 'Welcome, {name}',
         'welcome_sub'        => "Here's an overview of your tickets and system status",
+        'action_new_ticket'     => 'New ticket',
+        'action_new_ticket_sub' => 'Report a problem or ask for help',
+        'action_catalogue'      => 'Request',
+        'action_catalogue_sub'  => 'Order from the request catalogue',
         'recent_tickets'     => 'Recent Tickets',
+        // Catalogue-request approval status (#928)
+        'your_requests'      => 'Your requests',
+
+        // Outstanding training, shown above the ticket counts and only when
+        // there is some. Counts what is still TO DO, never what is finished.
+        // ⚠️ Singular spelled out, because the i18n layer has NO pluralisation —
+        // `{count} courses` renders "1 courses", and one course is the ordinary
+        // case for somebody who has been given a single piece of training.
+        'training_count_one'   => 'You have 1 course to complete',
+        'training_count'       => 'You have {count} courses to complete',
+        'training_overdue_one' => 'You have 1 course to complete, and it is overdue',
+        'training_overdue'     => 'You have {count} courses to complete, {overdue} overdue',
+        'training_due'       => 'Due {date}',
+        'training_was_due'   => 'Was due {date}',
+        'training_all'       => 'All my training',
+        'req_col_request'    => 'Request',
+        'req_col_status'     => 'Status',
+        'req_col_submitted'  => 'Submitted',
+        'req_pending'        => 'Awaiting approval',
+        'req_approved'       => 'Approved',
+        'req_rejected'       => 'Declined',
         'system_status'      => 'System Status',
         'loading_tickets'    => 'Loading tickets...',
         'loading_status'     => 'Loading status...',
@@ -81,10 +225,43 @@ return [
         'create_first'       => 'Create your first ticket',
         'no_services'        => 'No services configured',
         'all_operational'    => 'All systems operational',
+        'popular_articles'   => 'Popular articles',
+        'browse_knowledge'   => 'Browse all',
+        'loading_articles'   => 'Loading articles...',
+        'no_articles'        => 'No articles have been published for you yet.',
+    ],
+
+    // Screen recording. SHARED between raising a ticket and replying to one —
+    // both show the same dialog (self-service/includes/record-modal.php driven
+    // by assets/js/screen-recorder.js), so the strings live outside either
+    // page's namespace.
+    'recorder' => [
+        'title'                 => 'Record screen',
+        'button'                => 'Record screen',
+        'tooltip'               => 'Show us what happens — record your screen for up to 5 minutes.',
+        'include_mic'           => 'Include microphone audio',
+        'cancel'                => 'Cancel',
+        'start'                 => 'Start',
+        'stop'                  => 'Stop',
+        'use'                   => 'Use this',
+        'discard'               => 'Discard',
+        'ready'                 => 'Ready — max 5 minutes',
+        'recording'             => 'Recording {time}',
+        'recorded'              => 'Recorded {time} — preview below',
+        'permission_denied'     => 'Permission denied. Click Start to try again.',
+        'start_failed'          => 'Could not start recording ({message})',
+        'uploading'             => 'Uploading...',
+        'upload_failed'         => 'Upload failed',
+        'upload_failed_message' => 'Failed to upload recording: {message}',
+        'claim_prompt'          => 'Click {use} to attach the recording, or {discard} to drop it — then send again.',
+        'attached'              => 'Screen recording attached.',
     ],
 
     'new_ticket' => [
         'title'              => 'Self-Service Portal - New Ticket',
+        // Discussion #62
+        'confidential'       => 'This is confidential',
+        'confidential_hint'  => 'Turn this on if your ticket is personal - about your health, say, or a complaint. Confidential tickets are kept from managers. The service desk still sees them.',
         'heading'            => 'New Ticket',
         'mailbox'            => 'Mailbox *',
         'mailbox_loading'    => 'Loading...',
@@ -92,30 +269,31 @@ return [
         'mailbox_failed'     => 'Failed to load mailboxes',
         'subject'            => 'Subject *',
         'subject_placeholder'=> 'Brief summary of your issue',
+        'deflect_title'      => 'These might answer your question:',
+        // Category (#1540). Optional, and only shown when the field is switched
+        // on and the list is non-empty. A requester guessing wrongly is exactly
+        // what the analyst's "category at close" exists to correct.
+        'category'           => 'What is this about?',
+        'category_none'      => 'Not sure',
+        // Ticket type (#179). Shown only when choosing one changes what the
+        // requester is asked - see api/self-service/get_ticket_fields.php.
+        'ticket_type'        => 'What kind of request is it?',
+        'ticket_type_none'   => 'Not sure',
+
         'priority'           => 'Priority',
         'priority_low'       => 'Low',
         'priority_normal'    => 'Normal',
         'priority_high'      => 'High',
         'description'        => 'Description',
+        'full_screen'        => 'Full screen',
+        'full_screen_done'   => 'Done',
         'description_placeholder' => 'Provide as much detail as possible about your issue...',
+        'equipment'          => 'Which equipment is this about?',
+        'equipment_none'     => 'Not about a specific device',
+        'equipment_hint'     => 'Only equipment assigned to you is listed. If it is something shared, such as a meeting room screen or a printer, just describe it above.',
         'attachments'        => 'Attachments',
         'dropzone'           => 'Drag and drop files here or {browse}',
         'dropzone_browse'    => 'browse',
-        'record_screen'      => 'Record screen',
-        'include_mic'        => 'Include microphone audio',
-        'rec_start'          => 'Start',
-        'rec_stop'           => 'Stop',
-        'rec_use'            => 'Use this',
-        'rec_discard'        => 'Discard',
-        'rec_ready'          => 'Ready — max 5 minutes',
-        'rec_recording'      => 'Recording {time}',
-        'rec_recorded'       => 'Recorded {time} — preview below',
-        'rec_permission_denied' => 'Permission denied. Click Start to try again.',
-        'rec_start_failed'   => 'Could not start recording ({message})',
-        'rec_uploading'      => 'Uploading...',
-        'rec_upload_failed'  => 'Upload failed',
-        'rec_upload_failed_alert' => 'Failed to upload recording: {message}',
-        'rec_claim_prompt'   => 'Click {use} to attach the recording, or {discard} to drop it — then submit again.',
         'cancel'             => 'Cancel',
         'submit'             => 'Submit',
         'submitting'         => 'Submitting...',
@@ -125,14 +303,71 @@ return [
         'create_failed'      => 'Failed to create ticket. Please try again.',
     ],
 
+    'tickets' => [
+        'title'         => 'Self-Service Portal — My Tickets',
+        'heading'       => 'My Tickets',
+        // Managers (discussion #62)
+        'team_heading'  => 'My team\'s tickets',
+        'team_none'     => 'Nobody you manage has a ticket you can see.',
+        'stub_subject'  => 'Confidential ticket',
+        'filter_open'   => 'Open',
+        'filter_closed' => 'Closed',
+        'filter_all'    => 'All',
+        'filter_label'  => 'Filter by status',
+        'team_person_all'   => 'Everyone',
+        'team_person_label' => 'Filter by person',
+        'load_more'     => 'Load more',
+        'showing_of'    => 'Showing {shown} of {total}',
+        'loading'       => 'Loading...',
+        'load_failed'   => 'Could not load your tickets. Please try again.',
+        'none'          => 'Nothing here',
+        'select'        => 'Select a ticket to read it',
+        'back_to_list'  => 'All tickets',
+    ],
+
     'ticket' => [
+        // ── Seen as a manager (discussion #62, step 3) ───────────────────
+        'mgr_banner'              => '{name}\'s ticket. You can see it because you manage them.',
+        'mgr_can_view'            => 'You can read it, but not reply or close it.',
+        'mgr_can_reply'           => 'You can read it and reply.',
+        'mgr_can_close'           => 'You can read it and close it.',
+        'mgr_can_both'            => 'You can read it, reply and close it.',
+        'stub_title'              => 'Confidential ticket',
+        'stub_body'               => 'This ticket is confidential. Its details are kept from managers.',
+        // ── Who has seen this ticket (discussion #62, step 2) ────────────
+        'seen_title'              => 'Who has seen this ticket',
+        'seen_nobody'             => 'Nobody outside the service desk has looked at it.',
+        'seen_times'              => '{count} times',
+        'seen_help'               => 'Anyone other than you who opens this ticket in the portal - a manager, say - is listed here, with when they looked. The service desk is not listed: they see every ticket as part of their job.',
+        // ── Confidential (discussion #62) ───────────────────────────────
+        'confidential'            => 'Confidential',
+        'confidential_hint'       => 'Kept from managers. The service desk still sees it.',
+        'mark_confidential'       => 'Mark confidential',
+        'mark_confidential_title' => 'Make this ticket confidential?',
+        'mark_confidential_confirm' => 'Confidential tickets are kept from managers. Only the service desk can make a ticket normal again, so you cannot undo this yourself.',
+        'mark_confidential_done'  => 'This ticket is now confidential.',
+        'mark_confidential_failed'=> 'The ticket could not be updated just now. Please try again in a minute.',
+        // ── Closing your own ticket (off unless an admin turns it on) ───
+        'self_close'              => 'Close ticket',
+        'self_close_hint'         => 'Close this ticket if you have sorted it yourself or no longer need help',
+        'self_close_title'        => 'Close this ticket?',
+        'self_close_confirm'      => 'The service desk will stop working on it. If you need help again you can always raise a new ticket.',
+        'self_close_reason_label' => 'Anything you would like to add?',
+        'self_close_reason'       => 'e.g. it started working again, or I sorted it myself (optional)',
+        'self_close_done'         => 'Thanks — your ticket has been closed.',
+        'self_close_failed'       => 'The ticket could not be closed just now. Please try again in a minute.',
         'title'              => 'Self-Service Portal - Ticket Detail',
         'back'               => 'Back to Dashboard',
         'loading'            => 'Loading ticket...',
         'load_failed'        => 'Failed to load ticket',
         'load_detail_failed' => 'Failed to load ticket details',
         'created'            => 'Created {date}',
+        // The answers the requester gave in the extra fields (discussion #193).
+        'details_heading'    => 'Your details',
         'screen_recordings'  => 'Screen recordings',
+        // Singular: recordings now sit against the message they came with,
+        // rather than in one list at the top of the ticket.
+        'screen_recording'   => 'Screen recording',
         'recording'          => 'recording',
         'with_audio'         => 'with audio',
         'conversation'       => 'Conversation',
@@ -140,12 +375,65 @@ return [
         'unknown_sender'     => 'Unknown',
         'support'            => 'Support',
         'note'               => 'Note',
+        // Shown instead of a file size on a note attachment that is a link out to
+        // a document system rather than a file we hold (discussion #103).
+        'note_file_link'     => 'Link',
         'message'            => 'Message',
+
+        'reply_heading'        => 'Reply',
+        'reply_placeholder'    => 'Add a reply for the support team...',
+        'reply_send'           => 'Send',
+        'reply_sending'        => 'Sending...',
+        'reply_attach'         => 'Attach',
+        'reply_hint'           => 'Attach screenshots, logs or documents if they help.',
+        'reply_remove_file'    => 'Remove',
+        'reply_empty'          => 'Please write a message or attach a file.',
+        'reply_failed'         => 'Your reply could not be sent. Please try again.',
+        'reply_sent'           => 'Your reply has been sent.',
+        'reply_sent_reopened'  => 'Your reply has been sent, and the ticket has been reopened.',
+    ],
+
+    'help_centre' => [
+        // ── How the list is drawn. The names match the analyst side's
+        //    (Cards / List / Tree) so a customer and an analyst are
+        //    describing the same thing to each other.
+        'layout_label'  => 'How to show the articles',
+        'layout_cards'  => 'Cards',
+        'layout_list'   => 'List',
+        'layout_tree'   => 'Tree',
+        'layout_table'  => 'Table',
+        'unfiled'       => 'Everything else',
+        'col_title'     => 'Article',
+        'col_folder'    => 'Section',
+
+        'title'              => 'Self-Service Portal — Help Centre',
+        'heading'            => 'Help Centre',
+        'lede'               => 'Guides and answers from the IT team. Search before raising a ticket — the answer may already be here.',
+        'search_placeholder' => 'Search for an answer...',
+        'loading'            => 'Loading articles...',
+        'load_failed'        => 'Failed to load articles. Please try again.',
+        'back'               => 'Back to all articles',
+        'updated'            => 'Updated {date}',
+        'not_found'          => 'Article not available',
+        'not_found_hint'     => 'It may have been withdrawn, or it may not be shared with you.',
+        'no_results'         => 'Nothing found for "{query}"',
+        'no_results_hint'    => 'Try a different word, or raise a ticket and the IT team will help.',
+        'no_articles'        => 'No articles yet',
+        'no_articles_hint'   => 'The IT team has not published any guides here yet. Raise a ticket and they will help you directly.',
+        // Documents attached to an article (GH #177).
+        'documents'          => 'Documents',
+        'doc_download'       => 'Download',
+        'doc_open'           => 'Open',
+        'doc_link'           => 'Link',
+        'doc_file'           => 'File',
+        'doc_count_one'      => '1 document',
+        'doc_count_many'     => '{n} documents',
     ],
 
     'help' => [
         'title'              => 'Self-Service Portal — Help',
         'heading'            => 'Help & Guide',
+        'on_this_page'       => 'On this page',
         'lede'               => 'Everything you need to know about the Self-Service Portal — how to raise a ticket, attach a screen recording, track progress on existing tickets, and manage your account security.',
 
         's1_title'           => 'Welcome',
@@ -154,11 +442,31 @@ return [
 
         's2_title'           => 'Signing in',
         's2_p1'              => 'There are three ways your account gets created — you might not even need to register:',
-        's2_li1'             => '<strong>Self-registration</strong> — click <em>Register</em> on the sign-in page, enter your work email, name, and a password. You\'re in.',
-        's2_li2'             => '<strong>"Claiming" an account</strong> — if you\'ve previously sent the IT team an email and they raised a ticket on your behalf, the system already has your email on file. Registering with that same email will <em>claim</em> the existing account (and link any past tickets to it) rather than create a duplicate.',
-        's2_li3'             => '<strong>Created by IT</strong> — the team can pre-create an account for you. You\'ll be told to register with your email and pick a password — same claim flow as above.',
+        's2_li1'             => '<strong>Self-registration</strong> — click <em>Register</em> on the sign-in page, enter your work email, name, and a password. We then email you a confirmation link, and your password is only set once you open it, so nobody can sign up using an address that isn\'t theirs. (Your IT team can switch self-registration off, in which case you won\'t see the link.)',
+        's2_li2'             => '<strong>"Claiming" an account</strong> — if you\'ve previously sent the IT team an email and they raised a ticket on your behalf, the system already has your email on file. Registering with that same email <em>claims</em> the existing account (and keeps your past tickets) rather than creating a duplicate — again, only once you\'ve opened the confirmation link.',
+        's2_li3'             => '<strong>Created by IT</strong> — the team can pre-create an account for you. You\'ll be told to register with your email and pick a password — same confirmed flow as above.',
         's2_tip'             => '<strong>Forgotten password?</strong> Use the <em>Forgot password</em> link on the sign-in page — you\'ll get an email with a reset link.',
 
+        // Sections added when the Help Centre and request catalogue shipped.
+        'kb_title'           => 'Finding an answer yourself',
+        'kb_p1'              => 'Before raising a ticket, it is worth a look in <strong>Knowledge</strong> — the IT team publish guides there for the things people ask most often. If your answer is in one, you have it straight away instead of waiting for a reply.',
+        'kb_li1'             => 'Click <strong>Knowledge</strong> in the top navigation.',
+        'kb_li2'             => 'Type what you are stuck on into the search box — a word or two is usually enough (<em>vpn</em>, <em>printer</em>, <em>password</em>).',
+        'kb_li3'             => 'Click an article to read it. You can link straight to one, so it is easy to share with a colleague.',
+        'kb_li4'             => 'Some articles come with documents - a form to fill in, or a guide as a PDF. They are listed under the article; click one to download it. An article with documents shows a paperclip in the list.',
+        'kb_p2'              => 'You will also see suggestions <em>while you are raising a ticket</em>: start typing the subject and any matching guides appear underneath it. Reading one costs you nothing, and if it solves the problem you can simply close the page — nothing is submitted until you press Submit.',
+        'kb_tip'             => '<strong>Nothing showing?</strong> Either your search found no match, or your IT team has not published any guides yet. Raise a ticket as normal and they will help you directly.',
+        'st_title'   => 'Knowing whether something is down',
+        'st_p1'      => 'The home page shows the services we run and whether each one is healthy. If something is having problems, it is listed there with what is wrong &mdash; so it is worth a glance before raising a ticket about it.',
+        'st_p2'      => 'When we are working on a problem, you may also see the incident itself under <strong>What is happening</strong>, with the services it affects. Choose <strong>Show updates</strong> to read what we have posted about it: what we found, what we are doing, and when it was fixed, in the order it happened.',
+        'st_tip'     => 'A problem stays listed for a short while after it is fixed, marked as resolved, so if something went wrong for you this morning you can still see that it has been dealt with.',
+
+        'cat_title'          => 'Requesting something',
+        'cat_p1'             => 'Some things are not a fault at all — a new starter, a laptop, access to a system. Those have their own forms so the IT team get everything they need first time, instead of a conversation to fill in the gaps.',
+        'cat_li1'            => 'From the dashboard, click <strong>Request</strong>.',
+        'cat_li2'            => 'Pick what you need from the list.',
+        'cat_li3'            => 'Fill in the questions and press <strong>Submit request</strong>. Anything marked with a red asterisk is required.',
+        'cat_p2'             => 'Your request goes to the IT team to pick up. If the list is empty, your team has not published any request forms yet — raise a normal ticket instead.',
         's3_title'           => 'Raising a ticket',
         's3_p1'              => 'Click <strong>New Ticket</strong> in the top nav. Fill in:',
         's3_li1'             => '<strong>Mailbox</strong> — which support queue the ticket should land in (e.g. <em>IT Support</em>, <em>HR</em>). If your organisation only has one, it\'s pre-selected.',
@@ -166,36 +474,66 @@ return [
         's3_li3'             => '<strong>Priority</strong> — <em>Low</em>, <em>Normal</em>, or <em>High</em>. The IT team may adjust this based on impact.',
         's3_li4'             => '<strong>Description</strong> — the full details. Include what you were trying to do, what happened instead, any error messages, and roughly when it started. More context = faster resolution.',
         's3_li5'             => '<strong>Attachments</strong> — screenshots, logs, documents. Drag and drop onto the dropzone, or click to browse.',
+        // The portal category picker (#1546). Optional and only shown when the
+        // organisation has switched the field on and has portal-visible categories.
+        's3_li_category'     => '<strong>What is this about?</strong> — a short list your IT team has set up ("Printing", "Access requests") to get the ticket to the right person faster. It only appears if they have chosen to offer it, it is always optional, and picking <em>Not sure</em> is a perfectly good answer — an analyst confirms the real category when the ticket is dealt with.',
+        // Discussion #62
+        's3_li_confidential' => '<strong>This is confidential</strong> — turn it on if the ticket is personal: about your health, say, or a complaint. Confidential tickets are kept from managers; the service desk still sees them. You can also mark a ticket confidential later with <em>Mark confidential</em> at the top of it, but only the service desk can undo that.',
         's3_p2'              => 'Click <strong>Submit</strong>. You\'ll see a confirmation with your ticket reference (something like <em>LVB-805-40499</em>) — quote that if you ever need to chase it up.',
         's3_tip'             => 'A picture is worth 1000 words. A screenshot or recording (see below) is worth 1000 pictures. Don\'t be shy — the more visual context you can attach, the quicker the IT team can identify the problem.',
 
         's4_title'           => 'Recording your screen',
         's4_p1'              => 'For anything visual — a UI glitch, a workflow that doesn\'t behave, an error that flashes by — record your screen instead of trying to describe it in words. The portal does this natively, no plugins or third-party tools needed.',
-        's4_li1'             => 'On the <strong>New Ticket</strong> form, scroll down to the attachments area and click <strong>Record screen</strong>.',
+        's4_li1'             => 'Click <strong>Record screen</strong> — on the <strong>New ticket</strong> form, or in the reply box of a ticket you already have open. It works the same in both places.',
         's4_li2'             => 'Tick <strong>Include microphone audio</strong> if you want to narrate the issue out loud as you record — this is often the most useful thing you can do for the IT team. Off by default for privacy.',
         's4_li3'             => 'Click <strong>Start</strong>. Your browser will ask which tab, window, or whole screen you\'d like to share — pick one and click <em>Share</em>.',
         's4_li4'             => 'Demonstrate the issue. Max 5 minutes — you\'ll see a live countdown.',
         's4_li5'             => 'Click <strong>Stop</strong> (or hit the browser\'s own <em>"Stop sharing"</em> bar — either works).',
         's4_li6'             => 'Preview the result. Happy? Click <strong>Use this</strong> to attach. Not happy? Click <strong>Discard</strong> and re-record.',
-        's4_li7'             => 'Submit your ticket as normal — the recording goes along with it.',
+        's4_li7'             => 'Send as normal — the recording goes with your ticket, or with your reply.',
         's4_tip1'            => '<strong>Heads up</strong>: if you click Submit while a recording is still in the preview without clicking <em>Use this</em> or <em>Discard</em>, the form will stop and ask you to do one or the other first. This is deliberate — we don\'t want to silently lose your recording.',
         's4_tip2'            => '<strong>iPhone / iPad</strong>: Apple Safari on iOS doesn\'t support screen recording from web pages (an Apple limitation, not ours). The Record button won\'t appear on those devices — use a desktop or laptop browser to capture a recording.',
 
-        's5_title'           => 'Viewing & tracking your tickets',
+        // Kept short so it doesn't wrap in the help page's 250px sidebar.
+        's5_title'           => 'Viewing your tickets',
         's5_p1'              => 'The <strong>Dashboard</strong> is your home page. It shows:',
         's5_li1'             => '<strong>Summary cards</strong> — how many of your tickets are Open, In Progress, On Hold, and the total.',
         's5_li2'             => '<strong>Recent tickets</strong> — a quick table of your most recent items. Click any row to open it.',
         's5_li3'             => '<strong>System status</strong> — live indicator of any known IT outages, so you can check before raising a ticket about something that\'s already a known issue.',
-        's5_p2'              => 'Clicking a ticket opens the <strong>ticket detail</strong> page where you can see:',
+        's5_p2'              => '<strong>My Tickets</strong> lists everything you have raised down the left. Pick one and it opens beside the list, where you can see:',
         's5_li4'             => 'The full conversation between you and the IT team — emails in both directions, in date order.',
-        's5_li5'             => 'Any screen recordings you attached, with inline video players.',
+        's5_li5'             => 'Any screen recordings, playing where you sent them — a video you attached to a later reply sits with that reply, not back at the start.',
         's5_li6'             => 'Notes the analyst chose to share with you (internal-only notes stay hidden).',
         's5_li7'             => 'The current status, priority, and assigned analyst.',
-        's5_p3'              => 'To reply or add information, just reply to the email notification you received — your reply threads back into the ticket automatically. Or send a fresh email to the support address with the ticket reference in the subject line.',
+        // Discussion #62, step 2
+        's5_li_seen'         => '<strong>Who has seen this ticket</strong> — anyone other than you who has opened it in the portal, such as a manager, with when they last looked. The service desk is not listed; looking at tickets is their job.',
+        's5_p3'              => 'To reply or add information, use the reply box at the bottom of the conversation — you can attach files and record your screen from there too. Replying to the email notification you received works just as well; either way it lands on the same ticket.',
 
+        // Training. Written to be readable by somebody whose portal has no
+        // Training tab at all — most do not — rather than assuming it is there.
+        'tr_title' => 'Training',
+        'tr_p1'    => 'Your IT team may ask you to complete a short course — security awareness, data protection, or anything else everyone needs to have read. If they have, a <strong>Training</strong> tab appears at the top of the portal, and anything still to do is shown on your dashboard when you sign in. If you have never been given a course, you will not see either, and there is nothing to do.',
+        'tr_li1'   => 'Open <strong>Training</strong>, or click a course on your dashboard.',
+        'tr_li2'   => 'Work through the lessons using <strong>Next</strong>. You can jump about using the list on the left, and you can stop whenever you like — it remembers where you got to.',
+        'tr_li3'   => 'Some courses end with a few questions. Answer them and press <strong>Finish</strong> to have them marked.',
+        'tr_li4'   => 'You are shown the result straight away, along with which answers were wrong and why. If you did not pass, you can try again.',
+        'tr_p2'    => 'Your progress is saved as you go, so you can do a course in several sittings, on any device, and pick up where you left off.',
+        'tr_tip'   => '<strong>Deadlines and reminders:</strong> a course may have a date by which it should be done. You have the whole of that day. If your IT team has switched reminders on you will get an email as the date approaches, and again if it passes — those stop as soon as you finish the course.',
+
+        // Managers only (discussion #62) - the section is not drawn for anyone else.
+        'team_title'         => 'Team tickets',
+        'team_p1'            => 'You can see the tickets raised by the people you manage. They are under <strong>Team tickets</strong> in the menu, apart from your own under My Tickets.',
+        'team_li_who'        => '<strong>Who is on your team</strong> was set up by your IT team &mdash; from the Manager field in your organisation\'s directory, or chosen for you. Ask them if somebody is missing, or should not be there.',
+        'team_li_banner'     => '<strong>Each team ticket says whose it is</strong> and what you may do with it. You can always read it; your organisation decides whether you can also reply to it or close it.',
+        'team_li_conf'       => '<strong>Confidential tickets</strong> &mdash; a health matter, say &mdash; are kept from managers. Depending on your organisation you will not see them at all, or only that one exists, with its number and status and nothing it says.',
+        'team_li_filter'     => '<strong>Finding one</strong> &mdash; pick a person, a status, or both, above the list. The newest 50 are shown first; <strong>Load more</strong> at the bottom brings the next 50.',
+        'team_li_told'       => '<strong>Being told</strong> &mdash; your organisation may email you when someone on your team raises a ticket, or show it in the bell at the top of the portal. Confidential tickets never are.',
+        'team_li_seen'       => '<strong>Opening a team ticket is recorded.</strong> The person who raised it can see that you looked, and when.',
+        'team_tip'           => 'Open a colleague\'s ticket when you need to, not out of curiosity &mdash; they can see that you did.',
         's6_title'           => 'Account & security',
         's6_p1'              => 'Click your initials in the top-right corner to open the account menu. From there:',
-        's6_li1'             => '<strong>My Account</strong> — set a <strong>preferred name</strong> (e.g. <em>"Ed"</em> instead of <em>"Ed Mozley"</em>) that\'s used when the system greets you in emails. Change your password.',
+        's6_li1'             => '<strong>My Account</strong> — set a <strong>preferred name</strong> (e.g. <em>"Ed"</em> instead of <em>"Ed Mozley"</em>) that\'s used when the system greets you in emails, keep your own <strong>contact details</strong> up to date, choose how the portal looks, and change your password.',
+        's6_li_contact'      => '<strong>Your own contact details</strong> — such as your job title, office, phone and mobile, all optional. Worth keeping current: they are what the IT team look at when they need to reach you about a ticket. Your organisation decides which of them you can change here. If your details come from its own staff directory or address book they may be shown but not editable — ask your IT team to change them — and if a note says they also go to your organisation\'s address book, saving sends your change there too.',
         's6_li2'             => '<strong>Multi-factor authentication (MFA)</strong> — turn on TOTP-based MFA using an authenticator app like Google Authenticator, Microsoft Authenticator, or Authy. Strongly recommended — the portal is on the internet, and a second factor is your best protection if your password ever leaks.',
         's6_li3'             => '<strong>Sign out</strong> — ends your session. Useful on shared computers.',
         's6_tip'             => '<strong>About the feedback survey</strong>: when your ticket is closed, the IT team may email you a short 1&ndash;5 satisfaction survey. It takes 5 seconds — please do fill it in. It helps them improve the service and makes a real difference in development conversations within the team.',
@@ -211,6 +549,7 @@ return [
     'menu' => [
         'my_account'    => 'My Account',
         'mfa'           => 'Multi-Factor Auth',
+        'analyst_console' => 'Analyst console',
         'logout'        => 'Logout',
         'logout_confirm'=> 'Are you sure you want to logout?',
         'mfa_on'        => 'On',
@@ -219,6 +558,10 @@ return [
 
     'account' => [
         'heading'             => 'My Account',
+        'appearance'          => 'Appearance',
+        'appearance_hint'     => 'Choose how the portal looks. Saved to your account.',
+        'theme_default'       => 'Light',
+        'theme_dark'          => 'Dark',
         'preferred_name'      => 'Preferred Name',
         'preferred_name_placeholder' => 'e.g. Ed',
         'preferred_name_hint' => 'How you would like to be addressed (leave blank to use your full name)',
@@ -231,6 +574,29 @@ return [
         'close'               => 'Close',
         'name_saved'          => 'Preferred name saved. Refresh the page to see the change.',
         'name_save_failed'    => 'Failed to save',
+
+        // Your own contact details. Deliberately only the four a person knows
+        // better than the service desk — see USER_SELF_EDITABLE_FIELDS in
+        // includes/users.php for why department, employee ID and manager are not
+        // offered here.
+        'job_title'             => 'Job title',
+        'job_title_placeholder' => 'e.g. Finance Manager',
+        'office'                => 'Office',
+        'office_placeholder'    => 'e.g. Leeds',
+        'office_hint'           => 'Which site or building you work from.',
+        'phone'                 => 'Phone',
+        'phone_placeholder'     => 'e.g. 0113 496 0000',
+        'mobile'                => 'Mobile',
+        'mobile_placeholder'    => 'e.g. 07700 900000',
+        'contact_hint'          => 'Keeping these up to date helps the IT team reach you about your tickets. Only they can see them.',
+        'details_saved'         => 'Your details have been saved.',
+        'managed_note'          => 'Your name and contact details come from your organisation\'s directory, so they cannot be changed here. Ask your IT team to update them.',
+        'load_failed'           => 'Your details could not be loaded, so they cannot be edited right now. Please close this and try again.',
+        'too_long'              => 'That is too long — please keep it to {max} characters or fewer.',
+        'address_book_note'     => 'Your contact details also go to your organisation\'s address book when you save them.',
+        'address_book_failed'   => 'Your details could not be sent to your organisation\'s address book, so nothing was changed. Please try again later.',
+        'address_book_conflict' => 'Your organisation\'s address book has had one of these details changed recently, so nothing was changed. Please ask your IT team to check it.',
+        'not_offered'           => 'One of these details can no longer be changed here. The form has been refreshed.',
         'pw_fields_required'  => 'All fields are required',
         'pw_changed'          => 'Password changed successfully',
         'pw_change_failed'    => 'Failed to change password',

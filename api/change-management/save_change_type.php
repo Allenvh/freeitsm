@@ -5,6 +5,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -12,6 +16,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('changes');
+requireCapabilityJson(Cap::CHANGES_TYPES);   // Change management settings tab — see docs/design/rbac.md
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);
@@ -22,6 +28,13 @@ try {
     $is_default    = !empty($data['is_default']) ? 1 : 0;
     $display_order = (int)($data['display_order'] ?? 0);
     $is_active     = !empty($data['is_active']) ? 1 : 0;
+    // How it is approved (#180): review (the CAB or the approver decides first) or
+    // emergency (may go ahead; decided afterwards). Nothing becomes pre-authorised by
+    // its type - that only comes from an approved template.
+    $approval_route = (string)($data['approval_route'] ?? 'review');
+    if (!in_array($approval_route, ['review', 'emergency'], true)) {
+        throw new Exception('Unknown approval route');
+    }
 
     if ($name === '') {
         throw new Exception('Name is required');
@@ -41,15 +54,15 @@ try {
 
     if ($id) {
         $sql = "UPDATE change_types
-                   SET name = ?, colour = ?, is_default = ?, display_order = ?, is_active = ?
+                   SET name = ?, colour = ?, approval_route = ?, is_default = ?, display_order = ?, is_active = ?
                  WHERE id = ?";
         $stmt = $conn->prepare($sql);
-        $stmt->execute([$name, $colour ?: null, $is_default, $display_order, $is_active, $id]);
+        $stmt->execute([$name, $colour ?: null, $approval_route, $is_default, $display_order, $is_active, $id]);
     } else {
-        $sql = "INSERT INTO change_types (name, colour, is_default, display_order, is_active)
-                VALUES (?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO change_types (name, colour, approval_route, is_default, display_order, is_active)
+                VALUES (?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
-        $stmt->execute([$name, $colour ?: null, $is_default, $display_order, $is_active]);
+        $stmt->execute([$name, $colour ?: null, $approval_route, $is_default, $display_order, $is_active]);
     }
 
     $hasDefault = (int) $conn->query("SELECT COUNT(*) FROM change_types WHERE is_default = 1")->fetchColumn();
@@ -58,6 +71,7 @@ try {
     }
 
     $conn->commit();
+    wf_emit('change_type', $id ? 'updated' : 'created', $id ? (int)$id : (int)$conn->lastInsertId(), $name);
     echo json_encode(['success' => true]);
 
 } catch (Exception $e) {

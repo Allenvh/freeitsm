@@ -40,7 +40,9 @@ return [
         'search_heading'     => 'Search Articles',
         'search_placeholder' => 'Search by title or content...',
         'tags_heading'       => 'Filter by Tags',
+        'folders_heading'    => 'Folders',
         'new_article'        => '+ New Article',
+        'new_article_tip'    => 'New article',
         'recycle_bin'        => 'Recycle Bin',
         'no_tags'            => 'No tags yet',
     ],
@@ -50,8 +52,10 @@ return [
         'recycle_bin'  => 'Recycle Bin',
         'count'        => '{count} articles',
         'count_one'    => '{count} article',
+        'tags_more'    => '+{count} more...',
         'archived'     => '{count} archived',
         'no_articles'  => 'No articles found',
+        'unfiled'      => 'Not in a folder',
         'create_first' => 'Create your first article',
         'by'           => 'By {name}',
         'error_loading'=> 'Error loading articles',
@@ -73,6 +77,25 @@ return [
         'link'       => 'Share Link',
         'pdf'        => 'Export as PDF',
         'email'      => 'Email (Link + PDF)',
+        'copy_manually' => 'Your browser would not copy this automatically. Here is the link:',
+    ],
+
+    'bulk' => [
+        'select_title' => 'Select this article',
+        'selected'     => '{count} articles selected',
+        'selected_one' => '1 article selected',
+        'set_to'       => 'Set who can see them:',
+        'apply'        => 'Apply',
+        'applying'     => 'Applying...',
+        'select_all'   => 'Select all',
+        'done'         => 'Updated {count} articles',
+        'partial'      => 'Updated {updated}; {failed} could not be changed (they may belong to a company you cannot access)',
+        'move_to'      => 'Move them to:',
+        'move'         => 'Move',
+        'move_choose'  => 'Choose a folder...',
+        'moved'        => 'Moved {count} articles',
+        'moved_partial'=> 'Moved {moved}; {failed} could not be moved',
+        'move_failed'  => 'Could not move the selected articles',
     ],
 
     'editor' => [
@@ -87,10 +110,184 @@ return [
         'field_owner'      => 'Owner',
         'owner_none'       => '-- No owner assigned --',
         'field_review'     => 'Next review date',
+        'field_folder'     => 'Folder',
+        'folder_hint'      => 'A document lives in one folder. Use a shortcut if it belongs in two places.',
+        'field_audience'   => 'Who can see this',
+        'audience_internal'=> 'Analysts only',
+        'audience_customer'=> 'Analysts and signed-in customers',
+        // ⚠️ Describes the REACH, not the channel. This used to read "Anyone,
+        // including website chat", which was accurate only while web chat was
+        // the single thing reading at this level. The moment a second public
+        // reader exists (a public help site, a public API) a channel-named label
+        // becomes wrong — and wrong in the dangerous direction, understating the
+        // exposure. Which channels are involved belongs in the hint below, where
+        // it can be updated; the label states the consequence, which never changes.
+        'audience_public'  => 'Analysts, customers and anyone on the internet',
+        // The editor presents this level as an opt-in tickbox rather than a third
+        // dropdown choice: it is a different kind of decision from the other two,
+        // and it deserves to look like a deliberate act rather than the next item
+        // in a list. The STORED value is unchanged ('public') — this is wording
+        // and presentation only.
+        'audience_public_toggle'   => 'Also allow anyone on the internet',
+        'audience_public_channels' => 'Currently reaches the web chat widget on your website.',
+        'audience_hint_internal' => 'Only your own team. Never shown to customers or the website chat.',
+        // This rung is LIVE as of the portal Help Centre — it used to say "not yet
+        // in use", which was honest at the time and became wrong the moment a
+        // reader shipped. Keep it accurate.
+        'audience_hint_customer' => 'Appears in the Help Centre of the self-service portal, so anyone signed in there can read it. The website chat will never use it, because a chat visitor is an anonymous stranger.',
+        'audience_hint_public'   => 'The website chat can answer visitors from this article. Only mark things public that you would happily show a stranger.',
+        // GH #177: added to the hint when a change of audience would publish documents.
+        'audience_docs_warning'  => 'This article also has {n} document(s) shown in the Help Centre: once it is published and saved, customers who can read it can download them. Hide any you want to keep internal in the Documents section below.',
+        'field_company'    => 'Company',
+        'company_shared'   => 'Shared with all companies',
+        'documents_after_save' => 'Save the article first, then reopen it to attach documents.',
+        'company_hint'     => 'Leave shared for anything generic. Pick a company and only that company sees it.',
         'cancel'           => 'Cancel',
         'save'             => 'Save',
         'version'          => 'Version',
+        'fullscreen'       => 'Full screen',
+        'fullscreen_title' => 'Just the editor, filling the screen. Press Esc to come back.',
         'create_tag'       => 'Create "{name}"',
+    ],
+
+    'layout' => [
+        'list'  => 'List',
+        'cards' => 'Cards',
+        'tree'  => 'Tree',
+        'details' => 'Details',
+    ],
+
+    'details' => [
+        'name'     => 'Name',
+        'author'   => 'Author',
+        'modified' => 'Modified',
+        'tags'     => 'Tags',
+    ],
+
+    'folders' => [
+        // Renamed from "All articles": since the top level now shows only what is
+        // AT the top level, that label was a promise the view no longer keeps.
+        // Searching still covers everything, which is where "all" belongs.
+        'root'          => 'Home',
+        'new'           => 'New folder',
+        'new_prompt'    => 'Name for the new folder',
+        'rename_prompt' => 'New name for this folder',
+        'rename'        => 'Rename',
+        'delete'        => 'Delete',
+        'delete_confirm' => 'Delete the folder "{name}"? It must be empty first.',
+        'created'       => 'Folder created',
+        'renamed'       => 'Folder renamed',
+        'rename_article_prompt' => 'New title for this article',
+        'renamed_article'       => 'Article renamed',
+        'deleted'       => 'Folder deleted',
+        'moved'         => 'Folder moved',
+        'moved_article' => 'Article moved',
+        'move_to_root'     => 'Move out of its folder',
+        'shortcut_added'   => 'Shortcut created',
+        'shortcut_removed' => 'Shortcut removed',
+        'shortcut_remove'  => 'Remove shortcut from this folder',
+        'is_shortcut'      => 'Shown here by a shortcut. It lives in another folder.',
+        'restricted'    => 'Restricted to chosen people',
+        'load_failed'   => 'Could not load folders',
+        'none'          => 'No folders yet',
+        'empty'         => 'This folder is empty.',
+        'up'            => 'Up one level',
+        'items'         => 'articles',
+        'item_one'      => 'article',
+    ],
+
+    'move' => [
+        'title'  => 'Move this article',
+        'button' => 'Move',
+    ],
+
+    'audit' => [
+        'title'        => 'History',
+        'title_named'  => 'History of "{name}"',
+        'button'       => 'History',
+        'hint'         => 'Who did what, and when. Views are recorded once per person per day.',
+        'none'         => 'Nothing has happened to this yet.',
+        'failed'       => 'Could not load the history',
+        'portal_user'  => 'portal user',
+
+        // The stored action values, turned into English. Never printed raw:
+        // `admin_override` is a machine value, not a sentence.
+        'action_create'         => 'Created',
+        'action_edit'           => 'Edited',
+        'action_view'           => 'Read',
+        'action_move'           => 'Moved',
+        'action_rename'         => 'Renamed',
+        'action_delete'         => 'Deleted',
+        'action_archive'        => 'Archived',
+        'action_restore'        => 'Restored',
+        'action_permissions'    => 'Permissions changed',
+        'action_admin_override' => 'Opened using administrator access',
+
+        'detail_override'   => 'The access list did not admit this person; their administrator access let them in.',
+        'detail_added'      => 'Added {who}',
+        'detail_removed'    => 'Removed someone from the list',
+        'detail_restricted' => 'Restricted to chosen people',
+        'detail_opened'     => 'Opened to everyone',
+        'detail_wiped'      => 'Cleared {count} entries, because the list means the opposite thing in the other mode',
+        'detail_moved'      => 'Into {folder}',
+        // GH #177: a document on the article shown in / hidden from the Help Centre.
+        'detail_doc_shown'  => '{name}: shown in the Help Centre',
+        'detail_doc_hidden' => '{name}: hidden from the Help Centre',
+
+        'principal_analyst'   => 'analyst',
+        'principal_team'      => 'team',
+        'principal_user'      => 'user',
+        'principal_user_group'=> 'group',
+    ],
+
+    'exceptions' => [
+        'title'      => 'Documents and folders with their own permissions',
+        'button'     => 'Permission exceptions',
+        'hint'       => 'These do not follow the folder above them, so what is true inside a folder cannot be told by looking at the folder. Everything else inherits.',
+        'none'       => 'Nothing has its own permissions. Everything follows its folder.',
+        'folder'     => 'Folder',
+        'article'    => 'Article',
+        'listed'     => 'listed',
+        'own_rules'  => 'This has its own permissions and does not follow its folder.',
+    ],
+
+    'perm' => [
+        'title'              => 'Who can see this',
+        'title_folder'       => 'Who can see "{name}"',
+        'inherit_from'       => 'These permissions come from the folder "{folder}".',
+        'inherit_readonly'   => 'To change them, open the permissions on that folder. Untick the box above to give this its own rules instead.',
+        'inherit_none'       => 'Nothing above this restricts who can see it, so it follows the ordinary rules: anyone with access to Knowledge and to its company can read it.',
+        'inherit'            => 'Use the same permissions as the folder above',
+        'restrict'           => 'Restrict to chosen people',
+        'explain_open'       => 'Everyone who can already see it, except the people listed below.',
+        'explain_restricted' => 'Only the people listed below.',
+        'search_placeholder' => 'Search for a person, team or group...',
+        'none_open'          => 'Nobody is excluded.',
+        'none_restricted'    => 'Nobody is listed yet, so nobody but an administrator can see this.',
+        'remove'             => 'Remove',
+        'remove_confirm'     => 'Take {name} off this list?',
+        'removed'            => '{name} removed',
+        'added'              => 'Added',
+        // ⚠️ THE QUESTION HAS TO EXPLAIN BOTH STATES. The first version said
+        // "changing this clears the 1 people already listed, because the list
+        // means the opposite thing in the other mode" — which names the damage
+        // without explaining it, mishandles the singular, and reads (Ed's word)
+        // like a riddle. Somebody meeting this for the first time needs to know
+        // what the list means NOW, what it will mean AFTER, and why the two
+        // cannot be merged. That is three sentences, and three sentences is fine
+        // for a question asked once in a while about who can see something.
+        'wipe_people_one'    => '1 person',
+        'wipe_people'        => '{count} people',
+        'wipe_title_restrict'=> 'Restrict this to chosen people?',
+        'wipe_title_open'    => 'Open this to everyone again?',
+        'wipe_to_restricted' => "At the moment everyone who can reach the folder above can see this, apart from the {people} you have listed — that list is who is SHUT OUT.\n\nRestricting it turns the list around: it becomes the only people who CAN see this, and everybody else loses access.\n\nBecause the two lists mean opposite things, the {people} listed now will be cleared and you will start again by adding whoever should have access.",
+        'wipe_to_open'       => "At the moment only the {people} you have listed can see this — that list is who is LET IN.\n\nOpening it turns the list around: it becomes the people who are SHUT OUT, and everybody else gains access.\n\nBecause the two lists mean opposite things, the {people} listed now will be cleared.",
+        'wipe_ok_restrict'   => 'Restrict it',
+        'wipe_ok_open'       => 'Open it',
+        'now_unreachable'    => 'Nobody is listed now, so only an administrator can see this.',
+        'no_permission'      => 'You do not have permission to manage access.',
+        'failed'             => 'Could not load permissions',
+        'manage'             => 'Permissions',
     ],
 
     'recycle' => [
@@ -201,6 +398,23 @@ return [
         'tab_ai'         => 'AI',
         'tab_embeddings' => 'Embeddings',
         'tab_recycle'    => 'Recycle bin',
+        'browse_heading'         => 'Where you browse folders',
+        'browse_panel_title'     => 'In the left panel',
+        'browse_panel_desc'      => 'The folder tree sits in the panel on the left, and the main list shows every article until you pick one. This is the default.',
+        'browse_explorer_title'  => 'In the main pane',
+        'browse_explorer_desc'   => 'Folders come out of the left panel, freeing it up, and you browse in the main list instead - folders first, then articles, with a trail across the top. Closer to a file explorer.',
+        'tab_permissions'        => 'Folder permissions',
+        'perm_model_heading'     => 'How folder permissions apply',
+        'perm_model_intro'       => 'When a folder is restricted, does that restriction cover everything inside it, or only the folder itself? Both are reasonable; pick the one that matches how your team files things. This applies to the whole installation.',
+        'perm_containers_title'  => 'Folders are containers',
+        'perm_containers_desc'   => 'To read a document you must be able to read every folder above it. A locked cabinet is locked, whatever is written on the thing inside it. This is the default.',
+        'perm_filing_title'      => 'Folders are filing',
+        'perm_filing_desc'       => 'Permissions belong to documents; folders only organise them. The nearest permissions win, and the folders further up do not restrict what is inside them.',
+        'perm_preview_none'      => 'Nothing would change: no document is read by anyone differently under the other setting.',
+        'perm_preview_gain'      => '{count} document readings would be GAINED - people would be able to read things they currently cannot.',
+        'perm_preview_lose'      => '{count} document readings would be LOST - people would lose access to things they can read today.',
+        'perm_preview_capped'    => '(Counted across the first {count} analysts.)',
+        'perm_saved'             => 'Folder permission model saved',
         'tab_left_panel' => 'Left panel',
 
         'email_heading'  => 'Outbound email settings',
@@ -301,8 +515,82 @@ return [
         'embed_get_failed'   => 'Failed to get articles',
     ],
 
+    // ── Knowledge assistant (knowledge/assistant/index.php) ─────────────
+    // This page already exports the 'knowledge' namespace to JavaScript, so
+    // its script calls window.t() directly rather than carrying its own table.
+    'assistant' => [
+        'browser_title'   => 'Knowledge assistant',
+        'heading'         => 'Assistant',
+        'sub'             => 'Reads what the service desk has been answering and tells you what the knowledge base is missing. It only speaks up when the same question keeps coming back.',
+        'run'             => 'Look for gaps',
+        'checking'        => 'Checking…',
+        'tab_open'        => 'To write',
+        'tab_written'     => 'Written',
+        'tab_dismissed'   => 'Not needed',
+        'modal_title'     => 'Writing this up',
+        'modal_reading'   => 'Reading the ticket…',
+
+        // The list
+        'load_failed'     => 'Could not load',
+        'last_looked'     => 'Last looked {date}.',
+        'empty_open'      => 'Nothing to write. Either the assistant has not looked yet, or your knowledge base already covers what people keep asking.',
+        'empty_written'   => 'Nothing written from a gap yet.',
+        'empty_dismissed' => 'Nothing set aside.',
+        'draft'           => 'Draft',
+        'dismiss'         => 'Not needed',
+        'restore'         => 'Bring back',
+        'open_article'    => 'Open article',
+        // "Asked once" and "Asked 7 times" are two sentences in most languages.
+        'asked_one'       => 'Asked <strong>once</strong>',
+        'asked_many'      => 'Asked <strong>{n} times</strong>',
+        'written_up_as'   => 'written up as “{title}”',
+        'still_draft'     => '(still a draft)',
+        'show_tickets'    => 'Show the tickets',
+
+        // Running the analysis
+        'reading'         => 'Reading…',
+        'start_failed'    => 'Could not start.',
+        'no_tickets'      => 'There are no closed tickets in the last {days} days to read.',
+        'reading_n'       => 'Reading your closed tickets… {done} of {total}.',
+        'stopped_early'   => 'Stopped early.',
+        'read_failed'     => 'Could not read the tickets — check the OpenAI key in Knowledge → Settings.',
+        'clustering'      => 'Working out what is missing…',
+        'finish_failed'   => 'Could not finish.',
+        'wording_mode'    => 'Matched on wording. Add an OpenAI key in Knowledge → Settings to match on meaning instead.',
+        'update_failed'   => 'Could not update',
+
+        // The write-up
+        'reading_best'    => 'Reading the most detailed ticket…',
+        'answer_one'      => 'Answer at least one question first.',
+        'writing_up'      => 'Writing it up…',
+        'unreachable'     => 'Could not reach the assistant.',
+        'not_enough_yet'  => 'There is not enough in these tickets yet.',
+        'draft_ready'     => 'Draft ready. Read it before you publish — it was written from ticket {ref}.',
+        'draft_note'      => 'Saving puts this in your knowledge base as an unpublished draft. Nobody can read it until you publish it.',
+        'save_draft'      => 'Save draft',
+        'refused'         => 'Not enough to write from yet.',
+        'refused_why'     => 'The tickets do not say what caused this or how it was fixed.',
+        'refused_ask'     => 'Answer what you can and it will try again. You were there; it was not.',
+        'try_again'       => 'Try again',
+        'untitled'        => 'Untitled',
+        'save_failed'     => 'Could not save',
+
+        // The opening line, which depends on what the reader is allowed to do
+        'nothing_yet_readonly' => 'Nothing to show yet. Someone with permission to run the assistant needs to look for gaps first.',
+        'unread_tickets'  => 'There are {n} closed tickets from the last {days} days I have not read yet.',
+        // No leading space: it is joined with one in the script. A value
+        // whose correctness depends on invisible whitespace is the same
+        // trap as the blank-English rule, and no translator can see it.
+        'press_run'       => 'Press “Look for gaps”.',
+        'none_to_read'    => 'No closed tickets in the last {days} days to read.',
+    ],
+
     'help' => [
         'guide'          => 'Guide',
+        // The in-depth topic pages (knowledge/help/), first: documents in the Help Centre (GH #177).
+        'topics_title'   => 'In depth',
+        'topics_body'    => 'Longer guides to the parts of the knowledge base that need more explaining than a paragraph.',
+        'back_to_guide'  => 'Back to the Knowledge guide',
         'nav_overview'   => 'Overview',
         'nav_writing'    => 'Writing articles',
         'nav_review'     => 'Review workflow',
@@ -310,6 +598,90 @@ return [
         'nav_search'     => 'Search & navigation',
         'nav_sharing'    => 'Sharing & export',
         'nav_tips'       => 'Quick tips',
+        'nav_folders'    => 'Folders & views',
+        'nav_permissions' => 'Who can see what',
+
+        // ── Section 4: folders and views ─────────────────────────────────────
+        'folders_heading' => 'Organising with folders',
+        'folders_intro'   => 'Folders group articles the way any file browser does. A document lives in exactly one folder, so there is always a single honest answer to "where is it?" — and the same document can be pointed at from other folders by a shortcut when it genuinely belongs in two places.',
+
+        'folders_make_heading' => 'Making and changing folders',
+        'folders_step1' => '<strong>Create a folder</strong> &mdash; click <strong>New folder</strong> in the left panel, or right-click an existing folder to create one inside it. New folders are created inside whichever folder you are looking at, so open the parent first and the nesting takes care of itself.',
+        'folders_step2' => '<strong>Rename or delete</strong> &mdash; right-click any folder. A folder must be <strong>empty before it can be deleted</strong>, which is deliberate: deleting a folder full of documents is not a tidying-up action and should not be one click.',
+        'folders_step3' => '<strong>File a document</strong> &mdash; drag it onto a folder, in any view. You can also right-click a document and choose <strong>Move out of its folder</strong> to send it back to the top level.',
+        'folders_step4' => '<strong>Move a folder</strong> &mdash; drag the folder itself onto another one. Everything inside comes with it, permissions included.',
+        'folders_step5' => '<strong>Make a shortcut</strong> &mdash; hold <strong>Ctrl</strong> while dragging. The document stays exactly where it lives and the folder you dropped it on shows a pointer to it. A shortcut is only ever a pointer: it carries no permissions of its own, and it never lets anybody see something they could not already see. Right-click a shortcut to remove it &mdash; that takes away the pointer and leaves the document untouched.',
+
+        'folders_views_heading' => 'Four ways to look at the same thing',
+        'folders_view_list'    => 'List',
+        'folders_view_list_desc'  => 'The full-width rows, with a preview of each article. Best when you are reading rather than filing.',
+        'folders_view_cards'   => 'Cards',
+        'folders_view_cards_desc' => 'A grid of tiles showing title, author, date and tags. Best for scanning a folder you already know.',
+        'folders_view_tree'    => 'Tree',
+        'folders_view_tree_desc'  => 'The whole shape at once, folders and documents together, sorted by name with folders above documents. Best for finding out how the knowledge base is arranged.',
+        'folders_view_details' => 'Details',
+        'folders_view_details_desc' => 'A table of name, author, modified date and tags, like the details view in a file browser. Best for spotting what has not been touched in a while.',
+        'folders_views_note' => 'Your choice of view is remembered per person, so it is still there next time you come back. It is not shared with anyone else.',
+
+        'folders_home_heading' => 'Home, breadcrumbs and searching',
+        'folders_home' => '<strong>Home shows the top level only</strong> &mdash; what is filed at the top, plus the folders themselves. It does not list everything you own, any more than opening a disk lists every file on it. That is why filing a document makes it leave Home: it has gone somewhere.',
+        'folders_breadcrumb' => '<strong>The trail across the top</strong> names where you are and every step back to Home; click any part of it to jump there, or use the <strong>&uarr;</strong> button to go up one level. The address bar names the folder too, so a folder can be bookmarked or sent to a colleague.',
+        'folders_search' => '<strong>Searching and tag filters look everywhere</strong>, folders included, and each result says which folder it came from. This is deliberate: a search that quietly ignored anything filed away would answer <em>"no results"</em> about articles that certainly exist.',
+        'folders_select_heading' => 'Selecting several at once',
+        'folders_select_intro'   => 'Filing one document at a time is fine for one document. To move six, tick them.',
+        'folders_select1' => '<strong>The tick is the mechanism</strong> &mdash; a plain click on a document always opens it, so selecting is done with the tick box on each row rather than by clicking the row itself.',
+        'folders_select2' => '<strong>Shift and click a tick</strong> to take everything between it and the last one you ticked. The block follows the order shown on screen, so it is whatever you can see between the two &mdash; which is why sorting the details view by a different column changes what a range means.',
+        'folders_select3' => '<strong>Ctrl or Shift and click the document itself</strong> selects it instead of opening it, for when your hand is already on the row.',
+        'folders_select4' => '<strong>Arrow keys</strong> move down the list, <strong>Shift and an arrow</strong> extends the block, <strong>Ctrl and an arrow</strong> moves without changing what is selected, <strong>Space</strong> ticks, <strong>Ctrl+A</strong> takes everything on screen and <strong>Escape</strong> clears.',
+        'folders_select5' => 'A selection <strong>survives searching, filtering and changing view</strong>. Tick six results for <em>VPN</em>, search for <em>printer</em>, tick four more, then move all ten &mdash; that is the point of keeping it.',
+        'folders_select6' => 'With anything ticked, a bar appears above the list: <strong>Move them to</strong> files the lot into one folder, and <strong>Set who can see them</strong> changes the audience on all of them at once.',
+        'folders_tip' => '<strong>Right-click is the fast route.</strong> Everything on this page &mdash; new folder, rename, permissions, move, remove shortcut &mdash; is on the right-click menu of a folder or a document, in every view.',
+
+        // ── Section 5: permissions ───────────────────────────────────────────
+        'perms_heading' => 'Who can see what',
+        'perms_intro'   => 'Two separate controls decide who can read a document, and they are easy to confuse because they answer different questions. The audience decides what kind of person may see it at all. Permissions then narrow that to named people. They combine, and they only ever narrow: a permission can never let somebody see something their audience excludes.',
+
+        'perms_two_heading' => 'The two controls, in order',
+        'perms_audience_title' => 'Audience &mdash; what kind of person',
+        'perms_audience_desc'  => 'Set in the editor, under <em>Who can see this</em>. <strong>Analysts only</strong> keeps an article inside your team; the customer setting also shows it in the self-service portal; ticking <em>Also allow anyone on the internet</em> lets the website chat answer from it. This is covered in section 2.',
+        'perms_acl_title'      => 'Permissions &mdash; which named people',
+        'perms_acl_desc'       => 'Set from the <strong>Permissions</strong> item on a folder or document&rsquo;s right-click menu. This is a list of specific analysts, teams or portal users. It narrows the audience further; it can never widen it.',
+
+        'perms_mode_heading' => 'Open or restricted — and what the list means',
+        'perms_mode_intro'   => 'Every folder and every document is one of two things, and <strong>the list of people means the opposite thing in each</strong>. This is the single most important idea on this page, and reading the list without knowing which mode you are in will mislead you every time.',
+        'perms_open_title'   => 'Open (the default)',
+        'perms_open_desc'    => 'Everyone who can already see it, <strong>except</strong> the people on the list. The list is who is <strong>shut out</strong>. Leave the list empty and nothing is restricted at all.',
+        'perms_restricted_title' => 'Restricted to chosen people',
+        'perms_restricted_desc'  => 'Only the people on the list. The list is who is <strong>let in</strong>. An empty list here means nobody at all &mdash; the strictest setting there is, not the loosest.',
+        'perms_mode_why' => 'A list is never a mixture of both, which is why there is no <em>allow</em> and <em>deny</em> column to reconcile and no order of precedence to learn. An access list here cannot contradict itself, because a contradiction is not something it can express.',
+        'perms_mode_switch' => '<strong>Switching between the two empties the list</strong>, and FreeITSM asks before it does. It has to: the same names would mean the exact reverse afterwards, and a list left behind in the wrong mode would silently do the opposite of what it says. The question spells out what the list means now and what it would mean after.',
+
+        'perms_inherit_heading' => 'Inheriting from the folder above',
+        'perms_inherit' => 'By default a document uses <strong>the same permissions as the folder above</strong>, and so does a folder inside a folder. This is the ordinary case and the one you should aim to keep: set permissions on a folder once and everything filed into it is covered, including things filed there later.',
+        'perms_inherit_view' => 'With the box ticked, the Permissions window <strong>shows you the rules it is inheriting and which folder they come from, read-only</strong>. They are deliberately not editable there &mdash; those rules belong to the folder above, and changing them from inside one document would quietly change what everything else in that folder can see. Where nothing above restricts anything, it says so in words, because an empty list and <em>"no restrictions at all"</em> look identical and mean opposite things.',
+        'perms_inherit_own' => 'Untick the box to give that one document or folder <strong>its own rules</strong>. Use this sparingly. Anything with its own rules is invisible from the outside: you cannot look at a folder and know what is true inside it.',
+        'perms_exceptions' => '<strong>Permission exceptions</strong> in the left panel lists everything that has its own rules rather than following its folder. It is the antidote to the paragraph above &mdash; the one screen that tells you where the surprises are. Check it occasionally; the count only goes up on its own.',
+
+        'perms_model_heading' => 'What a restricted folder covers',
+        'perms_model_intro'   => 'When a folder is restricted, does that cover everything inside it, or only the folder itself? Both answers are reasonable and organisations genuinely differ, so it is a setting: <strong>Knowledge &rsaquo; Settings &rsaquo; Permissions</strong>. It applies to the whole installation, and only an administrator can change it.',
+        'perms_containers_title' => 'Folders are containers (the default)',
+        'perms_containers_desc'  => 'To read a document you must be able to read every folder above it. A locked cabinet is locked whatever is written on the file inside. Restricting a folder is enough to protect everything in it.',
+        'perms_filing_title'     => 'Folders are filing',
+        'perms_filing_desc'      => 'Permissions belong to documents; folders only organise them. The nearest rules win and the folders above do not add restrictions of their own. Choose this if your folders are a filing scheme rather than a security boundary.',
+        'perms_model_preview'    => 'Before the setting changes, FreeITSM tells you <strong>how many document readings would be gained or lost</strong> across your real content and your real people. Changing the answer to "who can read what" across a whole knowledge base is not something to do on a hunch, and the preview turns it from a guess into a number.',
+
+        'perms_where_heading' => 'Where the rules apply',
+        'perms_where_intro'   => 'The same access list is enforced everywhere an article can be reached. There is no route that reads round it.',
+        'perms_where_analysts' => 'Analysts &mdash; browsing, searching and the article itself.',
+        'perms_where_portal'   => 'The self-service portal &mdash; the Help Centre customers see.',
+        'perms_where_ai'       => 'The AI assistant &mdash; and the filtering happens <strong>before the model is shown the text</strong>, not after it has answered. An assistant that paraphrased a restricted document into an answer would leak it just as surely as showing it.',
+        'perms_where_chat'     => 'The website chat widget &mdash; which can only ever use articles marked for the internet.',
+        'perms_where_api'      => 'The REST API &mdash; a key acts as the analyst it belongs to and sees exactly what that person sees.',
+
+        'perms_admin_heading' => 'Administrators, and the trail',
+        'perms_admin' => 'Somebody has to be able to get back into a folder that has been restricted to nobody, so <strong>an administrator can always read anything</strong>. That is a deliberate floor rather than an oversight: without it, one mis-click could put a document permanently beyond every person in the building.',
+        'perms_admin_audit' => '<strong>Every time that floor is used it is recorded</strong> &mdash; who opened what, and when &mdash; separately from ordinary reads. An override nobody can audit is not a safety net, it is a back door. Changes to permissions are recorded the same way.',
+        'perms_admin_tip' => 'A restricted folder with nobody on its list is not broken and is not a mistake FreeITSM will correct for you &mdash; it means exactly what it says. If you meant to share it, put somebody on the list; the window tells you plainly when you have created one.',
 
         'hero_title'     => 'Knowledge base guide',
         'hero_subtitle'  => 'Create, review, and share knowledge articles so your team always has the answers they need.',
@@ -327,14 +699,17 @@ return [
 
         'writing_heading' => 'Writing articles — step by step',
         'writing_intro'   => "A good knowledge article answers a single question clearly and completely. Whether it's a how-to guide, a troubleshooting runbook, or a policy document, the goal is the same: someone who reads it should be able to act on it without needing to ask a colleague.",
-        'writing_step1'   => '<strong>Click "+ New Article"</strong> in the sidebar to open the article editor. This gives you a blank canvas with all the fields you need.',
+        'writing_step1'   => '<strong>Click New</strong> at the top right to open the article editor. This gives you a blank canvas with all the fields you need.',
         'writing_step2'   => '<strong>Give it a clear title</strong> &mdash; use the kind of phrasing someone would actually search for. "How to reset a user\'s password in Active Directory" is better than "Password Reset Procedure v2.1".',
         'writing_step3'   => '<strong>Add tags</strong> &mdash; type in the tag input and press Enter or comma to add. Tags let people find your article through filtering as well as search. Use a mix of broad tags (e.g. "Active Directory") and specific ones (e.g. "password-reset").',
         'writing_step4'   => '<strong>Assign an owner</strong> &mdash; the owner is the person responsible for keeping the article up to date. When it comes up for review, the owner gets notified.',
         'writing_step5'   => '<strong>Set a review date</strong> &mdash; knowledge goes stale. Set a next-review date so the article surfaces in the review queue at the right time. Quarterly reviews work well for most content; critical procedures might need monthly checks.',
         'writing_step6'   => '<strong>Write the content</strong> &mdash; the rich text editor supports headings, bold, italic, bullet and numbered lists, tables, code blocks with syntax highlighting, images, and links. Structure your article with clear headings so readers can scan it quickly.',
+        'writing_step_visibility' => '<strong>Decide who can see it</strong> &mdash; <em>Who can see this</em> controls the audience. <strong>Analysts only</strong> (the default) keeps it inside your team. Ticking <strong>Also allow anyone on the internet</strong> lets the website chat widget answer visitors from it &mdash; only tick that for things you would happily show a stranger. It is a tickbox rather than a third choice because it is a different kind of decision from the other two. If you run more than one company you can also give the article a <em>Company</em>, or leave it shared with everyone.',
         'writing_step7'   => "<strong>Save</strong> &mdash; your article is saved as a draft. You can come back and edit it anytime. When you're happy with it, submit it for review or publish it directly depending on your team's workflow.",
+        'writing_visibility_callout' => '<strong>Why your chat widget might not be answering:</strong> every article starts as <em>Analysts only</em>, including ones written before this setting existed. The website chat can only use articles where <em>Also allow anyone on the internet</em> is ticked, so tick it on a few of your customer-facing ones and it will start using them. That default is deliberate &mdash; nothing you wrote for internal use gets shown to the public unless you say so.',
         'writing_tip'     => 'Every time you save significant changes, use the "Save as new version" option. This creates a versioned snapshot so you can always look back at what the article said previously. Version numbers display on the article view so readers know how current it is.',
+        'writing_fullscreen' => 'Want more room to write? <strong>Full screen</strong>, beside Save, shows just the editor filling the whole window. Press <strong>Esc</strong> to come back. (Desktop only.)',
 
         'review_heading' => 'Review workflow — getting articles approved',
         'review_intro'   => 'For teams that need quality control over published content, the review workflow ensures every article is checked by a second pair of eyes before it goes live. This is especially valuable for customer-facing documentation, compliance procedures, and technical runbooks where accuracy matters.',
@@ -375,7 +750,7 @@ return [
         'search_field3'  => '<strong>Combined search + tags</strong> &mdash; search and tag filters work together. Select a tag to narrow the scope, then type a search term to find specific content within that tag group.',
         'search_field4'  => '<strong>Article count</strong> &mdash; the header always shows how many articles match your current filters, so you know how broad or narrow your results are.',
         'search_field5'  => '<strong>Recycle bin</strong> &mdash; archived articles are moved to the recycle bin rather than permanently deleted. Click the Recycle Bin button in the sidebar to view and restore archived articles when needed.',
-        'search_tip'     => 'Consistent tagging makes a huge difference. Agree on a tagging convention with your team &mdash; for example, always using lowercase, hyphen-separated tags like "active-directory" or "network-setup". The tag suggestion feature helps by showing existing tags as you type.',
+        'search_tip'     => 'Consistent tagging makes a huge difference. Agree on a tagging convention with your team — for example, always using lowercase, hyphen-separated tags like "active-directory" or "network-setup". The tag suggestion feature helps by showing existing tags as you type.',
 
         'sharing_heading' => 'Sharing & export',
         'sharing_intro'   => 'Knowledge is most valuable when it reaches the people who need it. The sharing features make it easy to get articles to colleagues, end users, or external stakeholders without requiring them to log into the system.',
@@ -389,7 +764,7 @@ return [
         'tip1_title'   => 'Write for scanning',
         'tip1_desc'    => 'Use headings, short paragraphs, and bullet lists. Most readers scan articles looking for the specific step they need, rather than reading top to bottom.',
         'tip2_title'   => 'Review dates matter',
-        'tip2_desc'    => 'Set a review date on every article. Outdated knowledge is worse than no knowledge &mdash; it leads people down the wrong path and erodes trust in the knowledge base.',
+        'tip2_desc'    => 'Set a review date on every article. Outdated knowledge is worse than no knowledge — it leads people down the wrong path and erodes trust in the knowledge base.',
         'tip3_title'   => 'Version your changes',
         'tip3_desc'    => 'Use "Save as new version" for significant updates. This preserves a history of how the article evolved and lets you roll back if something goes wrong.',
         'tip4_title'   => 'Tag consistently',

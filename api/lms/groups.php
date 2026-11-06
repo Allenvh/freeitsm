@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
@@ -33,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     echo json_encode(['success' => true, 'data' => $groups]);
     exit;
 }
+
+requireCapabilityJson(Cap::LMS_MANAGE);
 
 // POST: create group
 $input = json_decode(file_get_contents('php://input'), true);

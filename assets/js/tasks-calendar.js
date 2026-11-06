@@ -18,7 +18,14 @@ let viewMode = 'month';  // 'month' | 'week' | 'day'
 let currentFilter = 'my';
 let currentFilterTeamId = null;
 let currentFilterAnalystId = null;
+// '' parent tasks only (the default, as before), 'both', or 'only' (#90).
+// Seeded from the stored preference, which the page renders into the markup so
+// the select is already right on arrival rather than correcting itself after a
+// fetch. Falls back to the old behaviour if the page did not publish one.
+let currentSubtaskScope = window.CAL_SUBTASK_SCOPE || '';
 let tasks = [];
+// Future occurrences of fixed schedules - dates, not rows (#94).
+let projected = [];
 let statuses = [];
 let priorities = [];
 let analysts = [];
@@ -26,8 +33,11 @@ let teams = [];
 let spanMode = 'deadline';
 let surfaceTags = false;
 
+// The repeat mark (#94). Deliberately the same shape the detail panel uses, so a
+// reader does not have to learn two. White because it sits on the coloured chip.
+const CAL_ICON_RECUR = '<svg class="recur-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>';
+
 // Locale for date formatting — matches the page's i18n locale
-const UI_LOCALE = document.documentElement.lang || 'en';
 
 // ── Init ───────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -42,6 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
+/** Loads the Tasks settings the calendar uses - the span mode and whether tags show on the calendar. */
 async function loadSettings() {
     try {
         const d = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
@@ -50,6 +61,7 @@ async function loadSettings() {
     } catch (e) { console.error('Failed to load settings:', e); }
 }
 
+/** Loads the task statuses and redraws the colour legend. */
 async function loadStatuses() {
     try {
         const d = await fetch(API_BASE + 'get_task_statuses.php').then(r => r.json());
@@ -60,6 +72,7 @@ async function loadStatuses() {
     } catch (e) { console.error('Failed to load statuses:', e); }
 }
 
+/** Loads the active task priorities for the quick-look panel. */
 async function loadPriorities() {
     try {
         const d = await fetch(API_BASE + 'get_task_priorities.php').then(r => r.json());
@@ -67,6 +80,7 @@ async function loadPriorities() {
     } catch (e) { console.error('Failed to load priorities:', e); }
 }
 
+/** Loads analysts and teams and fills the Analyst and Team filter drop-downs. */
 async function loadDropdowns() {
     try {
         const [aRes, tRes] = await Promise.all([
@@ -88,20 +102,83 @@ async function loadDropdowns() {
     } catch (e) { console.error('Failed to load dropdowns:', e); }
 }
 
+/**
+ * Future occurrences of fixed-schedule repeats (#94), honouring the same
+ * who-is-it-for filter as the real tasks beside them.
+ *
+ * These have no row behind them, so they cannot be filtered in SQL by the same
+ * joins; the endpoint returns the assignee and the filtering happens here.
+ * Getting that wrong would be worse than not showing them: a projection under
+ * "My tasks" that is not yours is a promise about somebody else's week.
+ */
+function visibleProjected() {
+    if (!projected.length) return [];
+    return projected.filter(p => {
+        // The page publishes it on <body>, the same source tasks.js reads.
+        // window.ANALYST_ID does not exist on this page - reaching for it would
+        // have made every projection vanish under "My tasks" and looked like the
+        // projections simply not working.
+        if (currentFilter === 'my')      return String(p.assigned_analyst_id) === String(document.body.dataset.analystId || '');
+        if (currentFilter === 'analyst') return String(p.assigned_analyst_id) === String(currentFilterAnalystId);
+        if (currentFilter === 'team')    return false;   // a projection carries no team of its own
+        return true;                                     // 'all'
+    });
+}
+
+/**
+ * Loads the projected future occurrences of repeating tasks, from two months before to a year after
+ * the month in view; a failure leaves none.
+ */
+async function loadProjected() {
+    // A generous window either side of anything the calendar can show, so paging
+    // a month does not need another round trip.
+    const from = new Date(viewDate.getFullYear(), viewDate.getMonth() - 2, 1);
+    const to   = new Date(viewDate.getFullYear(), viewDate.getMonth() + 12, 0);
+    /** Formats a Date as YYYY-MM-DD through toISOString, so in UTC. */
+    const ymd  = d => d.toISOString().slice(0, 10);
+    try {
+        const d = await fetch(`${API_BASE}projected.php?from=${ymd(from)}&to=${ymd(to)}`).then(r => r.json());
+        projected = d.success ? (d.projected || []) : [];
+    } catch (e) {
+        projected = [];   // the calendar still draws every real task
+    }
+}
+
+/**
+ * Loads the tasks for the current filter and subtask scope, then the projected repeats, and redraws
+ * the calendar.
+ */
 async function loadTasks() {
     let url = API_BASE + 'list.php?filter=' + currentFilter;
+    if (currentSubtaskScope) url += '&subtasks=' + currentSubtaskScope;
     if (currentFilter === 'team' && currentFilterTeamId) url += '&team_id=' + currentFilterTeamId;
     if (currentFilter === 'analyst' && currentFilterAnalystId) url += '&analyst_id=' + currentFilterAnalystId;
     try {
         const d = await fetch(url).then(r => r.json());
         if (d.success) {
             tasks = d.tasks;
+            await loadProjected();
             renderCalendar();
         }
     } catch (e) { console.error('Failed to load tasks:', e); }
 }
 
 // ── Filters ────────────────────────────────────────────────────────
+function setSubtaskScope(scope) {
+    currentSubtaskScope = scope;
+    loadTasks();
+    // Remember it. The calendar redraws either way, so the save is deliberately
+    // not awaited and a failure is silent: this is a view preference, and
+    // interrupting someone with a toast because a preference did not persist
+    // would be worse than quietly showing them the default next time.
+    fetch('../../api/system/set_user_preference.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'tasks_calendar_subtasks', value: scope })
+    }).catch(() => {});
+}
+
+/** Switches to a preset filter (my, all...), clears the team and analyst filters and reloads. */
 function setFilter(filter) {
     currentFilter = filter;
     currentFilterTeamId = null;
@@ -114,6 +191,7 @@ function setFilter(filter) {
     loadTasks();
 }
 
+/** Shows one team's tasks, or goes back to My tasks when cleared. */
 function setTeamFilter(teamId) {
     if (!teamId) { setFilter('my'); return; }
     currentFilter = 'team';
@@ -124,6 +202,7 @@ function setTeamFilter(teamId) {
     loadTasks();
 }
 
+/** Shows one analyst's tasks, or goes back to My tasks when cleared. */
 function setAnalystFilter(analystId) {
     if (!analystId) { setFilter('my'); return; }
     currentFilter = 'analyst';
@@ -141,12 +220,14 @@ function calPrev() {
     else viewDate.setDate(viewDate.getDate() - 1);
     renderCalendar();
 }
+/** Moves forward one month, week or day, depending on the view. */
 function calNext() {
     if (viewMode === 'month') viewDate.setMonth(viewDate.getMonth() + 1);
     else if (viewMode === 'week') viewDate.setDate(viewDate.getDate() + 7);
     else viewDate.setDate(viewDate.getDate() + 1);
     renderCalendar();
 }
+/** Jumps back to today (the 1st of this month in month view). */
 function calToday() {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -156,6 +237,7 @@ function calToday() {
     renderCalendar();
 }
 
+/** Switches between month, week and day views. */
 function setView(mode) {
     viewMode = mode;
     document.querySelectorAll('.view-btn').forEach(b =>
@@ -175,9 +257,12 @@ function renderCalendar() {
 }
 
 // Resolve each task to the date range it occupies, respecting span mode.
+// Projected occurrences (#94) are merged in here rather than rendered
+// separately, so they get the same placement, span and week-wrapping logic and
+// cannot drift from how real tasks are drawn.
 function placedTasks() {
     const placed = [];
-    tasks.forEach(t => {
+    tasks.concat(visibleProjected()).forEach(t => {
         if (!t.due_date) return;
         const end = t.due_date;
         let start = end;
@@ -239,6 +324,7 @@ function renderWeekRow(weekStart, todayStr, placed, monthCtx) {
     return { cells, bars, lanes: laneEnd.length };
 }
 
+/** Draws the month view - one row per week from Monday, each high enough for its lanes of bars. */
 function renderMonth() {
     const grid = document.getElementById('calGrid');
     document.getElementById('calWeekdays').style.display = '';
@@ -248,7 +334,7 @@ function renderMonth() {
     const month = viewDate.getMonth();
 
     document.getElementById('calTitle').textContent =
-        viewDate.toLocaleDateString(UI_LOCALE, { month: 'long', year: 'numeric' });
+        fmtNaiveMonthYear(viewDate);
 
     const first = new Date(year, month, 1);
     const gridStart = new Date(first);
@@ -276,6 +362,7 @@ function renderMonth() {
     grid.innerHTML = html;
 }
 
+/** Draws the week view for the Monday-to-Sunday week holding the view date, with a compact range title. */
 function renderWeek() {
     const grid = document.getElementById('calGrid');
     document.getElementById('calWeekdays').style.display = '';
@@ -290,10 +377,12 @@ function renderWeek() {
     // Title — "5 – 11 May 2026" or "28 Apr – 4 May 2026"
     const sameMonth = weekStart.getMonth() === weekEnd.getMonth();
     const sameYear = weekStart.getFullYear() === weekEnd.getFullYear();
-    const startLabel = weekStart.toLocaleDateString(UI_LOCALE,
-        sameMonth ? { day: 'numeric' } : (sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' }));
-    const endLabel = weekEnd.toLocaleDateString(UI_LOCALE,
-        { day: 'numeric', month: 'short', year: 'numeric' });
+    // The week title compresses when it can ("5 - 11 May 2026"), so the shape is
+    // dictated by the layout rather than by preference - hence fmtNaiveTemplate
+    // rather than fmtNaiveDate. Month names still follow the language.
+    const startLabel = fmtNaiveTemplate(weekStart,
+        sameMonth ? 'D' : (sameYear ? 'D MON' : 'D MON YYYY'));
+    const endLabel = fmtNaiveTemplate(weekEnd, 'D MON YYYY');
     document.getElementById('calTitle').textContent = `${startLabel} – ${endLabel}`;
 
     const placed = placedTasks();
@@ -306,14 +395,17 @@ function renderWeek() {
     </div>`;
 }
 
+/**
+ * Draws the day view as a list of the tasks on that date, open before done, with status, assignee,
+ * dates, parent and tags.
+ */
 function renderDay() {
     const grid = document.getElementById('calGrid');
     document.getElementById('calWeekdays').style.display = 'none';
     grid.className = '';
 
     document.getElementById('calTitle').textContent =
-        viewDate.toLocaleDateString(UI_LOCALE,
-            { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        fmtNaiveWeekday(viewDate) + ' ' + fmtNaiveTemplate(viewDate, 'D MONTH YYYY');
 
     const dayStr = ymd(viewDate);
     const placed = placedTasks().filter(p => p.start <= dayStr && dayStr <= p.end);
@@ -343,10 +435,17 @@ function renderDay() {
             ? `<span class="cal-day-task-tags">${t.tags.slice(0, 4).map(tg =>
                 `<span class="mini-tag-dot" style="background:${esc(tg.colour || '#6b7280')}"></span>`).join('')}</span>`
             : '';
-        return `<div class="cal-day-task${done ? ' cal-day-task-done' : ''}" onclick="openTask(${t.id})">
+        // In the day list there is room to say which task a subtask belongs to,
+        // so it says it rather than relying on a tooltip (#90).
+        if (t.parent_task_id && t.parent_title) meta.unshift(esc(t.parent_title));
+        // A projection says so in words here. On the month grid there is only a
+        // tooltip and a faded chip; in a list, "not created yet" is worth stating,
+        // because otherwise it looks like a task you could open and edit.
+        if (t.projected) meta.push(esc(window.t('tasks.recur.projected')));
+        return `<div class="cal-day-task${done ? ' cal-day-task-done' : ''}${t.parent_task_id ? ' cal-day-task-subtask' : ''}${t.recurrence_id ? ' cal-day-task-recur' : ''}${t.projected ? ' cal-day-task-projected' : ''}" onclick="openTask(${t.projected ? t.source_task_id : t.id})">
             <span class="cal-day-task-dot" style="background:${esc(colour)}"></span>
             <div class="cal-day-task-body">
-                <div class="cal-day-task-title">${esc(t.title)}</div>
+                <div class="cal-day-task-title">${t.recurrence_id ? CAL_ICON_RECUR : ''}${esc(t.title)}</div>
                 ${meta.length ? `<div class="cal-day-task-meta">${meta.join(' · ')}</div>` : ''}
             </div>
             ${tagDots}
@@ -356,27 +455,49 @@ function renderDay() {
     grid.innerHTML = `<div class="cal-day-list">${rows}</div>`;
 }
 
+/**
+ * Returns the bar markup for one task's interval in a week row - one spanning bar in span mode,
+ * otherwise a chip per day.
+ *
+ * Clicking a projected repeat opens the task its series comes from.
+ */
 function renderBars(iv) {
     const t = iv.p.task;
     const colour = t.status_colour || '#6b7280';
     const done = Number(t.status_is_closed) === 1;
     const top = 28 + iv.lane * 24;
     const title = esc(t.title);
-    const tip = esc(t.title + (t.analyst_name ? ' · ' + t.analyst_name : '') +
-        ' · ' + (iv.p.start !== iv.p.end ? fmt(iv.p.start) + ' → ' + fmt(iv.p.end) : fmt(iv.p.end)));
+    // A subtask carries its parent's name in the tooltip: on a month grid the
+    // title alone ("Rack it") rarely says which piece of work it belongs to (#90).
+    const isSub = !!t.parent_task_id;
+    // A task that is one of a repeating series carries the same mark here as in
+    // the detail panel (#94). One shape wherever it appears.
+    const isRecur = !!t.recurrence_id;
+    // A projection has no row behind it: it is drawn faintly and clicking it
+    // opens the task the series comes from, because there is nothing else to open.
+    const isProj = !!t.projected;
+    const projLabel = isProj ? ' · ' + window.t('tasks.recur.projected') : '';
+    const tip = esc(t.title + (isSub && t.parent_title ? ' (' + t.parent_title + ')' : '') +
+        (t.analyst_name ? ' · ' + t.analyst_name : '') +
+        ' · ' + (iv.p.start !== iv.p.end ? fmt(iv.p.start) + ' → ' + fmt(iv.p.end) : fmt(iv.p.end)) +
+        projLabel);
 
     const tagDots = (surfaceTags && t.tags && t.tags.length)
         ? t.tags.slice(0, 4).map(tg =>
             `<span class="mini-tag-dot" style="background:${esc(tg.colour || '#6b7280')}"></span>`).join('')
         : '';
 
+    /**
+     * Returns one bar or chip at a column and span, coloured by status and marked for done, subtask,
+     * repeating and projected.
+     */
     const make = (col, span, extraCls) => {
         const left = `calc(${col} / 7 * 100% + 3px)`;
         const width = `calc(${span} / 7 * 100% - 6px)`;
-        return `<div class="cal-bar ${extraCls}${done ? ' cal-bar-done' : ''}"
+        return `<div class="cal-bar ${extraCls}${done ? ' cal-bar-done' : ''}${isSub ? ' cal-bar-subtask' : ''}${isRecur ? ' cal-bar-recur' : ''}${isProj ? ' cal-bar-projected' : ''}"
             style="left:${left};width:${width};top:${top}px;background:${colour}"
-            title="${tip}" onclick="openTask(${t.id})">
-            <span class="cal-bar-label">${title}</span>${tagDots}</div>`;
+            title="${tip}" onclick="openTask(${isProj ? t.source_task_id : t.id})">
+            <span class="cal-bar-label">${isRecur ? CAL_ICON_RECUR : ''}${title}</span>${tagDots}</div>`;
     };
 
     if (spanMode === 'span') {
@@ -391,6 +512,7 @@ function renderBars(iv) {
     return out;
 }
 
+/** Draws the legend of active statuses and their colours. */
 function renderLegend() {
     const el = document.getElementById('calLegend');
     if (!el) return;
@@ -408,6 +530,7 @@ function openTask(id) { TasksQuickPanel.open(id); }
 // Monday-based column index (Mon=0 … Sun=6)
 function mondayCol(d) { return (d.getDay() + 6) % 7; }
 
+/** Formats a Date as a local YYYY-MM-DD. */
 function ymd(d) {
     return d.getFullYear() + '-' +
         String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -421,14 +544,15 @@ function dayDiff(a, b) {
     return Math.round((db - da) / 86400000);
 }
 
+/** Formats a YYYY-MM-DD as a short day and month. */
 function fmt(ds) {
-    return new Date(ds + 'T00:00:00').toLocaleDateString(UI_LOCALE,
-        { day: 'numeric', month: 'short' });
+    return fmtNaiveDayMonth(new Date(ds + 'T00:00:00'));
 }
 
+/** HTML-escapes a value through a text node; null and undefined become an empty string. */
 function esc(text) {
     if (text == null) return '';
     const div = document.createElement('div');
     div.textContent = String(text);
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

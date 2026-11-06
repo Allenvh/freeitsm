@@ -40,13 +40,137 @@
     --on-accent:     #ffffff;   /* text/icons on accent     */
 
     /* Status / semantic pairs (badges, pills) */
-    --success-bg:     #dcfce7;  --success-text: #166534;  --success-accent: #16a34a;
-    --danger-bg:      #fee2e2;  --danger-text:  #991b1b;  --danger-accent:  #d13438;
+    --success-bg:     #dcfce7;  --success-text: #166534;  --success-accent: #16a34a;  --success-border: #b7e1c4;
+    --danger-bg:      #fee2e2;  --danger-text:  #991b1b;  --danger-accent:  #d13438;  --danger-border:  #f0c2c2;
     --warning-bg:     #fef3c7;  --warning-text: #92400e;  --warning-border: #f0d9a8;
+    /* The fourth of the set. Success, danger and warning have been here a while;
+       information had no pair, so "a blue note" had nowhere to come from but a
+       hand-picked hex — which is right in one mode and wrong in the other. */
+    --info-bg:        #e0f2fe;  --info-text:    #075985;  --info-accent:    #0284c7;  --info-border:    #b9def5;
 
     /* Problem Management (purple) accents — the problem strip + badges */
     --problem-bg:        #faf7fd;  --problem-border: #e6d8f2;
     --problem-text:      #6a1b9a;  --problem-badge-bg: #ede7f6;
+
+    /* Knowledge module (purple) accents — buttons, tag pills, AI chat */
+    --kb-accent:       #8764b8;  --kb-accent-hover: #6b4fa2;
+    --kb-accent-soft:  #f3eef8;  --kb-on-accent:    #ffffff;
+
+    /* Change Management module (teal) accents — buttons, filters, CAB */
+    --cm-accent:       #00897b;  --cm-accent-hover: #00695c;
+    --cm-accent-soft:  #e0f2f1;  --cm-on-accent:    #ffffff;
+
+    /* Problem Management module (red) accents — buttons, filters, RCA.
+       Red is the module's registered brand colour (module-colors.php: the
+       waffle tile + header gradient). Distinct from the cross-module
+       --problem-* purple badge palette above (used by Tickets). */
+    --pm-accent:       #dc2626;  --pm-accent-hover: #b91c1c;
+    --pm-accent-soft:  #fde8e8;  --pm-on-accent:    #ffffff;
+
+    /* Calendar module (orange) accents — buttons, today, event chips */
+    --cal-accent:      #ef6c00;  --cal-accent-hover: #e65100;
+    --cal-accent-soft: #fff3e0;  --cal-on-accent:    #ffffff;
+
+    /* Morning Checks module (cyan) accents — chart border, raise-ticket chip.
+       Cyan is the module's registered brand colour (module-colors.php). */
+    --mc-accent:       #00acc1;  --mc-accent-hover: #00838f;
+    --mc-accent-soft:  #e0f7fa;  --mc-on-accent:    #ffffff;
+
+    /* Reporting module (rust-orange) accents — cards, links, chart, hero.
+       Rust is the module's registered brand colour (module-colors.php).
+       Distinct from Calendar's brighter orange (--cal-*). */
+    --rep-accent:      #ca5010;  --rep-accent-hover: #a5410a;
+    --rep-accent-soft: #fdeee6;  --rep-on-accent:    #ffffff;
+
+    /* Software module (indigo) accents — cards, links, charts, badges.
+       Indigo is the module's registered brand colour (module-colors.php). */
+    --sw-accent:       #5c6bc0;  --sw-accent-hover: #3f51b5;
+    --sw-accent-soft:  #e8eaf6;  --sw-on-accent:    #ffffff;
+
+    /* Forms module (teal) accents — builder, fields, submissions, hero.
+       Teal is the module's registered brand colour (module-colors.php);
+       shares the same hues as Change Management but kept as its own set. */
+    --forms-accent:      #00897b;  --forms-accent-hover: #00695c;
+    --forms-accent-soft: #e0f2f1;  --forms-on-accent:    #ffffff;
+
+    /* CMDB module (pink/magenta) accents — object browser, relationships, hero.
+       Pink is the module's registered brand colour (module-colors.php). */
+    --cmdb-accent:      #be185d;  --cmdb-accent-hover: #9d174d;
+    --cmdb-accent-soft: #fce4ec;  --cmdb-on-accent:    #ffffff;
+
+    /* Tasks module (violet) accents — board, list, timeline, calendar.
+       Violet is the module's registered brand colour (module-colors.php). */
+    --tsk-accent:      #7c3aed;  --tsk-accent-hover: #6d28d9;
+    --tsk-accent-soft: #f3f0ff;  --tsk-on-accent:    #ffffff;
+
+    /* Projects module (coral to violet, 3.2.0). The accent is the coral end;
+       --prj-accent-2 is the violet end, for the module's two-colour gradients. */
+    --prj-accent:      #e11d48;  --prj-accent-hover: #be123c;
+    --prj-accent-2:    #7c3aed;
+    --prj-accent-soft: #fff1f2;  --prj-on-accent:    #ffffff;
+    --prj-gradient:    linear-gradient(135deg, #f43f5e, #7c3aed);
+
+    /* Starters & leavers (golden brown) */
+    --jml-accent:      #a16207;  --jml-accent-hover: #854d0e;
+    --jml-accent-soft: #fef9c3;  --jml-on-accent:    #ffffff;
+
+    /* Contracts module (amber) accents — contracts, suppliers, RFP builder.
+       Amber is the module's registered brand colour (module-colors.php). */
+    --con-accent:      #f59e0b;  --con-accent-hover: #d97706;
+    --con-accent-soft: #fef3c7;  --con-on-accent:    #ffffff;
+
+    /* Domains module (lime-olive) accents - register, dashboard, grades.
+       Olive is the module's registered brand colour (module-colors.php). */
+    --dom-accent:      #4d7c0f;  --dom-accent-hover: #3f6212;
+    --dom-accent-soft: #ecfccb;  --dom-on-accent:    #ffffff;
+
+    /* Files module (navy) accents - menus, selection, buttons on the desktop. */
+    --fil-accent:      #1e3a8a;  --fil-accent-hover: #172554;
+    --fil-accent-soft: #dbeafe;  --fil-on-accent:    #ffffff;
+
+    /* War room module (amber) accents. Declared here rather than left to the
+       inline fallbacks the module was using: a var() fallback works, but it is
+       the same value in both palettes, so dark mode never adapted the accent. */
+    --war-room-accent:      #ea580c;  --war-room-accent-hover: #c2410c;
+    --war-room-accent-soft: #ffedd5;  --war-room-on-accent:    #ffffff;
+
+    /* Service Status module (emerald) accents — chrome only; the up/down/
+       degraded STATE colours are data. Emerald is the registered brand. */
+    --ss-accent:       #10b981;  --ss-accent-hover:  #059669;
+    --ss-accent-soft:  #d1fae5;  --ss-on-accent:     #ffffff;
+
+    /* Network Mapper module (cyan) accents — editor CHROME only; the diagram
+       canvas + nodes stay a light worksheet. Cyan is the registered brand. */
+    --nm-accent:       #06b6d4;  --nm-accent-hover:  #0891b2;
+    --nm-accent-soft:  #ecfeff;  --nm-on-accent:     #ffffff;
+
+    /* Workflows module (amber) accents — editor CHROME only; the workflow
+       canvas + nodes stay a light worksheet. NB workflow.css is authored amber
+       (#f59e0b), even though module-colors registers #ea580c for the header. */
+    --wf-accent:       #f59e0b;  --wf-accent-hover:  #d97706;
+    --wf-accent-soft:  #fef3c7;  --wf-on-accent:     #ffffff;
+
+    /* Process Mapper module (indigo) accents — editor CHROME only; the flowchart
+       canvas + steps stay a light worksheet. Indigo is the registered brand.
+       (--pm-* is Problem Management; process-mapper uses --pmap-*.) */
+    --pmap-accent:      #6366f1;  --pmap-accent-hover: #4f46e5;
+    --pmap-accent-soft: #eef2ff;  --pmap-on-accent:    #ffffff;
+
+    /* System Wiki — red (module-colors.php 'wiki') */
+    --wiki-accent:      #c62828;  --wiki-accent-hover: #b71c1c;
+    --wiki-accent-soft: #fdecea;  --wiki-on-accent:    #ffffff;
+
+    /* LMS — blue (module-colors.php 'lms') */
+    --lms-accent:       #2563eb;  --lms-accent-hover:  #1d4ed8;
+    --lms-accent-soft:  #eff6ff;  --lms-on-accent:     #ffffff;
+
+    /* Watchtower — slate (module-colors.php 'watchtower') */
+    --wt-accent:        #1e293b;  --wt-accent-hover:   #0f172a;
+    --wt-accent-soft:   #f1f5f9;  --wt-on-accent:      #ffffff;
+
+    /* System — blue-grey (module-colors.php 'system') */
+    --sys-accent:       #546e7a;  --sys-accent-hover:  #37474f;
+    --sys-accent-soft:  #eceff1;  --sys-on-accent:     #ffffff;
 
     /* Messaging-channel (WhatsApp etc.) composer — green-tinted surface */
     --channel-bg:        #f7fdf9;  --channel-border: #d6e9d8;
@@ -83,13 +207,118 @@
     --on-accent:     #ffffff;
 
     /* Status / semantic pairs — dark surfaces with light readable text */
-    --success-bg:     #16331f;  --success-text: #86efac;  --success-accent: #22c55e;
-    --danger-bg:      #3a1a1d;  --danger-text:  #fca5a5;  --danger-accent:  #f87171;
+    --success-bg:     #16331f;  --success-text: #86efac;  --success-accent: #22c55e;  --success-border: #2f6b46;
+    --danger-bg:      #3a1a1d;  --danger-text:  #fca5a5;  --danger-accent:  #f87171;  --danger-border:  #6b2b30;
     --warning-bg:     #3a2e12;  --warning-text: #fcd34d;  --warning-border: #5a4a1e;
+    /* ⚠️ Dark mode is NOT the light values darkened: the background has to be
+       darker than the page and the text lighter, so the pair inverts rather than
+       shifting. That is exactly why an author must never pick this colour. */
+    --info-bg:        #12293a;  --info-text:    #7dd3fc;  --info-accent:    #38bdf8;  --info-border:    #24506b;
 
     /* Problem Management (purple) — dark surfaces with light readable text */
     --problem-bg:        #241a30;  --problem-border: #3a2c4d;
     --problem-text:      #c9a9e9;  --problem-badge-bg: #2e2440;
+
+    /* Knowledge module (purple) — accent nudged lighter to read on dark */
+    --kb-accent:       #a98cd8;  --kb-accent-hover: #bda3e4;
+    --kb-accent-soft:  #2a2238;  --kb-on-accent:    #ffffff;
+
+    /* Change Management module (teal) — accent nudged lighter to read on dark */
+    --cm-accent:       #26a69a;  --cm-accent-hover: #4db6ac;
+    --cm-accent-soft:  #16302d;  --cm-on-accent:    #ffffff;
+
+    /* Problem Management module (red) — accent nudged lighter to read on dark */
+    --pm-accent:       #f87171;  --pm-accent-hover: #fca5a5;
+    --pm-accent-soft:  #3a1a1d;  --pm-on-accent:    #ffffff;
+
+    /* Calendar module (orange) — accent nudged lighter to read on dark */
+    --cal-accent:      #ff9d4d;  --cal-accent-hover: #ffb375;
+    --cal-accent-soft: #3a2a17;  --cal-on-accent:    #ffffff;
+
+    /* Morning Checks module (cyan) — accent nudged lighter to read on dark */
+    --mc-accent:       #26c6da;  --mc-accent-hover: #4dd0e1;
+    --mc-accent-soft:  #14343a;  --mc-on-accent:    #ffffff;
+
+    /* Reporting module (rust-orange) — accent nudged lighter to read on dark */
+    --rep-accent:      #e8703a;  --rep-accent-hover: #f08a5a;
+    --rep-accent-soft: #3a2416;  --rep-on-accent:    #ffffff;
+
+    /* Software module (indigo) — accent nudged lighter to read on dark */
+    --sw-accent:       #7986cb;  --sw-accent-hover: #9fa8da;
+    --sw-accent-soft:  #262b45;  --sw-on-accent:    #ffffff;
+
+    /* Forms module (teal) — accent nudged lighter to read on dark */
+    --forms-accent:      #26a69a;  --forms-accent-hover: #4db6ac;
+    --forms-accent-soft: #16302d;  --forms-on-accent:    #ffffff;
+
+    /* CMDB module (pink/magenta) — accent nudged lighter to read on dark */
+    --cmdb-accent:      #ec4899;  --cmdb-accent-hover: #f472b6;
+    --cmdb-accent-soft: #3a1826;  --cmdb-on-accent:    #ffffff;
+
+    /* Tasks module (violet) — accent nudged lighter to read on dark */
+    --tsk-accent:      #a78bfa;  --tsk-accent-hover: #c4b5fd;
+    --tsk-accent-soft: #2a2145;  --tsk-on-accent:    #ffffff;
+
+    /* Projects module (coral to violet) - lifted to read on dark */
+    --prj-accent:      #fb7185;  --prj-accent-hover: #fda4af;
+    --prj-accent-2:    #a78bfa;
+    --prj-accent-soft: #3a1622;  --prj-on-accent:    #ffffff;
+    --prj-gradient:    linear-gradient(135deg, #e11d48, #6d28d9);
+
+    /* Starters & leavers (golden brown) - lifted to read on dark */
+    --jml-accent:      #ca8a04;  --jml-accent-hover: #eab308;
+    --jml-accent-soft: #3a2a06;  --jml-on-accent:    #ffffff;
+
+    /* Contracts module (amber) — accent nudged lighter to read on dark */
+    --con-accent:      #fbbf24;  --con-accent-hover: #fcd34d;
+    --con-accent-soft: #3a2e12;  --con-on-accent:    #ffffff;
+
+    /* Domains module (lime-olive) — accent nudged lighter to read on dark.
+       Bright lime cannot carry white text, so on-accent flips to near-black. */
+    --dom-accent:      #84cc16;  --dom-accent-hover: #a3e635;
+    --dom-accent-soft: #1f2a12;  --dom-on-accent:    #111111;
+
+    /* Files module (navy) - lifted to a mid blue so it reads on dark. */
+    --fil-accent:      #60a5fa;  --fil-accent-hover: #93c5fd;
+    --fil-accent-soft: #172554;  --fil-on-accent:    #0b1220;
+
+    /* Service Status module (emerald) — accent nudged lighter to read on dark */
+    /* War room, dark: lifted so the amber reads against a dark surface. */
+    --war-room-accent:      #fb923c;  --war-room-accent-hover: #fdba74;
+    --war-room-accent-soft: #3a1d0b;  --war-room-on-accent:    #1a1a1a;
+
+    --ss-accent:       #34d399;  --ss-accent-hover:  #6ee7b7;
+    --ss-accent-soft:  #0f2e24;  --ss-on-accent:     #ffffff;
+
+    /* Network Mapper module (cyan) — accent nudged lighter to read on dark */
+    --nm-accent:       #22d3ee;  --nm-accent-hover:  #67e8f9;
+    --nm-accent-soft:  #0d2b30;  --nm-on-accent:     #ffffff;
+
+    /* Workflows module (amber) — accent nudged lighter to read on dark */
+    --wf-accent:       #fbbf24;  --wf-accent-hover:  #fcd34d;
+    --wf-accent-soft:  #3a2e12;  --wf-on-accent:     #ffffff;
+
+    /* Process Mapper module (indigo) — accent nudged lighter to read on dark */
+    --pmap-accent:      #818cf8;  --pmap-accent-hover: #a5b4fc;
+    --pmap-accent-soft: #262a45;  --pmap-on-accent:    #ffffff;
+
+    /* System Wiki — red, lifted so it reads on a dark surface */
+    --wiki-accent:      #ef5350;  --wiki-accent-hover: #f77c7a;
+    --wiki-accent-soft: #3a1d1c;  --wiki-on-accent:    #ffffff;
+
+    /* LMS — blue, lifted */
+    --lms-accent:       #60a5fa;  --lms-accent-hover:  #93c5fd;
+    --lms-accent-soft:  #1b2a45;  --lms-on-accent:     #ffffff;
+
+    /* Watchtower — slate. The registered brand (#1e293b) is near-black: fine as a
+       header gradient, invisible as an accent on a dark surface. So dark lifts it
+       to a readable mid-slate rather than nudging the brand value. */
+    --wt-accent:        #94a3b8;  --wt-accent-hover:   #cbd5e1;
+    --wt-accent-soft:   #22293a;  --wt-on-accent:      #0f172a;
+
+    /* System — blue-grey, lifted */
+    --sys-accent:       #90a4ae;  --sys-accent-hover:  #b0bec5;
+    --sys-accent-soft:  #263238;  --sys-on-accent:     #263238;
 
     /* Messaging-channel (WhatsApp etc.) composer — dark green-tinted surface */
     --channel-bg:        #15231b;  --channel-border: #2b3d31;

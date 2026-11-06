@@ -3,7 +3,8 @@
  * External API: Device Manager Ingest
  *
  * Accepts a JSON POST with device manager data from the PowerShell
- * collection script and syncs the asset_devices table (delete + reinsert).
+ * collection script and syncs the asset_devices table through
+ * AssetInventoryService::agentReport(), which also records the outcome.
  *
  * Auth: Authorization header with API key (validated against apikeys table).
  */
@@ -42,20 +43,34 @@ if (!$authKey) {
     exit;
 }
 
+$keyTenant = null;  // multi-tenancy: the company this agent's assets belong to
 try {
-    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM apikeys WHERE apikey = ? AND active = 1");
-    $stmt->execute([$authKey]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$row || (int)$row['cnt'] === 0) {
+    try {
+        $stmt = $conn->prepare("SELECT tenant_id FROM apikeys WHERE apikey = ? AND active = 1");
+        $stmt->execute([$authKey]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        $stmt = $conn->prepare("SELECT id FROM apikeys WHERE apikey = ? AND active = 1");
+        $stmt->execute([$authKey]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    if (!$row) {
         http_response_code(403);
         echo json_encode(['error' => 'Invalid authorization key']);
         exit;
+    }
+    if (array_key_exists('tenant_id', $row) && $row['tenant_id'] !== null) {
+        $keyTenant = (int)$row['tenant_id'];   // NULL stays the Default company
     }
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to validate API key']);
     exit;
 }
+
+// GH #217: an agent's report is refused while its module is switched off for the
+// install - the device is not recorded, and nothing is queued to arrive later.
+requireModuleOnJson($conn, 'assets');
 
 // --------------------------------------------------
 // Parse JSON payload (with UTF-8 normalization)
@@ -89,8 +104,10 @@ $hostname = trim($data['hostname']);
 // Look up asset by hostname
 // --------------------------------------------------
 try {
-    $stmt = $conn->prepare("SELECT id FROM assets WHERE hostname = ?");
-    $stmt->execute([$hostname]);
+    // Scoped to this key's company (NULL-safe match) so a device report only
+    // ever attaches to that company's asset of the same hostname.
+    $stmt = $conn->prepare("SELECT id FROM assets WHERE hostname = ? AND tenant_id <=> ?");
+    $stmt->execute([$hostname, $keyTenant]);
     $asset = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$asset) {
@@ -100,6 +117,13 @@ try {
     }
 
     $assetId = (int)$asset['id'];
+    // A retired asset (it has left the estate) keeps the devices it left with.
+    require_once __DIR__ . '/../../../../includes/asset_retirement.php';
+    if (assetIsRetired($conn, $assetId)) {
+        echo json_encode(['success' => true, 'asset_id' => $assetId, 'retired' => true,
+                          'message' => 'This asset is retired in FreeITSM: the device list was not applied.']);
+        exit;
+    }
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to look up asset']);
@@ -107,48 +131,42 @@ try {
 }
 
 // --------------------------------------------------
-// Sync devices (delete + reinsert)
+// Sync devices - through the one inventory implementation (GH #200 Part B)
 // --------------------------------------------------
-$devicesSynced = 0;
+//
+// 🔴 AN EMPTY LIST FROM AN OLD AGENT IS "I DID NOT FIND OUT", NOT "THERE ARE NO DEVICES".
+// The wipe used to run unconditionally, so a report carrying no devices emptied the table
+// - 226 rows gone on a WMI blip, silently. An agent that sends report_version 2 says
+// whether it collected (an empty list is then real) or failed (collection_failures);
+// anything older keeps the list, and says so in devices_left_unchanged.
+require_once __DIR__ . '/../../../../includes/services/asset_inventory.php';
+
+$v2 = (int)($data['report_version'] ?? 1) >= 2;
+$failures = is_array($data['collection_failures'] ?? null) ? $data['collection_failures'] : [];
 
 try {
-    $conn->prepare("DELETE FROM asset_devices WHERE asset_id = ?")->execute([$assetId]);
-
-    if (!empty($data['devices']) && is_array($data['devices'])) {
-        $stmt = $conn->prepare("
-            INSERT INTO asset_devices (asset_id, device_class, device_name, status, manufacturer, driver_version, driver_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        foreach ($data['devices'] as $device) {
-            $deviceName = isset($device['device_name']) ? trim($device['device_name']) : '';
-            if ($deviceName === '') continue;
-
-            $stmt->execute([
-                $assetId,
-                isset($device['device_class']) ? mb_substr(trim($device['device_class']), 0, 100) : null,
-                mb_substr($deviceName, 0, 255),
-                isset($device['status']) ? mb_substr(trim($device['status']), 0, 20) : null,
-                isset($device['manufacturer']) && trim($device['manufacturer']) !== '' ? mb_substr(trim($device['manufacturer']), 0, 255) : null,
-                isset($device['driver_version']) && trim($device['driver_version']) !== '' ? mb_substr(trim($device['driver_version']), 0, 50) : null,
-                isset($device['driver_date']) && trim($device['driver_date']) !== '' ? $device['driver_date'] : null
-            ]);
-            $devicesSynced++;
-        }
-    }
-} catch (PDOException $e) {
+    $sections = AssetInventoryService::agentReport($conn, $assetId, [
+        'devices' => AssetInventoryService::agentState($data['devices'] ?? null, $v2, $failures['devices'] ?? null),
+    ]);
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to sync devices', 'detail' => $e->getMessage()]);
     exit;
 }
 
-// --------------------------------------------------
-// Success response
-// --------------------------------------------------
+$devices = $sections['devices'];
+$leftUnchanged = $devices['result'] !== 'applied';
+
 echo json_encode([
-    'status'        => 'ok',
+    'status'        => $devices['result'] === 'failed' ? 'partial' : 'ok',
     'hostname'      => $hostname,
     'asset_id'      => $assetId,
-    'devices_synced' => $devicesSynced,
-    'message'       => 'Device manager data synchronized'
+    'devices_synced' => $leftUnchanged ? 0 : (int)$devices['added'],
+    // Said out loud, so "0 devices synced" cannot be mistaken for a machine
+    // that genuinely has none. The existing device list was kept.
+    'devices_left_unchanged' => $leftUnchanged,
+    'sections'      => $sections,
+    'message'       => $devices['result'] === 'failed'
+        ? 'The agent could not collect Device Manager - the existing device list was left unchanged'
+        : ($leftUnchanged ? 'No devices in the report - the existing device list was left unchanged' : 'Device manager data synchronized')
 ]);

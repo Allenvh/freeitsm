@@ -34,53 +34,33 @@ if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
     exit;
 }
 
-$tmp        = $_FILES['file']['tmp_name'];
-$origName   = $_FILES['file']['name'] ?? 'recording';
-$size       = (int)$_FILES['file']['size'];
-$mime       = $_FILES['file']['type'] ?? '';
 $duration   = isset($_POST['duration_seconds']) ? (int)$_POST['duration_seconds'] : null;
 $hasAudio   = !empty($_POST['has_audio']) ? 1 : 0;
 
-// Whitelist MIME types — only the two MediaRecorder can produce
-$allowedMimes = ['video/mp4', 'video/webm'];
-if (!in_array($mime, $allowedMimes, true)) {
-    // Some browsers omit the codec param; sniff the first few bytes as a fallback
-    $first = file_get_contents($tmp, false, null, 0, 16);
-    if (strpos($first, 'ftyp') !== false) {
-        $mime = 'video/mp4';
-    } elseif (strpos($first, "\x1A\x45\xDF\xA3") === 0) {
-        $mime = 'video/webm';
-    } else {
-        echo json_encode(['success' => false, 'error' => 'Unsupported file type. Only mp4 and webm recordings are allowed.']);
-        exit;
-    }
-}
-
-// 50MB cap — keeps the on-disk footprint sane and protects against rogue uploads
-$maxBytes = 50 * 1024 * 1024;
-if ($size > $maxBytes) {
-    echo json_encode(['success' => false, 'error' => 'Recording too large (max 50MB)']);
-    exit;
-}
-
-$ext = $mime === 'video/mp4' ? 'mp4' : 'webm';
-$uuid = bin2hex(random_bytes(16));
-$storedName = $uuid . '.' . $ext;
-
+// 🔴 Through includes/uploads.php, like every other upload. This endpoint used to
+// trust the browser's declared type outright - video/mp4 meant no check at all -
+// or accept any file with "ftyp" somewhere in its first 16 bytes, with its own
+// size rule and no refusal of an empty file. uploadStoreFile() checks the
+// extension, then the CONTENT against it (fails closed), and stores under a random
+// name in a folder it protects. The recorder names its file
+// screen-recording-<stamp>.mp4|webm, so genuine recordings pass unchanged.
+// Reported privately, October 2026.
+require_once '../../includes/uploads.php';
 $appRoot = realpath(__DIR__ . '/../../');
 $pendingDir = $appRoot . DIRECTORY_SEPARATOR . 'recordings' . DIRECTORY_SEPARATOR . 'pending';
-if (!is_dir($pendingDir)) {
-    if (!mkdir($pendingDir, 0755, true) && !is_dir($pendingDir)) {
-        echo json_encode(['success' => false, 'error' => 'Server storage unavailable']);
-        exit;
-    }
-}
-
-$destPath = $pendingDir . DIRECTORY_SEPARATOR . $storedName;
-if (!move_uploaded_file($tmp, $destPath)) {
-    echo json_encode(['success' => false, 'error' => 'Failed to store recording']);
+try {
+    $stored = uploadStoreFile($_FILES['file'], $pendingDir,
+        ['mp4' => UPLOAD_TYPES_VIDEO['mp4'], 'webm' => UPLOAD_TYPES_VIDEO['webm']],
+        50 * 1024 * 1024);   // 50MB: keeps the on-disk footprint sane
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     exit;
 }
+$storedName = $stored['stored_name'];
+$origName   = uploadCleanName($stored['original_name']);
+$size       = (int)$stored['size'];
+// What the <video> element needs to hear, whichever of each type's names finfo used.
+$mime       = substr($storedName, -4) === '.mp4' ? 'video/mp4' : 'video/webm';
 
 // Store the relative path so it stays portable across deployments
 $relativePath = 'recordings/pending/' . $storedName;

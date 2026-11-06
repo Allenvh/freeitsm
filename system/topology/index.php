@@ -11,58 +11,77 @@ session_start();
 require_once '../../config.php';
 require_once '../../includes/i18n.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/theme.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'topology';
+require_once __DIR__ . '/../includes/page_gate.php';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'system'];
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . $path_prefix . 'login.php');
+    header('Location: ' . $path_prefix . 'auth/login.php');
     exit;
 }
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - Topology</title>
-    <link rel="stylesheet" href="<?php echo $path_prefix; ?>assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('system', 'Topology')); ?></title>
+    <link rel="stylesheet" href="<?php echo $path_prefix; ?>assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="<?php echo $path_prefix; ?>assets/css/inbox.css?v=79">
     <style>
-        .topo-wrap { height: calc(100vh - 48px); overflow-y: auto; background: #f5f7fa; padding: 24px 28px 60px; }
+        body {
+            /* System is the FIRST module whose DARK accent is a LIGHT colour (#90a4ae).
+               inbox.css renders .btn-primary/.add-btn as background:var(--accent) +
+               color:var(--on-accent) — and the global --on-accent stays WHITE in dark.
+               So pinning --accent alone would put white text on a light button. Pin
+               --on-accent too: it flips to near-black in dark. */
+            --accent: var(--sys-accent, #546e7a);
+            --accent-hover: var(--sys-accent-hover, #37474f);
+            --on-accent: var(--sys-on-accent, #fff);
+        }
+
+        .topo-wrap { height: calc(100vh - 48px); overflow-y: auto; background: var(--app-bg, #f5f7fa); padding: 24px 28px 60px; }
         .topo-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
-        .topo-head h2 { font-size: 22px; color: #333; margin: 0; }
-        .topo-sub { font-size: 13px; color: #888; margin: 0 0 16px; }
+        .topo-head h2 { font-size: 22px; color: var(--text, #333); margin: 0; }
+        .topo-sub { font-size: 13px; color: var(--text-dim, #888); margin: 0 0 16px; }
 
         .topo-totals { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-        .topo-stat { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #555; }
-        .topo-stat strong { color: #1f2330; font-size: 16px; margin-right: 5px; }
+        .topo-stat { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: var(--text-muted, #555); }
+        .topo-stat strong { color: var(--text, #1f2330); font-size: 16px; margin-right: 5px; }
 
         .topo-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
         .topo-search { position: relative; flex: 1; max-width: 320px; }
-        .topo-search input { width: 100%; padding: 8px 12px; border: 1px solid #d6dde3; border-radius: 7px; font-size: 13px; box-sizing: border-box; }
-        .topo-search input:focus { outline: none; border-color: #546e7a; }
-        .topo-btn { background: #fff; border: 1px solid #d6dde3; border-radius: 7px; padding: 8px 12px; font-size: 12.5px; color: #555; cursor: pointer; }
-        .topo-btn:hover { background: #f3f4f6; }
+        .topo-search input { width: 100%; padding: 8px 12px; border: 1px solid var(--border, #d6dde3); border-radius: 7px; font-size: 13px; box-sizing: border-box; background: var(--surface, #fff); color: var(--text, #333); }
+        .topo-search input::placeholder { color: var(--text-faint, #999); }
+        .topo-search input:focus { outline: none; border-color: var(--sys-accent, #546e7a); }
+        .topo-btn { background: var(--surface, #fff); border: 1px solid var(--border, #d6dde3); border-radius: 7px; padding: 8px 12px; font-size: 12.5px; color: var(--text-muted, #555); cursor: pointer; }
+        .topo-btn:hover { background: var(--surface-hover, #f3f4f6); }
 
-        .tree { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 4px; }
-        .tree-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: default; font-size: 13.5px; color: #333; }
+        .tree { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 8px 4px; }
+        .tree-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: default; font-size: 13.5px; color: var(--text, #333); }
         .tree-row.expandable { cursor: pointer; }
-        .tree-row.expandable:hover { background: #f5f7fa; }
-        .tree-caret { width: 14px; flex-shrink: 0; color: #98a2b3; font-size: 11px; transition: transform 0.12s; display: inline-block; text-align: center; }
+        .tree-row.expandable:hover { background: var(--surface-hover, #f5f7fa); }
+        .tree-caret { width: 14px; flex-shrink: 0; color: var(--text-faint, #98a2b3); font-size: 11px; transition: transform 0.12s; display: inline-block; text-align: center; }
         .tree-row.open > .tree-caret { transform: rotate(90deg); }
         .tree-caret.empty { visibility: hidden; }
-        .tree-ico { width: 16px; height: 16px; flex-shrink: 0; color: #6b7280; }
-        .tree-label { color: #1f2330; }
-        .tree-label.muted { color: #98a2b3; font-style: italic; }
+        .tree-ico { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-muted, #6b7280); }
+        .tree-label { color: var(--text, #1f2330); }
+        .tree-label.muted { color: var(--text-faint, #98a2b3); font-style: italic; }
         .tree-count { background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 600; border-radius: 10px; padding: 1px 8px; }
         .tree-link { margin-left: 6px; font-size: 11.5px; color: #6366f1; text-decoration: none; }
         .tree-link:hover { text-decoration: underline; }
-        .tree-children { display: none; margin-left: 20px; border-left: 1px solid #eef0f4; padding-left: 4px; }
+        .tree-children { display: none; margin-left: 20px; border-left: 1px solid var(--border-soft, #eef0f4); padding-left: 4px; }
         .tree-children.open { display: block; }
 
+        /* Status tags — data. Same meaning in both modes, so they stay hardcoded. */
         .tag { font-size: 10.5px; font-weight: 600; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
         .tag.green { background: #e8f5e9; color: #2e7d32; }
         .tag.amber { background: #fff8e1; color: #8a5a00; }
@@ -70,11 +89,20 @@ if (!isset($_SESSION['analyst_id'])) {
         .tag.blue  { background: #e3f2fd; color: #1565c0; }
         .tag.default { background: #ede7f6; color: #5e35b1; }
 
-        .topo-loading, .topo-error { color: #888; font-size: 13px; padding: 20px; }
+        .topo-loading, .topo-error { color: var(--text-dim, #888); font-size: 13px; padding: 20px; }
         .topo-error { color: #c0392b; }
+
+        /* ---- Dark overrides: pale washes / indigo accents that would glow ---- */
+        [data-theme-mode="dark"] .tree-count { background: #262a45; color: #a5b4fc; }
+        [data-theme-mode="dark"] .tree-link { color: #a5b4fc; }
+        [data-theme-mode="dark"] .topo-error { color: #fca5a5; }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="<?php echo $path_prefix; ?>assets/js/tz.js?v=5"></script>
 </head>
-<body>
+<body data-mobile-module="system" data-mobile-page="topology">
     <?php include '../includes/header.php'; ?>
 
     <div class="topo-wrap">
@@ -192,7 +220,7 @@ if (!isset($_SESSION['analyst_id'])) {
         // Analysts with access (restricted analysts granted to this company)
         cats.push(node('users', 'Analysts (restricted, with access)', {
             count: c.analysts.length,
-            link: { href: BASE + 'tickets/settings/', text: 'manage' },
+            link: { href: BASE + 'system/analysts/', text: 'manage' },
             children: c.analysts.length
                 ? c.analysts.map(a => leaf('user', esc(a.name)))
                 : [leaf('user', '<span class="tree-label muted">none restricted here — all-access analysts can work in every company (see Global)</span>')]
@@ -231,7 +259,7 @@ if (!isset($_SESSION['analyst_id'])) {
         }));
         kids.push(node('users', 'All-access analysts', {
             count: g.all_access_analysts.length,
-            link: { href: BASE + 'tickets/settings/', text: 'manage' },
+            link: { href: BASE + 'system/analysts/', text: 'manage' },
             children: g.all_access_analysts.length ? g.all_access_analysts.map(a => leaf('user', esc(a.name))) : [leaf('user', '<span class="tree-label muted">none</span>')]
         }));
         return node('globe', '<strong>Global / shared</strong> <span class="tree-label muted">— serves every company</span>', { open: true, children: kids });
@@ -286,5 +314,6 @@ if (!isset($_SESSION['analyst_id'])) {
 
     load();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

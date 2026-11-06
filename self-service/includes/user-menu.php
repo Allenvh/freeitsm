@@ -11,6 +11,29 @@ $_um_initials = strtoupper(substr($_um_parts[0], 0, 1));
 if (count($_um_parts) > 1) {
     $_um_initials .= strtoupper(substr(end($_um_parts), 0, 1));
 }
+
+/**
+ * Does this portal user also have an active analyst account? If so the menu
+ * offers a way back to the analyst console (discussion #155, contributed by
+ * Santhosh Srinivasan). The mirror of the portal link in includes/waffle-menu.php
+ * (#81). Matching on email is fine here: it only shows a link, and signing in
+ * on the other side still goes through that side's own login.
+ */
+$__hasAnalystAccount = !empty($_SESSION['analyst_id']);
+if (!$__hasAnalystAccount && !empty($ss_user_email)) {
+    try {
+        if (!function_exists('connectToDatabase')) {
+            require_once __DIR__ . '/../../includes/functions.php';
+        }
+        $__aa = connectToDatabase()->prepare(
+            "SELECT 1 FROM analysts WHERE LOWER(email) = LOWER(?) AND is_active = 1 LIMIT 1"
+        );
+        $__aa->execute([$ss_user_email]);
+        $__hasAnalystAccount = (bool)$__aa->fetchColumn();
+    } catch (Throwable) {
+        $__hasAnalystAccount = false;
+    }
+}
 ?>
 <style>
     /* Avatar & User Menu */
@@ -47,7 +70,7 @@ if (count($_um_parts) > 1) {
         top: 100%;
         right: 0;
         margin-top: 8px;
-        background: #fff;
+        background: var(--surface, #fff);
         border-radius: 8px;
         box-shadow: 0 6px 30px rgba(0,0,0,0.25);
         min-width: 240px;
@@ -59,16 +82,20 @@ if (count($_um_parts) > 1) {
 
     .ss-menu-header {
         padding: 16px;
-        border-bottom: 1px solid #eee;
+        border-bottom: 1px solid var(--border-soft, #eee);
     }
+    /* 🔴 These three had to move WITH the surface above them, not after it.
+       Theming `.ss-user-menu`'s background and leaving the text at #333 is
+       dark-on-dark — a worse bug than the one being fixed, and invisible to
+       anyone testing in light mode. */
     .ss-menu-name {
         font-size: 14px;
         font-weight: 600;
-        color: #333;
+        color: var(--text, #333);
     }
     .ss-menu-email {
         font-size: 12px;
-        color: #999;
+        color: var(--text-dim, #999);
         margin-top: 2px;
     }
 
@@ -79,18 +106,18 @@ if (count($_um_parts) > 1) {
         padding: 11px 16px;
         cursor: pointer;
         font-size: 13px;
-        color: #333;
+        color: var(--text, #333);
         transition: background 0.15s;
         border: none;
         background: none;
         width: 100%;
         text-align: left;
     }
-    .ss-menu-item:hover { background: #f5f5f5; }
-    .ss-menu-item svg { width: 16px; height: 16px; color: #666; flex-shrink: 0; }
-    .ss-menu-divider { height: 1px; background: #eee; margin: 0; }
-    .ss-menu-item.logout-item { color: #d32f2f; }
-    .ss-menu-item.logout-item svg { color: #d32f2f; }
+    .ss-menu-item:hover { background: var(--surface-hover, #f5f5f5); }
+    .ss-menu-item svg { width: 16px; height: 16px; color: var(--text-muted, #666); flex-shrink: 0; }
+    .ss-menu-divider { height: 1px; background: var(--border-soft, #eee); margin: 0; }
+    .ss-menu-item.logout-item { color: var(--danger-accent, #d32f2f); }
+    .ss-menu-item.logout-item svg { color: var(--danger-accent, #d32f2f); }
 
     .ss-mfa-badge {
         margin-left: auto;
@@ -99,8 +126,8 @@ if (count($_um_parts) > 1) {
         padding: 2px 6px;
         border-radius: 3px;
     }
-    .ss-mfa-badge.enabled { background: #e8f5e9; color: #2e7d32; }
-    .ss-mfa-badge.disabled { background: #f5f5f5; color: #999; }
+    .ss-mfa-badge.enabled { background: var(--success-bg, #e8f5e9); color: var(--success-text, #2e7d32); }
+    .ss-mfa-badge.disabled { background: var(--surface-hover, #f5f5f5); color: var(--text-dim, #999); }
 
     /* Account modals */
     .ss-modal {
@@ -114,7 +141,7 @@ if (count($_um_parts) > 1) {
     }
     .ss-modal.active { display: flex; }
     .ss-modal-box {
-        background: #fff;
+        background: var(--surface, #fff);
         border-radius: 8px;
         width: 90%;
         max-width: 460px;
@@ -124,10 +151,10 @@ if (count($_um_parts) > 1) {
     }
     .ss-modal-header {
         padding: 20px 24px;
-        border-bottom: 1px solid #e0e0e0;
+        border-bottom: 1px solid var(--border, #e0e0e0);
         font-size: 18px;
         font-weight: 600;
-        color: #333;
+        color: var(--text, #333);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -137,15 +164,46 @@ if (count($_um_parts) > 1) {
         border: none;
         cursor: pointer;
         padding: 4px;
-        color: #999;
+        color: var(--text-dim, #999);
         font-size: 20px;
         line-height: 1;
     }
-    .ss-modal-close:hover { color: #333; }
+    .ss-modal-close:hover { color: var(--text, #333); }
     .ss-modal-body { padding: 24px; }
+
+    /* Appearance picker — the portal's equivalent of the analyst waffle-menu
+       palette swatches. Swatch colours are literal on purpose: they must show
+       what each palette LOOKS like, so they can't come from the active theme. */
+    .ss-theme-picker { display: flex; gap: 10px; flex-wrap: wrap; }
+    .ss-theme-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border: 1px solid var(--border, #d1d5db);
+        border-radius: 6px;
+        background: var(--surface, #fff);
+        color: var(--text, #333);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .ss-theme-option:hover { border-color: var(--ss-accent, #10b981); }
+    .ss-theme-option.selected {
+        border-color: var(--ss-accent, #10b981);
+        box-shadow: 0 0 0 2px var(--ss-accent-soft, #d1fae5);
+    }
+    .ss-theme-swatch {
+        width: 18px; height: 18px; border-radius: 4px;
+        border: 1px solid rgba(0,0,0,.15);
+        display: inline-block;
+    }
+    .ss-theme-swatch-default { background: linear-gradient(135deg, #ffffff 50%, #f3f4f6 50%); }
+    .ss-theme-swatch-dark    { background: linear-gradient(135deg, #1f2937 50%, #111827 50%); }
     .ss-modal-footer {
         padding: 16px 24px;
-        border-top: 1px solid #e0e0e0;
+        border-top: 1px solid var(--border, #e0e0e0);
         display: flex;
         gap: 10px;
         justify-content: flex-end;
@@ -156,21 +214,33 @@ if (count($_um_parts) > 1) {
         display: block;
         margin-bottom: 6px;
         font-weight: 500;
-        color: #333;
+        color: var(--text, #333);
         font-size: 13px;
     }
     .ss-form-input {
         width: 100%;
         padding: 10px 12px;
-        border: 1px solid #ddd;
+        border: 1px solid var(--border, #ddd);
         border-radius: 4px;
         font-size: 13px;
         font-family: inherit;
+        background: var(--surface, #fff);
+        color: var(--text, #333);
     }
-    .ss-form-input:focus { outline: none; border-color: #0078d4; }
+    .ss-form-input:focus { outline: none; border-color: var(--accent, #0078d4); }
+    /* A locked field must LOOK locked. Without this a directory-owned detail
+       rendered exactly like an editable one - most visibly in the dark theme -
+       and the only clue was the note above it. */
+    .ss-form-input:disabled {
+        background: var(--surface-2, #f0f0f0);
+        color: var(--text-muted, #777);
+        border-style: dashed;
+        cursor: not-allowed;
+        opacity: .75;
+    }
     .ss-form-hint {
         font-size: 11px;
-        color: #999;
+        color: var(--text-dim, #999);
         margin-top: 4px;
     }
 
@@ -185,10 +255,10 @@ if (count($_um_parts) > 1) {
     }
     .ss-btn-primary { background: #0078d4; color: #fff; }
     .ss-btn-primary:hover { background: #005a9e; }
-    .ss-btn-secondary { background: #e0e0e0; color: #333; }
-    .ss-btn-secondary:hover { background: #d0d0d0; }
-    .ss-btn-danger { background: #fff; color: #d32f2f; border: 1px solid #d32f2f; }
-    .ss-btn-danger:hover { background: #ffebee; }
+    .ss-btn-secondary { background: var(--surface-3, #e0e0e0); color: var(--text, #333); border: 1px solid var(--border, #d0d0d0); }
+    .ss-btn-secondary:hover { background: var(--surface-hover, #d0d0d0); }
+    .ss-btn-danger { background: var(--surface, #fff); color: var(--danger-accent, #d32f2f); border: 1px solid var(--danger-accent, #d32f2f); }
+    .ss-btn-danger:hover { background: var(--danger-bg, #ffebee); }
     .ss-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .ss-msg {
@@ -198,8 +268,24 @@ if (count($_um_parts) > 1) {
         margin-bottom: 16px;
         display: none;
     }
-    .ss-msg.success { display: block; background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
-    .ss-msg.error { display: block; background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+    .ss-msg.success { display: block; background: var(--success-bg, #e8f5e9); color: var(--success-text, #2e7d32); border: 1px solid var(--success-border, #c8e6c9); }
+    .ss-msg.error { display: block; background: var(--danger-bg, #ffebee); color: var(--danger-text, #c62828); border: 1px solid var(--danger-border, #ffcdd2); }
+    /* 🔴 The base `.ss-msg` is `display: none`, so a message needs a VARIANT or
+       it is invisible with its text sitting in the DOM. The directory-managed
+       note had no variant: 135 characters of explanation, `offsetHeight: 0`,
+       and four greyed-out boxes with nothing saying why. Worse, the harness
+       that "proved" it visible checked `style.display !== 'none'` — the INLINE
+       style, which is true the instant you clear it, whatever the stylesheet
+       does next. 🔑 Assert the COMPUTED display and a real box height.
+       Tinted like its analyst twin, and not the amber warning palette: nothing
+       is wrong, the details simply belong to the directory. */
+    .ss-msg.info {
+        display: block;
+        background: var(--accent-soft, #e8f4fd);
+        color: var(--text, #333);
+        border: 1px solid var(--border, #e0e0e0);
+        border-left: 3px solid var(--accent, #0078d4);
+    }
 
     /* MFA specific */
     .ss-mfa-status-card {
@@ -207,23 +293,31 @@ if (count($_um_parts) > 1) {
         border-radius: 6px;
         margin-bottom: 16px;
     }
-    .ss-mfa-status-card.enabled { background: #e8f5e9; border: 1px solid #c8e6c9; }
-    .ss-mfa-status-card.not-enabled { background: #f5f5f5; border: 1px solid #e0e0e0; }
-    .ss-mfa-status-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-    .ss-mfa-status-desc { font-size: 12px; color: #666; }
+    /* ⚠️ The MFA modal shares `.ss-modal-box` with the account modal, so
+       theming that box's background made every hardcoded dark colour in here
+       dark-on-dark. These had to be done in the same pass, not left for later. */
+    .ss-mfa-status-card.enabled { background: var(--success-bg, #e8f5e9); border: 1px solid var(--success-border, #c8e6c9); }
+    .ss-mfa-status-card.not-enabled { background: var(--surface-3, #f5f5f5); border: 1px solid var(--border, #e0e0e0); }
+    .ss-mfa-status-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; color: var(--text, #333); }
+    .ss-mfa-status-desc { font-size: 12px; color: var(--text-muted, #666); }
 
+    /* 🔴 The QR code stays on a WHITE plate in both themes, deliberately. A QR
+       is read by a phone camera, and inverting it — or floating dark modules on
+       a dark surface — is how you get a code that will not scan. The white is
+       the quiet zone, not decoration. */
     .ss-qr-container {
         text-align: center;
         padding: 16px;
         background: #fff;
-        border: 1px solid #eee;
+        border: 1px solid var(--border, #eee);
         border-radius: 6px;
         margin-bottom: 16px;
     }
     .ss-qr-container img { image-rendering: pixelated; }
     .ss-secret-display { text-align: center; margin-bottom: 16px; }
     .ss-secret-display code {
-        background: #f5f5f5;
+        background: var(--surface-3, #f5f5f5);
+        color: var(--text, #333);
         padding: 8px 14px;
         border-radius: 4px;
         font-size: 14px;
@@ -231,7 +325,7 @@ if (count($_um_parts) > 1) {
         letter-spacing: 2px;
         user-select: all;
     }
-    .ss-secret-display p { font-size: 11px; color: #999; margin-top: 6px; }
+    .ss-secret-display p { font-size: 11px; color: var(--text-dim, #999); margin-top: 6px; }
     .ss-verify-row { display: flex; gap: 10px; align-items: flex-end; }
     .ss-verify-row .ss-form-group { flex: 1; margin-bottom: 0; }
     .ss-otp-input {
@@ -239,6 +333,17 @@ if (count($_um_parts) > 1) {
         letter-spacing: 6px;
         text-align: center;
         font-family: 'Consolas', monospace;
+    }
+
+    /* ── Phone ──────────────────────────────────────────────────────────────
+     * iOS zooms into any field under 16px and stays zoomed. These live here
+     * rather than in self-service.css because this component's <style> is
+     * included in the BODY, after that stylesheet in the <head> — so a rule
+     * there at equal specificity would lose on document order and do nothing.
+     * The component owns its own styles; this keeps that true on a phone. */
+    @media (max-width: 768px) {
+        .ss-form-input { font-size: 16px; min-height: 44px; }
+        .ss-menu-item  { min-height: 44px; }
     }
 </style>
 
@@ -261,8 +366,20 @@ if (count($_um_parts) > 1) {
             <span><?php echo htmlspecialchars(t('self-service.menu.mfa')); ?></span>
             <span class="ss-mfa-badge disabled" id="ssMfaBadge"><?php echo htmlspecialchars(t('self-service.menu.mfa_off')); ?></span>
         </button>
+        <?php if ($__hasAnalystAccount): ?>
+        <?php /* GH #169: the analyst LOGIN, not "/". "/" sends anyone without an
+                 analyst session to the install's front door (discussion #63), and
+                 on an install whose front door is the portal that reopened the
+                 portal. auth/login.php sends a signed-in analyst on to the console
+                 itself, so this works signed in or not - the same as the analyst
+                 side's link to self-service/. */ ?>
+        <button class="ss-menu-item" onclick="window.open('<?php echo BASE_URL; ?>auth/login.php', '_blank', 'noopener');">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            <span><?php echo htmlspecialchars(t('self-service.menu.analyst_console')); ?></span>
+        </button>
+        <?php endif; ?>
         <div class="ss-menu-divider"></div>
-        <button class="ss-menu-item logout-item" onclick="if(confirm(window.t('self-service.menu.logout_confirm'))) window.location.href='logout.php';">
+        <button class="ss-menu-item logout-item" onclick="ssConfirmLogout()">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             <span><?php echo htmlspecialchars(t('self-service.menu.logout')); ?></span>
         </button>
@@ -284,12 +401,65 @@ if (count($_um_parts) > 1) {
                 <div class="ss-form-hint"><?php echo htmlspecialchars(t('self-service.account.preferred_name_hint')); ?></div>
             </div>
 
+            <?php /* Your own contact details.
+                     The narrowest of the three field lists — see
+                     USER_SELF_EDITABLE_FIELDS in includes/users.php for why
+                     department, employee ID and manager are deliberately absent.
+                     Saved by the SAME button as the preferred name: one Save for
+                     "things about me" reads as one action, and two adjacent Save
+                     buttons invite the reader to wonder which one they need. */ ?>
+            <div id="ssContactBlock">
+                <div class="ss-msg" id="ssManagedNote" style="display:none;"></div>
+
+                <div class="ss-form-group">
+                    <label class="ss-form-label" for="ssJobTitle"><?php echo htmlspecialchars(t('self-service.account.job_title')); ?></label>
+                    <input type="text" class="ss-form-input" id="ssJobTitle" maxlength="150" placeholder="<?php echo htmlspecialchars(t('self-service.account.job_title_placeholder')); ?>" autocomplete="off">
+                </div>
+
+                <div class="ss-form-group">
+                    <label class="ss-form-label" for="ssOffice"><?php echo htmlspecialchars(t('self-service.account.office')); ?></label>
+                    <input type="text" class="ss-form-input" id="ssOffice" maxlength="150" placeholder="<?php echo htmlspecialchars(t('self-service.account.office_placeholder')); ?>" autocomplete="off">
+                    <div class="ss-form-hint"><?php echo htmlspecialchars(t('self-service.account.office_hint')); ?></div>
+                </div>
+
+                <div class="ss-form-group">
+                    <label class="ss-form-label" for="ssPhone"><?php echo htmlspecialchars(t('self-service.account.phone')); ?></label>
+                    <input type="tel" class="ss-form-input" id="ssPhone" maxlength="50" placeholder="<?php echo htmlspecialchars(t('self-service.account.phone_placeholder')); ?>" autocomplete="tel">
+                </div>
+
+                <div class="ss-form-group">
+                    <label class="ss-form-label" for="ssMobile"><?php echo htmlspecialchars(t('self-service.account.mobile')); ?></label>
+                    <input type="tel" class="ss-form-input" id="ssMobile" maxlength="50" placeholder="<?php echo htmlspecialchars(t('self-service.account.mobile_placeholder')); ?>" autocomplete="tel">
+                    <div class="ss-form-hint"><?php echo htmlspecialchars(t('self-service.account.contact_hint')); ?></div>
+                </div>
+            </div>
+
             <div style="margin-bottom:24px;">
                 <button class="ss-btn ss-btn-primary" id="ssNameSaveBtn" onclick="ssSavePreferredName()"><?php echo htmlspecialchars(t('self-service.account.save')); ?></button>
             </div>
 
-            <div style="border-top:1px solid #e0e0e0; padding-top:20px;">
-                <div style="font-size:15px;font-weight:600;color:#333;margin-bottom:16px;"><?php echo htmlspecialchars(t('self-service.account.change_password')); ?></div>
+            <!-- Appearance. Analysts pick a palette from the waffle menu; portal
+                 users have no waffle menu, so their picker lives here. Saves and
+                 applies immediately — no page reload, because the whole portal is
+                 driven by theme tokens on <html data-theme>. -->
+            <div style="border-top:1px solid var(--border, #e0e0e0); padding-top:20px; margin-bottom:24px;">
+                <div style="font-size:15px;font-weight:600;color:var(--text,#333);margin-bottom:12px;">
+                    <?php echo htmlspecialchars(t('self-service.account.appearance')); ?>
+                </div>
+                <div class="ss-theme-picker" id="ssThemePicker">
+                    <?php foreach (Theme::all() as $tid => $meta): ?>
+                    <button type="button" class="ss-theme-option" data-theme-id="<?php echo htmlspecialchars($tid); ?>"
+                            onclick="ssSetTheme(this.dataset.themeId)">
+                        <span class="ss-theme-swatch ss-theme-swatch-<?php echo htmlspecialchars($tid); ?>"></span>
+                        <?php echo htmlspecialchars(t('self-service.account.theme_' . $tid)); ?>
+                    </button>
+                    <?php endforeach; ?>
+                </div>
+                <div class="ss-form-hint"><?php echo htmlspecialchars(t('self-service.account.appearance_hint')); ?></div>
+            </div>
+
+            <div style="border-top:1px solid var(--border, #e0e0e0); padding-top:20px;">
+                <div style="font-size:15px;font-weight:600;color:var(--text,#333);margin-bottom:16px;"><?php echo htmlspecialchars(t('self-service.account.change_password')); ?></div>
                 <div id="ssPwMsg" class="ss-msg"></div>
                 <div class="ss-form-group">
                     <label class="ss-form-label"><?php echo htmlspecialchars(t('self-service.account.current_password')); ?></label>
@@ -338,7 +508,7 @@ const _mfaApi = '../api/myaccount/';
 function _ssEsc(text) {
     const div = document.createElement('div');
     div.textContent = text || '';
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /* --- User Menu --- */
@@ -394,14 +564,88 @@ function ssCloseAccountModal() {
     document.getElementById('ssAccountModal').classList.remove('active');
 }
 
+/* Payload key -> field id for "your own contact details". The server sends the
+   authoritative list in `data.fields`; this only says where each one is drawn. */
+const SS_CONTACT_ELS = {
+    job_title: 'ssJobTitle',
+    office:    'ssOffice',
+    phone:     'ssPhone',
+    mobile:    'ssMobile',
+};
+
+/* Which contact fields this person may change: offered by the administrator
+   (System → Portal profile) and not owned by a directory. Set from the server on
+   every load, never assumed. ⚠️ It starts EMPTY: an unloaded list must not read
+   as "editable", because the user would then type into a form whose Save is
+   going to be refused — or worse, on a future code path, accepted. Pessimistic
+   until the server says otherwise. */
+let ssEditableFields = [];
+
 async function ssLoadProfile() {
+    const note = document.getElementById('ssManagedNote');
     try {
         const resp = await fetch(_ssApi + 'get_profile.php');
         const data = await resp.json();
-        if (data.success) {
-            document.getElementById('ssPreferredName').value = data.preferred_name || '';
+
+        // ⚠️ A failed load must NOT leave an empty, editable, saveable form.
+        // Every field would read as "blank" and Save would write those blanks
+        // over real values the user never saw. Lock it and say so instead.
+        if (!data.success) {
+            ssEditableFields = [];
+            ssSetContactEnabled([]);
+            note.style.display = '';
+            note.className = 'ss-msg error';
+            note.textContent = window.t('self-service.account.load_failed');
+            return;
         }
-    } catch (e) {}
+
+        document.getElementById('ssPreferredName').value = data.preferred_name || '';
+
+        // Drive the form from the server's list: a field the administrator has
+        // switched off (System → Portal profile) is not shown at all, and is
+        // never posted.
+        const offered = Array.isArray(data.fields) ? data.fields : [];
+        const locked  = Array.isArray(data.locked) ? data.locked : [];
+        Object.entries(SS_CONTACT_ELS).forEach(function ([key, id]) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const group = el.closest('.ss-form-group');
+            if (group) group.style.display = offered.includes(key) ? '' : 'none';
+            el.value = offered.includes(key) ? (data[key] || '') : '';
+        });
+        document.getElementById('ssContactBlock').style.display = offered.length ? '' : 'none';
+
+        ssEditableFields = offered.filter(function (k) { return !locked.includes(k); });
+        ssSetContactEnabled(ssEditableFields);
+        if (locked.length) {
+            // ⚠️ `.ss-msg info`, not `.ss-msg`. The base class is display:none.
+            note.className = 'ss-msg info';
+            note.style.display = '';
+            note.textContent = window.t('self-service.account.managed_note');
+        } else if (data.address_book) {
+            // Somebody else's system is being written to - say so before they save.
+            note.className = 'ss-msg info';
+            note.style.display = '';
+            note.textContent = window.t('self-service.account.address_book_note');
+        } else {
+            note.style.display = 'none';
+        }
+    } catch (e) {
+        ssEditableFields = [];
+        ssSetContactEnabled([]);
+        note.style.display = '';
+        note.className = 'ss-msg error';
+        note.textContent = window.t('self-service.account.load_failed');
+    }
+}
+
+/* `disabled` rather than `readonly`: read-only still looks typeable and still
+   submits, and the point is that these values are the directory's to change. */
+function ssSetContactEnabled(editable) {
+    Object.entries(SS_CONTACT_ELS).forEach(function ([key, id]) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !editable.includes(key);
+    });
 }
 
 function ssShowAcctMsg(msg, type) {
@@ -410,20 +654,80 @@ function ssShowAcctMsg(msg, type) {
     el.textContent = msg;
 }
 
+/**
+ * Switch colour palette. Applies instantly by swapping the attributes on <html>
+ * — the whole portal is driven by theme tokens, so nothing needs reloading —
+ * then persists to the user record so it sticks on the next visit.
+ */
+async function ssSetTheme(themeId) {
+    const modes = { 'default': 'light', 'dark': 'dark' };
+    document.documentElement.setAttribute('data-theme', themeId);
+    document.documentElement.setAttribute('data-theme-mode', modes[themeId] || 'light');
+    ssMarkSelectedTheme(themeId);
+
+    try {
+        await fetch('../api/self-service/save_theme.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theme: themeId })
+        });
+    } catch (e) {
+        // The visual change already happened; a failed save just means it won't
+        // persist. Not worth an error banner over.
+        console.warn('Could not save theme preference', e);
+    }
+}
+
+function ssMarkSelectedTheme(themeId) {
+    document.querySelectorAll('.ss-theme-option').forEach(function (btn) {
+        btn.classList.toggle('selected', btn.dataset.themeId === themeId);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    ssMarkSelectedTheme(document.documentElement.getAttribute('data-theme') || 'default');
+});
+
 async function ssSavePreferredName() {
     const btn = document.getElementById('ssNameSaveBtn');
     btn.disabled = true;
     document.getElementById('ssAcctMsg').className = 'ss-msg';
 
+    const payload = { preferred_name: document.getElementById('ssPreferredName').value.trim() };
+
+    // ⚠️ Only the fields this person may change are posted. update_profile.php
+    // refuses the whole save if a body mentions a locked or switched-off one,
+    // so posting them would turn "I changed my preferred name" into an error
+    // about a job title — the preferred name must stay editable for everybody.
+    ssEditableFields.forEach(function (key) {
+        const el = document.getElementById(SS_CONTACT_ELS[key]);
+        if (el) payload[key] = el.value.trim();
+    });
+
     try {
         const resp = await fetch(_ssApi + 'update_profile.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ preferred_name: document.getElementById('ssPreferredName').value.trim() })
+            body: JSON.stringify(payload)
         });
         const data = await resp.json();
         if (data.success) {
-            ssShowAcctMsg(window.t('self-service.account.name_saved'), 'success');
+            ssShowAcctMsg(window.t('self-service.account.details_saved'), 'success');
+        } else if (data.error === 'managed') {
+            // The record became directory-owned since the form was opened.
+            // Re-read rather than arguing with a stale page.
+            ssShowAcctMsg(window.t('self-service.account.managed_note'), 'error');
+            ssLoadProfile();
+        } else if (data.error === 'not_offered') {
+            ssShowAcctMsg(window.t('self-service.account.not_offered'), 'error');
+            ssLoadProfile();
+        } else if (data.error === 'address_book') {
+            // Nothing was saved, here or there - see update_profile.php.
+            ssShowAcctMsg(window.t(data.conflict
+                ? 'self-service.account.address_book_conflict'
+                : 'self-service.account.address_book_failed'), 'error');
+        } else if (data.error === 'too_long') {
+            ssShowAcctMsg(window.t('self-service.account.too_long', { max: data.max }), 'error');
         } else {
             ssShowAcctMsg(data.error, 'error');
         }
@@ -509,11 +813,11 @@ function ssRenderMfaContent() {
     if (_ssMfaEnabled) {
         container.innerHTML =
             '<div class="ss-mfa-status-card enabled">' +
-                '<div class="ss-mfa-status-title" style="color:#2e7d32;">' + _ssEsc(window.t('self-service.mfa.enabled_title')) + '</div>' +
+                '<div class="ss-mfa-status-title" style="color:var(--success-text,#2e7d32);">' + _ssEsc(window.t('self-service.mfa.enabled_title')) + '</div>' +
                 '<div class="ss-mfa-status-desc">' + _ssEsc(window.t('self-service.mfa.enabled_desc')) + '</div>' +
             '</div>' +
             '<div>' +
-                '<p style="font-size:13px;color:#666;margin:0 0 12px 0;">' + _ssEsc(window.t('self-service.mfa.disable_prompt')) + '</p>' +
+                '<p style="font-size:13px;color:var(--text-muted,#666);margin:0 0 12px 0;">' + _ssEsc(window.t('self-service.mfa.disable_prompt')) + '</p>' +
                 '<div class="ss-form-group">' +
                     '<input type="password" class="ss-form-input" id="ssMfaDisablePw" placeholder="' + _ssEsc(window.t('self-service.mfa.disable_placeholder')) + '">' +
                 '</div>' +
@@ -531,7 +835,7 @@ function ssRenderMfaContent() {
 
 async function ssStartMfaSetup() {
     const container = document.getElementById('ssMfaContent');
-    container.innerHTML = '<p style="color:#888;">' + _ssEsc(window.t('self-service.mfa.generating')) + '</p>';
+    container.innerHTML = '<p style="color:var(--text-dim,#888);">' + _ssEsc(window.t('self-service.mfa.generating')) + '</p>';
 
     try {
         const resp = await fetch(_mfaApi + 'setup_mfa.php?ctx=user', {
@@ -553,17 +857,17 @@ async function ssStartMfaSetup() {
             qr.make();
             qrHtml = qr.createImgTag(5, 0);
         } catch (e) {
-            qrHtml = '<p style="color:#c62828;">' + _ssEsc(window.t('self-service.mfa.qr_failed')) + '</p>';
+            qrHtml = '<p style="color:var(--danger-text,#c62828);">' + _ssEsc(window.t('self-service.mfa.qr_failed')) + '</p>';
         }
 
         container.innerHTML =
-            '<p style="font-size:13px;color:#333;margin:0 0 16px 0;">' + window.t('self-service.mfa.step1') + '</p>' +
+            '<p style="font-size:13px;color:var(--text,#333);margin:0 0 16px 0;">' + window.t('self-service.mfa.step1') + '</p>' +
             '<div class="ss-qr-container">' + qrHtml + '</div>' +
             '<div class="ss-secret-display">' +
                 '<code>' + _ssEsc(data.secret) + '</code>' +
                 '<p>' + _ssEsc(window.t('self-service.mfa.manual_key')) + '</p>' +
             '</div>' +
-            '<p style="font-size:13px;color:#333;margin:0 0 12px 0;">' + window.t('self-service.mfa.step2') + '</p>' +
+            '<p style="font-size:13px;color:var(--text,#333);margin:0 0 12px 0;">' + window.t('self-service.mfa.step2') + '</p>' +
             '<div class="ss-verify-row">' +
                 '<div class="ss-form-group">' +
                     '<input type="text" class="ss-form-input ss-otp-input" id="ssMfaVerifyCode" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code">' +
@@ -651,11 +955,40 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-document.getElementById('ssAccountModal').addEventListener('click', function(e) {
-    if (e.target === this) ssCloseAccountModal();
-});
+/* Sign out, after the same confirm dialog the rest of FreeITSM uses. Falls
+   back to the browser's own only if confirm.js failed to load, so the button
+   can never become one that does nothing. */
+async function ssConfirmLogout() {
+    ssCloseMenu();
+    let ok;
+    if (typeof window.showConfirm === 'function') {
+        ok = await window.showConfirm({
+            title:       window.t('self-service.menu.logout'),
+            message:     window.t('self-service.menu.logout_confirm'),
+            okLabel:     window.t('self-service.menu.logout'),
+            cancelLabel: window.t('common.cancel'),
+            okClass:     'primary'
+        });
+    } else {
+        ok = confirm(window.t('self-service.menu.logout_confirm'));
+    }
+    if (ok) window.location.href = 'logout.php';
+}
 
-document.getElementById('ssMfaModal').addEventListener('click', function(e) {
-    if (e.target === this) ssCloseMfaModal();
-});
+/* Close on a click on the backdrop - but only a click that STARTED there.
+   🔴 A browser reports mousedown-inside + mouseup-outside as a `click` on the
+   nearest common ancestor, which is the backdrop. So selecting text in a field
+   and letting go past the edge of the dialog used to close it, and lose
+   whatever was being typed. Same idiom as the contracts screens. */
+function ssBackdropClose(modalId, close) {
+    const modal = document.getElementById(modalId);
+    let downOnBackdrop = false;
+    modal.addEventListener('mousedown', function (e) { downOnBackdrop = e.target === modal; });
+    modal.addEventListener('click', function (e) {
+        if (e.target === modal && downOnBackdrop) close();
+        downOnBackdrop = false;
+    });
+}
+ssBackdropClose('ssAccountModal', ssCloseAccountModal);
+ssBackdropClose('ssMfaModal', ssCloseMfaModal);
 </script>

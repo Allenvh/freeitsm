@@ -1,0 +1,53 @@
+/*
+ * The ticket table (PR #213): the shared data table (data-table.css) placed in
+ * the inbox's middle column, in place of the message list. See
+ * assets/js/tickets-table.js.
+ */
+
+/* Exactly one of the two lists is ever shown (TicketTable paint()). */
+#ticketTableContainer { min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#ticketTableContainer[hidden], #emailList[hidden] { display: none !important; }
+#ticketTableContainer .dt-toolbar { flex-wrap: wrap; }
+#ticketTableContainer .dt-search { min-width: 160px; }
+#ticketTableContainer .ticket-content-search { padding: 8px; font-size: 12px; }
+#ticketTableContainer .dt-wrap { display: flex; flex-direction: column; }
+#ticketTableContainer .dt-table { flex: none; }
+#ticketTableContainer .dt-toolbar { gap: 6px; }
+#ticketTableContainer .dt-layout { flex: 1; height: auto; }
+
+/* Rows carry .email-item so the inbox's selection code works on them; these
+   undo the message-list layout that class brings, and show the selection. */
+#ticketTableContainer .ticket-queue-row { display: table-row; padding: 0; }
+/* The message list's own selected colour (inbox.css .email-item.selected) - a
+   theme token, so it is dark in dark mode. --surface-selected does not exist,
+   so its light fallback was showing under dark mode's light text. */
+#ticketTableContainer .ticket-queue-row.selected,
+#ticketTableContainer .ticket-queue-row.selected td { background: var(--accent-soft, #e8f4fd); color: var(--text); }
+#ticketTableContainer .ticket-queue-row.kb-focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* A queue owns the available width until a detail is opened. On a wide
+   desktop both panes have useful minimum widths; smaller desktops show the
+   detail on its own. Mobile keeps its existing sliding-pane navigation. */
+#ticketTableBack[hidden], .ticket-table-splitter[hidden] { display: none; }
+@media (min-width: 769px) {
+    body.ticket-table-mode .email-list-container { flex: 1 1 0; width: auto; min-width: 0; max-width: none; }
+    .ticket-table-mode:not(.ticket-table-detail) .reading-pane { display: none; }
+    body.ticket-table-mode.ticket-table-detail:not(.ticket-table-narrow) .email-list-container {
+        flex: 0 0 var(--ticket-table-width); width: var(--ticket-table-width); border-right: 0;
+    }
+    .ticket-table-mode.ticket-table-narrow .folder-container,
+    .ticket-table-mode.ticket-table-narrow .email-list-container { display: none; }
+    .ticket-table-splitter { flex: 0 0 8px; cursor: col-resize; touch-action: none; background: var(--surface); border-inline: 1px solid var(--border); }
+    .ticket-table-splitter:hover, .ticket-table-splitter:focus-visible { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; }
+    .ticket-table-resizing, .ticket-table-resizing * { cursor: col-resize !important; user-select: none !important; }
+    /* Full screen has its own Back (GH #225), which steps back to the split. */
+    body.ticket-popout .ticket-table-splitter,
+    body.ticket-popout #ticketTableBack { display: none; }
+}
+@media (max-width: 768px) {
+    #ticketTableBack, .ticket-table-splitter { display: none; }
+    .ticket-table-mode .email-list-container { width: 100%; max-width: 100%; min-width: 0; }
+}
+
+/* The Messages / Table choice in the action row. */
+.ticket-list-choice { display: flex; align-items: center; gap: 8px; font-size: 12px; }

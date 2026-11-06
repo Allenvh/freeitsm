@@ -13,6 +13,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('software');
 
 $app_id = $_GET['app_id'] ?? '';
 
@@ -25,6 +26,7 @@ try {
     $conn = connectToDatabase();
 
     $sql = "SELECT
+                h.id AS asset_id, d.source,
                 h.hostname,
                 d.display_version,
                 d.install_date,

@@ -14,10 +14,23 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('watchtower');
 
 try {
     $conn = connectToDatabase();
-    $data = getWatchtowerData($conn);
+    $analystId = (int)$_SESSION['analyst_id'];
+
+    // Whose work (#58). ?scope= wins for a single request so the toggle feels
+    // instant; otherwise the analyst's remembered choice. Anything unrecognised
+    // falls through to 'all', which is exactly the old behaviour.
+    $scope = isset($_GET['scope']) && wtScopeIsValid((string)$_GET['scope'])
+        ? (string)$_GET['scope']
+        : wtScopeFor($conn, $analystId);
+
+    $data = getWatchtowerData($conn, $analystId, $scope);
+    $data['scope']            = $scope;
+    $data['impersonal_cards'] = wtImpersonalCards();
+    $data['impersonal_mode']  = wtImpersonalOnMine($conn, $analystId);
 
     echo json_encode(array_merge(
         ['success' => true, 'generated_at' => gmdate('Y-m-d\TH:i:s\Z')],

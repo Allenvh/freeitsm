@@ -6,20 +6,38 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/timezone.php';
+require_once '../../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'security';
+require_once __DIR__ . '/../includes/page_gate.php';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'system'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('system.security.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('system', t('system.security.title'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
+        /* System module accent (blue-grey) — shared primitives pick this up. */
+        body {
+            /* System is the FIRST module whose DARK accent is a LIGHT colour (#90a4ae).
+               inbox.css renders .btn-primary/.add-btn as background:var(--accent) +
+               color:var(--on-accent) — and the global --on-accent stays WHITE in dark.
+               So pinning --accent alone would put white text on a light button. Pin
+               --on-accent too: it flips to near-black in dark. */
+            --accent: var(--sys-accent, #546e7a);
+            --accent-hover: var(--sys-accent-hover, #37474f);
+            --on-accent: var(--sys-on-accent, #fff);
+        }
+
         .security-container {
             height: calc(100vh - 48px);
             overflow-y: auto;
@@ -29,34 +47,34 @@ $translationNamespaces = ['common', 'system'];
         .page-title {
             font-size: 22px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin: 0 0 6px 0;
         }
 
         .page-subtitle {
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin: 0 0 30px 0;
         }
 
         .settings-card {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
             padding: 24px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08));
             margin-bottom: 24px;
         }
 
         .settings-card h3 {
             font-size: 15px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin: 0 0 4px 0;
         }
 
         .settings-card .card-desc {
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin: 0 0 20px 0;
             line-height: 1.5;
         }
@@ -73,30 +91,32 @@ $translationNamespaces = ['common', 'system'];
         .setting-label {
             flex: 1;
             font-size: 13px;
-            color: #555;
+            color: var(--text-muted, #555);
         }
 
         .setting-label strong {
             display: block;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 2px;
         }
 
         .setting-input {
             width: 100px;
             padding: 8px 10px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 13px;
             text-align: center;
             font-family: inherit;
+            background: var(--surface, #fff);
+            color: var(--text, #333);
         }
 
-        .setting-input:focus { outline: none; border-color: #546e7a; }
+        .setting-input:focus { outline: none; border-color: var(--sys-accent, #546e7a); }
 
         .setting-unit {
             font-size: 12px;
-            color: #999;
+            color: var(--text-faint, #999);
             min-width: 50px;
         }
 
@@ -118,28 +138,52 @@ $translationNamespaces = ['common', 'system'];
         }
 
         .btn-primary {
-            background: #546e7a;
-            color: #fff;
+            background: var(--sys-accent, #546e7a);
+            /* The dark accent is a LIGHT blue-grey, so the label flips dark. */
+            color: var(--sys-on-accent, #fff);
         }
 
+        /* #455a64 isn't the --sys-accent-hover light value (#37474f), so it stays
+           hardcoded here and gets a dark override below. */
         .btn-primary:hover { background: #455a64; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .info-note {
             background: #f5f7fa;
-            border: 1px solid #e0e0e0;
+            border: 1px solid var(--border, #e0e0e0);
             border-radius: 6px;
             padding: 14px 16px;
             font-size: 12px;
-            color: #666;
+            color: var(--text-muted, #666);
             line-height: 1.6;
             margin-top: 6px;
         }
 
-        .info-note strong { color: #333; }
+        .info-note strong { color: var(--text, #333); }
+        .info-note p { margin: 0 0 10px; }
+        .info-note p:last-child { margin-bottom: 0; }
+
+        /* Attachments card: every control sits in the same fixed-width column, so
+           the dropdown and the types box are wide enough to read and the two MB
+           boxes start at the same place. A password manager that inserts its own
+           icon beside a box can then only nudge the unit after it, never the box. */
+        .att-control { flex: 0 0 360px; display: flex; align-items: center; gap: 10px; }
+        .att-control .setting-input.att-wide { width: 100%; text-align: left; }
+        .att-control .setting-unit { min-width: 0; }
+        @media (max-width: 900px) { .att-control { flex-basis: auto; width: 100%; } }
+
+        /* ---- Dark mode: pale washes + off-token colours ---- */
+        [data-theme-mode="dark"] .btn-primary:hover {
+            background: var(--sys-accent-hover, #b0bec5);
+        }
+        [data-theme-mode="dark"] .info-note {
+            background: var(--surface-2, #232830);
+        }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="system" data-mobile-page="security">
     <?php include '../includes/header.php'; ?>
 
     <div class="security-container">
@@ -147,9 +191,22 @@ $translationNamespaces = ['common', 'system'];
         <p class="page-subtitle"><?php echo htmlspecialchars(t('system.security.subtitle')); ?></p>
 
         <form id="securityForm">
+            <!-- Self-service registration -->
+            <div class="settings-card">
+                <h3 id="self-registration"><?php echo htmlspecialchars(t('system.security.selfreg_heading')); ?></h3>
+                <p class="card-desc"><?php echo htmlspecialchars(t('system.security.selfreg_desc')); ?></p>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('system.security.selfreg_label')); ?></strong>
+                        <?php echo htmlspecialchars(t('system.security.selfreg_hint')); ?>
+                    </div>
+                    <input type="checkbox" id="selfServiceRegistration" style="width:22px;height:22px;cursor:pointer;">
+                </div>
+            </div>
+
             <!-- Trusted Device -->
             <div class="settings-card">
-                <h3><?php echo htmlspecialchars(t('system.security.trusted_heading')); ?></h3>
+                <h3 id="trusted-devices"><?php echo htmlspecialchars(t('system.security.trusted_heading')); ?></h3>
                 <p class="card-desc"><?php echo htmlspecialchars(t('system.security.trusted_desc')); ?></p>
                 <div class="setting-row">
                     <div class="setting-label">
@@ -163,7 +220,7 @@ $translationNamespaces = ['common', 'system'];
 
             <!-- Password Policy -->
             <div class="settings-card">
-                <h3><?php echo htmlspecialchars(t('system.security.password_heading')); ?></h3>
+                <h3 id="passwords"><?php echo htmlspecialchars(t('system.security.password_heading')); ?></h3>
                 <p class="card-desc"><?php echo htmlspecialchars(t('system.security.password_desc')); ?></p>
                 <div class="setting-row">
                     <div class="setting-label">
@@ -177,7 +234,7 @@ $translationNamespaces = ['common', 'system'];
 
             <!-- Account Lockout -->
             <div class="settings-card">
-                <h3><?php echo htmlspecialchars(t('system.security.lockout_heading')); ?></h3>
+                <h3 id="lockout"><?php echo htmlspecialchars(t('system.security.lockout_heading')); ?></h3>
                 <p class="card-desc"><?php echo htmlspecialchars(t('system.security.lockout_desc')); ?></p>
                 <div class="setting-row">
                     <div class="setting-label">
@@ -199,14 +256,16 @@ $translationNamespaces = ['common', 'system'];
 
             <!-- IP Ban -->
             <div class="settings-card">
-                <h3><?php echo htmlspecialchars(t('system.security.ipban_heading')); ?></h3>
+                <h3 id="ip-bans"><?php echo htmlspecialchars(t('system.security.ipban_heading')); ?></h3>
                 <p class="card-desc"><?php echo htmlspecialchars(t('system.security.ipban_desc')); ?></p>
                 <div class="setting-row">
                     <div class="setting-label">
                         <strong><?php echo htmlspecialchars(t('system.security.first_ban')); ?></strong>
                         <?php echo htmlspecialchars(t('system.security.first_ban_hint')); ?>
                     </div>
-                    <input type="number" class="setting-input" id="maxIpAttempts" min="0" max="20" value="5">
+                    <?php /* value="0", not 5: this is what shows before loadSettings() replaces
+                             it, and it must not claim protection that may not be configured. */ ?>
+                    <input type="number" class="setting-input" id="maxIpAttempts" min="0" max="20" value="0">
                     <span class="setting-unit"><?php echo htmlspecialchars(t('system.security.unit_attempts')); ?></span>
                 </div>
                 <div class="setting-row">
@@ -214,11 +273,85 @@ $translationNamespaces = ['common', 'system'];
                         <strong><?php echo htmlspecialchars(t('system.security.min_threshold')); ?></strong>
                         <?php echo htmlspecialchars(t('system.security.min_threshold_hint')); ?>
                     </div>
-                    <input type="number" class="setting-input" id="minIpAttempts" min="1" max="10" value="2">
+<?php /* min="0", not min="1": 0 is what the login code reads as "off", and it is what
+     this box shows when the setting is genuinely absent. With min="1" the browser
+     refused to submit the form in exactly that state — the one case an administrator
+     most needs to be able to save from. Spotted by Erlend Volden. */ ?>
+                    <input type="number" class="setting-input" id="minIpAttempts" min="0" max="10" value="0">
                     <span class="setting-unit"><?php echo htmlspecialchars(t('system.security.unit_attempts')); ?></span>
                 </div>
                 <div class="info-note">
                     <strong><?php echo htmlspecialchars(t('system.security.ipban_example_strong')); ?></strong> <?php echo htmlspecialchars(t('system.security.ipban_example_text')); ?>
+                </div>
+            </div>
+
+            <!-- Attachments -->
+            <div class="settings-card">
+                <h3 id="attachments"><?php echo htmlspecialchars(t('system.security.attachments_heading')); ?></h3>
+                <p class="card-desc"><?php echo htmlspecialchars(t('system.security.attachments_desc')); ?></p>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('system.security.rejected_behaviour')); ?></strong>
+                        <?php echo htmlspecialchars(t('system.security.rejected_behaviour_hint')); ?>
+                    </div>
+                    <div class="att-control">
+                        <select class="setting-input att-wide" id="attachmentRejectedBehaviour">
+                            <option value="store"><?php echo htmlspecialchars(t('system.security.rejected_store')); ?></option>
+                            <option value="drop"><?php echo htmlspecialchars(t('system.security.rejected_drop')); ?></option>
+                        </select>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('system.security.allowed_extensions')); ?></strong>
+                        <?php echo htmlspecialchars(t('system.security.allowed_extensions_hint')); ?>
+                    </div>
+                    <div class="att-control">
+                        <input type="text" class="setting-input att-wide" id="attachmentAllowedExtensions" autocomplete="off"
+                               placeholder="<?php echo htmlspecialchars(t('system.security.allowed_extensions_ph')); ?>">
+                    </div>
+                </div>
+                <?php
+                    // Size limits (GH #170). PHP's own limits are shown beside them:
+                    // a file PHP refuses never reaches FreeITSM, whatever is set here.
+                    require_once __DIR__ . '/../../includes/attachment_limits.php';
+                    $phpLim = phpUploadLimits();
+                    $phpMb = fn($b) => $b < 0 ? t('system.security.php_unlimited') : oversizeMbWords((int)$b);
+                    $browserCap = min($phpLim['upload_max_filesize'] < 0 ? PHP_INT_MAX : $phpLim['upload_max_filesize'],
+                                      $phpLim['post_max_size'] <= 0 ? PHP_INT_MAX : $phpLim['post_max_size']);
+                ?>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('system.security.max_attachment')); ?></strong>
+                        <?php echo htmlspecialchars(t('system.security.max_attachment_hint')); ?>
+                    </div>
+                    <div class="att-control">
+                        <input type="number" class="setting-input" id="attachmentMaxMb" min="1" max="102400" placeholder="10"
+                               autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">
+                        <span class="setting-unit">MB</span>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('system.security.max_total')); ?></strong>
+                        <?php echo htmlspecialchars(t('system.security.max_total_hint')); ?>
+                    </div>
+                    <div class="att-control">
+                        <input type="number" class="setting-input" id="attachmentMaxTotalMb" min="0" max="102400" placeholder="0"
+                               autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">
+                        <span class="setting-unit">MB</span>
+                    </div>
+                </div>
+                <div class="info-note" id="phpLimitsNote" data-browser-cap="<?php echo $browserCap === PHP_INT_MAX ? 0 : (int)$browserCap; ?>">
+                    <p><?php echo htmlspecialchars(t('system.security.allowed_extensions_note')); ?></p>
+                    <p><?php echo htmlspecialchars(t('system.security.rejected_note')); ?></p>
+                    <p><?php echo htmlspecialchars(t('system.security.php_limits', [
+                        'upload' => $phpMb($phpLim['upload_max_filesize']),
+                        'post'   => $phpMb($phpLim['post_max_size']),
+                        'memory' => $phpMb($phpLim['memory_limit']),
+                    ])); ?></p>
+                    <p id="phpLimitsWarn" style="display:none;color:var(--danger-text);font-weight:600;"><?php echo htmlspecialchars(t('system.security.php_limits_warn')); ?></p>
+                    <p><?php echo t('system.security.oversize_signpost', ['link' => '<a href="' . htmlspecialchars(BASE_URL) . 'tickets/settings/?tab=mailboxes#oversize">' . htmlspecialchars(t('system.security.oversize_signpost_link')) . '</a>']); ?></p>
                 </div>
             </div>
 
@@ -229,7 +362,9 @@ $translationNamespaces = ['common', 'system'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <script>
     const API_BASE = '<?php echo $path_prefix; ?>api/settings/';
 
@@ -239,12 +374,35 @@ $translationNamespaces = ['common', 'system'];
             const data = await resp.json();
             if (data.success) {
                 const s = data.settings;
-                document.getElementById('trustedDeviceDays').value = s.trusted_device_days || '0';
-                document.getElementById('passwordExpiryDays').value = s.password_expiry_days || '0';
-                document.getElementById('maxFailedLogins').value = s.max_failed_logins || '0';
-                document.getElementById('lockoutDuration').value = s.lockout_duration_minutes || '30';
-                document.getElementById('maxIpAttempts').value = s.max_ip_attempts || '5';
-                document.getElementById('minIpAttempts').value = s.min_ip_attempts || '2';
+                document.getElementById('selfServiceRegistration').checked = (s.self_service_registration_enabled === '1');
+                // ⚠️ These used to read `s.max_ip_attempts || '5'` and `|| '2'`. Nothing
+                // seeded those settings, so on a fresh install the boxes showed 5 and 2
+                // while the login code read the missing values as 0 and treated 0 as
+                // "off". An administrator opening this page saw brute-force protection
+                // configured and reasonably concluded it was on. It wasn't, unless they
+                // happened to press Save. A screen that overstates protection is worse
+                // than one that shows it switched off.
+                //
+                // Database Verify now seeds real values, so these normally just show
+                // what is stored. Where a value is genuinely absent the box shows 0,
+                // which is what the login code will actually do.
+                const shown = (v, ifMissing) => (v === undefined || v === null || v === '') ? ifMissing : v;
+                document.getElementById('trustedDeviceDays').value  = shown(s.trusted_device_days, '0');
+                document.getElementById('passwordExpiryDays').value = shown(s.password_expiry_days, '0');
+                document.getElementById('maxFailedLogins').value    = shown(s.max_failed_logins, '0');
+                document.getElementById('maxIpAttempts').value      = shown(s.max_ip_attempts, '0');
+                document.getElementById('minIpAttempts').value      = shown(s.min_ip_attempts, '0');
+                // A duration is not an on/off switch — 30 is a real default, not a claim
+                // that anything is enabled, and it only applies once the count above is
+                // greater than zero.
+                document.getElementById('lockoutDuration').value    = shown(s.lockout_duration_minutes, '30');
+                document.getElementById('attachmentRejectedBehaviour').value = s.attachment_rejected_behaviour || 'store';
+                // Empty is a real, meaningful value here ("everything we consider safe"),
+                // so it must NOT fall back to a placeholder list the way the numbers above do.
+                document.getElementById('attachmentAllowedExtensions').value = s.attachment_allowed_extensions || '';
+                document.getElementById('attachmentMaxMb').value = s.attachment_max_mb || '10';
+                document.getElementById('attachmentMaxTotalMb').value = s.attachment_max_total_mb || '0';
+                checkPhpLimits();
             }
         } catch (e) {
             console.error('Failed to load settings', e);
@@ -257,12 +415,17 @@ $translationNamespaces = ['common', 'system'];
         btn.disabled = true;
 
         const settings = {
+            self_service_registration_enabled: document.getElementById('selfServiceRegistration').checked ? '1' : '0',
             trusted_device_days: document.getElementById('trustedDeviceDays').value,
             password_expiry_days: document.getElementById('passwordExpiryDays').value,
             max_failed_logins: document.getElementById('maxFailedLogins').value,
             lockout_duration_minutes: document.getElementById('lockoutDuration').value,
             max_ip_attempts: document.getElementById('maxIpAttempts').value,
-            min_ip_attempts: document.getElementById('minIpAttempts').value
+            min_ip_attempts: document.getElementById('minIpAttempts').value,
+            attachment_rejected_behaviour: document.getElementById('attachmentRejectedBehaviour').value,
+            attachment_allowed_extensions: document.getElementById('attachmentAllowedExtensions').value.trim(),
+            attachment_max_mb: String(Math.max(1, parseInt(document.getElementById('attachmentMaxMb').value, 10) || 10)),
+            attachment_max_total_mb: String(Math.max(0, parseInt(document.getElementById('attachmentMaxTotalMb').value, 10) || 0))
         };
 
         try {
@@ -284,7 +447,17 @@ $translationNamespaces = ['common', 'system'];
         btn.disabled = false;
     });
 
+    // Warn when the limit is above what PHP accepts from a browser - those
+    // uploads would be refused before FreeITSM sees them (GH #170).
+    function checkPhpLimits() {
+        const cap = parseInt(document.getElementById('phpLimitsNote').dataset.browserCap, 10) || 0;
+        const mb = parseInt(document.getElementById('attachmentMaxMb').value, 10) || 0;
+        document.getElementById('phpLimitsWarn').style.display = (cap > 0 && mb * 1048576 > cap) ? '' : 'none';
+    }
+    document.getElementById('attachmentMaxMb').addEventListener('input', checkPhpLimits);
+
     loadSettings();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

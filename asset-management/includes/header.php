@@ -9,7 +9,7 @@ $module_title = function_exists('t') ? t('asset-management.title') : 'Assets';
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 
@@ -45,6 +45,15 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span><?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.table') : 'Table'); ?></span>
         </a>
+        <a href="<?php echo BASE_URL; ?>asset-management/users.php" class="nav-btn <?php echo $current_page === 'users' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.users') : 'Users'); ?>">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span><?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.users') : 'Users'); ?></span>
+        </a>
         <a href="<?php echo BASE_URL; ?>asset-management/dashboard/" class="nav-btn <?php echo $current_page === 'dashboard' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.dashboard') : 'Dashboard'); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -61,6 +70,15 @@ require_once $path_prefix . 'includes/waffle-menu.php';
                 <line x1="6" y1="18" x2="6.01" y2="18"></line>
             </svg>
             <span><?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.servers') : 'Servers'); ?></span>
+        </a>
+        <a href="<?php echo BASE_URL; ?>asset-management/leases/" class="nav-btn <?php echo $current_page === 'leases' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.leases') : 'Leases'); ?>">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <circle cx="12" cy="15" r="3"></circle>
+                <polyline points="12 13.5 12 15 13 16"></polyline>
+            </svg>
+            <span><?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.leases') : 'Leases'); ?></span>
         </a>
         <a href="<?php echo BASE_URL; ?>asset-management/settings/" class="nav-btn <?php echo $current_page === 'settings' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('asset-management.nav.settings') : 'Settings'); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -97,7 +115,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
     z-index: 10;
     overflow: hidden;
     transition: width 0.18s ease;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.12);
+    box-shadow: 2px 0 8px var(--shadow, rgba(0, 0, 0, 0.12));
 }
 .assets-container.sidebar-hover .assets-list-container:hover {
     width: 400px;
@@ -123,7 +141,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
     width: 3px;
     height: 36px;
     border-radius: 2px;
-    background: #bbb;
+    background: var(--text-faint, #bbb);
     transition: opacity 0.18s;
     pointer-events: none;
     z-index: 1;

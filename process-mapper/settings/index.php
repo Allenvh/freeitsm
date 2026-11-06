@@ -18,7 +18,18 @@ session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+require_once '../../includes/settings_manifest.php';
+requireModuleAccess('process-mapper');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered.
+$settingsManifest = settingsManifestFor('process-mapper');
+$visibleTabs      = settingsVisibleTabs(connectToDatabase(), (int) $_SESSION['analyst_id'], $settingsManifest);
+$activeTabId      = settingsFirstTabId($visibleTabs);
 
 $current_page = 'settings';
 $path_prefix  = '../../';
@@ -27,18 +38,28 @@ $translationNamespaces = ['common', 'process-mapper'];
 $shapes = include '../includes/shapes.php';
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active('process-mapper')); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode('process-mapper')); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('process-mapper.title') . ' — ' . t('process-mapper.nav.settings')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/process-mapper.css?v=10">
+    <title><?php echo htmlspecialchars(pageTitle('process-mapper', t('process-mapper.nav.settings'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../../assets/css/process-mapper.css?v=11">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <style>
-        /* Module accent for the shared .toggle-switch (defined in inbox.css). */
-        body { --accent: #0078d4; }
+        /* Module accent for the shared .toggle-switch / tabs / buttons (defined
+           in inbox.css) — pinned to this module's indigo brand. */
+        body {
+            --accent:       var(--pmap-accent);
+            --accent-hover: var(--pmap-accent-hover);
+            --accent-soft:  var(--pmap-accent-soft);
+            --on-accent:    var(--pmap-on-accent);
+        }
 
         /* Identical to tickets/settings/index.php — settings pages scroll the
            page rather than the body, and fill the full width (no 1200px cap). */
@@ -61,7 +82,7 @@ $shapes = include '../includes/shapes.php';
             font-size: 20px;
             font-weight: 600;
             margin-bottom: 20px;
-            color: #333;
+            color: var(--text, #333);
             padding: 0;
             border-bottom: none;
         }
@@ -78,22 +99,22 @@ $shapes = include '../includes/shapes.php';
             align-items: center;
             gap: 6px;
             padding: 10px 4px 7px;
-            background: #fafafa;
-            border: 2px solid #eee;
+            background: var(--surface-2, #fafafa);
+            border: 2px solid var(--border-soft, #eee);
             border-radius: 8px;
             cursor: pointer;
         }
         .pms-shape-opt:hover { border-color: #c7d2fe; }
         .pms-shape-opt.selected {
-            border-color: #0078d4;
-            background: #eaf4fc;
+            border-color: var(--accent, #0078d4);
+            background: var(--accent-soft, #eaf4fc);
         }
         .pms-shape-name {
             font-size: 11px;
-            color: #666;
+            color: var(--text-muted, #666);
             text-align: center;
         }
-        .pms-shape-opt.selected .pms-shape-name { color: #005a9e; font-weight: 600; }
+        .pms-shape-opt.selected .pms-shape-name { color: var(--accent-hover, #005a9e); font-weight: 600; }
 
         /* Built-in marker pill — sits next to the row name. */
         .pms-builtin {
@@ -101,8 +122,8 @@ $shapes = include '../includes/shapes.php';
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            background: #eef2ff;
-            color: #4338ca;
+            background: var(--accent-soft, #eef2ff);
+            color: var(--accent-hover, #4338ca);
             padding: 2px 6px;
             border-radius: 4px;
             margin-left: 6px;
@@ -117,27 +138,38 @@ $shapes = include '../includes/shapes.php';
         }
         .pms-order-num {
             min-width: 18px;
-            color: #555;
+            color: var(--text-muted, #555);
         }
+
+        /* Dark: the pale-indigo shape hover border would glow on the dark card. */
+        [data-theme-mode="dark"] .pms-shape-opt:hover { border-color: #3a3f6b; }
     </style>
+    <!-- Mobile layer: linked AFTER this page's own CSS so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="process-mapper" data-mobile-page="settings">
     <?php include '../includes/header.php'; ?>
 
     <div class="container">
         <!-- Tabs strip — matches tickets/settings -->
-        <div class="tabs">
-            <button class="tab active" data-tab="step-types" onclick="PMS.switchTab('step-types')"><?php echo htmlspecialchars(t('process-mapper.settings_tabs.step_types')); ?></button>
-            <button class="tab"        data-tab="left-panel" onclick="PMS.switchTab('left-panel')"><?php echo htmlspecialchars(t('process-mapper.settings_tabs.left_panel')); ?></button>
-        </div>
+        <?php
+        /* 🔴 The third argument is not optional here. The tab bar renders
+           `onclick="<fn>('id')"`, which is resolved against the GLOBAL scope —
+           and this page keeps switchTab() inside the PMS IIFE, so the default
+           `switchTab` was a ReferenceError and the Left panel tab did nothing
+           at ANY width. Every other settings screen declares switchTab as a
+           plain global, which is why this is the only one affected. */
+        renderSettingsTabBar($visibleTabs, $activeTabId, 'PMS.switchTab');
+        ?>
 
         <!-- Step types tab (existing content) -->
-        <div class="tab-content active" id="step-types-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'step-types')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'step-types' ? ' active' : ''; ?>" id="step-types-tab" data-capability="<?php echo capKey(Cap::PROCESS_MAPPER_STEP_TYPES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('process-mapper.settings.title')); ?></h2>
                 <button class="add-btn" onclick="PMS.openAdd()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
-            <p style="margin-bottom: 20px; color: #666;"><?php echo htmlspecialchars(t('process-mapper.settings.intro')); ?></p>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('process-mapper.settings.intro')); ?></p>
 
             <table>
                 <thead>
@@ -157,26 +189,29 @@ $shapes = include '../includes/shapes.php';
         </div>
 
         <!-- Left panel tab — per-analyst preference -->
-        <div class="tab-content" id="left-panel-tab">
+        <?php endif; ?>
+
+        <!-- Left panel — per-analyst display preference; no capability. -->
+        <div class="tab-content<?php echo $activeTabId === 'left-panel' ? ' active' : ''; ?>" id="left-panel-tab" data-capability="none">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('process-mapper.left_panel.title')); ?></h2>
             </div>
-            <p style="margin-bottom: 20px; color: #666;"><?php echo htmlspecialchars(t('process-mapper.left_panel.intro')); ?></p>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('process-mapper.left_panel.intro')); ?></p>
 
             <form id="pmsLeftPanelForm" autocomplete="off" onsubmit="event.preventDefault();">
                 <div class="form-group">
-                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: #333;"><?php echo htmlspecialchars(t('process-mapper.left_panel.mode_label')); ?></label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: var(--text, #333);"><?php echo htmlspecialchars(t('process-mapper.left_panel.mode_label')); ?></label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
                         <input type="radio" name="pmsSidebarMode" value="always" onchange="PMS.saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('process-mapper.left_panel.mode_always')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-faint, #777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('process-mapper.left_panel.mode_always_hint')); ?>
                         </span>
                     </label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; cursor: pointer;">
                         <input type="radio" name="pmsSidebarMode" value="hover" onchange="PMS.saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('process-mapper.left_panel.mode_hover')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-faint, #777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('process-mapper.left_panel.mode_hover_hint')); ?>
                         </span>
                     </label>
@@ -207,7 +242,7 @@ $shapes = include '../includes/shapes.php';
                 </div>
                 <div class="form-group">
                     <label for="pmsColor"><?php echo htmlspecialchars(t('process-mapper.settings.field_colour')); ?></label>
-                    <input type="color" id="pmsColor" value="#0078d4" autocomplete="off" style="width: 60px; height: 32px; padding: 2px;">
+                    <input type="color" id="pmsColor" value="var(--accent, #0078d4)" autocomplete="off" style="width: 60px; height: 32px; padding: 2px;">
                 </div>
                 <div class="form-group">
                     <label class="toggle-label">
@@ -249,7 +284,7 @@ $shapes = include '../includes/shapes.php';
         function esc(s) {
             const d = document.createElement('div');
             d.textContent = s == null ? '' : String(s);
-            return d.innerHTML;
+            return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Use the shared toast notification system (assets/js/toast.js) so
@@ -286,7 +321,7 @@ $shapes = include '../includes/shapes.php';
                 const upDisabled   = i === 0 ? 'disabled' : '';
                 const downDisabled = i === types.length - 1 ? 'disabled' : '';
                 const deleteDisabled = row.is_builtin ? 'disabled' : '';
-                const swatch = `<span style="display:inline-block; width:20px; height:20px; border-radius:4px; background:${esc(row.color)}; vertical-align:middle; border:1px solid #ddd; margin-right:6px;"></span><code style="font-size:12px;">${esc(row.color)}</code>`;
+                const swatch = `<span style="display:inline-block; width:20px; height:20px; border-radius:4px; background:${esc(row.color)}; vertical-align:middle; border:1px solid var(--border, #ddd); margin-right:6px;"></span><code style="font-size:12px;">${esc(row.color)}</code>`;
                 return `<tr>
                     <td><span class="pm-shape-preview" data-shape="${esc(row.shape)}" style="background:${esc(row.color)}"></span></td>
                     <td><strong>${esc(row.name)}</strong>${builtin}</td>
@@ -321,7 +356,7 @@ $shapes = include '../includes/shapes.php';
             editingId = null;
             document.getElementById('pmsModalTitle').textContent = window.t('process-mapper.settings.add_title');
             document.getElementById('pmsName').value = '';
-            document.getElementById('pmsColor').value = '#0078d4';
+            document.getElementById('pmsColor').value = 'var(--accent, #0078d4)';
             document.getElementById('pmsActive').checked = true;
             pickShape('rounded');
             showModal();
@@ -334,7 +369,7 @@ $shapes = include '../includes/shapes.php';
             editingId = id;
             document.getElementById('pmsModalTitle').textContent = window.t('process-mapper.settings.edit_title');
             document.getElementById('pmsName').value = row.name || '';
-            document.getElementById('pmsColor').value = /^#[0-9a-fA-F]{6}$/.test(row.color) ? row.color : '#0078d4';
+            document.getElementById('pmsColor').value = /^#[0-9a-fA-F]{6}$/.test(row.color) ? row.color : 'var(--accent, #0078d4)';
             document.getElementById('pmsActive').checked = !!row.is_active;
             pickShape(SHAPE_KEYS.includes(row.shape) ? row.shape : 'rounded');
             showModal();
@@ -451,5 +486,6 @@ $shapes = include '../includes/shapes.php';
                  switchTab, saveSidebarMode };
     })();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

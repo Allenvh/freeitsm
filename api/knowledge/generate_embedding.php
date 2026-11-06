@@ -6,7 +6,13 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
+require_once '../../includes/knowledge/visibility.php';
+require_once '../../includes/rbac.php';
 require_once '../../includes/encryption.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -14,6 +20,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('knowledge');
+requireCapabilityJson(Cap::KNOWLEDGE_EMBEDDINGS);   // Knowledge settings tab — see docs/design/rbac.md
 
 $input = json_decode(file_get_contents('php://input'), true);
 $articleId = intval($input['article_id'] ?? 0);
@@ -38,6 +46,17 @@ try {
     }
 
     $apiKey = decryptValue($keyRow['setting_value']);
+
+    // Reads a body by id, so it needs the same ownership check as any other
+    // by-id read — an id is a guess away.
+    // lifecycle 'any': the published test lives in the query below and stays
+    // there, so this guard keeps meaning exactly what it meant before — "may you
+    // reach this article at all", now including the audience rung and the access
+    // list rather than the company alone.
+    if (!knowledgeCanRead($conn, KnowledgeViewer::forAnalyst($conn, (int)$_SESSION["analyst_id"]), $articleId, ["lifecycle" => "any"])) {
+        echo json_encode(['success' => false, 'error' => 'Article not found']);
+        exit;
+    }
 
     // Get article content
     $articleSql = "SELECT id, title, body FROM knowledge_articles WHERE id = ? AND is_published = 1";
@@ -78,7 +97,7 @@ try {
         'Content-Type: application/json',
         'Authorization: Bearer ' . $apiKey
     ]);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
+    sslApplyCurl($ch);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
     $response = curl_exec($ch);

@@ -6,6 +6,11 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+require_once '../../includes/changes/approvals.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -13,6 +18,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('changes');
+requireCapabilityJson(Cap::CHANGES_STATUSES);   // Change management settings tab — see docs/design/rbac.md
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -37,9 +44,19 @@ try {
         throw new Exception("Cannot delete: this status is used by $count change(s). Reassign them or set the status to inactive instead.");
     }
 
+    $name = $conn->query("SELECT name FROM change_statuses WHERE id = " . (int)$id)->fetchColumn() ?: null;
+    $conn->beginTransaction();
     $stmt = $conn->prepare("DELETE FROM change_statuses WHERE id = ?");
     $stmt->execute([$id]);
+    // Never leave a stage the code moves changes into without a status to move them to.
+    $missing = changeStagesWithoutActiveStatus($conn);
+    if ($missing) {
+        $conn->rollBack();
+        throw new Exception(changeStagesMissingMessage($missing));
+    }
+    $conn->commit();
 
+    wf_emit('change_status', 'deleted', (int)$id, $name);
     echo json_encode(['success' => true]);
 
 } catch (Exception $e) {

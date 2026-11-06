@@ -12,14 +12,40 @@ let selectedCategories = new Set();
 let currentEventId = null;
 let draggedEventId = null;
 
-// Day names
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-                'July', 'August', 'September', 'October', 'November', 'December'];
+/** Translate, or the English written at the call site (i18n.js). */
+function cal(key, english, params) {
+    return window.tf ? window.tf('calendar.' + key, english, params) : english;
+}
+/** Translates a key from the shared common.calendar language section, or returns the English given at the call site. */
+function calCommon(key, english) {
+    return window.tf ? window.tf('common.calendar.' + key, english) : english;
+}
+
+// Day and month names come from common.calendar, which the date formatter and
+// every other calendar in the product already share - and which is already
+// translated into all 13 locales. This file had its own English copy.
+//
+// Functions, not constants: the page sets window.translations in its head, but
+// a constant evaluated when the script loads would freeze whatever was there.
+const DAY_KEYS   = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const DAY_EN     = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_KEYS = ['january', 'february', 'march', 'april', 'may', 'june',
+                    'july', 'august', 'september', 'october', 'november', 'december'];
+const MONTH_EN   = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Short weekday names, Sunday first, in the user's language. */
+function dayNames()   { return DAY_KEYS.map((k, i) => calCommon('weekdays_short.' + k, DAY_EN[i])); }
+/** Full month names, January first, in the user's language. */
+function monthNames() { return MONTH_KEYS.map((k, i) => calCommon('months.' + k, MONTH_EN[i])); }
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    loadCategories();
+    // ?new=1: New in the Table view's action row lands here (#185). After the
+    // categories, which the event form's category list is built from.
+    loadCategories().then(function () {
+        if (new URLSearchParams(location.search).get('new') === '1') openEventModal();
+    });
     renderCalendar();
 });
 
@@ -43,7 +69,7 @@ async function loadCategories() {
 function renderCategoryFilters() {
     const container = document.getElementById('categoryFilterList');
     if (categories.length === 0) {
-        container.innerHTML = '<div class="no-categories">No categories found</div>';
+        container.innerHTML = '<div class="no-categories">' + escapeHtml(cal('sidebar.none', 'No categories found')) + '</div>';
         return;
     }
 
@@ -126,18 +152,18 @@ async function renderCalendar() {
 function updateTitle() {
     const titleEl = document.getElementById('calendarTitle');
     if (currentView === 'month') {
-        titleEl.textContent = `${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+        titleEl.textContent = `${monthNames()[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
     } else if (currentView === 'week') {
         const weekStart = getWeekStart(currentDate);
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
         if (weekStart.getMonth() === weekEnd.getMonth()) {
-            titleEl.textContent = `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()} - ${weekEnd.getDate()}, ${weekStart.getFullYear()}`;
+            titleEl.textContent = `${monthNames()[weekStart.getMonth()]} ${weekStart.getDate()} - ${weekEnd.getDate()}, ${weekStart.getFullYear()}`;
         } else {
-            titleEl.textContent = `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()} - ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`;
+            titleEl.textContent = `${monthNames()[weekStart.getMonth()]} ${weekStart.getDate()} - ${monthNames()[weekEnd.getMonth()]} ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`;
         }
     } else {
-        titleEl.textContent = `${MONTHS[currentDate.getMonth()]} ${currentDate.getDate()}, ${currentDate.getFullYear()}`;
+        titleEl.textContent = `${monthNames()[currentDate.getMonth()]} ${currentDate.getDate()}, ${currentDate.getFullYear()}`;
     }
 }
 
@@ -215,7 +241,7 @@ function renderMonthView(container) {
 
     // Header row
     html += '<div class="month-header">';
-    DAYS.forEach(day => {
+    dayNames().forEach(day => {
         html += `<div class="month-header-cell">${day}</div>`;
     });
     html += '</div>';
@@ -275,7 +301,7 @@ function renderWeekView(container) {
         day.setDate(day.getDate() + i);
         const isToday = day.getTime() === today.getTime();
         html += `<div class="week-header-day ${isToday ? 'today' : ''}">
-                    <div class="week-day-name">${DAYS[i]}</div>
+                    <div class="week-day-name">${dayNames()[i]}</div>
                     <div class="week-day-number">${day.getDate()}</div>
                  </div>`;
     }
@@ -341,7 +367,7 @@ function renderDayView(container) {
     // Header
     html += '<div class="day-header"><div class="day-header-info">';
     html += `<div class="day-header-date">${currentDate.getDate()}</div>`;
-    html += `<div class="day-header-weekday">${DAYS[currentDate.getDay()]}, ${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}</div>`;
+    html += `<div class="day-header-weekday">${dayNames()[currentDate.getDay()]}, ${monthNames()[currentDate.getMonth()]} ${currentDate.getFullYear()}</div>`;
     html += '</div></div>';
 
     // All-day events
@@ -418,6 +444,7 @@ function formatEventTime(event) {
     const start = new Date(event.start_datetime.replace(' ', 'T'));
     const end = event.end_datetime ? new Date(event.end_datetime.replace(' ', 'T')) : null;
 
+    /** Formats a time as 12-hour clock with AM/PM, leaving out the minutes on the hour. */
     const formatTime = (d) => {
         let hours = d.getHours();
         const minutes = d.getMinutes();
@@ -427,7 +454,7 @@ function formatEventTime(event) {
         return minutes ? `${hours}:${minutes.toString().padStart(2, '0')} ${ampm}` : `${hours} ${ampm}`;
     };
 
-    if (event.all_day) return 'All day';
+    if (event.all_day) return cal('js.all_day', 'All day');
     if (end && end.getTime() !== start.getTime()) {
         return `${formatTime(start)} - ${formatTime(end)}`;
     }
@@ -455,17 +482,17 @@ function openEventModal(eventId = null, dateStr = null, hour = null) {
 
     // Populate category dropdown
     const categorySelect = document.getElementById('eventCategory');
-    categorySelect.innerHTML = '<option value="">-- Select category --</option>' +
+    categorySelect.innerHTML = '<option value="">' + escapeHtml(cal('event.category_none', '-- Select category --')) + '</option>' +
         categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
 
     if (eventId) {
         // Edit existing event
-        title.textContent = 'Edit Event';
+        title.textContent = cal('event.modal_edit', 'Edit event');
         deleteBtn.style.display = 'block';
         loadEventForEdit(eventId);
     } else {
         // New event
-        title.textContent = 'New Event';
+        title.textContent = cal('event.modal_new', 'New event');
         deleteBtn.style.display = 'none';
 
         if (dateStr) {
@@ -484,6 +511,25 @@ function openEventModal(eventId = null, dateStr = null, hour = null) {
 
     toggleAllDay();
     modal.classList.add('active');
+
+    // Attached documents (discussion #76) — agendas, minutes, the signed change
+    // approval. Only for an event that EXISTS: a new one has no id to attach to,
+    // so the panel is hidden until it has been saved once.
+    var docHost = document.getElementById('eventDocuments');
+    if (docHost) {
+        if (eventId && window.FreeITSMDocuments) {
+            docHost.hidden = false;
+            FreeITSMDocuments.mount(docHost, {
+                parentType: 'calendar_event',
+                parentId:   eventId,
+                apiBase:    '../api/documents/',
+                showHeading: true
+            });
+        } else {
+            docHost.hidden = true;
+            docHost.innerHTML = '';
+        }
+    }
 }
 
 // Load event data for editing
@@ -547,11 +593,11 @@ async function saveEvent() {
     const description = document.getElementById('eventDescription').value.trim();
 
     if (!title) {
-        showToast('Please enter an event title', 'error');
+        showToast(cal('event.title_required', 'Please enter an event title'), 'error');
         return;
     }
     if (!startDate) {
-        showToast('Please enter a start date', 'error');
+        showToast(cal('event.start_required', 'Please select a start date'), 'error');
         return;
     }
 
@@ -587,11 +633,11 @@ async function saveEvent() {
             closeEventModal();
             renderCalendar();
         } else {
-            showToast('Error: ' + data.error, 'error');
+            showToast(cal('js.error_prefix', 'Error: {message}', { message: data.error }), 'error');
         }
     } catch (error) {
         console.error('Error saving event:', error);
-        showToast('Error saving event', 'error');
+        showToast(cal('toast.save_failed', 'Failed to save'), 'error');
     }
 }
 
@@ -600,7 +646,12 @@ async function deleteEvent() {
     const id = document.getElementById('eventId').value;
     if (!id) return;
 
-    if (!(await showConfirm({ title: 'Delete', message: 'Are you sure you want to delete this event?', okLabel: 'Delete', okClass: 'danger' }))) return;
+    if (!(await showConfirm({
+        title: cal('event.delete', 'Delete'),
+        message: cal('event.delete_confirm', 'Are you sure you want to delete this event?'),
+        okLabel: cal('event.delete', 'Delete'),
+        okClass: 'danger'
+    }))) return;
 
     try {
         const response = await fetch(API_BASE + 'delete_event.php', {
@@ -614,11 +665,11 @@ async function deleteEvent() {
             closeEventPopup();
             renderCalendar();
         } else {
-            showToast('Error: ' + data.error, 'error');
+            showToast(cal('js.error_prefix', 'Error: {message}', { message: data.error }), 'error');
         }
     } catch (error) {
         console.error('Error deleting event:', error);
-        showToast('Error deleting event', 'error');
+        showToast(cal('toast.delete_failed', 'Failed to delete'), 'error');
     }
 }
 
@@ -635,7 +686,7 @@ function showEventPopup(eventId, clickEvent) {
     const locationEl = document.getElementById('popupLocation');
     const descriptionEl = document.getElementById('popupDescription');
 
-    categoryEl.textContent = event.category_name || 'Uncategorized';
+    categoryEl.textContent = event.category_name || cal('js.uncategorised', 'Uncategorized');
     categoryEl.style.backgroundColor = event.category_color || '#ef6c00';
     titleEl.textContent = event.title;
     timeEl.textContent = formatEventTime(event);
@@ -680,6 +731,7 @@ function handleDragStart(eventId, e) {
     e.target.classList.add('dragging');
 }
 
+/** Clears the drag highlight from the month view and forgets the dragged event when a drag finishes. */
 function handleDragEnd(e) {
     e.target.classList.remove('dragging');
     document.querySelectorAll('.month-day.drag-over').forEach(el => {
@@ -688,6 +740,7 @@ function handleDragEnd(e) {
     draggedEventId = null;
 }
 
+/** Allows a drop on a month-view day and highlights that day as the only drop target. */
 function handleDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -700,6 +753,7 @@ function handleDragOver(e) {
     }
 }
 
+/** Removes the drop highlight when the pointer leaves a month-view day for somewhere outside it. */
 function handleDragLeave(e) {
     const dayCell = e.target.closest('.month-day');
     const relatedCell = e.relatedTarget ? e.relatedTarget.closest('.month-day') : null;
@@ -708,6 +762,10 @@ function handleDragLeave(e) {
     }
 }
 
+/**
+ * Moves the dropped event to the new day in the month view, keeping its times and length, saves it
+ * through save_event.php and redraws the calendar. Dropping on the same day does nothing.
+ */
 async function handleDrop(newDateStr, e) {
     e.preventDefault();
     e.stopPropagation();
@@ -769,11 +827,11 @@ async function handleDrop(newDateStr, e) {
         if (data.success) {
             await renderCalendar();
         } else {
-            showToast('Error moving event: ' + data.error, 'error');
+            showToast(cal('js.error_prefix', 'Error: {message}', { message: data.error }), 'error');
         }
     } catch (error) {
         console.error('Error moving event:', error);
-        showToast('Error moving event', 'error');
+        showToast(cal('js.move_failed', 'Failed to move'), 'error');
     }
 
     draggedEventId = null;
@@ -795,5 +853,5 @@ function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

@@ -1,0 +1,617 @@
+/**
+ * War room — fallback chat.
+ *
+ * Everything here is local: no web font, no CDN, no remote image. A page for
+ * the day the internet is down must not need the internet to render.
+ *
+ * Colours come from the shared theme tokens so dark mode works with no second
+ * palette to maintain (see Theming-and-Dark-Mode).
+ */
+
+.wr-container {
+    display: flex;
+    height: calc(100vh - 48px);
+    background: var(--app-bg, #f5f5f5);
+}
+
+/* ---- channels ---- */
+.wr-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    padding: 16px 12px;
+    background: var(--surface, #fff);
+    border-right: 1px solid var(--border, #e0e0e0);
+    overflow-y: auto;
+}
+
+.wr-sidebar-heading,
+.wr-group {
+    margin: 0 0 6px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-muted, #666);
+}
+/* Section headings between groups need air above them, but not the first one. */
+.wr-group { margin-top: 16px; }
+
+.wr-sidebar-actions { display: flex; gap: 6px; margin-bottom: 12px; }
+.wr-side-btn {
+    flex: 1;
+    padding: 7px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.wr-side-btn:hover { border-color: var(--accent, #ea580c); color: var(--accent, #ea580c); }
+
+.wr-channels { display: flex; flex-direction: column; gap: 2px; }
+
+.wr-channel {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+}
+/* The name takes the space and truncates; the badge never gets squeezed out,
+   because an unread count you cannot see is worse than a clipped channel name. */
+.wr-channel-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-channel:hover { background: var(--surface-hover, #f0f0f0); }
+.wr-channel.active {
+    background: var(--accent, #ea580c);
+    color: var(--on-accent, #fff);
+    font-weight: 600;
+}
+
+.wr-lock { flex-shrink: 0; font-size: 16px; line-height: 1; opacity: 0.55; }
+.wr-unread {
+    flex-shrink: 0;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--accent, #ea580c);
+    color: var(--on-accent, #fff);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+}
+.wr-channel.active .wr-unread { background: var(--on-accent, #fff); color: var(--accent, #ea580c); }
+
+/* ---- the conversation ---- */
+.wr-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    /* Roomier at the bottom than the top: the composer is the thing your hand
+       is on, and with presence moved to the sidebar there is nothing between
+       the feed and the edge of the window to soften it. */
+    padding: 16px 20px 20px;
+}
+
+.wr-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 6px;
+}
+.wr-title-wrap { min-width: 0; }
+.wr-title { margin: 0; font-size: 18px; color: var(--text, #333); overflow-wrap: anywhere; }
+.wr-topic { margin-top: 2px; font-size: 12px; color: var(--text-muted, #666); overflow-wrap: anywhere; }
+
+.wr-tools { display: flex; gap: 6px; flex-shrink: 0; }
+.wr-tool {
+    padding: 6px 12px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.wr-tool:hover { border-color: var(--accent, #ea580c); color: var(--accent, #ea580c); }
+
+.wr-intro {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--text-muted, #666);
+}
+
+/* The feed is the only thing that scrolls, so the composer stays put while a
+   long incident scrolls past above it. */
+.wr-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 14px;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 8px;
+}
+
+.wr-empty {
+    padding: 32px 12px;
+    text-align: center;
+    color: var(--text-dim, #999);
+    font-size: 14px;
+}
+
+.wr-msg { padding: 7px 0; border-bottom: 1px solid var(--border-soft, #f2f2f2); }
+.wr-msg:last-child { border-bottom: none; }
+
+.wr-msg-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.wr-msg-author { font-size: 13px; font-weight: 600; color: var(--text, #333); }
+.wr-msg-time { font-size: 11px; color: var(--text-dim, #999); }
+
+/* Author text is arbitrary and messages can contain a pasted URL or a stack
+   trace, so both have to be allowed to break rather than widen the column. */
+.wr-msg-body {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text, #333);
+    white-space: pre-wrap;      /* keep the line breaks people typed */
+    overflow-wrap: anywhere;
+}
+
+/* ---- mentions ---- */
+/* A name in a message. Tinted rather than boxed, so a sentence with three names
+   in it still reads as a sentence. */
+.wr-at {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: var(--accent-soft, rgba(234, 88, 12, 0.12));
+    color: var(--accent, #ea580c);
+    font-weight: 600;
+}
+/* Your own name is the one you need to spot while scrolling past forty lines. */
+.wr-at-me {
+    background: var(--accent, #ea580c);
+    color: var(--on-accent, #fff);
+}
+
+/* A mention badge is deliberately NOT the same as an unread badge: being named is
+   a different event from having missed something, and one badge for both hides
+   the one that needs you. */
+.wr-mention-badge {
+    flex-shrink: 0;
+    min-width: 20px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    background: var(--danger-accent, #c62828);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* The @ picker. Anchored above the composer, because a dropdown below it would
+   be off the bottom of the window. */
+.wr-ac {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    min-width: 220px;
+    max-height: 210px;
+    overflow-y: auto;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #ddd);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+    z-index: 30;
+}
+.wr-ac[hidden] { display: none; }
+.wr-ac-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+}
+.wr-ac-item.active,
+.wr-ac-item:hover { background: var(--surface-hover, #f2f2f2); }
+
+/* ---- Warbot ----
+   Tinted and edged so a machine's answer is visually distinct from a person's
+   at a glance, without shouting. The label does the actual work; the tint just
+   groups the block. */
+.wr-msg-bot {
+    margin: 6px 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--accent, #ea580c);
+    border-radius: 0 6px 6px 0;
+    background: var(--surface-hover, #fafafa);
+}
+.wr-msg-bot .wr-msg-body {
+    white-space: pre-wrap;      /* the tools return lists; keep their lines */
+    overflow-wrap: anywhere;
+}
+.wr-bot-tag {
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--accent, #ea580c);
+    color: var(--on-accent, #fff);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.wr-bot-thinking { opacity: 0.75; }
+
+/* ---- edit / delete ---- */
+/* The composer is the positioning context for the @ picker above. */
+.wr-composer { position: relative; }
+
+.wr-msg { position: relative; }
+.wr-msg-flag { font-size: 11px; font-style: italic; color: var(--text-dim, #999); }
+
+/* Actions appear on hover on a pointer device, and are always visible on touch —
+   there is no hover on a phone, and a control you cannot reach is not a control. */
+.wr-msg-acts {
+    position: absolute;
+    top: 4px; right: 0;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.wr-msg:hover .wr-msg-acts,
+.wr-msg:focus-within .wr-msg-acts { opacity: 1; }
+@media (hover: none) { .wr-msg-acts { opacity: 1; } }
+
+.wr-msg-act {
+    padding: 2px 8px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 4px;
+    background: var(--surface, #fff);
+    color: var(--text-muted, #666);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+.wr-msg-act:hover { border-color: var(--accent, #ea580c); color: var(--accent, #ea580c); }
+
+/* The tombstone. Muted and italic so it reads as an absence rather than as
+   something somebody said. */
+.wr-tombstone { color: var(--text-dim, #999); font-style: italic; }
+.wr-edit-area { resize: vertical; min-height: 110px; font-family: inherit; }
+
+/* ---- attachments on a message ---- */
+.wr-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+
+/* A screenshot is the commonest attachment in an incident, so it previews
+   rather than becoming a filename you have to open to understand. Capped
+   small: the feed is a conversation, not a gallery. */
+.wr-thumb { display: block; line-height: 0; }
+.wr-thumb img {
+    max-width: 220px;
+    max-height: 160px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+}
+
+.wr-file {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    max-width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+    background: var(--surface-hover, #fafafa);
+    color: var(--text, #333);
+    font-size: 13px;
+    text-decoration: none;
+}
+.wr-file:hover { border-color: var(--accent, #ea580c); }
+.wr-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-file-size { flex-shrink: 0; font-size: 11px; color: var(--text-dim, #999); }
+
+/* ---- presence (in the sidebar, under the channels) ---- */
+.wr-presence {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-soft, #f0f0f0);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim, #888);
+    overflow-wrap: anywhere;        /* a long list of names must not widen the panel */
+}
+/* Losing contact is the one state that must not look like "it's quiet". */
+.wr-presence-offline { color: var(--danger-accent, #c62828); font-weight: 600; }
+
+.wr-presence-label {
+    margin: 8px 0 2px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: var(--text-muted, #666);
+}
+.wr-presence-name { color: var(--text, #333); }
+/* Someone in the war room but in another channel: present, but not reading this. */
+.wr-presence-name.wr-away { color: var(--text-dim, #999); }
+
+.wr-desktop-opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-soft, #f0f0f0);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-muted, #666);
+    cursor: pointer;
+}
+.wr-desktop-opt input { margin-top: 2px; flex-shrink: 0; }
+
+.wr-pref { margin-top: 12px; }
+.wr-pref-label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--text-muted, #666); }
+.wr-pref select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 12px;
+}
+.wr-pref-hint { margin-top: 5px; font-size: 11px; line-height: 1.4; color: var(--text-dim, #999); }
+
+/* ---- composer ---- */
+/* `align-items: stretch` (the default) is what actually keeps the box and the
+   button the same height — matching two fixed heights by hand drifts the moment
+   either one's padding changes. The explicit height stops a 1-row textarea
+   coming out shorter than the button's padding makes it. */
+/* Presence used to sit between the feed and the composer and provided this
+   gap by accident; it now lives in the sidebar, so the gap has to be stated. */
+.wr-composer { display: flex; gap: 10px; align-items: stretch; margin-top: 12px; }
+
+.wr-composer textarea {
+    flex: 1;
+    min-width: 0;
+    height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.35;
+    resize: vertical;               /* drag it taller for a long message */
+    box-sizing: border-box;
+}
+.wr-composer textarea:focus {
+    outline: none;
+    border-color: var(--accent, #ea580c);
+}
+.wr-composer .btn { flex-shrink: 0; height: 42px; padding: 0 20px; }
+
+/* The attach control is a label wrapping a hidden file input — the native
+   button cannot be styled to match, and a label is still keyboard-reachable
+   and screen-reader-labelled via the visually-hidden span inside it. */
+.wr-attach {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text-muted, #666);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+.wr-attach:hover { border-color: var(--accent, #ea580c); color: var(--accent, #ea580c); }
+.wr-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Files chosen but not yet sent, so nobody presses Send believing a screenshot
+   is attached when the picker was cancelled. */
+.wr-pending { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.wr-pending[hidden] { display: none; }      /* same trap as .wr-panel above */
+.wr-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 260px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background: var(--surface-hover, #f0f0f0);
+    color: var(--text, #333);
+    font-size: 12px;
+}
+.wr-chip > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-chip-x { border: none; background: none; color: var(--text-muted, #666); font-size: 14px; line-height: 1; cursor: pointer; }
+
+.wr-archived-note {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+    background: var(--surface-hover, #fafafa);
+    color: var(--text-muted, #666);
+    font-size: 13px;
+}
+
+/* ---- side panel: search and the situation report ----
+   A panel rather than a page, so the conversation stays visible while you use
+   either — during an incident, losing sight of the chat to run a search is a
+   real cost. */
+/* ⚠️ An explicit `display` in author CSS BEATS the `hidden` attribute, whose
+   `display: none` comes from the browser's own stylesheet. Every element in this
+   file that JS toggles with .hidden and that also sets a display here needs its
+   own [hidden] rule — without it the panel simply never closes, which is exactly
+   what happened to the × button. */
+.wr-panel[hidden] { display: none; }
+
+.wr-panel {
+    width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface, #fff);
+    border-left: 1px solid var(--border, #e0e0e0);
+    overflow: hidden;
+}
+.wr-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border, #e0e0e0);
+}
+.wr-panel-head h3 { margin: 0; font-size: 15px; color: var(--text, #333); }
+.wr-panel-close {
+    border: none;
+    background: none;
+    color: var(--text-muted, #666);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+.wr-panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+
+.wr-search-input, .wr-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+.wr-scope { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 13px; color: var(--text-muted, #666); }
+.wr-muted { color: var(--text-dim, #999); font-size: 13px; padding: 8px 0; }
+.wr-warn  { color: var(--danger-accent, #c62828); font-size: 13px; padding: 8px 0; line-height: 1.5; }
+.wr-hint  { margin: 4px 0 12px; font-size: 12px; color: var(--text-dim, #999); }
+.wr-field-label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 500; color: var(--text, #333); }
+
+.wr-results { display: flex; flex-direction: column; gap: 6px; }
+.wr-result {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border, #e8e8e8);
+    border-radius: 6px;
+    background: none;
+    color: var(--text, #333);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.wr-result:hover { border-color: var(--accent, #ea580c); }
+.wr-result-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.wr-result-channel { font-size: 12px; font-weight: 600; color: var(--accent, #ea580c); }
+.wr-result-meta { font-size: 11px; color: var(--text-dim, #999); }
+.wr-result-snippet { font-size: 13px; line-height: 1.45; color: var(--text-muted, #555); overflow-wrap: anywhere; }
+
+.wr-sitrep-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.wr-sitrep-form select {
+    padding: 8px 10px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font: inherit;
+    font-size: 14px;
+}
+.wr-sitrep-go { align-self: flex-start; }
+/* The report is model prose inserted as TEXT — pre-wrap is what keeps its
+   paragraphs and bullets readable without ever rendering it as HTML. */
+.wr-report {
+    padding: 12px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+    background: var(--surface-hover, #fafafa);
+    color: var(--text, #333);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.wr-report-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-dim, #999);
+}
+
+/* ---- dialogs ---- */
+.wr-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.45);
+}
+.wr-modal[hidden] { display: none; }
+.wr-modal-card {
+    width: 100%;
+    max-width: 460px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface, #fff);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.wr-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border, #e0e0e0);
+}
+.wr-modal-head h3 { margin: 0; font-size: 16px; color: var(--text, #333); }
+.wr-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.wr-modal-actions { display: flex; gap: 8px; margin-top: 18px; }
+
+.wr-members { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
+.wr-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    color: var(--text, #333);
+}
+.wr-member:hover { background: var(--surface-hover, #f5f5f5); }
+.wr-member-btn { width: 100%; border: none; background: none; font: inherit; text-align: left; cursor: pointer; }
+.wr-here-dot { margin-left: auto; font-size: 11px; color: var(--success-accent, #2e7d32); }

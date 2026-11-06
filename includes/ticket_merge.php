@@ -1,0 +1,830 @@
+<?php
+/**
+ * Merging tickets.
+ *
+ * WHAT A MERGE ACTUALLY IS
+ * ------------------------
+ * Two people reported the same printer. Or a monitoring system opened forty tickets
+ * for one outage. Merging folds those conversations together so there is one place to
+ * answer from — without destroying the references the requesters already hold.
+ *
+ * THE REFERENCE IS THE HARD PART
+ * ------------------------------
+ * Every notification FreeITSM has ever sent carries `[SDREF:ABC-452-98881]` in its
+ * subject, and check_mailbox_email.php routes inbound replies by matching it. So a
+ * merged-away ticket can never simply cease to exist: somewhere out there are emails
+ * in a customer's inbox whose Reply button still points at it.
+ *
+ * That is why `tickets.merged_into_id` exists and why the source row is NEVER deleted.
+ * The source stays, closed and flagged, and both the UI and the mail importer follow
+ * the pointer. "Whatever happened to ABC?" is answerable forever, and a reply to a
+ * two-year-old ABC notification still lands on the live ticket.
+ *
+ * TWO POLICIES, BOTH THE ADMIN'S CHOICE
+ * -------------------------------------
+ * Tickets → Settings → Merge behaviour, install-wide (not per-analyst: whether a
+ * requester's reference survives is a promise to the CUSTOMER, and two analysts on
+ * the same mailbox must not be able to disagree about it).
+ *
+ *   reference_mode  'survivor' — one existing ticket lives on and keeps its number.
+ *                                Nothing the requester has seen becomes a dead ref.
+ *                   'new'      — a brand-new ticket is minted and EVERY source folds
+ *                                into it, including the one the analyst picked. All
+ *                                the old refs become redirects.
+ *
+ *   originals_mode  'thread'      messages move onto the target, tagged with where
+ *                                 they came from. Searchable, quotable, inline.
+ *                   'thread_html' as above, PLUS a self-contained HTML snapshot of
+ *                                 each source attached to the target.
+ *                   'html'        the messages stay on their original tickets and the
+ *                                 target gets only the snapshots. Tidiest target;
+ *                                 the trade-off is that inbox search no longer finds
+ *                                 the merged content, because search reads message
+ *                                 bodies and not attachments.
+ *
+ * WHAT MOVES AND WHAT STAYS
+ * -------------------------
+ * Fourteen tables hang off a ticket, and the split is not arbitrary — the test is
+ * "does this record describe the CONVERSATION, or does it describe what happened to
+ * THIS TICKET?" The first kind moves; the second kind would be falsified by moving.
+ *
+ *   MOVE   emails (attachments follow by email_id), ticket_notes, ticket_time_entries,
+ *          ticket_recordings, ticket_cmdb_objects, ticket_assets, tasks,
+ *          problem_tickets, change_tickets, form_submissions, webchat_conversations
+ *
+ *   STAY   ticket_audit          the source's own history. Moving it would rewrite
+ *                                the past and make the source look like it never had one.
+ *          sla_notifications_sent what the SLA engine did to THAT ticket, at the time.
+ *          ticket_csat_responses  a survey somebody answered ABOUT that ticket.
+ *          mailbox_activity_log   an append-only log; logs are not editable records.
+ */
+
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/services/tickets.php';
+require_once __DIR__ . '/uploads.php';   // the merge snapshot is written through it
+
+/** Tables whose rows describe the conversation and therefore follow it. */
+const MERGE_MOVE_TABLES = [
+    'ticket_notes', 'ticket_time_entries', 'ticket_recordings',
+    'tasks', 'form_submissions', 'webchat_conversations',
+];
+
+/**
+ * Move tables where a duplicate row on the target must not be created.
+ *
+ * The value is the column that pairs with ticket_id to make a row unique, and it
+ * goes straight into the SQL below — so a wrong name here is not a mismatch, it is
+ * an "Unknown column" thrown into a catch that assumes the table is simply absent.
+ * The move then silently does not happen. Check the name against the schema.
+ */
+const MERGE_MOVE_DEDUPE = [
+    'ticket_cmdb_objects' => 'cmdb_object_id',
+    'ticket_assets'       => 'asset_id',
+    'problem_tickets'     => 'problem_id',
+    'change_tickets'      => 'change_id',
+];
+
+/**
+ * Read the install's merge policy. Defaults are the conservative pair: keep the
+ * requester's reference alive, and keep the conversation searchable.
+ */
+function mergeSettings(PDO $conn): array {
+    $out = [
+        'reference_mode' => 'survivor',
+        'originals_mode' => 'thread',
+        'ai_summary'     => '1',
+    ];
+    try {
+        $stmt = $conn->query(
+            "SELECT setting_key, setting_value FROM system_settings
+              WHERE setting_key IN ('merge_reference_mode','merge_originals_mode','merge_ai_summary')"
+        );
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $k = str_replace('merge_', '', $row['setting_key']);
+            if ($row['setting_value'] !== null && $row['setting_value'] !== '') {
+                $out[$k] = $row['setting_value'];
+            }
+        }
+    } catch (Exception) { /* defaults stand */ }
+
+    if (!in_array($out['reference_mode'], ['survivor', 'new'], true))               $out['reference_mode'] = 'survivor';
+    if (!in_array($out['originals_mode'], ['thread', 'thread_html', 'html'], true)) $out['originals_mode'] = 'thread';
+    return $out;
+}
+
+/**
+ * Follow the merge chain to the ticket that is actually live.
+ *
+ * A ticket merged into a ticket that was later merged again must resolve all the way
+ * through, or an old email reply would land on a ticket that is itself closed and
+ * redirected. Bounded to 10 hops so a cycle — which should be impossible, but a
+ * database is not a proof — cannot hang a mailbox poller.
+ *
+ * @return int the id of the live ticket (the input id if it was never merged)
+ */
+function resolveMergedTicket(PDO $conn, int $ticketId): int {
+    $seen = [];
+    for ($i = 0; $i < 10; $i++) {
+        if (isset($seen[$ticketId])) break;      // cycle: stop where we are
+        $seen[$ticketId] = true;
+        try {
+            $stmt = $conn->prepare("SELECT merged_into_id FROM tickets WHERE id = ?");
+            $stmt->execute([$ticketId]);
+            $next = $stmt->fetchColumn();
+        } catch (Exception) {
+            return $ticketId;                    // column not there yet (pre-upgrade)
+        }
+        if ($next === false || $next === null) return $ticketId;
+        $ticketId = (int)$next;
+    }
+    return $ticketId;
+}
+
+/**
+ * Undo a merge: take back exactly what was moved, and reopen the source.
+ *
+ * HOW THIS DIFFERS FROM UNDOING A SPLIT
+ * ------------------------------------
+ * Undoing a split refuses if ANYTHING has happened on the new ticket, because that
+ * ticket was brand new — activity on it means somebody has started working the thing
+ * you are about to delete.
+ *
+ * A merge is the opposite. The survivor is the LIVE ticket: people are supposed to
+ * keep replying on it, and usually have. Refusing on that basis would make unmerge
+ * useless within the hour. So this takes back only what the merge recorded and leaves
+ * everything else on the survivor, including every reply written since.
+ *
+ * It still refuses when the recorded rows have been moved on AGAIN (split out, merged
+ * elsewhere), because then this is no longer a reversal and pretending otherwise
+ * strands messages.
+ *
+ * WHAT IT CANNOT PUT BACK
+ * -----------------------
+ * Ticket-to-ticket LINKS that the merge re-pointed at the survivor stay there. The
+ * merge did not record which links it moved (it deduplicates and drops self-links, so
+ * "which ones came from the source" is genuinely ambiguous afterwards). This is a
+ * known limitation rather than an oversight; the alternative is guessing, and links
+ * are cheap to re-add by hand.
+ *
+ * @param int $actorId  the analyst undoing the merge, for the audit rows
+ * @param int $mergeId  the merge to undo (ticket_merges.id)
+ */
+function unmergeTicket(PDO $conn, int $actorId, int $mergeId): array {
+    $ctx = ActorContext::fromSession($conn);
+
+    $q = $conn->prepare("SELECT * FROM ticket_merges WHERE id = ?");
+    $q->execute([$mergeId]);
+    $merge = $q->fetch(PDO::FETCH_ASSOC);
+    if (!$merge)                            throw new Exception('That merge was not found');
+    if (!empty($merge['undone_datetime']))  throw new Exception('That merge has already been undone');
+
+    $sourceId = (int)$merge['source_ticket_id'];
+    $targetId = (int)$merge['target_ticket_id'];
+
+    foreach ([$sourceId, $targetId] as $id) {
+        try { TicketsService::loadTicket($conn, $ctx, $id); }
+        catch (Throwable $e) { throw new Exception('Could not load ticket #' . $id . ' (' . $e->getMessage() . ')'); }
+    }
+
+    $emailIds = json_decode((string)$merge['moved_email_ids'], true);
+    if (!is_array($emailIds)) {
+        throw new Exception('This merge was made before FreeITSM recorded which messages moved, so it cannot be undone automatically');
+    }
+    $emailIds = array_values(array_filter(array_map('intval', $emailIds)));
+
+    // Every recorded message must still be on the survivor.
+    if ($emailIds) {
+        $in    = implode(',', $emailIds);
+        $still = (int)$conn->query("SELECT COUNT(*) FROM emails WHERE id IN ($in) AND ticket_id = $targetId")->fetchColumn();
+        if ($still !== count($emailIds)) {
+            throw new Exception('Some of those messages have since been moved again, so this merge can no longer be undone');
+        }
+    }
+
+    $related = json_decode((string)$merge['moved_related'], true);
+    if (!is_array($related)) $related = [];
+
+    $conn->beginTransaction();
+    try {
+        if ($emailIds) {
+            $conn->exec("UPDATE emails SET ticket_id = $sourceId WHERE id IN (" . implode(',', $emailIds) . ")");
+        }
+
+        // Notes, time, tasks, CMDB/problem/change links — everything else that moved.
+        foreach ($related as $table => $ids) {
+            if (!preg_match('/^[a-z_]+$/', (string)$table)) continue;   // developer-supplied, still guarded
+            $ids = array_values(array_filter(array_map('intval', (array)$ids)));
+            if (!$ids) continue;
+            try {
+                $conn->exec("UPDATE `$table` SET ticket_id = $sourceId WHERE id IN (" . implode(',', $ids) . ") AND ticket_id = $targetId");
+            } catch (Exception) { /* table absent on a part-upgraded install */ }
+        }
+
+        // The HTML snapshot the merge attached to the survivor describes a merge that
+        // no longer exists. Remove the carrier message, its attachment row, and the
+        // file itself — leaving the file behind would quietly fill the disk.
+        if (!empty($merge['snapshot_email_id'])) {
+            $sid = (int)$merge['snapshot_email_id'];
+            try {
+                $af = $conn->prepare("SELECT file_path FROM email_attachments WHERE email_id = ?");
+                $af->execute([$sid]);
+                $base = dirname(__DIR__) . '/tickets/attachments/';
+                foreach ($af->fetchAll(PDO::FETCH_COLUMN) as $path) {
+                    if ($path && is_file($base . $path)) @unlink($base . $path);
+                }
+                $conn->prepare("DELETE FROM email_attachments WHERE email_id = ?")->execute([$sid]);
+                $conn->prepare("DELETE FROM emails WHERE id = ? AND ticket_id = ?")->execute([$sid, $targetId]);
+            } catch (Exception) { /* best effort — never fail an unmerge over a file */ }
+        }
+
+        // Reopen the source AS IT WAS. Not "Open" — that would be wrong for a ticket
+        // that had already been resolved when somebody merged it.
+        $conn->prepare(
+            "UPDATE tickets
+                SET merged_into_id = NULL,
+                    status_id = COALESCE(?, status_id),
+                    closed_datetime = ?,
+                    updated_datetime = UTC_TIMESTAMP()
+              WHERE id = ?"
+        )->execute([
+            $merge['source_prev_status_id'] !== null ? (int)$merge['source_prev_status_id'] : null,
+            $merge['source_prev_closed_datetime'],
+            $sourceId,
+        ]);
+
+        // Drop the duplicate_of link the merge created (the one thing we know we made).
+        try {
+            $conn->prepare("DELETE FROM ticket_links WHERE source_ticket_id = ? AND target_ticket_id = ? AND relation_type = 'duplicate_of'")
+                 ->execute([$sourceId, $targetId]);
+        } catch (Exception) { /* linking not installed */ }
+
+        // In 'new' reference mode the survivor was created BY the merge. Once the last
+        // source has been taken back out it holds nothing of its own, so it goes to
+        // the trash rather than lingering as an empty ticket nobody can explain.
+        $targetEmptied = false;
+        if ($merge['reference_mode'] === 'new') {
+            $rq = $conn->prepare("SELECT COUNT(*) FROM ticket_merges WHERE target_ticket_id = ? AND undone_datetime IS NULL AND id <> ?");
+            $rq->execute([$targetId, $mergeId]);
+            $remaining = (int)$rq->fetchColumn();
+
+            $leftOver = (int)$conn->query("SELECT COUNT(*) FROM emails WHERE ticket_id = $targetId")->fetchColumn();
+            if ($remaining === 0 && $leftOver === 0) {
+                TicketsService::deleteTicket($conn, $ctx, $targetId, true);
+                $targetEmptied = true;
+            }
+        }
+
+        $conn->prepare("UPDATE ticket_merges SET undone_datetime = UTC_TIMESTAMP(), undone_by_id = ? WHERE id = ?")
+             ->execute([$actorId ?: null, $mergeId]);
+
+        mergeAudit($conn, $sourceId, $actorId, 'Merge undone', null,
+            'Unmerged from ' . mergeTicketNumber($conn, $targetId));
+        if (!$targetEmptied) {
+            mergeAudit($conn, $targetId, $actorId, 'Merge undone', null,
+                ($merge['source_ticket_number'] ?? ('#' . $sourceId)) . ' was unmerged');
+        }
+
+        $conn->commit();
+        return [
+            'source_ticket_id'     => $sourceId,
+            'source_ticket_number' => $merge['source_ticket_number'],
+            'returned'             => count($emailIds),
+            'target_trashed'       => $targetEmptied,
+        ];
+    } catch (Exception $e) {
+        $conn->rollBack();
+        throw $e;
+    }
+}
+
+/** Is this ticket a merged-away one? Returns the target row, or null. */
+function mergedAwayInfo(PDO $conn, int $ticketId): ?array {
+    try {
+        // The merge id and whether it is reversible come along too, so the banner can
+        // offer Undo without a second round trip — and can stay silent when the merge
+        // predates the recording that makes an undo possible.
+        $stmt = $conn->prepare(
+            "SELECT t.merged_into_id, tgt.ticket_number, tgt.subject,
+                    m.id AS merge_id,
+                    (m.moved_email_ids IS NOT NULL) AS can_undo
+               FROM tickets t
+               LEFT JOIN tickets tgt ON tgt.id = t.merged_into_id
+               LEFT JOIN ticket_merges m
+                      ON m.source_ticket_id = t.id
+                     AND m.target_ticket_id = t.merged_into_id
+                     AND m.undone_datetime IS NULL
+              WHERE t.id = ? AND t.merged_into_id IS NOT NULL
+           ORDER BY m.id DESC LIMIT 1"
+        );
+        $stmt->execute([$ticketId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    } catch (Exception) {
+        return null;
+    }
+}
+
+/**
+ * Merge one or more source tickets into a target.
+ *
+ * @param int $actorId  the analyst doing the merge, for the audit rows
+ * @param int[] $sourceIds tickets to fold away
+ * @param int   $targetId  the ticket the analyst chose to keep
+ * @return array {target_id, target_number, merged: int[], created_new: bool}
+ * @throws Exception on anything that would leave a half-merge
+ */
+function mergeTickets(PDO $conn, int $actorId, array $sourceIds, int $targetId): array {
+    $settings = mergeSettings($conn);
+
+    $sourceIds = array_values(array_unique(array_map('intval', $sourceIds)));
+    $sourceIds = array_filter($sourceIds, fn($id) => $id > 0 && $id !== $targetId);
+    if (!$sourceIds) {
+        throw new Exception('Nothing to merge');
+    }
+
+    $ctx = ActorContext::fromSession($conn);
+
+    // Access check FIRST, for every ticket involved, before a single row moves. A
+    // merge is a multi-ticket write and a half-done one is far worse than a refused
+    // one — loadTicket() throws for anything unknown or out of this analyst's scope.
+    $all = array_merge($sourceIds, [$targetId]);
+    $tickets = [];
+    foreach ($all as $id) {
+        try {
+            $tickets[$id] = TicketsService::loadTicket($conn, $ctx, $id);
+        } catch (Throwable $e) {
+            // The service says a bare "Ticket not found." which, in a multi-ticket
+            // action, tells the analyst nothing about WHICH one — and it means two
+            // different things (no such id, or out of your company scope). Name the id
+            // so a failed merge is diagnosable from the toast alone.
+            throw new Exception('Could not load ticket #' . $id . ' (' . $e->getMessage() . ')');
+        }
+        if ($tickets[$id]['deleted_datetime'] !== null) {
+            throw new Exception('Ticket ' . $tickets[$id]['ticket_number'] . ' is in the trash — restore it first');
+        }
+        if (!empty($tickets[$id]['merged_into_id'])) {
+            throw new Exception('Ticket ' . $tickets[$id]['ticket_number'] . ' has already been merged');
+        }
+    }
+
+    // Same-company only. Folding a client's conversation into another client's ticket
+    // would be a data leak dressed up as an action, and it must be refused for an
+    // all-access analyst too — a same-company invariant binds every actor.
+    //
+    // ⚠️ `tickets.tenant_id` NULL does NOT mean "no company": for this table it means
+    // the DEFAULT company (an unrouted ticket). Comparing the raw values rejected a
+    // perfectly ordinary merge between an older NULL ticket and a Default-company one
+    // as "different companies" — which is most merges on an install that predates
+    // multi-tenancy. Normalise both sides through the default id before comparing.
+    // (This is the scoped-data meaning of NULL; config lists like ticket_types use
+    // the opposite convention. Always check which shape the table is.)
+    $normaliseTenant = function ($raw) use ($conn) {
+        if ($raw === null || $raw === '') return getDefaultTenantId($conn);
+        return (int)$raw;
+    };
+    $targetTenant = $normaliseTenant($tickets[$targetId]['tenant_id'] ?? null);
+    foreach ($sourceIds as $sid) {
+        if ($normaliseTenant($tickets[$sid]['tenant_id'] ?? null) !== $targetTenant) {
+            throw new Exception(
+                'Ticket ' . ($tickets[$sid]['ticket_number'] ?? $sid) . ' belongs to a different company from '
+                . ($tickets[$targetId]['ticket_number'] ?? $targetId) . ' — tickets can only be merged within one company'
+            );
+        }
+    }
+
+    $conn->beginTransaction();
+    try {
+        $createdNew = false;
+        $realTarget = $targetId;
+
+        // 'new' mode: mint a fresh ticket and fold EVERYTHING into it, including the
+        // ticket the analyst nominated. The nominated one supplies the new ticket's
+        // properties so nothing is lost, but it is no more "the survivor" than any
+        // other source — that is the whole point of this mode.
+        if ($settings['reference_mode'] === 'new') {
+            $realTarget = mergeCreateTargetTicket($conn, $tickets[$targetId], $actorId);
+            $createdNew = true;
+            $sourceIds[] = $targetId;
+            $tickets[$realTarget] = TicketsService::loadTicket($conn, $ctx, $realTarget);
+        }
+
+        $merged = [];
+        foreach ($sourceIds as $sid) {
+            mergeOneTicket($conn, $actorId, $sid, $realTarget, $tickets[$sid], $settings);
+            $merged[] = $sid;
+        }
+
+        // Confidential travels with the messages (discussion #62). The target now
+        // holds every source's conversation, so if ANY of them was confidential,
+        // so is it - otherwise merging would be a way to show a manager a ticket
+        // they were never meant to see. Unmerging leaves it confidential (raise-only).
+        require_once __DIR__ . '/ticket_sensitivity.php';
+        ticketSensitivityInherit($conn, (int)$realTarget, $merged, 'merged with a confidential ticket');
+        ticketSensitivityApplyDefaults($conn, (int)$realTarget);
+
+        $conn->commit();
+        return [
+            'target_id'     => $realTarget,
+            'target_number' => $tickets[$realTarget]['ticket_number'] ?? '',
+            'merged'        => $merged,
+            'created_new'   => $createdNew,
+            'settings'      => $settings,
+        ];
+    } catch (Exception $e) {
+        $conn->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * Create the brand-new ticket that everything folds into ('new' reference mode).
+ *
+ * @param array $model  the nominated ticket's row (from TicketsService::loadTicket()), whose properties the new ticket copies
+ * @param int $actorId  the analyst doing the merge, for the audit row
+ */
+function mergeCreateTargetTicket(PDO $conn, array $model, int $actorId): int {
+    // Reuse the service's own generator via a plain insert: the service's createTicket
+    // would also raise an initial email row and fire workflow triggers, neither of
+    // which belongs to a merge.
+    // TRAP: the install's numbering, never a number made here - see
+    //   messagingGenerateTicketNumber() for what went wrong when it was.
+    $number = TicketNumbering::next(
+        $conn,
+        !empty($model['ticket_type_id']) ? (int)$model['ticket_type_id'] : null,
+        !empty($model['tenant_id'])      ? (int)$model['tenant_id']      : null
+    );
+
+    $stmt = $conn->prepare(
+        "INSERT INTO tickets
+            (ticket_number, subject, status_id, priority_id, department_id, ticket_type_id,
+             assigned_analyst_id, origin_id, user_id, owner_id, tenant_id, created_datetime, updated_datetime)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+    );
+    $stmt->execute([
+        $number,
+        $model['subject'] ?? 'Merged ticket',
+        $model['status_id'] ?? null,
+        $model['priority_id'] ?? null,
+        $model['department_id'] ?? null,
+        $model['ticket_type_id'] ?? null,
+        $model['assigned_analyst_id'] ?? null,
+        $model['origin_id'] ?? null,
+        $model['user_id'] ?? null,
+        $model['owner_id'] ?? null,
+        $model['tenant_id'] ?? null,
+    ]);
+    $newId = (int)$conn->lastInsertId();
+
+    mergeAudit($conn, $newId, $actorId, 'Ticket Created', null, 'Created by merging tickets');
+    return $newId;
+}
+
+/**
+ * Fold a single source into the target. Assumes the caller holds a transaction.
+ *
+ * @param int $actorId  the analyst doing the merge, for the audit rows
+ * @param int $sourceId  the ticket being folded away
+ * @param int $targetId  the ticket it is folded into
+ * @param array $source  the source ticket's row, as loaded by TicketsService::loadTicket()
+ * @param array $settings  the merge policy from mergeSettings(): reference_mode, originals_mode, ai_summary
+ */
+function mergeOneTicket(PDO $conn, int $actorId, int $sourceId, int $targetId, array $source, array $settings): void {
+    $moveMessages = ($settings['originals_mode'] !== 'html');
+    $makeSnapshot = ($settings['originals_mode'] !== 'thread');
+
+    // The HTML snapshot is built BEFORE anything moves — once the messages are on the
+    // target there is no longer a "source conversation" to render.
+    $snapshotHtml = $makeSnapshot ? mergeBuildSnapshotHtml($conn, $sourceId, $source) : null;
+
+    // Capture which messages are about to move BEFORE moving them — afterwards they
+    // are indistinguishable from the target's own. Recorded so unmerge is possible
+    // later; a count would leave an undo guessing.
+    $movedIds = [];
+    if ($moveMessages) {
+        $q = $conn->prepare("SELECT id FROM emails WHERE ticket_id = ?");
+        $q->execute([$sourceId]);
+        $movedIds = array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN));
+
+        $stmt = $conn->prepare("UPDATE emails SET ticket_id = ? WHERE ticket_id = ?");
+        $stmt->execute([$targetId, $sourceId]);
+    }
+
+    // Record which rows move, per table, BEFORE moving them — afterwards they are
+    // indistinguishable from the target's own. Messages alone are not a merge: an
+    // unmerge that returned only emails would strand this ticket's notes and logged
+    // time on somebody else's ticket.
+    $movedRelated = [];
+    foreach (MERGE_MOVE_TABLES as $table) {
+        try {
+            $q = $conn->prepare("SELECT id FROM `$table` WHERE ticket_id = ?");
+            $q->execute([$sourceId]);
+            $rows = array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN));
+            if ($rows) $movedRelated[$table] = $rows;
+
+            $conn->prepare("UPDATE `$table` SET ticket_id = ? WHERE ticket_id = ?")->execute([$targetId, $sourceId]);
+        } catch (Exception) { /* table absent on a part-upgraded install */ }
+    }
+
+    // Dedupe-on-move: linking the same CMDB object or problem twice would show the
+    // analyst a duplicate row for no reason.
+    foreach (MERGE_MOVE_DEDUPE as $table => $col) {
+        try {
+            // Note the ordering: the de-dupe DELETE runs first, so what is recorded
+            // afterwards is exactly the set that actually moves. Recording before the
+            // delete would promise an unmerge rows that no longer exist.
+            $conn->prepare(
+                "DELETE FROM `$table`
+                  WHERE ticket_id = ?
+                    AND `$col` IN (SELECT * FROM (SELECT `$col` FROM `$table` WHERE ticket_id = ?) x)"
+            )->execute([$sourceId, $targetId]);
+
+            $q = $conn->prepare("SELECT id FROM `$table` WHERE ticket_id = ?");
+            $q->execute([$sourceId]);
+            $rows = array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN));
+            if ($rows) $movedRelated[$table] = $rows;
+
+            $conn->prepare("UPDATE `$table` SET ticket_id = ? WHERE ticket_id = ?")->execute([$targetId, $sourceId]);
+        } catch (Exception) { /* absent */ }
+    }
+
+    // Ticket-to-ticket links: re-point at the target, then drop self-links and any
+    // duplicate pair the re-point just created.
+    try {
+        $conn->prepare("UPDATE ticket_links SET source_ticket_id = ? WHERE source_ticket_id = ?")->execute([$targetId, $sourceId]);
+        $conn->prepare("UPDATE ticket_links SET target_ticket_id = ? WHERE target_ticket_id = ?")->execute([$targetId, $sourceId]);
+        $conn->prepare("DELETE FROM ticket_links WHERE source_ticket_id = target_ticket_id")->execute();
+        $conn->exec(
+            "DELETE l1 FROM ticket_links l1
+               INNER JOIN ticket_links l2
+                  ON l1.source_ticket_id = l2.source_ticket_id
+                 AND l1.target_ticket_id = l2.target_ticket_id
+                 AND l1.relation_type   = l2.relation_type
+                 AND l1.id > l2.id"
+        );
+    } catch (Exception) { /* linking not installed */ }
+
+    $snapshotEmailId = null;
+    if ($snapshotHtml !== null) {
+        $snapshotEmailId = mergeAttachSnapshot($conn, $targetId, $source, $snapshotHtml);
+    }
+
+    // What the source looked like BEFORE the merge closes it. Restoring an unmerged
+    // ticket to "Open" would be a guess, and the wrong one for anything that had
+    // already been resolved when it was merged.
+    $prevStatusId = $source['status_id'] ?? null;
+    $prevClosedAt = $source['closed_datetime'] ?? null;
+
+    // Close the source and point it at the target. The status is the install's OWN
+    // first closed status — never a hardcoded name, because an install may have
+    // renamed or added its own (the same rule the reopen-on-reply logic follows).
+    $closedId = mergeFirstClosedStatusId($conn);
+    $conn->prepare(
+        "UPDATE tickets
+            SET merged_into_id = ?,
+                status_id = COALESCE(?, status_id),
+                closed_datetime = COALESCE(closed_datetime, UTC_TIMESTAMP()),
+                updated_datetime = UTC_TIMESTAMP()
+          WHERE id = ?"
+    )->execute([$targetId, $closedId, $sourceId]);
+
+    // The merge log, and an audit entry on BOTH tickets — the source needs to say
+    // where it went, the target needs to say what arrived.
+    $targetNumber = mergeTicketNumber($conn, $targetId);
+    $conn->prepare(
+        "INSERT INTO ticket_merges
+            (source_ticket_id, source_ticket_number, target_ticket_id, reference_mode,
+             originals_mode, moved_email_ids, moved_related, snapshot_email_id,
+             source_prev_status_id, source_prev_closed_datetime, merged_by_id, merged_datetime)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())"
+    )->execute([
+        $sourceId, $source['ticket_number'] ?? null, $targetId,
+        $settings['reference_mode'], $settings['originals_mode'],
+        json_encode($movedIds), json_encode($movedRelated), $snapshotEmailId,
+        $prevStatusId, $prevClosedAt, $actorId ?: null,
+    ]);
+
+    mergeAudit($conn, $sourceId, $actorId, 'Merged', $source['ticket_number'] ?? '', 'Merged into ' . $targetNumber);
+    mergeAudit($conn, $targetId, $actorId, 'Merged', null, 'Merged in ' . ($source['ticket_number'] ?? ('#' . $sourceId)));
+
+    // Record the relationship in the existing linking feature too, so the Links
+    // section and the merge banner agree rather than telling two stories.
+    try {
+        $conn->prepare(
+            "INSERT INTO ticket_links (source_ticket_id, target_ticket_id, relation_type, created_by_id, created_datetime)
+             VALUES (?, ?, 'duplicate_of', ?, UTC_TIMESTAMP())"
+        )->execute([$sourceId, $targetId, $actorId ?: null]);
+    } catch (Exception) { /* linking not installed, or already linked */ }
+}
+
+/** The install's first closed status id, or null if none is flagged. */
+function mergeFirstClosedStatusId(PDO $conn): ?int {
+    try {
+        $row = $conn->query("SELECT id FROM ticket_statuses WHERE is_closed = 1 ORDER BY display_order, id LIMIT 1")->fetchColumn();
+        return $row ? (int)$row : null;
+    } catch (Exception) {
+        return null;
+    }
+}
+
+/** A ticket's number for audit and note text; "#id" if the lookup fails. */
+function mergeTicketNumber(PDO $conn, int $ticketId): string {
+    try {
+        $stmt = $conn->prepare("SELECT ticket_number FROM tickets WHERE id = ?");
+        $stmt->execute([$ticketId]);
+        return (string)$stmt->fetchColumn();
+    } catch (Exception) {
+        return '#' . $ticketId;
+    }
+}
+
+/**
+ * Writes one ticket_audit row for a merge step, best-effort - a failed audit
+ * write never stops the merge. An actor id of 0 is stored as NULL.
+ *
+ * @param int $actorId  the analyst doing the merge; 0 is stored as NULL
+ * @param string $field  the audit field: 'Ticket Created', 'Merged' or 'Merge undone'
+ * @param ?string $old  the value before, or null
+ * @param ?string $new  the value after, or null
+ * @writes ticket_audit - the merge shows in each ticket's history
+ */
+function mergeAudit(PDO $conn, int $ticketId, int $actorId, string $field, ?string $old, ?string $new): void {
+    try {
+        $conn->prepare(
+            "INSERT INTO ticket_audit (ticket_id, analyst_id, field_name, old_value, new_value, created_datetime)
+             VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())"
+        )->execute([$ticketId, $actorId ?: null, $field, $old, $new]);
+    } catch (Exception) { /* audit is best-effort, never fail a merge for it */ }
+}
+
+/**
+ * Render a source ticket's whole conversation as a self-contained HTML document.
+ *
+ * ⚠️ THIS FILE IS OPENED OUTSIDE THE APP. An analyst downloads it and it renders in a
+ * browser tab with no Content-Security-Policy and none of the app's protections, and
+ * the message bodies in it were written by whoever emailed the service desk.
+ *
+ * So every body goes through sanitiseUserHtml() — the same customer allow-list the
+ * portal uses on the way in — which keeps a short list of formatting tags and drops
+ * <script>, <style>, <iframe>, every on* handler and <img>. Plain-text bodies are
+ * escaped and <br>-ed instead. Nothing else here is interpolated without
+ * htmlspecialchars().
+ *
+ * Stripping <script> alone would NOT be enough: `onerror` on a surviving tag fires
+ * with no script element anywhere. That is why this uses the one shared allow-list
+ * rather than a hand-rolled strip.
+ *
+ * @param int $sourceId  the ticket whose conversation and notes to render
+ * @param array $source  that ticket's row (ticket_number, subject, created_datetime)
+ */
+function mergeBuildSnapshotHtml(PDO $conn, int $sourceId, array $source): string {
+    require_once __DIR__ . '/html_sanitise.php';
+
+    $esc = function ($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); };
+
+    try {
+        $stmt = $conn->prepare(
+            "SELECT subject, from_name, from_address, received_datetime,
+                    body_content, body_type, direction
+               FROM emails WHERE ticket_id = ? ORDER BY received_datetime, id"
+        );
+        $stmt->execute([$sourceId]);
+        $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception) { $messages = []; }
+
+    try {
+        $stmt = $conn->prepare(
+            "SELECT n.note_text, n.created_datetime, a.full_name
+               FROM ticket_notes n LEFT JOIN analysts a ON a.id = n.analyst_id
+              WHERE n.ticket_id = ? ORDER BY n.created_datetime, n.id"
+        );
+        $stmt->execute([$sourceId]);
+        $notes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception) { $notes = []; }
+
+    $rows = '';
+    foreach ($messages as $m) {
+        $body = (string)($m['body_content'] ?? '');
+        $safe = (strtolower((string)$m['body_type']) === 'html')
+            ? sanitiseUserHtml($body)
+            : nl2br($esc($body));
+
+        $who = trim(($m['from_name'] ?? '') . ' <' . ($m['from_address'] ?? '') . '>');
+        $rows .= '<div class="msg"><div class="meta"><strong>' . $esc($m['direction'] ?? '') . '</strong> &mdash; '
+               . $esc($who) . ' &mdash; ' . $esc($m['received_datetime'] ?? '') . '</div>'
+               . '<div class="subj">' . $esc($m['subject'] ?? '') . '</div>'
+               . '<div class="body">' . $safe . '</div></div>';
+    }
+    if ($rows === '') $rows = '<p class="empty">This ticket had no messages.</p>';
+
+    $noteRows = '';
+    foreach ($notes as $n) {
+        $noteRows .= '<div class="note"><div class="meta">' . $esc($n['full_name'] ?? 'Analyst')
+                   . ' &mdash; ' . $esc($n['created_datetime'] ?? '') . '</div>'
+                   . '<div class="body">' . nl2br($esc($n['note_text'] ?? '')) . '</div></div>';
+    }
+    if ($noteRows !== '') $noteRows = '<h2>Internal notes</h2>' . $noteRows;
+
+    $ref     = $esc($source['ticket_number'] ?? '');
+    $subject = $esc($source['subject'] ?? '');
+    $created = $esc($source['created_datetime'] ?? '');
+    $stamp   = gmdate('Y-m-d H:i') . ' UTC';
+
+    // Styles are inline because the document must render standalone, off-server.
+    $css = 'body{font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;font-size:14px;color:#222;background:#f6f7f9;margin:0;padding:24px;}'
+         . '.wrap{max-width:860px;margin:0 auto;background:#fff;border:1px solid #e2e5e9;border-radius:8px;padding:28px;}'
+         . 'h1{font-size:19px;margin:0 0 4px;}h2{font-size:15px;margin:26px 0 10px;border-bottom:1px solid #eee;padding-bottom:6px;}'
+         . '.hdr{color:#666;font-size:12px;margin-bottom:18px;}'
+         . '.msg,.note{border:1px solid #e6e9ec;border-radius:6px;padding:14px 16px;margin-bottom:12px;}'
+         . '.note{background:#fffdf3;border-color:#f0e6c0;}'
+         . '.meta{color:#666;font-size:12px;margin-bottom:6px;}'
+         . '.subj{font-weight:600;margin-bottom:8px;}'
+         . '.body{line-height:1.55;overflow-wrap:anywhere;}'
+         . '.body table{max-width:100%;border-collapse:collapse;}.body td,.body th{border:1px solid #ddd;padding:4px 6px;}'
+         . '.empty{color:#888;font-style:italic;}'
+         . '.foot{margin-top:26px;color:#888;font-size:11px;border-top:1px solid #eee;padding-top:10px;}';
+
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+         . '<title>' . $ref . ' &mdash; ' . $subject . '</title><style>' . $css . '</style></head>'
+         . '<body><div class="wrap">'
+         . '<h1>' . $ref . ' &mdash; ' . $subject . '</h1>'
+         . '<div class="hdr">Raised ' . $created . '. Snapshot taken when this ticket was merged, ' . $esc($stamp) . '.</div>'
+         . '<h2>Conversation</h2>' . $rows . $noteRows
+         . '<div class="foot">Generated by FreeITSM. Scripts and remote images were removed when this snapshot was made.</div>'
+         . '</div></body></html>';
+}
+
+/**
+ * Attach a snapshot to the target ticket.
+ *
+ * A ticket's attachments are, in this schema, ALWAYS `email_attachments` reached
+ * through `emails.ticket_id` — there is no standalone ticket-attachment table. So the
+ * snapshot arrives as a system-generated message on the thread carrying the file.
+ * That is not a workaround dressed as a design: it puts the snapshot in the
+ * conversation where an analyst will notice it AND in the Attachments list, from one
+ * insert, downloadable through the same endpoint as every other attachment.
+ *
+ * @param int $targetId  the ticket the snapshot is attached to
+ * @param array $source  the source ticket's row (ticket_number, id) - its number names the file
+ * @param string $html  the snapshot document from mergeBuildSnapshotHtml()
+ */
+function mergeAttachSnapshot(PDO $conn, int $targetId, array $source, string $html): int {
+    $ref = $source['ticket_number'] ?? ('ticket-' . (int)($source['id'] ?? 0));
+
+    $conn->prepare(
+        "INSERT INTO emails
+            (subject, from_address, from_name, received_datetime, body_content, body_type,
+             has_attachments, is_read, ticket_id, direction, channel, is_initial, processed_datetime, ticket_created)
+         VALUES (?, '', 'FreeITSM', UTC_TIMESTAMP(), ?, 'html', 1, 1, ?, 'Manual', 'email', 0, UTC_TIMESTAMP(), 1)"
+    )->execute([
+        'Merged from ' . $ref,
+        '<p>Ticket <strong>' . htmlspecialchars((string)$ref, ENT_QUOTES, 'UTF-8')
+            . '</strong> was merged into this one. Its full conversation is attached as an HTML file.</p>',
+        $targetId,
+    ]);
+    $emailId = (int)$conn->lastInsertId();
+
+    // Same on-disk layout the mailbox importer uses, so anything that already walks
+    // tickets/attachments keeps working.
+    $baseDir = dirname(__DIR__) . '/tickets/attachments';
+    $subDir  = (string)floor($emailId / 1000);
+    $dir     = $baseDir . '/' . $subDir . '/' . $emailId;
+
+    // ⚠️ THE SNAPSHOT GOES THROUGH includes/uploads.php LIKE EVERYTHING ELSE.
+    //
+    // This used to file_put_contents() a hand-named `.html` straight into the web
+    // root — the exact pattern uploads.php exists to stop, written by the one caller
+    // nobody thought to check because the bytes are ours rather than a stranger's.
+    // Erlend Volden flagged it: provenance is not the point. An `.html` file living
+    // under tickets/attachments/ is same-origin script execution the moment anything
+    // serves it, and the only thing standing in the way was a .htaccess that does not
+    // exist on nginx and needs separate configuration on IIS.
+    //
+    // uploadStoreBytes() gives it a random name of OUR choosing. `.html` is not an
+    // accepted type — deliberately, that decision is the sanitiser's whole point — so
+    // the file is QUARANTINED to `.bin`, which no server hands to an interpreter and
+    // which attachmentSendHeaders() can only ever return as an octet-stream download.
+    //
+    // The feature is unaffected: `filename` in the database is still `SDREF.html`, so
+    // the analyst downloads a file that opens in a browser as before. What changed is
+    // that the copy sitting on our disk is inert, and its name is unguessable.
+    $stored = uploadStoreBytes(
+        $html,
+        preg_replace('/[^a-zA-Z0-9._-]/', '_', (string)$ref) . '.html',
+        $dir,
+        ATTACHMENT_POLICY_STORE
+    );
+    if (empty($stored['stored'])) {
+        throw new Exception('Could not write the merge snapshot file'
+            . ($stored['reason'] ? ' — ' . $stored['reason'] : ''));
+    }
+
+    $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', (string)$ref) . '.html';
+    $relPath  = $subDir . '/' . $emailId . '/' . $stored['stored_name'];
+
+    $conn->prepare(
+        "INSERT INTO email_attachments (email_id, filename, content_type, file_path, file_size, is_inline, created_datetime)
+         VALUES (?, ?, 'text/html', ?, ?, 0, UTC_TIMESTAMP())"
+    )->execute([$emailId, $filename, $relPath, strlen($html)]);
+
+    return $emailId;
+}

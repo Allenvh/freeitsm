@@ -1,0 +1,50 @@
+# A throwaway Zabbix 7.0 LTS, for testing the Zabbix integration end to end
+# against the real thing (tests/zabbix/run.php drives it). Developer tooling:
+# nothing in FreeITSM needs this to run.
+#
+#   docker compose -f tests/zabbix/docker-compose.yml up -d
+#   php tests/zabbix/run.php
+#   docker compose -f tests/zabbix/docker-compose.yml down -v     # remove it all
+#
+# Zabbix reaches FreeITSM on the host through host.docker.internal, so the
+# web server on the host must listen beyond 127.0.0.1. Ports are loopback-only:
+# nothing here is reachable from the network.
+name: freeitsm-zabbix-test
+
+services:
+  zbx-db:
+    image: mysql:8.0
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin", "--log-bin-trust-function-creators=1"]
+    environment:
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix-test-only
+      MYSQL_ROOT_PASSWORD: zabbix-test-only-root
+    volumes: [zbx-db:/var/lib/mysql]
+
+  zbx-server:
+    image: zabbix/zabbix-server-mysql:alpine-7.0-latest
+    depends_on: [zbx-db]
+    environment:
+      DB_SERVER_HOST: zbx-db
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix-test-only
+      MYSQL_ROOT_PASSWORD: zabbix-test-only-root
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:10051:10051"]   # zabbix_sender pushes trapper values here
+
+  zbx-web:
+    image: zabbix/zabbix-web-nginx-mysql:alpine-7.0-latest
+    depends_on: [zbx-server]
+    environment:
+      DB_SERVER_HOST: zbx-db
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix-test-only
+      ZBX_SERVER_HOST: zbx-server
+      PHP_TZ: UTC
+    ports: ["127.0.0.1:8086:8080"]     # http://localhost:8086  (Admin / zabbix)
+
+volumes:
+  zbx-db:

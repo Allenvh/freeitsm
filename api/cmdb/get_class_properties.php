@@ -5,6 +5,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -12,6 +13,10 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// CMDB reference data — was reachable by any signed-in analyst, even one
+// without the CMDB module. Classes stay install-wide (no company scope).
+requireModuleAccessJson('cmdb');
 
 try {
     $classId = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
@@ -21,7 +26,7 @@ try {
 
     $stmt = $conn->prepare(
         "SELECT p.id, p.class_id, p.property_key, p.label, p.property_type,
-                p.target_class_id, p.is_required, p.display_order,
+                p.target_class_id, p.is_required, p.spreads_impact, p.display_order,
                 tc.name AS target_class_name
            FROM cmdb_class_properties p
       LEFT JOIN cmdb_classes tc ON tc.id = p.target_class_id

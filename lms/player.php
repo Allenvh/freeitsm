@@ -6,13 +6,18 @@
 session_start();
 require_once '../config.php';
 require_once '../includes/i18n.php';
+require_once '../includes/timezone.php';
+require_once '../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
 require_once '../includes/functions.php';
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../auth/login.php');
     exit;
 }
+
+requireModuleAccess('lms');
 
 $courseId = (int)($_GET['course_id'] ?? 0);
 if (!$courseId) {
@@ -28,6 +33,41 @@ if (!$course) {
     die('Course not found');
 }
 
+// Playback gate: a learner may only open a course assigned to them; a manager
+// (or admin) may open any, which is how Preview works. Enforced here so it can't
+// be bypassed by typing the player URL for an unassigned course.
+require_once '../includes/lms_access.php';
+if (!lmsCanAccessCourse($conn, LmsLearner::analyst((int)$_SESSION['analyst_id']), $courseId)) {
+    header('Location: my-courses.php?denied=1');
+    exit;
+}
+
+/* Where "back" goes, and what it says.
+   Preview in the course editor opens the REAL player, in the same tab, and the
+   player's own back link went to the console — so previewing a lesson dropped
+   you three clicks away from the lesson you were editing, which is where the
+   confusion comes from. `from=editor` sends you back to the editor instead.
+
+   ⚠️ Checked against the capability, not just the parameter: anyone can type
+   `&from=editor`, and a learner must not be handed a link to an authoring
+   screen they cannot open. `common.back` is reused rather than a new string
+   being invented for it — it is accurate, and already translated everywhere.
+
+   Computed HERE, above the native handoff, so the authored-course player
+   (which is included below and draws its own toolbar) gets the same answer. */
+$fromEditor = (($_GET['from'] ?? '') === 'editor')
+    && analystHasCapability($conn, (int)$_SESSION['analyst_id'], Cap::LMS_MANAGE);
+$backHref  = $fromEditor ? ('editor.php?course_id=' . (int)$courseId) : './';
+$backLabel = $fromEditor ? t('common.back') : t('lms.player.back');
+
+// An authored course has no package and no launch URL — it is rendered by our
+// own player from the database. Hand off before the SCORM checks below, which
+// would (correctly) reject it.
+if (($course['content_type'] ?? 'scorm') === 'native') {
+    require __DIR__ . '/native-player.php';
+    exit;
+}
+
 if (empty($course['launch_url'])) {
     die('Course has no launch URL. The SCORM package may not have been parsed correctly.');
 }
@@ -39,25 +79,31 @@ $path_prefix = '../';
 $translationNamespaces = ['common', 'lms'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($course['title']); ?> - <?php echo htmlspecialchars(t('lms.title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/lms.css">
+    <title><?php echo htmlspecialchars(pageTitle('lms', $course['title'])); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/lms.css?v=11">
+    <!-- Mobile layer: linked AFTER this page's own CSS so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
 </head>
-<body>
+<body data-mobile-module="lms">
     <?php include 'includes/header.php'; ?>
 
     <div class="lms-player">
         <div class="lms-player-toolbar">
             <span class="course-title"><?php echo htmlspecialchars($course['title']); ?></span>
             <div style="display: flex; gap: 8px; align-items: center;">
-                <span style="font-size: 12px; color: #666;"><?php echo htmlspecialchars(t('lms.player.scorm_version', ['version' => $course['scorm_version'] ?? '?'])); ?></span>
-                <a href="./" class="btn btn-secondary" style="font-size: 12px; padding: 5px 12px;"><?php echo htmlspecialchars(t('lms.player.back')); ?></a>
+                <span style="font-size: 12px; color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('lms.player.scorm_version', ['version' => $course['scorm_version'] ?? '?'])); ?></span>
+                <a href="<?php echo htmlspecialchars($backHref); ?>" class="btn btn-secondary" style="font-size: 12px; padding: 5px 12px;"><?php echo htmlspecialchars($backLabel); ?></a>
             </div>
         </div>
         <iframe id="scormFrame" class="lms-player-frame" src="<?php echo htmlspecialchars($launchUrl); ?>" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
@@ -72,7 +118,7 @@ $translationNamespaces = ['common', 'lms'];
         apiEndpoint: '../api/lms/scorm_data.php'
     };
     </script>
-    <script src="../assets/js/scorm-api.js"></script>
+    <script src="../assets/js/scorm-api.js?v=3"></script>
 
     <script>
     // Auto-commit on page unload
@@ -87,5 +133,6 @@ $translationNamespaces = ['common', 'lms'];
         }
     });
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

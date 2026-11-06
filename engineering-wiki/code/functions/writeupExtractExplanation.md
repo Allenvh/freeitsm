@@ -1,0 +1,20 @@
+# writeupExtractExplanation()
+
+The prose part of a NOT_ENOUGH body, with the question lines removed.
+
+```php
+function writeupExtractExplanation(string $body): string
+```
+
+Defined in [includes/knowledge/writeup_ai.php](/code/files/includes/knowledge/writeup_ai.php.md), line 843.
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `$body` | `string` |  | the body of a NOT_ENOUGH response, from `writeupParseResponse()` |
+
+**Returns:** `string`
+
+## Called from
+
+- [api/knowledge/writeup_stream.php](/code/files/api/knowledge/writeup_stream.php.md)
+

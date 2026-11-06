@@ -12,12 +12,16 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -60,6 +64,7 @@ try {
 
     $conn->prepare("UPDATE tickets SET tenant_id = ?, updated_datetime = UTC_TIMESTAMP() WHERE id = ?")
          ->execute([$targetId, $ticketId]);
+    ticketsFollowCompanyMove($conn, [$ticketId], $targetId);   // its tasks and search entries
 
     // Audit (server-side so old/new company names are recorded accurately).
     try {

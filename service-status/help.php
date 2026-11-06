@@ -4,507 +4,138 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../auth/login.php');
     exit;
 }
+requireModuleAccess('service-status');
 
 $current_page = 'help';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'service-status'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('service-status.help.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('service-status', t('service-status.nav.help'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/help.css?v=6">
     <style>
-        .ss-help-container {
-            display: flex;
-            height: calc(100vh - 48px);
-            background: #f5f5f5;
+        /* The only thing a help page should need to say for itself: its colour. */
+        body {
+            --accent:       var(--ss-accent);
+            --accent-hover: var(--ss-accent-hover);
+            --accent-soft:  var(--ss-accent-soft);
+            --on-accent:    var(--ss-on-accent);
         }
 
-        /* Left sidebar navigation */
-        .ss-help-sidebar {
-            width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex-shrink: 0;
-        }
-
-        .ss-help-sidebar h3 {
-            font-size: 12px;
-            font-weight: 600;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin: 0 0 12px;
-        }
-
-        .ss-help-nav-link {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: 6px;
-            font-size: 13px;
-            color: #555;
-            text-decoration: none;
-            transition: background 0.15s, color 0.15s;
-        }
-
-        .ss-help-nav-link:hover {
-            background: #f5f5f5;
-            color: #333;
-        }
-
-        .ss-help-nav-link.active {
-            background: #ecfdf5;
-            color: #065f46;
-            font-weight: 600;
-        }
-
-        .ss-help-nav-num {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: #eee;
-            color: #888;
-            font-weight: 700;
-            font-size: 11px;
-            flex-shrink: 0;
-        }
-
-        .ss-help-nav-link.active .ss-help-nav-num {
-            background: #059669;
-            color: white;
-        }
-
-
-        /* Main content */
-        .ss-help-main {
-            flex: 1;
-            overflow-y: auto;
-        }
-
-        /* Hero banner */
-        .ss-help-hero {
-            background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
-            color: white;
-            padding: 40px 48px 36px;
-            text-align: center;
-        }
-
-        .ss-help-hero h2 {
-            margin: 0 0 8px;
-            font-size: 26px;
-            font-weight: 700;
-        }
-
-        .ss-help-hero p {
-            margin: 0;
-            font-size: 15px;
-            opacity: 0.85;
-        }
-
-        /* Content area */
-        .ss-help-content {
-            max-width: 1120px;
-            margin: 0 auto;
-            padding: 10px 48px 48px;
-        }
-
-        /* Sections */
-        .ss-help-section {
-            padding: 28px 0;
-            border-bottom: 1px solid #eee;
-            scroll-margin-top: 20px;
-        }
-
-        .ss-help-section:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-        }
-
-        .ss-help-section-header {
-            display: flex;
-            align-items: flex-start;
-            gap: 14px;
-            margin-bottom: 16px;
-        }
-
-        .ss-help-section-header h3 {
-            margin: 0;
-            font-size: 18px;
-            color: #333;
-        }
-
-        .ss-help-section-header p {
-            margin: 6px 0 0;
-            font-size: 14px;
-            color: #666;
-            line-height: 1.6;
-        }
-
-        .ss-help-section > p {
-            font-size: 14px;
-            color: #555;
-            line-height: 1.7;
-            margin: 0 0 14px;
-        }
-
-        .ss-help-section-num {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: #ecfdf5;
-            color: #065f46;
-            font-weight: 700;
-            font-size: 14px;
-            flex-shrink: 0;
-        }
-
-        .ss-help-section-num.highlight {
-            background: #059669;
-            color: white;
-        }
-
-        /* Feature cards grid */
-        .ss-help-features-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 14px;
-        }
-
-        .ss-help-feature-card {
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px solid #e0e0e0;
-            background: white;
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-
-        .ss-help-feature-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        }
-
-        .ss-help-feature-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 12px;
-        }
-
-        .ss-help-feature-icon.emerald { background: #ecfdf5; color: #10b981; }
-        .ss-help-feature-icon.blue { background: #e3f2fd; color: #1565c0; }
-        .ss-help-feature-icon.orange { background: #fff3e0; color: #e65100; }
-        .ss-help-feature-icon.red { background: #fce4ec; color: #c62828; }
-
-        .ss-help-feature-card h4 {
-            margin: 0 0 6px;
-            font-size: 15px;
-            color: #333;
-        }
-
-        .ss-help-feature-card p {
-            margin: 0;
-            font-size: 12.5px;
-            color: #666;
-            line-height: 1.5;
-        }
-
-        /* Status level cards */
-        .ss-help-status-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin: 14px 0;
-        }
-
-        .ss-help-status-card {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 14px 16px;
-            border-radius: 8px;
-            background: white;
-            border: 1px solid #e0e0e0;
-        }
-
-        .ss-help-status-dot {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        .ss-help-status-dot.operational { background: #10b981; }
-        .ss-help-status-dot.degraded { background: #f59e0b; }
-        .ss-help-status-dot.maintenance { background: #3b82f6; }
-        .ss-help-status-dot.major-outage { background: #ef4444; }
-
-        .ss-help-status-card strong {
-            display: block;
-            font-size: 13px;
-            color: #333;
-            margin-bottom: 2px;
-        }
-
-        .ss-help-status-card span {
-            font-size: 12px;
-            color: #777;
-            line-height: 1.4;
-        }
-
-        /* Numbered steps */
-        .ss-help-steps {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-left: 46px;
-        }
-
-        .ss-help-step-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 14px;
-            padding: 10px 14px;
-            border-radius: 8px;
-            background: #fafafa;
-            font-size: 14px;
-            color: #444;
-            line-height: 1.5;
-        }
-
-        .ss-help-step-num {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: #10b981;
-            color: white;
-            font-weight: 700;
-            font-size: 13px;
-            flex-shrink: 0;
-        }
-
-        /* Highlighted section */
-        .ss-help-section-highlight {
-            background: #ecfdf5;
-            margin: 0 -48px;
-            padding: 28px 48px !important;
-            border-bottom: none !important;
-            border-top: 2px solid #6ee7b7;
-        }
-
-        .ss-help-intro {
-            font-size: 14px;
-            color: #555;
-            line-height: 1.7;
-            margin-bottom: 20px !important;
-        }
-
-        /* Info fields list */
-        .ss-help-fields {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin: 10px 0;
-        }
-
-        .ss-help-fields div {
-            padding: 8px 14px;
-            background: #fafafa;
-            border-radius: 6px;
-            font-size: 13px;
-            color: #555;
-        }
-
-        /* Incident flow diagram */
-        .ss-help-flow {
-            display: flex;
-            align-items: center;
-            gap: 0;
-            margin: 14px 0;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .ss-help-flow-step {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 18px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            text-align: center;
-        }
-
-        .ss-help-flow-step.investigating { background: #fff7ed; color: #c2410c; }
-        .ss-help-flow-step.identified { background: #e0e7ff; color: #3730a3; }
-        .ss-help-flow-step.monitoring { background: #dbeafe; color: #1e40af; }
-        .ss-help-flow-step.resolved { background: #d1fae5; color: #065f46; }
-
-        .ss-help-flow-arrow {
-            padding: 0 8px;
-            color: #bbb;
-            font-size: 18px;
-        }
-
-        /* Tip callout */
-        .ss-help-tip {
-            font-size: 13px !important;
-            color: #065f46 !important;
-            background: #ecfdf5;
-            padding: 10px 14px;
-            border-radius: 8px;
-            border-left: 3px solid #10b981;
-            margin-top: 10px;
-        }
-
-        /* Quick tips grid */
-        .ss-help-tips-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        .ss-help-tip-card {
-            display: flex;
-            gap: 12px;
-            padding: 14px;
-            background: #fafafa;
-            border-radius: 8px;
-            font-size: 13px;
-            color: #555;
-            line-height: 1.5;
-        }
-
-        .ss-help-tip-icon {
-            font-size: 24px;
-            flex-shrink: 0;
-        }
-
-        .ss-help-tip-card strong {
-            color: #333;
-        }
-
-        /* Responsive */
-        @media (max-width: 900px) {
-            .ss-help-sidebar { display: none; }
-            .ss-help-content { padding: 10px 24px 40px; }
-            .ss-help-hero { padding: 30px 24px; }
-            .ss-help-section-highlight { margin: 0 -24px; padding: 20px 24px !important; }
-        }
-
-        @media (max-width: 700px) {
-            .ss-help-features-grid { grid-template-columns: 1fr; }
-            .ss-help-status-grid { grid-template-columns: 1fr; }
-            .ss-help-tips-grid { grid-template-columns: 1fr; }
-        }
+        /* Module-specific: the status dots carry meaning, so they keep their
+           own colours — taken from the theme's semantic tokens so they hold up
+           in dark mode too. */
+        .help-dot { width: 14px; height: 14px; }
+        .help-dot.operational  { background: var(--success-accent, #10b981); }
+        .help-dot.degraded     { background: var(--warning-text, #f59e0b); }
+        .help-dot.maintenance  { background: var(--accent); }
+        .help-dot.major-outage { background: var(--danger-accent, #ef4444); }
     </style>
+    <!-- Mobile: LAYER 16h — the guide body is already responsive; this adds the app shell. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
 
-    <div class="ss-help-container">
+    <div class="help-container">
         <!-- Left pane navigation -->
-        <div class="ss-help-sidebar">
+        <div class="help-sidebar">
             <h3><?php echo htmlspecialchars(t('service-status.help.guide')); ?></h3>
-            <a href="#overview" class="ss-help-nav-link active" data-section="overview">
-                <span class="ss-help-nav-num">1</span>
+            <a href="#overview" class="help-nav-link active" data-section="overview">
+                <span class="help-nav-num">1</span>
                 <?php echo htmlspecialchars(t('service-status.help.nav_overview')); ?>
             </a>
-            <a href="#status-dashboard" class="ss-help-nav-link" data-section="status-dashboard">
-                <span class="ss-help-nav-num">2</span>
+            <a href="#status-dashboard" class="help-nav-link" data-section="status-dashboard">
+                <span class="help-nav-num">2</span>
                 <?php echo htmlspecialchars(t('service-status.help.nav_dashboard')); ?>
             </a>
-            <a href="#managing-services" class="ss-help-nav-link" data-section="managing-services">
-                <span class="ss-help-nav-num">3</span>
+            <a href="#managing-services" class="help-nav-link" data-section="managing-services">
+                <span class="help-nav-num">3</span>
                 <?php echo htmlspecialchars(t('service-status.help.nav_services')); ?>
             </a>
-            <a href="#incident-history" class="ss-help-nav-link" data-section="incident-history">
-                <span class="ss-help-nav-num">4</span>
+            <a href="#incident-history" class="help-nav-link" data-section="incident-history">
+                <span class="help-nav-num">4</span>
                 <?php echo htmlspecialchars(t('service-status.help.nav_history')); ?>
             </a>
-            <a href="#settings" class="ss-help-nav-link" data-section="settings">
-                <span class="ss-help-nav-num">5</span>
+            <a href="#uptime" class="help-nav-link" data-section="uptime">
+                <span class="help-nav-num">5</span>
+                <?php echo htmlspecialchars(t('service-status.help.nav_uptime')); ?>
+            </a>
+            <a href="#settings" class="help-nav-link" data-section="settings">
+                <span class="help-nav-num">6</span>
                 <?php echo htmlspecialchars(t('service-status.help.nav_settings')); ?>
             </a>
-            <a href="#tips" class="ss-help-nav-link" data-section="tips">
-                <span class="ss-help-nav-num">6</span>
+            <a href="#tips" class="help-nav-link" data-section="tips">
+                <span class="help-nav-num">7</span>
                 <?php echo htmlspecialchars(t('service-status.help.nav_tips')); ?>
             </a>
         </div>
 
         <!-- Main content area -->
-        <div class="ss-help-main" id="helpMain">
+        <div class="help-main" id="helpMain">
             <!-- Hero banner -->
-            <div class="ss-help-hero">
+            <div class="help-hero">
                 <h2><?php echo htmlspecialchars(t('service-status.help.hero_title')); ?></h2>
                 <p><?php echo htmlspecialchars(t('service-status.help.hero_sub')); ?></p>
             </div>
 
-            <div class="ss-help-content">
+            <div class="help-content">
 
                 <!-- Section 1: Overview -->
-                <div class="ss-help-section" id="overview">
-                    <div class="ss-help-section-header">
-                        <span class="ss-help-section-num">1</span>
+                <div class="help-section" id="overview">
+                    <div class="help-section-header">
+                        <span class="help-section-num">1</span>
                         <div>
                             <h3><?php echo htmlspecialchars(t('service-status.help.overview_heading')); ?></h3>
                             <p><?php echo htmlspecialchars(t('service-status.help.overview_intro')); ?></p>
                         </div>
                     </div>
-                    <div class="ss-help-features-grid">
-                        <div class="ss-help-feature-card">
-                            <div class="ss-help-feature-icon emerald">
+                    <div class="help-cards">
+                        <div class="help-card">
+                            <div class="help-card-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                             </div>
                             <h4><?php echo htmlspecialchars(t('service-status.help.feature_dashboard_title')); ?></h4>
                             <p><?php echo htmlspecialchars(t('service-status.help.feature_dashboard_desc')); ?></p>
                         </div>
-                        <div class="ss-help-feature-card">
-                            <div class="ss-help-feature-icon orange">
+                        <div class="help-card">
+                            <div class="help-card-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                             </div>
                             <h4><?php echo htmlspecialchars(t('service-status.help.feature_incident_title')); ?></h4>
                             <p><?php echo htmlspecialchars(t('service-status.help.feature_incident_desc')); ?></p>
                         </div>
-                        <div class="ss-help-feature-card">
-                            <div class="ss-help-feature-icon blue">
+                        <div class="help-card">
+                            <div class="help-card-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                             </div>
                             <h4><?php echo htmlspecialchars(t('service-status.help.feature_management_title')); ?></h4>
                             <p><?php echo htmlspecialchars(t('service-status.help.feature_management_desc')); ?></p>
                         </div>
-                        <div class="ss-help-feature-card">
-                            <div class="ss-help-feature-icon red">
+                        <div class="help-card">
+                            <div class="help-card-icon">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                             </div>
                             <h4><?php echo htmlspecialchars(t('service-status.help.feature_comms_title')); ?></h4>
@@ -514,185 +145,244 @@ $translationNamespaces = ['common', 'service-status'];
                 </div>
 
                 <!-- Section 2: The Status Dashboard -->
-                <div class="ss-help-section" id="status-dashboard">
-                    <div class="ss-help-section-header">
-                        <span class="ss-help-section-num">2</span>
+                <div class="help-section" id="status-dashboard">
+                    <div class="help-section-header">
+                        <span class="help-section-num">2</span>
                         <h3><?php echo htmlspecialchars(t('service-status.help.dashboard_heading')); ?></h3>
                     </div>
                     <p><?php echo htmlspecialchars(t('service-status.help.dashboard_p1')); ?></p>
                     <p><?php echo t('service-status.help.dashboard_p2_html'); ?></p>
 
-                    <p style="margin-top: 18px; margin-bottom: 10px; font-weight: 600; color: #333;"><?php echo htmlspecialchars(t('service-status.help.status_levels')); ?></p>
-                    <div class="ss-help-status-grid">
-                        <div class="ss-help-status-card">
-                            <div class="ss-help-status-dot operational"></div>
+                    <p style="margin-top: 18px; margin-bottom: 10px; font-weight: 600; color: var(--text, #333);"><?php echo htmlspecialchars(t('service-status.help.status_levels')); ?></p>
+                    <div class="help-cards">
+                        <div class="help-card">
+                            <div class="help-dot operational"></div>
                             <div>
                                 <strong><?php echo htmlspecialchars(t('service-status.help.level_operational_name')); ?></strong>
                                 <span><?php echo htmlspecialchars(t('service-status.help.level_operational_desc')); ?></span>
                             </div>
                         </div>
-                        <div class="ss-help-status-card">
-                            <div class="ss-help-status-dot degraded"></div>
+                        <div class="help-card">
+                            <div class="help-dot degraded"></div>
                             <div>
                                 <strong><?php echo htmlspecialchars(t('service-status.help.level_degraded_name')); ?></strong>
                                 <span><?php echo htmlspecialchars(t('service-status.help.level_degraded_desc')); ?></span>
                             </div>
                         </div>
-                        <div class="ss-help-status-card">
-                            <div class="ss-help-status-dot maintenance"></div>
+                        <div class="help-card">
+                            <div class="help-dot maintenance"></div>
                             <div>
                                 <strong><?php echo htmlspecialchars(t('service-status.help.level_maintenance_name')); ?></strong>
                                 <span><?php echo htmlspecialchars(t('service-status.help.level_maintenance_desc')); ?></span>
                             </div>
                         </div>
-                        <div class="ss-help-status-card">
-                            <div class="ss-help-status-dot major-outage"></div>
+                        <div class="help-card">
+                            <div class="help-dot major-outage"></div>
                             <div>
                                 <strong><?php echo htmlspecialchars(t('service-status.help.level_outage_name')); ?></strong>
                                 <span><?php echo htmlspecialchars(t('service-status.help.level_outage_desc')); ?></span>
                             </div>
                         </div>
                     </div>
-                    <p class="ss-help-tip"><?php echo htmlspecialchars(t('service-status.help.dashboard_tip')); ?></p>
+                    <p class="help-note"><?php echo htmlspecialchars(t('service-status.help.dashboard_tip')); ?></p>
                 </div>
 
                 <!-- Section 3: Managing Services (highlighted) -->
-                <div class="ss-help-section ss-help-section-highlight" id="managing-services">
-                    <div class="ss-help-section-header">
-                        <span class="ss-help-section-num highlight">3</span>
+                <div class="help-section" id="managing-services">
+                    <div class="help-section-header">
+                        <span class="help-section-num">3</span>
                         <h3><?php echo t('service-status.help.services_heading_html'); ?></h3>
                     </div>
-                    <p class="ss-help-intro"><?php echo htmlspecialchars(t('service-status.help.services_intro')); ?></p>
+                    <p><?php echo htmlspecialchars(t('service-status.help.services_intro')); ?></p>
 
-                    <p style="font-weight: 600; color: #333; margin-bottom: 10px;"><?php echo htmlspecialchars(t('service-status.help.add_incident_heading')); ?></p>
-                    <div class="ss-help-steps">
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">1</div>
+                    <p style="font-weight: 600; color: var(--text, #333); margin-bottom: 10px;"><?php echo htmlspecialchars(t('service-status.help.add_incident_heading')); ?></p>
+                    <div class="help-steps">
+                        <div class="help-step">
+                            <div class="help-step-num">1</div>
                             <div>
                                 <?php echo t('service-status.help.add_incident_step1_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">2</div>
+                        <div class="help-step">
+                            <div class="help-step-num">2</div>
                             <div>
                                 <?php echo t('service-status.help.add_incident_step2_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">3</div>
+                        <div class="help-step">
+                            <div class="help-step-num">3</div>
                             <div>
                                 <?php echo t('service-status.help.add_incident_step3_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">4</div>
+                        <div class="help-step">
+                            <div class="help-step-num">4</div>
                             <div>
                                 <?php echo t('service-status.help.add_incident_step4_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">5</div>
+                        <div class="help-step">
+                            <div class="help-step-num">5</div>
                             <div>
                                 <?php echo t('service-status.help.add_incident_step5_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">6</div>
+                        <div class="help-step">
+                            <div class="help-step-num">6</div>
                             <div>
                                 <?php echo t('service-status.help.add_incident_step6_html'); ?>
                             </div>
                         </div>
                     </div>
 
-                    <p style="font-weight: 600; color: #333; margin: 20px 0 10px;"><?php echo htmlspecialchars(t('service-status.help.workflow_heading')); ?></p>
-                    <div class="ss-help-flow">
-                        <div class="ss-help-flow-step investigating"><?php echo htmlspecialchars(t('service-status.help.workflow_investigating')); ?></div>
-                        <div class="ss-help-flow-arrow">&rarr;</div>
-                        <div class="ss-help-flow-step identified"><?php echo htmlspecialchars(t('service-status.help.workflow_identified')); ?></div>
-                        <div class="ss-help-flow-arrow">&rarr;</div>
-                        <div class="ss-help-flow-step monitoring"><?php echo htmlspecialchars(t('service-status.help.workflow_monitoring')); ?></div>
-                        <div class="ss-help-flow-arrow">&rarr;</div>
-                        <div class="ss-help-flow-step resolved"><?php echo htmlspecialchars(t('service-status.help.workflow_resolved')); ?></div>
+                    <p style="font-weight: 600; color: var(--text, #333); margin: 20px 0 10px;"><?php echo htmlspecialchars(t('service-status.help.workflow_heading')); ?></p>
+                    <div class="help-flow">
+                        <div class="help-flow-step"><?php echo htmlspecialchars(t('service-status.help.workflow_investigating')); ?></div>
+                        <div class="help-flow-arrow">&rarr;</div>
+                        <div class="help-flow-step"><?php echo htmlspecialchars(t('service-status.help.workflow_identified')); ?></div>
+                        <div class="help-flow-arrow">&rarr;</div>
+                        <div class="help-flow-step"><?php echo htmlspecialchars(t('service-status.help.workflow_monitoring')); ?></div>
+                        <div class="help-flow-arrow">&rarr;</div>
+                        <div class="help-flow-step"><?php echo htmlspecialchars(t('service-status.help.workflow_resolved')); ?></div>
                     </div>
-                    <p style="font-size: 13px; color: #555; text-align: center; margin-top: 4px;"><?php echo t('service-status.help.workflow_note_html'); ?></p>
+                    <p style="font-size: 13px; color: var(--text-muted, #555); text-align: center; margin-top: 4px;"><?php echo t('service-status.help.workflow_note_html'); ?></p>
 
-                    <p class="ss-help-tip"><?php echo htmlspecialchars(t('service-status.help.services_tip')); ?></p>
+                    <p class="help-note"><?php echo htmlspecialchars(t('service-status.help.services_tip')); ?></p>
                 </div>
 
                 <!-- Section 4: Incident History -->
-                <div class="ss-help-section" id="incident-history">
-                    <div class="ss-help-section-header">
-                        <span class="ss-help-section-num">4</span>
+                <div class="help-section" id="incident-history">
+                    <div class="help-section-header">
+                        <span class="help-section-num">4</span>
                         <h3><?php echo htmlspecialchars(t('service-status.help.history_heading')); ?></h3>
                     </div>
                     <p><?php echo htmlspecialchars(t('service-status.help.history_p1')); ?></p>
-                    <div class="ss-help-fields">
+                    <div class="help-list">
                         <div><?php echo t('service-status.help.history_field_title_html'); ?></div>
                         <div><?php echo t('service-status.help.history_field_status_html'); ?></div>
                         <div><?php echo t('service-status.help.history_field_affected_html'); ?></div>
                         <div><?php echo t('service-status.help.history_field_updated_html'); ?></div>
+                        <div><?php echo t('service-status.help.history_field_actions_html'); ?></div>
                     </div>
                     <p><?php echo htmlspecialchars(t('service-status.help.history_p2')); ?></p>
-                    <p class="ss-help-tip"><?php echo htmlspecialchars(t('service-status.help.history_tip')); ?></p>
+                    <h4><?php echo htmlspecialchars(t('service-status.help.actions_heading')); ?></h4>
+                    <p><?php echo t('service-status.help.actions_p1'); ?></p>
+                    <div class="help-list">
+                        <div><?php echo t('service-status.help.actions_edit'); ?></div>
+                        <div><?php echo t('service-status.help.actions_resolve'); ?></div>
+                        <div><?php echo t('service-status.help.actions_delete'); ?></div>
+                    </div>
+                    <p><?php echo t('service-status.help.actions_updates'); ?></p>
+                    <p class="help-note"><?php echo t('service-status.help.actions_tip'); ?></p>
+
+                    <h4><?php echo htmlspecialchars(t('service-status.help.vis_heading')); ?></h4>
+                    <p><?php echo t('service-status.help.vis_p1'); ?></p>
+                    <p><?php echo t('service-status.help.vis_p2'); ?></p>
+                    <p><?php echo t('service-status.help.vis_p3'); ?></p>
+                    <p class="help-note warn"><?php echo t('service-status.help.vis_note'); ?></p>
+
+                    <h4><?php echo htmlspecialchars(t('service-status.help.corr_heading')); ?></h4>
+                    <p><?php echo t('service-status.help.corr_p1'); ?></p>
+                    <p><?php echo t('service-status.help.corr_p2'); ?></p>
+                    <p><?php echo t('service-status.help.corr_p3'); ?></p>
+                    <p class="help-note"><?php echo t('service-status.help.corr_note'); ?></p>
+
+                    <h4><?php echo htmlspecialchars(t('service-status.help.planned_heading')); ?></h4>
+                    <p><?php echo htmlspecialchars(t('service-status.help.planned_p1')); ?></p>
+                    <p><?php echo htmlspecialchars(t('service-status.help.planned_p2')); ?></p>
+                    <p><?php echo htmlspecialchars(t('service-status.help.planned_p3')); ?></p>
+                    <p class="help-note"><?php echo htmlspecialchars(t('service-status.help.planned_note')); ?></p>
+
+                    <p class="help-note"><?php echo htmlspecialchars(t('service-status.help.history_tip')); ?></p>
                 </div>
 
-                <!-- Section 5: Settings -->
-                <div class="ss-help-section" id="settings">
-                    <div class="ss-help-section-header">
-                        <span class="ss-help-section-num">5</span>
+                <!-- Section 5: Uptime and per-service history (discussion #59) -->
+                <div class="help-section" id="uptime">
+                    <div class="help-section-header">
+                        <span class="help-section-num">5</span>
+                        <h3><?php echo htmlspecialchars(t('service-status.help.uptime_heading')); ?></h3>
+                    </div>
+                    <p><?php echo t('service-status.help.uptime_p1_html'); ?></p>
+                    <p><?php echo t('service-status.help.uptime_p2_html'); ?></p>
+
+                    <h4><?php echo htmlspecialchars(t('service-status.help.uptime_record_heading')); ?></h4>
+                    <p><?php echo t('service-status.help.uptime_record_p_html'); ?></p>
+                    <div class="help-list">
+                        <div><?php echo t('service-status.help.uptime_step1_html'); ?></div>
+                        <div><?php echo t('service-status.help.uptime_step2_html'); ?></div>
+                        <div><?php echo t('service-status.help.uptime_step3_html'); ?></div>
+                    </div>
+                    <p class="help-note"><?php echo t('service-status.help.uptime_resolve_note_html'); ?></p>
+
+                    <h4><?php echo htmlspecialchars(t('service-status.help.uptime_counts_heading')); ?></h4>
+                    <p><?php echo t('service-status.help.uptime_counts_p_html'); ?></p>
+
+                    <h4><?php echo htmlspecialchars(t('service-status.help.uptime_reading_heading')); ?></h4>
+                    <div class="help-list">
+                        <div><?php echo t('service-status.help.uptime_read_green_html'); ?></div>
+                        <div><?php echo t('service-status.help.uptime_read_red_html'); ?></div>
+                        <div><?php echo t('service-status.help.uptime_read_grey_html'); ?></div>
+                    </div>
+                    <p class="help-note"><?php echo t('service-status.help.uptime_tip_html'); ?></p>
+                </div>
+
+                <!-- Section 6: Settings -->
+                <div class="help-section" id="settings">
+                    <div class="help-section-header">
+                        <span class="help-section-num">6</span>
                         <h3><?php echo htmlspecialchars(t('service-status.help.settings_heading')); ?></h3>
                     </div>
                     <p><?php echo htmlspecialchars(t('service-status.help.settings_p1')); ?></p>
-                    <div class="ss-help-steps">
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">1</div>
+                    <div class="help-steps">
+                        <div class="help-step">
+                            <div class="help-step-num">1</div>
                             <div>
                                 <?php echo t('service-status.help.settings_step1_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">2</div>
+                        <div class="help-step">
+                            <div class="help-step-num">2</div>
                             <div>
                                 <?php echo t('service-status.help.settings_step2_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">3</div>
+                        <div class="help-step">
+                            <div class="help-step-num">3</div>
                             <div>
                                 <?php echo t('service-status.help.settings_step3_html'); ?>
                             </div>
                         </div>
-                        <div class="ss-help-step-item">
-                            <div class="ss-help-step-num">4</div>
+                        <div class="help-step">
+                            <div class="help-step-num">4</div>
                             <div>
                                 <?php echo t('service-status.help.settings_step4_html'); ?>
                             </div>
                         </div>
                     </div>
-                    <p class="ss-help-tip"><?php echo htmlspecialchars(t('service-status.help.settings_tip')); ?></p>
+                    <p class="help-note"><?php echo htmlspecialchars(t('service-status.help.settings_tip')); ?></p>
                 </div>
 
                 <!-- Section 6: Quick Tips -->
-                <div class="ss-help-section" id="tips">
-                    <div class="ss-help-section-header">
-                        <span class="ss-help-section-num">6</span>
+                <div class="help-section" id="tips">
+                    <div class="help-section-header">
+                        <span class="help-section-num">7</span>
                         <h3><?php echo htmlspecialchars(t('service-status.help.tips_heading')); ?></h3>
                     </div>
-                    <div class="ss-help-tips-grid">
-                        <div class="ss-help-tip-card">
-                            <div class="ss-help-tip-icon">&#128226;</div>
+                    <div class="help-cards">
+                        <div class="help-card row">
+                            <div class="help-card-icon">&#128226;</div>
                             <div><strong><?php echo htmlspecialchars(t('service-status.help.tip_communicate_title')); ?></strong><br><?php echo htmlspecialchars(t('service-status.help.tip_communicate_desc')); ?></div>
                         </div>
-                        <div class="ss-help-tip-card">
-                            <div class="ss-help-tip-icon">&#128260;</div>
+                        <div class="help-card row">
+                            <div class="help-card-icon">&#128260;</div>
                             <div><strong><?php echo htmlspecialchars(t('service-status.help.tip_update_title')); ?></strong><br><?php echo t('service-status.help.tip_update_desc'); ?></div>
                         </div>
-                        <div class="ss-help-tip-card">
-                            <div class="ss-help-tip-icon">&#128200;</div>
+                        <div class="help-card row">
+                            <div class="help-card-icon">&#128200;</div>
                             <div><strong><?php echo htmlspecialchars(t('service-status.help.tip_review_title')); ?></strong><br><?php echo htmlspecialchars(t('service-status.help.tip_review_desc')); ?></div>
                         </div>
-                        <div class="ss-help-tip-card">
-                            <div class="ss-help-tip-icon">&#128736;</div>
+                        <div class="help-card row">
+                            <div class="help-card-icon">&#128736;</div>
                             <div><strong><?php echo htmlspecialchars(t('service-status.help.tip_maintenance_title')); ?></strong><br><?php echo htmlspecialchars(t('service-status.help.tip_maintenance_desc')); ?></div>
                         </div>
                     </div>
@@ -704,7 +394,7 @@ $translationNamespaces = ['common', 'service-status'];
     <script>
         // Scroll-spy: highlight active section in sidebar as user scrolls
         const helpMain = document.getElementById('helpMain');
-        const navLinks = document.querySelectorAll('.ss-help-nav-link');
+        const navLinks = document.querySelectorAll('.help-nav-link');
         const sections = [];
 
         navLinks.forEach(link => {
@@ -743,5 +433,6 @@ $translationNamespaces = ['common', 'service-status'];
             });
         });
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

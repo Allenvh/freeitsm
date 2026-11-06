@@ -11,18 +11,68 @@
 $db_config_path = 'C:\wamp64\db_config.php';
 require_once($db_config_path);
 
+// Encryption key file location (optional override).
+// The AES key that protects sensitive values lives in a file outside the web
+// root. By default it is c:\wamp64\encryption_keys\sdtickets.key on Windows or
+// /var/www/encryption_keys/freeitsm.key on Linux. To store it elsewhere (e.g.
+// your web root isn't /var/www), uncomment the line below and set an absolute
+// path. This can also be set via the ENCRYPTION_KEY_PATH environment variable,
+// which Docker uses; the setting here takes precedence when both are present.
+// define('ENCRYPTION_KEY_PATH', '/your/path/encryption_keys/freeitsm.key');
+
+// Behind a reverse proxy that terminates HTTPS?
+// Uncomment this if TLS ends at nginx, Traefik, Caddy, a load balancer or Cloudflare
+// and plain HTTP is used between there and PHP. Without it FreeITSM sees an HTTP
+// request, so the session cookie does NOT get its `Secure` flag and can be sent over
+// a plain connection.
+//
+// It is off by default, and must stay that way: X-Forwarded-Proto is a header any
+// client can invent, so believing it unconditionally would let a visitor flag their
+// own cookie Secure over plain HTTP and lock themselves out. Turn it on only when a
+// proxy you control is the only way in.
+// define('TRUST_PROXY_HTTPS', true);
+
 // Timezone
-date_default_timezone_set('America/New_York');
+// Fallback timezone for bare date() calls. Datetimes are stored in UTC and
+// converted per-user (Settings > Preferences); SLA uses its own calendar zone.
+// Matches the app's seeded defaults (SLA calendars default to Europe/London).
+date_default_timezone_set('Europe/London');
+
+// 🔴 The database connection's own clock — dbConnectionOptions() — is NOT defined
+// here any more. It lived in this file briefly (#1446) and that shipped GH #129:
+// this file is a template you edit and keep, so upgrading brought the callers and
+// left the definition behind, and every page returned HTTP 500. It now lives in
+// includes/db.php, which upgrades with the product. Nothing the app must EXECUTE
+// belongs in config.php — only values you choose.
 
 // SSL Certificate Verification
-// WARNING: Setting this to false is INSECURE and should ONLY be used for testing!
-// For production, configure php.ini with proper CA certificate bundle
-// Download from: https://curl.se/ca/cacert.pem
-define('SSL_VERIFY_PEER', false);
+// Single global switch for outbound HTTPS certificate verification. Leave this
+// ON in production — turning it off means the app stops checking who it is
+// talking to (Graph, mailboxes, AI providers, webhooks) and can be silently
+// man-in-the-middled. It is only ever a stopgap for a service you fully control
+// on your own network. There are no per-module SSL tick-boxes; this line governs
+// everything. See workflow/help-ssl.php for the full explanation.
+define('SSL_VERIFY_PEER', true);
 
-// Error reporting (set to 0 in production)
+// CA bundle used for verification (CURLOPT_CAINFO). Prefers a bundle configured
+// in php.ini; on Windows falls back to the cacert.pem shipped in includes/ so a
+// fresh WAMP install verifies out of the box. See includes/ssl.php.
+require_once(__DIR__ . '/includes/ssl.php');
+if (!defined('SSL_CA_BUNDLE')) {
+    define('SSL_CA_BUNDLE', sslResolveCaBundle());
+}
+
+// Error reporting. Errors are always LOGGED, and never shown to visitors - a
+// warning printed into a page names server paths, and before sign-in that is
+// shown to anybody. This file shipped with display_errors on. Reported privately,
+// October 2026. To see errors on a development box, add this to db_config.php
+// (outside the repository, so it is never committed):
+//     define('FREEITSM_DISPLAY_ERRORS', true);
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('log_errors', '1');
+// The command line (cron, tests, scripts) shows them: its output goes only to
+// whoever ran it, and a silent failing script is its own problem.
+ini_set('display_errors', (PHP_SAPI === 'cli' || (defined('FREEITSM_DISPLAY_ERRORS') && FREEITSM_DISPLAY_ERRORS)) ? '1' : '0');
 
 /**
  * BASE_URL — absolute URL path prefix for the app's deployment root.
@@ -32,20 +82,13 @@ ini_set('display_errors', 1);
  *   App served at https://itsm.company.com/      → BASE_URL = '/'
  *
  * Used everywhere we build internal links so we don't have to fiddle with
- * $path_prefix or '../' on every page. Auto-detected from the filesystem
- * location of this config.php relative to the web server's DOCUMENT_ROOT.
+ * $path_prefix or '../' on every page. Auto-detected from where the app sits
+ * under the web server's DOCUMENT_ROOT - by includes/base_url.php, which ships
+ * with the app, so nothing breaks if a copy of this file lacks the line below.
+ *
+ * To set it yourself (for example behind a proxy that serves the app under a
+ * different path), uncomment and edit:
  */
-if (!defined('BASE_URL')) {
-    $__appRoot = str_replace('\\', '/', realpath(__DIR__));
-    $__docRoot = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? ''));
-    $__rel = '';
-    if ($__docRoot && strpos($__appRoot, $__docRoot) === 0) {
-        $__rel = substr($__appRoot, strlen($__docRoot));
-    }
-    $__rel = '/' . trim($__rel, '/') . '/';
-    if ($__rel === '//') $__rel = '/'; // app deployed at document root
-    define('BASE_URL', $__rel);
-    unset($__appRoot, $__docRoot, $__rel);
-}
-require_once __DIR__ . '/includes/ldap_session.php';
+// define('BASE_URL', '/helpdesk/');
+require_once(__DIR__ . '/includes/base_url.php');
 ?>

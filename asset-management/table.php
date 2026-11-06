@@ -9,41 +9,137 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../auth/login.php');
     exit;
 }
+
+requireModuleAccess('assets');
 
 $current_page = 'table';
 $path_prefix = '../';
 $dtShowPdf = true;
 $translationNamespaces = ['common', 'asset-management'];
+
+/**
+ * Custom field columns, resolved SERVER-SIDE and handed to asset-table.js as a
+ * global.
+ *
+ * ⚠️ Not fetched by the JS, deliberately. createDataTable() hangs its boot off
+ * DOMContentLoaded, so awaiting anything before calling it means the event has
+ * already fired and the table never builds at all. Rendering the descriptors
+ * with the page removes the race entirely and saves a round trip.
+ *
+ * Only fields ticked "offer as a column" appear — the catalogue could be large,
+ * and a table with forty columns nobody asked for is worse than one with none.
+ */
+require_once '../includes/services/asset_fields.php';
+$assetCustomColumns = [];
+try {
+    $cfConn = connectToDatabase();
+    if (AssetFieldsService::schemaReady($cfConn)) {
+        foreach (AssetFieldsService::catalogue($cfConn, (int)$_SESSION['analyst_id']) as $f) {
+            if (empty($f['show_in_list'])) {
+                continue;
+            }
+            $assetCustomColumns[] = [
+                // 🔑 Prefixed, so a custom field called "model" can never collide
+                // with the built-in column of the same name.
+                'key'   => 'cf_' . $f['field_key'],
+                'label' => $f['label'],
+                // The shared engine sorts and filters by these three only.
+                'type'  => in_array($f['field_type'], ['number'], true) ? 'number'
+                           : ($f['field_type'] === 'date' ? 'date' : 'string'),
+            ];
+        }
+    }
+} catch (Exception $e) {
+    // A table with no custom columns beats no table at all.
+    $assetCustomColumns = [];
+}
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('asset-management.table.title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css?v=22">
-    <link rel="stylesheet" href="../assets/css/data-table.css?v=1">
+    <title><?php echo htmlspecialchars(pageTitle('assets', t('asset-management.nav.table'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/data-table.css?v=7">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
     <!-- jsPDF + autotable (same versions as morning-checks) for PDF export -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="../assets/js/vendor/jspdf.umd.min.js?v=4.2.1"></script>
+    <script src="../assets/js/vendor/jspdf.plugin.autotable.min.js?v=5.0.9"></script>
+    <?php /* Mobile-friendly opt-in (#937). Last stylesheet so its @media rules
+             win on ties. Every rule inside is gated at 768px. */ ?>
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
+    <style>
+        /* The "not seen in N days" banner (#97). Amber to match the Watchtower
+           card it is reached from, and shrink-proof so it cannot be squeezed to
+           nothing by the flex column it sits in. */
+        .asset-stale-notice {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 10px 14px 0;
+            padding: 9px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            background: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+        /* ⚠️ MUST come after the display:flex above. The browser's own
+           [hidden]{display:none} is a plain element-level default and loses to
+           any class rule that sets display — so without this the banner renders
+           on every visit to the table, empty, saying nothing. */
+        .asset-stale-notice[hidden] { display: none; }
+        .asset-stale-notice a { color: inherit; font-weight: 600; }
+        [data-theme-mode="dark"] .asset-stale-notice {
+            background: #3a2e12;
+            color: #fcd34d;
+            border-color: #5c481c;
+        }
+    </style>
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
+    <?php require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('asset-management.nav.assets'), [actionRowNew('./?new=1', t('asset-management.list.new_asset'), true)]); ?>
 
     <div class="dt-page">
+        <?php /* Filled in by asset-table.js when the page is opened as
+                 ?stale=N from the Watchtower "not seen" count (#97). Empty and
+                 hidden otherwise — the table is unfiltered in every other case. */ ?>
+        <div id="assetStaleNotice" class="asset-stale-notice" hidden></div>
+        <?php /* Retired assets: the same switch as the Assets list. Reloads the page,
+                 which reloads the table with or without them. */ ?>
+        <label class="asset-show-retired" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin:0 0 6px;cursor:pointer">
+            <input type="checkbox" id="assetShowRetired" onchange="try{localStorage.setItem('assets_show_retired',this.checked?'1':'0')}catch(e){};location.reload()">
+            <?php echo htmlspecialchars(t('asset-management.retired.show')); ?></label>
+        <script>try{document.getElementById('assetShowRetired').checked=localStorage.getItem('assets_show_retired')==='1'}catch(e){}</script>
         <?php include '../includes/data-table-skeleton.php'; ?>
     </div>
 
-    <script src="../assets/js/data-table.js?v=2"></script>
-    <script src="../assets/js/asset-table.js?v=4"></script>
+    <script>window.assetCustomColumns = <?php echo json_encode($assetCustomColumns, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+    <script src="../assets/js/data-table.js?v=9"></script>
+    <script src="../assets/js/asset-table.js?v=12"></script>
+    <?php /* Loaded last so it can wrap this page's globals; inert on desktop. */ ?>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>record preview — live page check</title>
+<body>
+<pre id="out">running…</pre>
+<script>
+/**
+ * Record previews (#91) — the LIVE run.
+ *
+ * Drives the REAL module pages in same-origin iframes, checks the ⓘ badge
+ * actually reached the DOM and is visible, then clicks one and waits for the
+ * card to fill from the real API.
+ *
+ * ⚠️ tests/record-preview.php cannot do this. A unit test and a parse check
+ * both pass happily on a badge that is never rendered, or one rendered inside a
+ * collapsed panel nobody opens. This file caught a real bug the PHP tests were
+ * green on: three types gated themselves with the active-company filter instead
+ * of the module's own permission check, so a ticket showed a problem pill and
+ * the preview behind it refused.
+ *
+ * HOW TO RUN — it needs a signed-in analyst, so forge one first:
+ *
+ *   printf 'analyst_id|i:1;' > c:/wamp64/tmp/sess_rplive
+ *
+ * then open (or --dump-dom with headless Chrome):
+ *
+ *   http://localhost/freeitsm-app/tests/record-preview-live.html?sid=rplive
+ *
+ * ⚠️ The record ids below are from a development install. If a case reports no
+ * badge at all, check the record still exists and still has the link the case
+ * is named for before believing the failure.
+ */
+const CASES = [
+  { name: 'tasks: a task linked to a ticket',      url: '../tasks/index.php?task=83',                    open: null },
+  { name: 'tickets: pills on a ticket with a task', url: '../tickets/index.php?ticket_id=635',           open: null },
+  { name: 'tickets: pills on a ticket with assets', url: '../tickets/index.php?ticket_id=409',           open: null },
+  { name: 'problems: linked incidents table',       url: '../problem-management/index.php?problem_id=3', open: null },
+  { name: 'changes: linked incidents table',        url: '../change-management/index.php?change_id=7',   open: null },
+  { name: 'assets: contracts panel',                url: '../asset-management/index.php?asset_id=22',    open: '#contractsTabBtn, [onclick*="contract"]' },
+  { name: 'contracts: linked equipment list',       url: '../contracts/view.php?id=1',                   open: null },
+  { name: 'tickets: a problem pill',                url: '../tickets/index.php?ticket_id=102',           open: null },
+  { name: 'tickets: a change pill',                 url: '../tickets/index.php?ticket_id=170',           open: null },
+];
+
+// The forged analyst session, handed in as ?sid=. Without it every iframe is a
+// login page and the run reports six identical, meaningless failures.
+const SID = new URLSearchParams(location.search).get('sid');
+if (SID) document.cookie = 'PHPSESSID=' + SID + '; path=/';
+
+const out = document.getElementById('out');
+const lines = [];
+function log(s) { lines.push(s); out.textContent = lines.join('\n'); }
+
+function waitFor(fn, ms) {
+  return new Promise(res => {
+    const t0 = Date.now();
+    (function poll() {
+      let v = null;
+      try { v = fn(); } catch (e) { v = null; }
+      if (v) return res(v);
+      if (Date.now() - t0 > ms) return res(null);
+      setTimeout(poll, 200);
+    })();
+  });
+}
+
+(async () => {
+  for (const c of CASES) {
+    const f = document.createElement('iframe');
+    f.style.cssText = 'width:1200px;height:800px;border:0;position:absolute;left:-9999px';
+    document.body.appendChild(f);
+    f.src = c.url;
+    await new Promise(r => { f.onload = r; setTimeout(r, 12000); });
+    const d = () => f.contentDocument;
+
+    // Some panels are behind a tab; click it before looking.
+    if (c.open) {
+      const btn = await waitFor(() => d().querySelector(c.open), 6000);
+      if (btn) { btn.click(); }
+    }
+
+    const badge = await waitFor(() => {
+      const list = d().querySelectorAll('.rp-badge');
+      // ⚠️ Only a badge that is actually VISIBLE counts. A badge in a
+      // display:none panel is exactly the failure this file exists to catch.
+      for (const b of list) { if (b.offsetParent !== null) return b; }
+      return null;
+    }, 12000);
+
+    if (!badge) {
+      const total = d() ? d().querySelectorAll('.rp-badge').length : -1;
+      log('FAIL  ' + c.name + '  (badges in DOM: ' + total + ', visible: 0)');
+      f.remove();
+      continue;
+    }
+
+    badge.click();
+    const filled = await waitFor(() => {
+      const p = d().querySelector('.rp-popover');
+      if (!p || p.hidden) return null;
+      const head = p.querySelector('.rp-head');
+      const bad  = p.querySelector('.rp-unavailable');
+      if (bad)  return { bad: bad.textContent.trim() };
+      if (head && head.textContent.trim()) return { head: head.textContent.trim() };
+      return null;
+    }, 10000);
+
+    if (!filled)        log('FAIL  ' + c.name + '  badge rendered but the card never filled');
+    else if (filled.bad) log('FAIL  ' + c.name + '  card said: ' + filled.bad);
+    else                 log('OK    ' + c.name + '  -> "' + filled.head + '"');
+
+    f.remove();
+  }
+  log('\ndone');
+})();
+</script>
+</body>

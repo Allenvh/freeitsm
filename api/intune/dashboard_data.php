@@ -15,6 +15,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('reporting');
+requireModuleOnJson(connectToDatabase(), 'assets');   // GH #217: device data - not while Assets is switched off
 
 try {
     $conn = connectToDatabase();
@@ -134,6 +136,10 @@ try {
         "SELECT DATE(enrolled_datetime) AS d, COUNT(*) AS c
            FROM intune_devices
           WHERE enrolled_datetime IS NOT NULL
+            -- The one CURDATE() left in the product on purpose (GH #126): this is
+            -- a 90-day rolling count against a UTC column, so the UTC date is the
+            -- right boundary and an hour is noise at that width. Every other
+            -- CURDATE() compared a BARE DATE and had to become a local one.
             AND enrolled_datetime >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
        GROUP BY d
        ORDER BY d ASC"

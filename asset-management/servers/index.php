@@ -4,22 +4,31 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+requireModuleAccess('assets');
 
 $current_page = 'servers';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'asset-management'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('asset-management.nav.servers')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('assets', t('asset-management.nav.servers'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <style>
         /* Override .main-container's display: flex so .servers-content
            behaves as a normal block (fills the full width) rather than a
@@ -27,7 +36,7 @@ $translationNamespaces = ['common', 'asset-management'];
         .servers-container {
             display: block;
             overflow-y: auto;
-            background-color: #f5f7fa;
+            background-color: var(--app-bg, #f5f7fa);
         }
 
         .servers-content {
@@ -46,10 +55,10 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .summary-card {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
             padding: 14px 16px;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            box-shadow: var(--shadow, 0 1px 4px rgba(0, 0, 0, 0.08));
             display: flex;
             align-items: center;
             gap: 12px;
@@ -66,7 +75,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .summary-icon svg {
-            color: #fff;
+            color: var(--on-accent, #fff);
         }
 
         .summary-icon.vms { background: linear-gradient(135deg, #0078d4, #106ebe); }
@@ -86,13 +95,13 @@ $translationNamespaces = ['common', 'asset-management'];
         .summary-value {
             font-size: 22px;
             font-weight: 700;
-            color: #333;
+            color: var(--text, #333);
             line-height: 1.2;
         }
 
         .summary-label {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-top: 2px;
         }
 
@@ -109,10 +118,10 @@ $translationNamespaces = ['common', 'asset-management'];
             flex: 1;
             max-width: 400px;
             padding: 10px 14px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 6px;
             font-size: 14px;
-            background: #fff;
+            background: var(--surface, #fff);
         }
 
         .search-box:focus {
@@ -129,7 +138,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .sync-info {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .btn {
@@ -155,7 +164,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .btn-sync:disabled {
-            background-color: #999;
+            background-color: var(--text-faint, #999);
             cursor: not-allowed;
         }
 
@@ -173,9 +182,9 @@ $translationNamespaces = ['common', 'asset-management'];
 
         /* Server Table */
         .servers-table-wrapper {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            box-shadow: var(--shadow, 0 1px 4px rgba(0, 0, 0, 0.08));
             overflow: hidden;
         }
 
@@ -189,40 +198,40 @@ $translationNamespaces = ['common', 'asset-management'];
             text-align: left;
             font-size: 11px;
             font-weight: 600;
-            color: #666;
+            color: var(--text-muted, #666);
             text-transform: uppercase;
             letter-spacing: 0.3px;
-            background-color: #f8f9fa;
-            border-bottom: 2px solid #e0e0e0;
+            background-color: var(--surface-3, #f8f9fa);
+            border-bottom: 2px solid var(--border, #e0e0e0);
             cursor: pointer;
             user-select: none;
             white-space: nowrap;
         }
 
         .servers-table thead th:hover {
-            background-color: #eef0f2;
+            background-color: var(--surface-hover, #eef0f2);
         }
 
         .servers-table thead th .sort-arrow {
             display: inline-block;
             margin-left: 4px;
             font-size: 10px;
-            color: #bbb;
+            color: var(--text-faint, #bbb);
         }
 
         .servers-table thead th.sorted .sort-arrow {
-            color: #333;
+            color: var(--text, #333);
         }
 
         .servers-table tbody td {
             padding: 10px 16px;
             font-size: 13px;
-            color: #333;
-            border-bottom: 1px solid #f0f0f0;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--surface-hover, #f0f0f0);
         }
 
         .servers-table tbody tr:hover {
-            background-color: #f9f9f9;
+            background-color: var(--surface-3, #f9f9f9);
         }
 
         .server-name {
@@ -231,6 +240,36 @@ $translationNamespaces = ['common', 'asset-management'];
             font-size: 13px;
         }
 
+        /* GH #199: Hyper-V reports and the hosts-and-clusters view. */
+        .hv-panel { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--border, #e0e0e0); border-radius: 8px; background: var(--surface, #fff); font-size: 13px; }
+        .hv-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .hv-conn { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 4px 0; }
+        .hv-pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+        .hv-ok { background: var(--success-bg, #dcfce7); color: var(--success-text, #15803d); }
+        .hv-warn { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #a16207); }
+        .hv-bad { background: var(--danger-bg, #fee2e2); color: var(--danger-text, #b91c1c); }
+        .hv-muted { background: var(--surface-hover, #f3f4f6); color: var(--text-muted, #666); }
+        .hv-sub { color: var(--text-muted, #666); font-size: 12px; }
+        .hv-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .hv-table th, .hv-table td { text-align: left; padding: 5px 8px; border-top: 1px solid var(--border, #eee); font-size: 12.5px; }
+        .hv-flag { margin-left: 6px; font-size: 11px; }
+        /* The estate tree (Hosts / Clusters tiles). Rows wrap rather than scroll on a phone. */
+        .summary-card.clickable { cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; }
+        .summary-card.clickable:hover, .summary-card.clickable:focus-visible { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); transform: translateY(-1px); outline: none; }
+        .summary-card.clickable.open { box-shadow: 0 0 0 2px var(--accent, #0078d4); }
+        .estate-group { padding: 10px 0 4px; border-top: 1px solid var(--border, #eee); }
+        .estate-group:first-child { border-top: none; }
+        .estate-group-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+        .estate-cluster { margin: 4px 0 6px 6px; padding-left: 10px; border-left: 2px solid var(--border, #e0e0e0); }
+        .estate-cluster-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 3px 0; }
+        .estate-hosts { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 2px 4px; }
+        .estate-host { display: inline-flex; flex-direction: column; gap: 2px; min-width: 140px; padding: 6px 10px; border: 1px solid var(--border, #e0e0e0); border-radius: 6px; background: var(--surface, #fff); color: var(--text, #333); font: inherit; text-align: left; cursor: pointer; }
+        .estate-host:hover, .estate-host.active { border-color: var(--accent, #0078d4); }
+        .estate-host.gone { opacity: 0.6; }
+        .estate-host strong { font-size: 13px; }
+        .estate-host .hv-pill { align-self: flex-start; }
+        .estate-src { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; background: var(--accent-soft, #e8f1fb); color: var(--accent, #0078d4); }
+        .filter-chip.host-chip { display: inline-flex; gap: 6px; align-items: center; }
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -271,24 +310,24 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .text-muted {
-            color: #aaa;
+            color: var(--text-faint, #aaa);
         }
 
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .empty-state svg {
-            color: #ccc;
+            color: var(--border, #ccc);
             margin-bottom: 15px;
         }
 
         .empty-state h3 {
             margin: 0 0 8px 0;
             font-size: 16px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .empty-state p {
@@ -298,7 +337,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .server-count {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         /* Sync message */
@@ -313,16 +352,16 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .sync-message.success {
             display: block;
-            background-color: #e8f5e9;
-            color: #2e7d32;
-            border: 1px solid #c8e6c9;
+            background-color: var(--success-bg, #e8f5e9);
+            color: var(--success-text, #2e7d32);
+            border: 1px solid var(--success-accent, #c8e6c9);
         }
 
         .sync-message.error {
             display: block;
-            background-color: #ffebee;
-            color: #c62828;
-            border: 1px solid #ffcdd2;
+            background-color: var(--danger-bg, #ffebee);
+            color: var(--danger-text, #c62828);
+            border: 1px solid var(--danger-accent, #ffcdd2);
         }
 
         /* Filter chips */
@@ -338,9 +377,9 @@ $translationNamespaces = ['common', 'asset-management'];
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
-            border: 1px solid #ddd;
-            background: #fff;
-            color: #666;
+            border: 1px solid var(--border, #ddd);
+            background: var(--surface, #fff);
+            color: var(--text-muted, #666);
             transition: all 0.15s;
         }
 
@@ -381,14 +420,14 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .detail-modal {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 10px;
             width: 100%;
             max-width: 900px;
             max-height: calc(100vh - 80px);
             display: flex;
             flex-direction: column;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+            box-shadow: var(--shadow, 0 8px 30px rgba(0,0,0,0.2));
         }
 
         .detail-header {
@@ -396,7 +435,7 @@ $translationNamespaces = ['common', 'asset-management'];
             justify-content: space-between;
             align-items: center;
             padding: 18px 24px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
             flex-shrink: 0;
         }
 
@@ -404,7 +443,7 @@ $translationNamespaces = ['common', 'asset-management'];
             margin: 0;
             font-size: 18px;
             font-family: monospace;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .detail-header .status-badge {
@@ -416,14 +455,14 @@ $translationNamespaces = ['common', 'asset-management'];
             border: none;
             font-size: 22px;
             cursor: pointer;
-            color: #888;
+            color: var(--text-dim, #888);
             padding: 4px 8px;
             border-radius: 4px;
         }
 
         .detail-close:hover {
-            background: #f0f0f0;
-            color: #333;
+            background: var(--surface-hover, #f0f0f0);
+            color: var(--text, #333);
         }
 
         .detail-body {
@@ -439,12 +478,12 @@ $translationNamespaces = ['common', 'asset-management'];
         .detail-section h3 {
             font-size: 13px;
             font-weight: 600;
-            color: #666;
+            color: var(--text-muted, #666);
             text-transform: uppercase;
             letter-spacing: 0.3px;
             margin: 0 0 10px 0;
             padding-bottom: 6px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
         }
 
         .detail-grid {
@@ -461,12 +500,12 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .detail-item .label {
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .detail-item .value {
             font-size: 13px;
-            color: #333;
+            color: var(--text, #333);
             font-weight: 500;
             text-align: right;
         }
@@ -476,18 +515,18 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .raw-toggle {
-            background: #f5f7fa;
-            border: 1px solid #ddd;
+            background: var(--surface-3, #f5f7fa);
+            border: 1px solid var(--border, #ddd);
             border-radius: 5px;
             padding: 8px 14px;
             font-size: 12px;
             cursor: pointer;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .raw-toggle:hover {
-            background: #eef0f2;
-            color: #333;
+            background: var(--surface-hover, #eef0f2);
+            color: var(--text, #333);
         }
 
         .raw-json {
@@ -526,18 +565,21 @@ $translationNamespaces = ['common', 'asset-management'];
         .detail-disks-table th, .detail-nics-table th {
             text-align: left;
             font-size: 11px;
-            color: #888;
+            color: var(--text-dim, #888);
             font-weight: 600;
             padding: 6px 10px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
         }
 
         .detail-disks-table td, .detail-nics-table td {
             padding: 6px 10px;
-            color: #333;
-            border-bottom: 1px solid #f5f5f5;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--app-bg, #f5f5f5);
         }
     </style>
+    <?php /* Mobile-friendly opt-in (#937). AFTER this page's own <style> so its
+             @media rules win on ties. Every rule inside is gated at 768px. */ ?>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php include '../includes/header.php'; ?>
@@ -636,7 +678,7 @@ $translationNamespaces = ['common', 'asset-management'];
                         <span class="summary-label"><?php echo htmlspecialchars(t('asset-management.servers.total_storage')); ?></span>
                     </div>
                 </div>
-                <div class="summary-card">
+                <div class="summary-card clickable" role="button" tabindex="0" onclick="toggleEstate()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleEstate(); }">
                     <div class="summary-icon hosts">
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
@@ -646,10 +688,10 @@ $translationNamespaces = ['common', 'asset-management'];
                     </div>
                     <div class="summary-info">
                         <span class="summary-value" id="hostCount">-</span>
-                        <span class="summary-label"><?php echo htmlspecialchars(t('asset-management.servers.esxi_hosts')); ?></span>
+                        <span class="summary-label"><?php echo htmlspecialchars(t('asset-management.servers.hosts')); ?></span>
                     </div>
                 </div>
-                <div class="summary-card">
+                <div class="summary-card clickable" role="button" tabindex="0" onclick="toggleEstate()" onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleEstate(); }">
                     <div class="summary-icon clusters">
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="3"></circle>
@@ -669,8 +711,23 @@ $translationNamespaces = ['common', 'asset-management'];
                 </div>
             </div>
 
+            <?php /* Every source's hosts and clusters, opened from the Hosts and Clusters tiles. */ ?>
+            <div class="hv-panel estate-panel" id="estatePanel" style="display:none;">
+                <div class="hv-panel-head"><strong><?php echo htmlspecialchars(t('asset-management.servers.estate_title')); ?></strong>
+                    <span class="hv-sub"><?php echo htmlspecialchars(t('asset-management.servers.estate_hint')); ?></span></div>
+                <div id="estateBody"></div>
+            </div>
+
             <!-- Sync Message -->
             <div class="sync-message" id="syncMessage"></div>
+
+            <?php /* GH #199: Hyper-V is pushed by a collector, so there is no Sync for it - this
+                     says when each connection last reported, and lists its hosts and clusters. */ ?>
+            <div class="hv-panel" id="hvPanel" style="display:none;">
+                <div class="hv-panel-head"><strong><?php echo htmlspecialchars(t('asset-management.hyperv.servers_title')); ?></strong>
+                    <a href="#" id="hvHostsToggle" onclick="event.preventDefault(); toggleEstate(true)"><?php echo htmlspecialchars(t('asset-management.hyperv.servers_hosts')); ?></a></div>
+                <div id="hvConnections"></div>
+            </div>
 
             <!-- Toolbar -->
             <div class="servers-toolbar">
@@ -679,6 +736,7 @@ $translationNamespaces = ['common', 'asset-management'];
                     <span class="filter-chip active" data-filter="all" onclick="setFilter('all')"><?php echo htmlspecialchars(t('asset-management.servers.filter_all')); ?></span>
                     <span class="filter-chip" data-filter="active" onclick="setFilter('active')"><?php echo htmlspecialchars(t('asset-management.servers.active')); ?></span>
                     <span class="filter-chip" data-filter="offline" onclick="setFilter('offline')"><?php echo htmlspecialchars(t('asset-management.servers.offline')); ?></span>
+                    <span class="filter-chip active host-chip" id="hostChip" style="display:none;" onclick="setHostFilter(null)"></span>
                 </div>
                 <div class="toolbar-right">
                     <span class="sync-info" id="syncInfo"></span>
@@ -688,7 +746,7 @@ $translationNamespaces = ['common', 'asset-management'];
                             <polyline points="1 20 1 14 7 14"></polyline>
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                         </svg>
-                        <?php echo htmlspecialchars(t('asset-management.servers.sync_vcenter')); ?>
+                        <?php echo htmlspecialchars(t('asset-management.servers.sync_hypervisors')); ?>
                     </button>
                 </div>
             </div>
@@ -699,6 +757,7 @@ $translationNamespaces = ['common', 'asset-management'];
                     <thead>
                         <tr>
                             <th onclick="sortTable('name')"><?php echo htmlspecialchars(t('asset-management.servers.col_name')); ?> <span class="sort-arrow">&#9650;</span></th>
+                            <th onclick="sortTable('source_name')"><?php echo htmlspecialchars(t('asset-management.servers.col_source')); ?> <span class="sort-arrow">&#9650;</span></th>
                             <th onclick="sortTable('power_state')"><?php echo htmlspecialchars(t('asset-management.servers.col_status')); ?> <span class="sort-arrow">&#9650;</span></th>
                             <th onclick="sortTable('num_cpu')"><?php echo htmlspecialchars(t('asset-management.servers.col_vcpu')); ?> <span class="sort-arrow">&#9650;</span></th>
                             <th onclick="sortTable('memory_gb')"><?php echo htmlspecialchars(t('asset-management.servers.col_memory')); ?> <span class="sort-arrow">&#9650;</span></th>
@@ -710,7 +769,7 @@ $translationNamespaces = ['common', 'asset-management'];
                         </tr>
                     </thead>
                     <tbody id="serversBody">
-                        <tr><td colspan="9" style="text-align: center; padding: 40px; color: #888;"><?php echo htmlspecialchars(t('asset-management.common.loading')); ?></td></tr>
+                        <tr><td colspan="10" style="text-align: center; padding: 40px; color: #888;"><?php echo htmlspecialchars(t('asset-management.common.loading')); ?></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -734,6 +793,8 @@ $translationNamespaces = ['common', 'asset-management'];
         let filteredServers = [];
         let currentSort = { column: 'name', direction: 'asc' };
         let currentFilter = 'all';
+        let estateData = [];
+        let hostFilter = null;   // {group, name, vdc} - one host's (or Cloud Director VDC's) VMs
         let searchTimeout = null;
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -753,6 +814,9 @@ $translationNamespaces = ['common', 'asset-management'];
                 if (data.success) {
                     allServers = data.servers;
                     updateSummary(data.summary);
+                    renderHyperv(data.hyperv || null);
+                    estateData = data.estate || [];
+                    if (document.getElementById('estatePanel').style.display !== 'none') renderEstate();
                     applyFilters();
                 } else {
                     showEmptyState(window.t('asset-management.servers.load_error', { error: data.error }));
@@ -790,6 +854,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
             filteredServers = allServers.filter(s => {
                 if (currentFilter !== 'all' && s.power_state !== currentFilter) return false;
+                if (hostFilter && (s.source_name !== hostFilter.group || (hostFilter.vdc ? s.cluster : s.host) !== hostFilter.name || s.not_seen_since)) return false;
                 if (search) {
                     return (s.name || '').toLowerCase().includes(search) ||
                            (s.ip_address || '').toLowerCase().includes(search) ||
@@ -853,7 +918,7 @@ $translationNamespaces = ['common', 'asset-management'];
             if (filteredServers.length === 0) {
                 if (allServers.length === 0) {
                     tbody.innerHTML = `
-                        <tr><td colspan="9">
+                        <tr><td colspan="10">
                             <div class="empty-state">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                     <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
@@ -862,11 +927,11 @@ $translationNamespaces = ['common', 'asset-management'];
                                     <line x1="6" y1="18" x2="6.01" y2="18"></line>
                                 </svg>
                                 <h3>${window.t('asset-management.servers.empty_heading')}</h3>
-                                <p>${window.t('asset-management.servers.empty_body')}</p>
+                                <p>${window.t('asset-management.servers.empty_body_hypervisors')}</p>
                             </div>
                         </td></tr>`;
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 30px; color: #888;">${window.t('asset-management.servers.no_match')}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 30px; color: #888;">${window.t('asset-management.servers.no_match')}</td></tr>`;
                 }
                 return;
             }
@@ -874,6 +939,7 @@ $translationNamespaces = ['common', 'asset-management'];
             tbody.innerHTML = filteredServers.map((s, i) => `
                 <tr onclick="showDetail(${i})">
                     <td><span class="server-name">${escapeHtml(s.name)}</span></td>
+                    <td><span class="status-badge" style="background:${s.source === 'vcenter' || !s.source ? 'var(--surface-2)' : 'var(--accent-soft)'};color:${s.source === 'vcenter' || !s.source ? 'var(--text-muted)' : 'var(--accent)'};">${escapeHtml(s.source_name || 'vCenter')}</span></td>
                     <td>
                         <span class="status-badge ${s.power_state}">
                             <span class="status-dot ${s.power_state}"></span>
@@ -885,15 +951,110 @@ $translationNamespaces = ['common', 'asset-management'];
                     <td>${s.hard_disk_size_gb ? formatSize(parseFloat(s.hard_disk_size_gb)) : '-'}</td>
                     <td><span class="mono ${s.ip_address ? '' : 'text-muted'}">${escapeHtml(s.ip_address || '-')}</span></td>
                     <td>${escapeHtml(s.host || '-')}</td>
-                    <td>${escapeHtml(s.cluster || '-')}</td>
+                    <td>${escapeHtml(s.cluster || '-')}${hvVmFlags(s)}</td>
                     <td>${formatGuestOS(s.guest_os)}</td>
                 </tr>
             `).join('');
         }
 
+        // ── Hyper-V (GH #199) ─────────────────────────────────────────────
+        const HV = (k, p) => window.t('asset-management.hyperv.' + k, p);
+        const hvWhen = s => s ? fmtDateTime(parseUTCDate(s)) : '-';
+        let hvData = null;
+
+        /** A VM's flags: highly available, and anything that says the data is not current. */
+        function hvVmFlags(s) {
+            if (s.source !== 'hyperv') return '';
+            let out = '';
+            if (s.highly_available === true) out += `<span class="hv-pill hv-ok hv-flag">${escapeHtml(HV('ha'))}</span>`;
+            if (s.not_seen_since) out += `<div class="hv-sub">${escapeHtml(HV('not_seen', { when: hvWhen(s.not_seen_since) }))}</div>`;
+            else if (s.not_confirmed_since) out += `<div class="hv-sub">${escapeHtml(HV('not_confirmed_since', { when: hvWhen(s.not_confirmed_since) }))}</div>`;
+            return out;
+        }
+
+        function renderHyperv(h) {
+            hvData = h;
+            const panel = document.getElementById('hvPanel');
+            if (!h || !h.connections.length) { panel.style.display = 'none'; return; }
+            panel.style.display = '';
+            document.getElementById('hvConnections').innerHTML = h.connections.map(c => {
+                const cls = !c.active ? 'muted' : (c.freshness === 'on_time' ? 'ok' : (c.freshness === 'late' ? 'warn' : 'bad'));
+                const word = !c.active ? HV('off') : HV(c.freshness);
+                return `<div class="hv-conn"><strong>${escapeHtml(c.name)}</strong><span class="hv-pill hv-${cls}">${escapeHtml(word)}</span>
+                    <span class="hv-sub">${c.last_report_at ? escapeHtml(HV('last_report', { when: hvWhen(c.last_report_at) })) + ' · ' : ''}${escapeHtml(HV('expected', { n: c.interval }))}</span>
+                    ${c.last_summary ? `<span class="hv-sub">${escapeHtml(c.last_summary)}</span>` : ''}</div>`;
+            }).join('') + `<div class="hv-sub">${escapeHtml(HV('storage_limit'))}</div>`;
+        }
+
+        /* The Hosts and Clusters tiles open this: every source's clusters and hosts, with the
+           VMs on each. Clicking a host lists only its VMs in the table. */
+        function toggleEstate(open) {
+            const panel = document.getElementById('estatePanel');
+            const show = open === true || panel.style.display === 'none';
+            panel.style.display = show ? '' : 'none';
+            document.querySelectorAll('.summary-card.clickable').forEach(c => c.classList.toggle('open', show));
+            if (show) { renderEstate(); panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+        }
+
+        function renderEstate() {
+            const S = (k, p) => window.t('asset-management.servers.' + k, p);
+            const N = (k, n) => S(n === 1 ? k + '_one' : k, { n: n });
+            const body = document.getElementById('estateBody');
+            if (!estateData.length) { body.innerHTML = `<div class="hv-sub">${escapeHtml(S('estate_empty'))}</div>`; return; }
+            const hostBtn = (g, x, vdc) => {
+                const on = hostFilter && hostFilter.group === g.label && hostFilter.name === x.name && !!hostFilter.vdc === !!vdc;
+                const gone = !!x.not_seen_since;
+                return `<button type="button" class="estate-host${on ? ' active' : ''}${gone ? ' gone' : ''}" data-group="${escapeHtml(g.label)}" data-name="${escapeHtml(x.name)}" data-vdc="${vdc ? 1 : 0}">
+                    <strong>${escapeHtml(x.name)}</strong>
+                    <span class="hv-sub">${escapeHtml(N('n_vms', x.vms) + ', ' + S('n_running', { n: x.running }))}${x.state ? ' · ' + escapeHtml(x.state) : ''}</span>
+                    ${x.identity_kind === 'name' ? `<span class="hv-pill hv-warn" title="${escapeHtml(window.t('asset-management.hyperv.identity_name_hint'))}">${escapeHtml(window.t('asset-management.hyperv.identity_name'))}</span>` : ''}
+                    ${hvSeen(x)}</button>`;
+            };
+            body.innerHTML = estateData.map(g => {
+                const hostTotal = g.clusters.reduce((n, c) => n + c.hosts.length, 0) + g.standalone.length;
+                const counts = g.hosts_hidden ? N('n_vdcs', g.vdcs.length) : N('n_hosts', hostTotal) + ', ' + N('n_clusters', g.clusters.length);
+                let out = `<div class="estate-group"><div class="estate-group-head"><span class="estate-src">${escapeHtml(g.label)}</span><span class="hv-sub">${escapeHtml(counts)}</span></div>`;
+                out += g.clusters.map(c => {
+                    const vms = c.hosts.reduce((n, x) => n + x.vms, 0);
+                    return `<div class="estate-cluster"><div class="estate-cluster-head"><strong>${escapeHtml(c.name)}</strong>
+                        <span class="hv-sub">${escapeHtml(N('n_hosts', c.hosts.length) + ', ' + N('n_vms', vms))}${c.quorum ? ' · ' + escapeHtml(window.t('asset-management.hyperv.col_quorum')) + ': ' + escapeHtml(c.quorum) : ''}</span>${hvSeen(c)}</div>
+                        <div class="estate-hosts">${c.hosts.map(x => hostBtn(g, x, false)).join('')}</div></div>`;
+                }).join('');
+                if (g.standalone.length) {
+                    out += `<div class="estate-cluster"><div class="estate-cluster-head"><strong>${escapeHtml(S('standalone'))}</strong></div>
+                        <div class="estate-hosts">${g.standalone.map(x => hostBtn(g, x, false)).join('')}</div></div>`;
+                }
+                if (g.hosts_hidden) {
+                    out += `<div class="estate-cluster"><div class="hv-sub">${escapeHtml(S('vcloud_hidden'))}</div>
+                        <div class="estate-hosts">${g.vdcs.map(x => hostBtn(g, x, true)).join('')}</div></div>`;
+                }
+                return out + '</div>';
+            }).join('');
+            body.querySelectorAll('.estate-host').forEach(b => b.addEventListener('click', () => {
+                const f = { group: b.dataset.group, name: b.dataset.name, vdc: b.dataset.vdc === '1' };
+                const same = hostFilter && hostFilter.group === f.group && hostFilter.name === f.name && hostFilter.vdc === f.vdc;
+                setHostFilter(same ? null : f);
+            }));
+        }
+
+        function setHostFilter(f) {
+            hostFilter = f;
+            const chip = document.getElementById('hostChip');
+            chip.style.display = f ? '' : 'none';
+            if (f) chip.innerHTML = escapeHtml(window.t('asset-management.servers.' + (f.vdc ? 'filter_vdc' : 'filter_host'), { name: f.name })) + ' <span aria-hidden="true">&times;</span>';
+            if (document.getElementById('estatePanel').style.display !== 'none') renderEstate();
+            applyFilters();
+        }
+
+        function hvSeen(r) {
+            if (r.not_seen_since) return `<span class="hv-pill hv-bad">${escapeHtml(HV('not_seen', { when: hvWhen(r.not_seen_since) }))}</span>`;
+            if (r.not_confirmed_since) return `<span class="hv-pill hv-warn">${escapeHtml(HV('not_confirmed_since', { when: hvWhen(r.not_confirmed_since) }))}</span>`;
+            return '';
+        }
+
         function showEmptyState(message) {
             document.getElementById('serversBody').innerHTML = `
-                <tr><td colspan="9" style="text-align: center; padding: 30px; color: #888;">${escapeHtml(message)}</td></tr>`;
+                <tr><td colspan="10" style="text-align: center; padding: 30px; color: #888;">${escapeHtml(message)}</td></tr>`;
         }
 
         function formatGuestOS(os) {
@@ -907,6 +1068,11 @@ $translationNamespaces = ['common', 'asset-management'];
             );
         }
 
+        /**
+         * "Sync hypervisors": every source at once. vCenter first (its one configured
+         * server), then every active Proxmox and Director server (sync_hypervisors.php).
+         * One source failing does not stop the others; the message lists each result.
+         */
         async function syncVCenter() {
             const btn = document.getElementById('syncBtn');
             const msgEl = document.getElementById('syncMessage');
@@ -916,18 +1082,49 @@ $translationNamespaces = ['common', 'asset-management'];
             msgEl.className = 'sync-message';
             msgEl.style.display = 'none';
 
-            try {
-                const response = await fetch(API_BASE + 'get_vcenter.php');
-                const data = await response.json();
+            const lines = [];
+            let anyFailed = false;
 
-                if (data.success) {
-                    msgEl.textContent = data.message;
-                    msgEl.className = 'sync-message success';
-                    loadServers(); // Refresh the table
-                } else {
-                    msgEl.textContent = window.t('asset-management.servers.sync_failed', { error: data.error });
-                    msgEl.className = 'sync-message error';
+            try {
+                // vCenter first. An install with no vCenter at all says so in
+                // not_configured, and that is not a failure when other sources
+                // exist - the PR showed a red "not configured" on every sync of a
+                // Proxmox-only install.
+                // POST: the sync writes server records, so the endpoint refuses a GET (csrf.php).
+                const vc = await fetch(API_BASE + 'get_vcenter.php', { method: 'POST' }).then(r => r.json()).catch(() => ({ success: false }));
+                const vcNotConfigured = !vc.success && vc.not_configured;
+                if (vc.success) {
+                    lines.push('vCenter: ' + vc.message);
+                } else if (!vcNotConfigured) {
+                    anyFailed = true;
+                    lines.push('vCenter: ' + (vc.error || window.t('asset-management.servers.sync_no_connect')));
                 }
+
+                // Then every active Proxmox and Director server, in one call on
+                // module access - see api/assets/sync_hypervisors.php for why it is
+                // not the per-server settings endpoints.
+                const hv = await fetch(API_BASE + 'sync_hypervisors.php', { method: 'POST' })
+                    .then(r => r.json()).catch(() => ({ success: false }));
+                if (hv.success) {
+                    for (const r of hv.results) {
+                        if (r.status !== 'ok') anyFailed = true;
+                        lines.push((r.source === 'proxmox' ? 'Proxmox ' : 'vCloud ') + r.name + ': ' + r.message);
+                    }
+                } else {
+                    anyFailed = true;
+                    lines.push(hv.error || window.t('asset-management.servers.sync_no_connect'));
+                }
+                if (!lines.length && vcNotConfigured) {
+                    anyFailed = true;
+                    lines.push('vCenter: ' + vc.error);   // nothing is set up at all: say so
+                }
+                if (!lines.length) {
+                    lines.push(window.t('asset-management.servers.sync_none'));
+                }
+
+                msgEl.innerHTML = lines.map(l => escapeHtml(l)).join('<br>');
+                msgEl.className = 'sync-message ' + (anyFailed ? 'error' : 'success');
+                loadServers(); // Refresh the table
             } catch (error) {
                 console.error('Sync error:', error);
                 msgEl.textContent = window.t('asset-management.servers.sync_no_connect');
@@ -949,7 +1146,7 @@ $translationNamespaces = ['common', 'asset-management'];
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         function showDetail(index) {
@@ -1124,5 +1321,7 @@ $translationNamespaces = ['common', 'asset-management'];
             if (e.key === 'Escape') closeDetail();
         });
     </script>
+    <?php /* Loaded last so it can wrap this page's globals; inert on desktop. */ ?>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

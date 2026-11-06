@@ -1,0 +1,257 @@
+/*
+ * Documents panel — attach files or DMS links to any record (discussion #76).
+ *
+ * One stylesheet for every module that mounts the panel. Colours come from the
+ * theme tokens so the panel takes on each module's accent without knowing which
+ * module it is in.
+ *
+ * ⚠️ Only tokens that EXIST in assets/css/theme.css. `--danger` on its own does
+ * not; the trio is --danger-bg / --danger-text / --danger-border.
+ */
+
+.fd-panel { margin-top: 8px; }
+
+/* ⚠️ This panel is dropped into a dozen different pages, each with its own idea
+   of what a bare element looks like. Anything the layout depends on is stated
+   here rather than inherited — .fd-drop is a <label>, and a page that does not
+   make labels block-level left it INLINE, so the dashed border wrapped the text
+   instead of drawing a box and the caption inside it broke out to full width. */
+.fd-panel, .fd-panel * { box-sizing: border-box; }
+
+.fd-head {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 10px;
+    /* A page whose h4 carries a big bottom margin would otherwise push the row
+       apart; a page with none let the drop zone ride up over the heading. */
+    min-height: 20px;
+}
+.fd-head h4 {
+    margin: 0; padding: 0;
+    font-size: 14px; font-weight: 600; line-height: 1.4;
+    color: var(--text, #333);
+    text-transform: none;    /* several settings pages upper-case their headings */
+    letter-spacing: normal;
+}
+.fd-count {
+    font-size: 12px; color: var(--text-dim, #888);
+}
+.fd-head .fd-spacer { flex: 1; }
+
+/* -- The drop zone ------------------------------------------------------- */
+.fd-drop {
+    display: block;          /* a <label> is inline by default — see the note above */
+    width: 100%;
+    border: 1.5px dashed var(--border, #ccc);
+    border-radius: 8px;
+    padding: 18px 16px;
+    margin: 0;
+    text-align: center;
+    color: var(--text-muted, #666);
+    font-size: 13px;
+    font-weight: 400;        /* pages that embolden their labels must not embolden this */
+    line-height: 1.5;
+    background: var(--surface-2, #fafafa);
+    transition: border-color 140ms ease, background 140ms ease;
+    cursor: pointer;
+}
+.fd-drop:hover { border-color: var(--accent, #0078d4); }
+.fd-drop.fd-over {
+    border-color: var(--accent, #0078d4);
+    background: var(--accent-soft, #eef6fd);
+}
+.fd-drop input[type=file] { display: none; }
+.fd-drop-or {
+    display: block; margin-top: 6px;
+    font-size: 12px; color: var(--text-dim, #888);
+}
+
+/* -- Add a link ---------------------------------------------------------- */
+.fd-linkrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.fd-linkrow input {
+    flex: 1; min-width: 180px;
+    padding: 8px 11px; font-size: 13px;
+    border: 1px solid var(--border, #ccc); border-radius: 6px;
+    background: var(--surface, #fff); color: var(--text, #333);
+}
+.fd-linkrow input:focus { outline: none; border-color: var(--accent, #0078d4); }
+
+/* -- The list ------------------------------------------------------------ */
+.fd-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.fd-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border, #e0e0e0); border-radius: 7px;
+    background: var(--surface, #fff);
+}
+.fd-icon {
+    flex: 0 0 auto; width: 28px; height: 28px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2, #f3f4f6); color: var(--text-muted, #666);
+}
+.fd-body { flex: 1; min-width: 0; }
+.fd-title {
+    font-size: 13px; font-weight: 600; color: var(--text, #333);
+    word-break: break-word;
+}
+.fd-title a { color: inherit; text-decoration: none; }
+.fd-title a:hover { text-decoration: underline; }
+.fd-desc {
+    font-size: 12px; color: var(--text-muted, #666);
+    margin-top: 2px; word-break: break-word;
+}
+.fd-meta {
+    font-size: 11px; color: var(--text-dim, #999); margin-top: 4px;
+}
+
+/* Where else this document is attached. Shown because attaching somewhere
+   widely visible widens who can read it — the user should be able to see that. */
+.fd-also {
+    margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px;
+}
+.fd-also-tag {
+    font-size: 11px; padding: 1px 7px; border-radius: 10px;
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border: 1px solid var(--warning-border, #f0d9a8);
+}
+
+/* The Help Centre (GH #177): on a knowledge article only. One line saying what
+   customers get, and a tag per document saying whether it is one of them. */
+.fd-hc {
+    font-size: 12.5px; line-height: 1.5; padding: 8px 11px; border-radius: 6px; margin: 0 0 10px;
+    background: var(--info-bg, #eff6ff); color: var(--info-text, #1e40af);
+    border: 1px solid var(--info-border, #bfdbfe);
+}
+.fd-hc a { color: inherit; font-weight: 600; }
+.fd-hc-tag {
+    font-size: 11px; padding: 1px 7px; border-radius: 10px; display: inline-block; margin-top: 5px;
+    background: var(--success-bg, #dcfce7); color: var(--success-text, #166534);
+    border: 1px solid var(--success-border, #bbf7d0);
+}
+.fd-hc-tag.fd-hc-hidden {
+    background: var(--surface-2, #f3f4f6); color: var(--text-muted, #666);
+    border-color: var(--border, #e0e0e0);
+}
+
+.fd-actions { flex: 0 0 auto; display: flex; gap: 6px; align-items: center; }
+.fd-btn {
+    padding: 4px 9px; font-size: 12px; border-radius: 5px; cursor: pointer;
+    border: 1px solid var(--border, #ccc);
+    background: var(--surface, #fff); color: var(--text, #333);
+}
+.fd-btn:hover { border-color: var(--accent, #0078d4); }
+.fd-btn.fd-danger { color: var(--danger-text, #991b1b); border-color: var(--danger-border, #f0c2c2); }
+.fd-btn.fd-danger:hover { background: var(--danger-bg, #fee2e2); }
+
+/* The round ⓘ, so it reads as "tell me about this" rather than another action. */
+.fd-btn.fd-info {
+    width: 24px; height: 24px; padding: 0;
+    border-radius: 50%;
+    font-style: italic; font-family: Georgia, 'Times New Roman', serif;
+    font-size: 13px; line-height: 1; font-weight: 700;
+}
+
+/* ─── The "attached to" dialogue ─────────────────────────────────────────
+   Its own overlay rather than the host page's modal, because this component is
+   mounted on a dozen pages and the command palette, and cannot assume any of
+   them provides one. z-index sits above the palette, which is what opens it. */
+.fd-modal-overlay {
+    position: fixed; inset: 0; z-index: 20000;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+}
+.fd-modal {
+    width: 100%; max-width: 460px; max-height: 80vh; overflow: auto;
+    background: var(--surface, #fff); color: var(--text, #333);
+    border: 1px solid var(--border, #e0e0e0); border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.fd-modal-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 16px; border-bottom: 1px solid var(--border, #e0e0e0);
+}
+.fd-modal-title { flex: 1; font-size: 14px; word-break: break-word; }
+.fd-modal-x {
+    background: none; border: none; cursor: pointer;
+    font-size: 22px; line-height: 1; color: var(--text-dim, #999);
+}
+.fd-modal-x:hover { color: var(--text, #333); }
+.fd-modal-body { padding: 14px 16px; font-size: 13px; }
+.fd-modal-desc { margin: 0 0 8px; }
+.fd-modal-meta { margin: 0 0 6px; font-size: 12px; color: var(--text-muted, #666); }
+.fd-modal-sub {
+    margin: 14px 0 6px; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-dim, #999);
+}
+.fd-modal-links { margin: 0; padding-left: 18px; }
+.fd-modal-links li { margin-bottom: 4px; word-break: break-word; }
+.fd-modal-links a { color: var(--accent, #0078d4); }
+.fd-modal-hidden {
+    margin: 10px 0 0; padding: 7px 10px; border-radius: 6px; font-size: 12px;
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border: 1px solid var(--warning-border, #f0d9a8);
+}
+
+.fd-empty {
+    padding: 14px; text-align: center;
+    font-size: 13px; color: var(--text-dim, #999);
+}
+.fd-error {
+    margin-top: 10px; padding: 9px 12px; border-radius: 6px; font-size: 13px;
+    background: var(--danger-bg, #fee2e2);
+    color: var(--danger-text, #991b1b);
+    border: 1px solid var(--danger-border, #f0c2c2);
+}
+.fd-error[hidden] { display: none; }
+
+/* Paging. Present from the start: "show everything" is fine until somebody
+   attaches three thousand photographs to one asset. */
+.fd-more { margin-top: 10px; text-align: center; }
+
+@media (max-width: 640px) {
+    .fd-item { flex-wrap: wrap; }
+    .fd-actions { width: 100%; justify-content: flex-end; }
+}
+
+/* The ⓘ inside a command-palette row. Sized to sit beside the type badge
+   without changing the row's height, and stopped from looking like the row's
+   own action — clicking it opens details, not the document. */
+.cmdp-info {
+    width: 22px; height: 22px; flex: 0 0 auto;
+    border-radius: 50%; cursor: pointer;
+    border: 1px solid var(--border, #ccc);
+    background: var(--surface, #fff); color: var(--text-muted, #666);
+    font-style: italic; font-family: Georgia, 'Times New Roman', serif;
+    font-size: 12px; font-weight: 700; line-height: 1;
+}
+.cmdp-info:hover { border-color: var(--accent, #0078d4); color: var(--accent, #0078d4); }
+
+/* -- Attach one that already exists -------------------------------------- */
+.fd-existing { margin-top: 8px; position: relative; }
+.fd-find {
+    width: 100%; padding: 8px 11px; font-size: 13px;
+    border: 1px solid var(--border, #ccc); border-radius: 6px;
+    background: var(--surface, #fff); color: var(--text, #333);
+}
+.fd-find:focus { outline: none; border-color: var(--accent, #0078d4); }
+.fd-findresults {
+    margin-top: 6px; border: 1px solid var(--border, #ccc); border-radius: 6px;
+    background: var(--surface, #fff); max-height: 220px; overflow: auto;
+}
+.fd-findresults[hidden] { display: none; }
+.fd-findrow {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    padding: 8px 11px; border: none; border-bottom: 1px solid var(--border, #eee);
+    background: none; color: var(--text, #333); font-size: 13px;
+}
+.fd-findrow:last-child { border-bottom: none; }
+.fd-findrow:hover { background: var(--surface-2, #f5f5f5); }
+.fd-findtitle { display: block; font-weight: 600; }
+/* Where it already lives. Attaching widens who can read it, so this is the
+   sentence somebody should read before clicking. */
+.fd-findwhere { display: block; font-size: 11px; color: var(--warning-text, #92400e); margin-top: 2px; }
+.fd-findempty { padding: 10px 11px; font-size: 12px; color: var(--text-dim, #999); }

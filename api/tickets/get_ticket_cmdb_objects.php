@@ -15,6 +15,9 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
+// GH #217: refused while the cmdb module is switched off for the install.
+requireModuleOnJson(connectToDatabase(), 'cmdb');
 
 try {
     $ticketId = isset($_GET['ticket_id']) ? (int)$_GET['ticket_id'] : 0;
@@ -27,6 +30,13 @@ try {
         throw new Exception('Ticket not found');
     }
 
+    // The ticket gate above doesn't cover the CIs this hydrates. A link created
+    // before the same-company rule existed can still straddle two companies, so
+    // scope the CI (and its parent) rather than trusting the invariant.
+    $analystId = (int)$_SESSION['analyst_id'];
+    [$tObj,    $aObj]    = activeTenantFilter($conn, $analystId, 'o');
+    [$tParent, $aParent] = activeTenantFilter($conn, $analystId, 'p');
+
     $stmt = $conn->prepare(
         "SELECT tco.id AS link_id,
                 o.id AS object_id, o.name, c.name AS class_name,
@@ -35,12 +45,12 @@ try {
            FROM ticket_cmdb_objects tco
            JOIN cmdb_objects o ON o.id = tco.cmdb_object_id
            JOIN cmdb_classes c ON c.id = o.class_id
-      LEFT JOIN cmdb_objects p ON p.id = o.parent_id
+      LEFT JOIN cmdb_objects p ON p.id = o.parent_id" . $tParent . "
       LEFT JOIN cmdb_classes pc ON pc.id = p.class_id
-          WHERE tco.ticket_id = ?
+          WHERE tco.ticket_id = ?" . $tObj . "
        ORDER BY c.name, o.name"
     );
-    $stmt->execute([$ticketId]);
+    $stmt->execute(array_merge($aParent, [$ticketId], $aObj));
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as &$r) {
         $r['link_id'] = (int)$r['link_id'];

@@ -12,7 +12,7 @@ $module_title = function_exists('t') ? t('morning-checks.title') : 'Morning Chec
 
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 

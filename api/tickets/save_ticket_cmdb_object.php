@@ -9,12 +9,18 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
+// GH #217: refused while the cmdb module is switched off for the install.
+requireModuleOnJson(connectToDatabase(), 'cmdb');
 
 try {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -39,6 +45,30 @@ try {
     $check = $conn->prepare("SELECT 1 FROM cmdb_objects WHERE id = ?");
     $check->execute([$objectId]);
     if (!$check->fetchColumn()) throw new Exception('CMDB object not found');
+
+    // ...and the CI side, which was unchecked: the ticket gate above says nothing
+    // about the object, so any CI id could be attached to a ticket the analyst
+    // legitimately owns — pulling another company's CI name into their reading
+    // pane. Framed as not-found, like every other CI gate.
+    if (!analystCanAccessCmdbObject($conn, (int)$_SESSION['analyst_id'], $objectId)) {
+        throw new Exception('CMDB object not found');
+    }
+
+    // Both ends reachable is still not enough for an all-access analyst, who can
+    // reach both companies. A ticket and the CI it references must belong to the
+    // same company, or the link itself becomes the leak.
+    if (isMultiTenant($conn)) {
+        $tt = $conn->prepare("SELECT tenant_id FROM tickets WHERE id = ?");
+        $tt->execute([$ticketId]);
+        $ticketTenant = $tt->fetchColumn();
+        $ot = $conn->prepare("SELECT tenant_id FROM cmdb_objects WHERE id = ?");
+        $ot->execute([$objectId]);
+        $objectTenant = $ot->fetchColumn();
+        $norm = fn($v) => ($v === null || $v === false) ? getDefaultTenantId($conn) : (int)$v;
+        if ($norm($ticketTenant) !== $norm($objectTenant)) {
+            throw new Exception('That configuration item belongs to a different company');
+        }
+    }
 
     try {
         $ins = $conn->prepare(

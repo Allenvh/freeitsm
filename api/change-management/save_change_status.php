@@ -5,6 +5,11 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+require_once '../../includes/changes/approvals.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -12,6 +17,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('changes');
+requireCapabilityJson(Cap::CHANGES_STATUSES);   // Change management settings tab — see docs/design/rbac.md
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);
@@ -23,6 +30,19 @@ try {
     $is_default    = !empty($data['is_default']) ? 1 : 0;
     $display_order = (int)($data['display_order'] ?? 0);
     $is_active     = !empty($data['is_active']) ? 1 : 0;
+    // The stage is what the approval rules read (includes/changes/approvals.php).
+    // Empty = "not classified", allowed so a custom status can be saved first and
+    // classified later - Settings marks it, and Enforce mode will refuse to start.
+    $stage = (string)($data['stage'] ?? '');
+    if ($stage !== '' && !changeStageIsValid($stage)) {
+        throw new Exception('Unknown stage');
+    }
+    $stage = $stage === '' ? null : $stage;
+    // A finished stage IS closed; every other stage is open. Only an unclassified
+    // status keeps the Closed tick it was given.
+    if ($stage !== null) {
+        $is_closed = in_array($stage, CHANGE_STAGES_CLOSED, true) ? 1 : 0;
+    }
 
     if ($name === '') {
         throw new Exception('Name is required');
@@ -42,15 +62,23 @@ try {
 
     if ($id) {
         $sql = "UPDATE change_statuses
-                   SET name = ?, colour = ?, is_closed = ?, is_default = ?, display_order = ?, is_active = ?
+                   SET name = ?, stage = ?, colour = ?, is_closed = ?, is_default = ?, display_order = ?, is_active = ?
                  WHERE id = ?";
         $stmt = $conn->prepare($sql);
-        $stmt->execute([$name, $colour ?: null, $is_closed, $is_default, $display_order, $is_active, $id]);
+        $stmt->execute([$name, $stage, $colour ?: null, $is_closed, $is_default, $display_order, $is_active, $id]);
     } else {
-        $sql = "INSERT INTO change_statuses (name, colour, is_closed, is_default, display_order, is_active)
-                VALUES (?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO change_statuses (name, stage, colour, is_closed, is_default, display_order, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
-        $stmt->execute([$name, $colour ?: null, $is_closed, $is_default, $display_order, $is_active]);
+        $stmt->execute([$name, $stage, $colour ?: null, $is_closed, $is_default, $display_order, $is_active]);
+    }
+
+    // The code moves changes INTO draft, awaiting and approved (a vote, a rejection,
+    // a resubmission), so each must keep an active status to move them to. Checked
+    // after the write, inside the transaction, so a rename that keeps the stage passes.
+    $missing = changeStagesWithoutActiveStatus($conn);
+    if ($missing) {
+        throw new Exception(changeStagesMissingMessage($missing));
     }
 
     $hasDefault = (int) $conn->query("SELECT COUNT(*) FROM change_statuses WHERE is_default = 1")->fetchColumn();
@@ -59,6 +87,7 @@ try {
     }
 
     $conn->commit();
+    wf_emit('change_status', $id ? 'updated' : 'created', $id ? (int)$id : (int)$conn->lastInsertId(), $name);
     echo json_encode(['success' => true]);
 
 } catch (Exception $e) {

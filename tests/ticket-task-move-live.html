@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ticket → task move — live check</title>
+<body>
+<pre id="out">running…</pre>
+<script>
+/**
+ * Linking a task that already belongs to another ticket (Ed) — the LIVE run.
+ *
+ * A task belongs to ONE ticket: `tasks.ticket_id` is a single column. So
+ * linking a task from the Tickets side when it is already attached MOVES it,
+ * and the other ticket silently loses it. The picker labelled such a row
+ * "currently on TICKET-x", but a label you may have read is not consent.
+ *
+ * Checks, in order:
+ *   1. the picker offers a task that belongs to another ticket
+ *   2. picking it raises a confirm naming BOTH the task and the ticket it is on
+ *   3. DECLINING leaves the other ticket's task exactly where it was  <- the point
+ *   4. accepting actually moves it
+ *   5. and it is moved back afterwards, so the run leaves nothing changed
+ *
+ * HOW TO RUN — needs a signed-in analyst:
+ *   printf 'analyst_id|i:1;' > c:/wamp64/tmp/sess_rplive
+ *   http://localhost/freeitsm-app/tests/ticket-task-move-live.html?sid=rplive&ticket=409&task=8
+ *
+ * ?ticket= is the ticket to link FROM (any ticket that is not the task's own).
+ * ?task=   is a task that already belongs to a DIFFERENT ticket.
+ */
+const P = new URLSearchParams(location.search);
+if (P.get('sid')) document.cookie = 'PHPSESSID=' + P.get('sid') + '; path=/';
+const TICKET = P.get('ticket') || '409';
+const TASK   = P.get('task')   || '8';
+
+// 🔴 THIS FILE WRITES. It moves a real task between real tickets and puts it
+// back, and if a run is cut short - a timeout, a closed tab, a crash - the task
+// is left on the wrong ticket. That happened during development and took two
+// rounds of "where did this link go?" to notice, because a half-finished run
+// looks exactly like a finished one from outside.
+//
+// So it refuses to run without being asked explicitly. Opening the URL out of
+// curiosity, or a stale tab reloading, now does nothing.
+const ALLOW_WRITE = P.get('allowwrite') === '1';
+
+const lines = [];
+const out = document.getElementById('out');
+function log(s) { lines.push(s); out.textContent = lines.join('\n'); }
+function ok(what, cond, detail) { log((cond ? 'PASS  ' : 'FAIL  ') + what + (cond || !detail ? '' : '  <- ' + detail)); }
+
+function waitFor(fn, ms) {
+  return new Promise(res => {
+    const t0 = Date.now();
+    (function poll() {
+      let v = null; try { v = fn(); } catch (e) {}
+      if (v) return res(v);
+      if (Date.now() - t0 > ms) return res(null);
+      setTimeout(poll, 200);
+    })();
+  });
+}
+const ticketOf = async () =>
+  (await fetch('../api/tasks/get.php?id=' + TASK).then(r => r.json())).task.ticket_id;
+
+(async () => {
+  if (!ALLOW_WRITE) {
+    log('This test MOVES a real task between real tickets and puts it back.\n' +
+        'It will not run without being asked explicitly. Add &allowwrite=1 to the URL,\n' +
+        'and check the task is back where it belongs when it finishes.');
+    return;
+  }
+
+  // ⚠️ Ask the SERVER what the task is attached to. Reading it out of the page
+  // would mean trusting the thing under test, and a top-level `let` is not a
+  // window property anyway.
+  const originalTicket = await ticketOf();
+  if (!originalTicket) { log('FAIL  task ' + TASK + ' is not linked to any ticket — pick one that is'); return; }
+  if (String(originalTicket) === String(TICKET)) {
+    log('FAIL  task ' + TASK + ' is already on ticket ' + TICKET + ' — pick a different ticket to link FROM');
+    return;
+  }
+  log('task ' + TASK + ' starts on ticket ' + originalTicket + '; linking from ticket ' + TICKET);
+
+  const f = document.createElement('iframe');
+  f.style.cssText = 'width:1500px;height:1000px;border:0;position:absolute;left:-9999px';
+  document.body.appendChild(f);
+  f.src = '../tickets/index.php?ticket_id=' + TICKET;
+  await new Promise(r => { f.onload = r; setTimeout(r, 14000); });
+  const d = () => f.contentDocument;
+  const W = () => f.contentWindow;
+
+  // The row the picker would show for this task.
+  //
+  // ⚠️ Search by the task's TITLE. An empty query matches everything but the
+  // endpoint returns only the ten most recently updated, so the first run of
+  // this file reported "task 8 is not among the linkable results" when the only
+  // thing wrong was that it sat eleventh.
+  const taskTitle = (await fetch('../api/tasks/get.php?id=' + TASK).then(r => r.json())).task.title;
+  const row = await fetch('../api/tickets/search_linkable_tasks.php?ticket_id=' + TICKET
+                          + '&q=' + encodeURIComponent(taskTitle))
+      .then(r => r.json())
+      .then(j => (j.results || []).find(r => String(r.id) === String(TASK)));
+  ok('the picker offers a task that belongs to another ticket', !!row,
+     'task ' + TASK + ' is not among the linkable results at all');
+  if (!row) { f.remove(); return; }
+  ok('…and the row is flagged as linked elsewhere', !!row.linked_elsewhere,
+     'linked_elsewhere was false, so the confirm below can never fire');
+
+  // --- 2 & 3: decline ---------------------------------------------------
+  //
+  // ⚠️ WAIT for the reading pane before opening the picker. f.onload fires when
+  // the HTML arrives, not when the ticket has been fetched and drawn, so the
+  // first run of this file called openLinkTaskPicker() while #stripPickerHost
+  // did not yet exist — openStripPicker() returned null, nothing opened, and it
+  // reported "the task picker did not open" as though the picker were broken.
+  const host = await waitFor(() => d().getElementById('stripPickerHost'), 20000);
+  if (!host) { log('FAIL  the ticket reading pane never finished loading'); f.remove(); return; }
+
+  W().openLinkTaskPicker(Number(TICKET));
+  await new Promise(r => setTimeout(r, 800));
+  // Reach the picker's own pick() by clicking its row, which is the only way in
+  // — pick() is a closure inside openLinkTaskPicker, not a global.
+  const input = await waitFor(() => d().querySelector('#stripPickerHost input'), 6000);
+  if (!input) { log('FAIL  the task picker did not open'); f.remove(); return; }
+  input.value = row.title;
+  input.dispatchEvent(new (W().Event)('input', { bubbles: true }));
+
+  // 🔴 SKIP THE "CREATE" ROW. The picker's first entry offers to CREATE a task
+  // with whatever you typed, and its label contains the title too — so matching
+  // on the title alone picks the create row, which does not link anything: it
+  // makes a NEW task. The first run of this file did exactly that twice, left
+  // two duplicate tasks on the ticket, and then reported "it moved the task with
+  // no warning" because no confirm had been reached. Match the row that carries
+  // the ☐/☑ box, which only an EXISTING task has.
+  const resultRow = await waitFor(() => {
+    const els = [...d().querySelectorAll('#stripPickerHost .asset-picker-result')];
+    return els.find(e => e.textContent.indexOf(row.title) !== -1
+                      && /[☐☑]/.test(e.textContent)) || null;
+  }, 8000);
+  if (!resultRow) { log('FAIL  the task never appeared in the picker results as an EXISTING task'); f.remove(); return; }
+  log('picking the existing-task row: ' + resultRow.textContent.replace(/\s+/g, ' ').trim().slice(0, 70));
+
+  resultRow.dispatchEvent(new (W().MouseEvent)('mousedown', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 1200));   // showConfirm raises the dialog in a rAF
+
+  const dlg = await waitFor(() => {
+    const m = d().querySelector('.fitsm-confirm-overlay.active .fitsm-confirm-modal');
+    return m && m.offsetParent !== null ? m : null;
+  }, 8000);
+  ok('picking a task that is on another ticket asks first', !!dlg,
+     'it moved the task with no warning at all');
+
+  if (dlg) {
+    const txt = dlg.textContent.replace(/\s+/g, ' ');
+    ok('…and the warning names the task and the ticket it is on',
+       txt.indexOf(row.title) !== -1 && /TICKET-|#/.test(txt), txt.slice(0, 160));
+
+    [...dlg.querySelectorAll('button')].find(b => !/move|verschieb|flyt/i.test(b.textContent)).click();
+    await new Promise(r => setTimeout(r, 1500));
+    ok('DECLINING leaves the task on its original ticket',
+       String(await ticketOf()) === String(originalTicket),
+       'the task moved anyway, to ' + (await ticketOf()));
+  }
+
+  // --- 4: accept --------------------------------------------------------
+  resultRow.dispatchEvent(new (W().MouseEvent)('mousedown', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 1200));
+  const dlg2 = await waitFor(() => {
+    const m = d().querySelector('.fitsm-confirm-overlay.active .fitsm-confirm-modal');
+    return m && m.offsetParent !== null ? m : null;
+  }, 8000);
+  // An `if (dlg2)` alone would skip in silence, which reads like a pass.
+  ok('the confirm appears again on a second attempt', !!dlg2);
+  if (dlg2) {
+    [...dlg2.querySelectorAll('button')].find(b => /move|verschieb|flyt/i.test(b.textContent)).click();
+    await new Promise(r => setTimeout(r, 2500));
+    ok('accepting actually moves it', String(await ticketOf()) === String(TICKET),
+       'still on ' + (await ticketOf()));
+  }
+
+  // ⚠️ Put it back. This file moves a REAL task between REAL tickets.
+  // 🔴 Refuse to write anything that is not a real id, rather than "restoring"
+  // a guess — a cleanup that can destroy what it protects is worse than none.
+  if (!Number.isFinite(Number(originalTicket)) || Number(originalTicket) <= 0) {
+    log('FAIL  CLEANUP REFUSED: original ticket was ' + originalTicket + ' — put it back by hand');
+    f.remove(); return;
+  }
+  // This page is not a FreeITSM page, so it sends the token the loaded page carries (S4).
+  await fetch('../api/tasks/save.php', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (f.contentDocument.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+    body: JSON.stringify({ id: Number(TASK), ticket_id: Number(originalTicket) })
+  });
+  await new Promise(r => setTimeout(r, 1200));
+  ok('CLEANUP: the task is back on ticket ' + originalTicket,
+     String(await ticketOf()) === String(originalTicket),
+     'LEFT ON ' + (await ticketOf()) + ' — set it back to ' + originalTicket + ' by hand');
+
+  // ⚠️ The picker can CREATE tasks as well as link them, and a mis-aimed click
+  // makes one silently. Say so, so a stray task is noticed rather than left.
+  const after = await fetch('../api/tasks/list.php').then(r => r.json()).catch(() => null);
+  if (after && Array.isArray(after.tasks)) {
+    const strays = after.tasks.filter(t =>
+      String(t.id) !== String(TASK) && t.title === taskTitle);
+    ok('no duplicate task was created by this run', strays.length === 0,
+       'CREATED: ' + strays.map(t => '#' + t.id).join(', ') + ' — delete them');
+  }
+
+  f.remove();
+  log('\ndone');
+})();
+</script>
+</body>

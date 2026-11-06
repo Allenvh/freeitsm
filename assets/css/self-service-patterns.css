@@ -1,0 +1,161 @@
+/**
+ * Background patterns for the self-service portal.
+ *
+ * 🔑 Pure CSS, no image files. A pattern that is a gradient costs nothing to
+ * serve, scales to any screen without a second asset, and cannot 404 on an
+ * install that copied the app folder without the images.
+ *
+ * 🔴 THESE MUST BE ALMOST INVISIBLE. The first version used 5.5% opacity with
+ * tight spacing, and on a real portal it was overwhelming - the diagonal read as
+ * bold hatching across the whole page and competed with the text. Ed sent
+ * screenshots. The rule that came out of it: a background pattern is texture you
+ * notice only if you look for it, not decoration. If you can read the pattern
+ * before you read the page, it is too strong.
+ *
+ * Two levers, and both matter: OPACITY (now ~2%) and SPACING (now roughly double
+ * the original). Lightening alone still gives a busy page, because the density
+ * is what the eye picks up.
+ *
+ * ⚠️ Every one is drawn in `currentColor` at very low opacity and sits BEHIND
+ * the page's own surface colour, so it works in light and dark without a second
+ * set of rules.
+ *
+ * The class is chosen from a fixed list in includes/self_service_settings.php -
+ * these names and that list must agree. "waves" was removed after the same
+ * review: it read as a chain of overlapping ovals rather than texture, and no
+ * amount of lightening made it calm.
+ */
+
+.ssp-pat-dots,
+.ss-pat-dots {
+    background-image: radial-gradient(currentColor 1px, transparent 1px);
+    background-size: 26px 26px;
+    background-color: var(--surface, #fff);
+}
+
+.ssp-pat-grid,
+.ss-pat-grid {
+    background-image:
+        linear-gradient(to right, currentColor 1px, transparent 1px),
+        linear-gradient(to bottom, currentColor 1px, transparent 1px);
+    background-size: 38px 38px;
+    background-color: var(--surface, #fff);
+}
+
+/* Was a 1px line every 12px, which is dense enough to read as hatching. One
+   line every 26px, and the line itself is hairline. */
+.ssp-pat-diagonal,
+.ss-pat-diagonal {
+    background-image: repeating-linear-gradient(
+        45deg, currentColor 0 1px, transparent 1px 26px
+    );
+    background-color: var(--surface, #fff);
+}
+
+/* Flow — a family of phase-shifted sine curves, generated rather than drawn.
+ *
+ * ⚠️ THE ONLY PATTERN THAT IS NOT `currentColor`. The others are CSS gradients
+ * and inherit the page's colour; this one is an SVG file, which is a separate
+ * document and cannot. So there are two files and the theme picks one, and
+ * their strength is baked into the file rather than set here.
+ *
+ * Anchored to the BOTTOM. The band is densest through its middle, and headings
+ * and the first cards live at the top - pinning it low keeps the busiest part
+ * of the drawing away from the part of the page people actually read.
+ */
+.ssp-pat-flow,
+.ss-pat-flow {
+    background-image: url('../img/portal-flow-light.svg');
+    background-position: center bottom;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-attachment: fixed;
+    background-color: var(--surface, #fff);
+}
+
+[data-theme-mode="dark"] .ssp-pat-flow,
+[data-theme-mode="dark"] .ss-pat-flow {
+    background-image: url('../img/portal-flow-dark.svg');
+}
+
+/* Mesh — three rotated ribbons. Same machinery as Flow, more of it: this one
+   is the showpiece and Flow is the one that sits behind a page of text all
+   day. Both are files rather than gradients, so neither takes `color`. */
+.ssp-pat-mesh,
+.ss-pat-mesh {
+    background-image: url('../img/portal-mesh-light.svg');
+    background-position: center bottom;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-attachment: fixed;
+    background-color: var(--surface, #fff);
+}
+
+[data-theme-mode="dark"] .ssp-pat-mesh,
+[data-theme-mode="dark"] .ss-pat-mesh {
+    background-image: url('../img/portal-mesh-dark.svg');
+}
+
+/* The colour every pattern is drawn in.
+ *
+ * 🔴 ~2%, not the 5.5% this started at. Set on the elements themselves rather
+ * than inherited, because `currentColor` would otherwise pick up whatever text
+ * colour the surrounding component happened to have - which is how a "subtle"
+ * pattern turns solid inside a dark header. */
+.ssp-pat-dots, .ssp-pat-grid, .ssp-pat-diagonal,
+.ss-pat-dots,  .ss-pat-grid,  .ss-pat-diagonal {
+    color: rgba(0, 0, 0, 0.022);
+}
+
+/* Dark mode carries a little more, because a light mark on a dark ground reads
+   fainter than the same mark inverted - but still barely there. */
+[data-theme-mode="dark"] .ssp-pat-dots,
+[data-theme-mode="dark"] .ssp-pat-grid,
+[data-theme-mode="dark"] .ssp-pat-diagonal,
+[data-theme-mode="dark"] .ss-pat-dots,
+[data-theme-mode="dark"] .ss-pat-grid,
+[data-theme-mode="dark"] .ss-pat-diagonal,
+[data-theme-mode="dark"] .ss-pat-diagonal {
+    color: rgba(255, 255, 255, 0.032);
+}
+
+/* The swatches on the settings screen are 92x62px, so at page spacing most of
+   them would show one mark or none. They get their own tighter, stronger copy -
+   a preview has to be legible to be a preview, and it is the only place these
+   are deliberately visible. */
+.ssp-pattern.ssp-pat-dots      { background-size: 12px 12px; }
+.ssp-pattern.ssp-pat-grid      { background-size: 16px 16px; }
+.ssp-pattern.ssp-pat-diagonal  { background-image: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 10px); }
+.ssp-pattern.ssp-pat-dots, .ssp-pattern.ssp-pat-grid,
+.ssp-pattern.ssp-pat-diagonal {
+    color: rgba(0, 0, 0, 0.16);
+}
+[data-theme-mode="dark"] .ssp-pattern.ssp-pat-dots,
+[data-theme-mode="dark"] .ssp-pattern.ssp-pat-grid,
+[data-theme-mode="dark"] .ssp-pattern.ssp-pat-diagonal {
+    color: rgba(255, 255, 255, 0.22);
+}
+
+/* Flow's swatch shows the WHOLE drawing rather than a crop of it: `cover` on a
+   92x62px tile lands in the middle of the band and shows four parallel lines,
+   which says nothing about what you are picking. It also takes no `color` - it
+   is a file, not a gradient. */
+.ssp-pattern.ssp-pat-flow {
+    background-image: url('../img/portal-flow-light.svg');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+[data-theme-mode="dark"] .ssp-pattern.ssp-pat-flow {
+    background-image: url('../img/portal-flow-dark.svg');
+}
+
+.ssp-pattern.ssp-pat-mesh {
+    background-image: url('../img/portal-mesh-light.svg');
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+[data-theme-mode="dark"] .ssp-pattern.ssp-pat-mesh {
+    background-image: url('../img/portal-mesh-dark.svg');
+}

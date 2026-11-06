@@ -4,23 +4,51 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+require_once '../../includes/settings_manifest.php';
+requireModuleAccess('software');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered.
+$settingsManifest = settingsManifestFor('software');
+$visibleTabs      = settingsVisibleTabs(connectToDatabase(), (int) $_SESSION['analyst_id'], $settingsManifest);
+$activeTabId      = settingsFirstTabId($visibleTabs);
+/* Honour ?tab=, so a link from elsewhere (the Watchtower settings signpost,
+   say) lands on the tab it names rather than on whichever is first.
+   Validated against the VISIBLE tabs, not just the manifest - a tab this
+   analyst has no capability for is never rendered, and asking for it must
+   not select nothing, nor slip past the check. Same three lines as
+   forms/settings/index.php. */
+if (!empty($_GET['tab']) && settingsTabVisible($visibleTabs, (string) $_GET['tab'])) {
+    $activeTabId = (string) $_GET['tab'];
+}
+
 
 $current_page = 'settings';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'software'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('software.settings.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('software', t('software.nav.settings'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
+        /* Module accent (indigo) — tabs, toggles, focus rings, shared buttons. */
+        body { --accent: var(--sw-accent, #5c6bc0); --accent-hover: var(--sw-accent-hover, #3f51b5); }
         body { padding-top: 0; }
         /* Full-width settings page matching the canonical layout used by
            other modules' settings pages. */
@@ -33,12 +61,12 @@ $translationNamespaces = ['common', 'software'];
         }
 
         /* Purple theme for Software tabs */
-        .tab:hover { color: #5c6bc0; }
-        .tab.active { color: #5c6bc0; border-bottom-color: #5c6bc0; }
+        .tab:hover { color: var(--accent, #5c6bc0); }
+        .tab.active { color: var(--accent, #5c6bc0); border-bottom-color: var(--accent, #5c6bc0); }
 
         .section-header {
             padding: 18px 24px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -47,22 +75,22 @@ $translationNamespaces = ['common', 'software'];
         .section-header h3 {
             margin: 0;
             font-size: 16px;
-            color: #333;
+            color: var(--text, #333);
             display: flex;
             align-items: center;
             gap: 10px;
         }
 
         .section-header h3 svg {
-            color: #5c6bc0;
+            color: var(--sw-accent, #5c6bc0);
         }
 
         .section-description {
             padding: 14px 24px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #eee;
+            background: var(--surface-2, #f8f9fa);
+            border-bottom: 1px solid var(--border-soft, #eee);
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
             line-height: 1.5;
         }
 
@@ -84,24 +112,26 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .btn-primary {
-            background: #5c6bc0;
+            background: var(--accent, #5c6bc0);
             color: #fff;
         }
 
         .btn-primary:hover {
-            background: #3f51b5;
+            background: var(--accent-hover, #3f51b5);
         }
 
         .btn-secondary {
-            background: #f5f5f5;
-            color: #333;
-            border: 1px solid #ddd;
+            background: var(--surface-hover, #f5f5f5);
+            color: var(--text, #333);
+            border: 1px solid var(--border, #ddd);
         }
 
         .btn-secondary:hover {
-            background: #eee;
+            background: var(--border-soft, #eee);
         }
 
+        /* Semantic action buttons — saturated fills with white text that read
+           on both light and dark, so left hardcoded (like the status badges). */
         .btn-danger {
             background: #dc3545;
             color: #fff;
@@ -140,22 +170,22 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .key-table thead th {
-            background: #f8f9fa;
+            background: var(--surface-2, #f8f9fa);
             padding: 10px 24px;
             text-align: left;
             font-size: 12px;
             font-weight: 600;
-            color: #555;
+            color: var(--text-muted, #555);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid var(--border, #e0e0e0);
         }
 
         .key-table tbody td {
             padding: 12px 24px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
             vertical-align: middle;
         }
 
@@ -164,13 +194,13 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .key-table tbody tr:hover {
-            background: #fafafa;
+            background: var(--surface-hover, #fafafa);
         }
 
         .api-key-value {
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 13px;
-            background: #f5f5f5;
+            background: var(--surface-hover, #f5f5f5);
             padding: 4px 10px;
             border-radius: 4px;
             display: inline-flex;
@@ -181,11 +211,11 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .api-key-masked {
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .api-key-full {
-            color: #333;
+            color: var(--text, #333);
         }
 
         .copy-btn {
@@ -193,18 +223,18 @@ $translationNamespaces = ['common', 'software'];
             border: none;
             cursor: pointer;
             padding: 2px;
-            color: #888;
+            color: var(--text-dim, #888);
             display: inline-flex;
         }
 
         .copy-btn:hover {
-            color: #5c6bc0;
+            color: var(--sw-accent, #5c6bc0);
         }
 
         .status-active {
             display: inline-block;
-            background: #e8f5e9;
-            color: #2e7d32;
+            background: var(--success-bg, #e8f5e9);
+            color: var(--success-text, #2e7d32);
             padding: 3px 10px;
             border-radius: 12px;
             font-size: 12px;
@@ -213,8 +243,8 @@ $translationNamespaces = ['common', 'software'];
 
         .status-revoked {
             display: inline-block;
-            background: #fce4ec;
-            color: #c62828;
+            background: var(--danger-bg, #fce4ec);
+            color: var(--danger-text, #c62828);
             padding: 3px 10px;
             border-radius: 12px;
             font-size: 12px;
@@ -233,21 +263,21 @@ $translationNamespaces = ['common', 'software'];
             background: none;
             border: none;
             padding: 4px;
-            color: #666;
+            color: var(--text-muted, #666);
             display: inline-flex;
             align-items: center;
             justify-content: center;
             vertical-align: middle;
             cursor: pointer;
         }
-        .action-btn:hover { background: none; border: none; color: #5c6bc0; }
-        .action-btn.delete:hover { color: #c62828; }
+        .action-btn:hover { background: none; border: none; color: var(--sw-accent, #5c6bc0); }
+        .action-btn.delete:hover { color: var(--danger-text, #c62828); }
         .action-btn svg { width: 16px; height: 16px; }
 
         .empty-state {
             padding: 40px;
             text-align: center;
-            color: #888;
+            color: var(--text-dim, #888);
             font-size: 14px;
         }
 
@@ -261,8 +291,8 @@ $translationNamespaces = ['common', 'software'];
         .spinner {
             width: 30px;
             height: 30px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #5c6bc0;
+            border: 3px solid var(--border-soft, #f3f3f3);
+            border-top: 3px solid var(--sw-accent, #5c6bc0);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -274,8 +304,8 @@ $translationNamespaces = ['common', 'software'];
 
         .new-key-banner {
             display: none;
-            background: #e8f5e9;
-            border: 1px solid #a5d6a7;
+            background: var(--success-bg, #e8f5e9);
+            border: 1px solid var(--success-border, #a5d6a7);
             border-radius: 6px;
             padding: 16px 20px;
             margin: 16px 24px;
@@ -284,17 +314,17 @@ $translationNamespaces = ['common', 'software'];
         .new-key-banner p {
             margin: 0 0 10px 0;
             font-size: 13px;
-            color: #2e7d32;
+            color: var(--success-text, #2e7d32);
             font-weight: 500;
         }
 
         .new-key-banner .key-display {
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 14px;
-            background: #fff;
+            background: var(--surface, #fff);
             padding: 10px 14px;
             border-radius: 4px;
-            border: 1px solid #c8e6c9;
+            border: 1px solid var(--success-border, #c8e6c9);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -305,7 +335,7 @@ $translationNamespaces = ['common', 'software'];
         .new-key-banner .hint {
             margin: 10px 0 0 0;
             font-size: 12px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         /* Modal for delete confirmation */
@@ -324,24 +354,24 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .confirm-box {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
             padding: 24px;
             max-width: 420px;
             width: 90%;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+            box-shadow: 0 8px 30px var(--shadow, rgba(0,0,0,0.2));
         }
 
         .confirm-box h4 {
             margin: 0 0 12px 0;
             font-size: 16px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .confirm-box p {
             margin: 0 0 20px 0;
             font-size: 14px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .confirm-actions {
@@ -350,16 +380,16 @@ $translationNamespaces = ['common', 'software'];
             gap: 10px;
         }
     </style>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="settings">
     <?php include '../includes/header.php'; ?>
 
     <div class="settings-container">
-        <div class="tabs">
-            <button class="tab active" data-tab="api-keys" onclick="switchTab('api-keys')"><?php echo htmlspecialchars(t('software.settings.tab_api_keys')); ?></button>
-        </div>
+        <?php renderSettingsTabBar($visibleTabs, $activeTabId); ?>
 
-        <div class="tab-content active" id="api-keys-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'api-keys')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'api-keys' ? ' active' : ''; ?>" id="api-keys-tab" data-capability="<?php echo capKey(Cap::SOFTWARE_API_KEYS); ?>">
             <div class="section-header">
                 <h3>
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -369,7 +399,7 @@ $translationNamespaces = ['common', 'software'];
                 </h3>
                 <div style="display:flex;align-items:center;gap:8px;">
                     <input type="text" id="keyLabelInput" placeholder="<?php echo htmlspecialchars(t('software.settings.label_input')); ?>" maxlength="100"
-                           style="padding:7px 12px;border:1px solid #ddd;border-radius:4px;font-size:13px;width:180px;">
+                           style="padding:7px 12px;border:1px solid var(--border, #ddd);border-radius:4px;font-size:13px;width:180px;background:var(--surface, #fff);color:var(--text, #333);">
                     <button class="btn btn-primary" onclick="generateKey()">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -416,6 +446,36 @@ $translationNamespaces = ['common', 'software'];
                 </table>
             </div>
         </div>
+        <?php endif; ?>
+
+        <?php /* Where licence renewals surface (#1551). Mirrors the Assets
+                 "Warranty" tab: same four choices, same days-ahead number, and
+                 the calendar half is generated by the same mechanism. */ ?>
+        <?php if (settingsTabVisible($visibleTabs, 'renewals')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'renewals' ? ' active' : ''; ?>" id="renewals-tab" data-capability="<?php echo capKey(Cap::SOFTWARE_RENEWALS); ?>">
+            <div class="settings-section">
+                <div class="settings-section-body">
+                    <p class="settings-description">
+                        <?php echo t('software.settings.renewals_intro'); ?>
+                    </p>
+                    <form id="renewalForm" onsubmit="saveRenewalSettings(event)">
+                        <div class="form-group">
+                            <label class="form-label" for="renewalSurface"><?php echo htmlspecialchars(t('software.settings.renewal_show_in')); ?></label>
+                            <select class="form-input" id="renewalSurface" style="max-width: 340px;">
+                                <option value="off"><?php echo htmlspecialchars(t('software.settings.renewal_off')); ?></option>
+                                <option value="dashboard"><?php echo htmlspecialchars(t('software.settings.renewal_dashboard_only')); ?></option>
+                                <option value="calendar"><?php echo htmlspecialchars(t('software.settings.renewal_calendar_only')); ?></option>
+                                <option value="both"><?php echo htmlspecialchars(t('software.settings.renewal_both')); ?></option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" id="renewalSaveBtn"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <script>
@@ -439,7 +499,57 @@ $translationNamespaces = ['common', 'software'];
 
         document.addEventListener('DOMContentLoaded', function() {
             loadKeys();
+            loadRenewalSettings();
         });
+
+        // ── Where licence renewals surface (#1551) ──────────────────────────
+        // Same shape as the Assets "Warranty" tab, reading through the shared
+        // system-settings endpoints rather than growing a pair of its own.
+        const API_SYSTEM_SETTINGS = '../../api/settings/';
+
+        async function loadRenewalSettings() {
+            const sel = document.getElementById('renewalSurface');
+            if (!sel) return;   // tab not visible to this analyst
+            try {
+                const res = await fetch(API_SYSTEM_SETTINGS + 'get_system_settings.php');
+                const data = await res.json();
+                if (!data.success) return;
+                // ⚠️ Defaults MATCH the server (dashboard / 30). If these two ever
+                // disagree the screen shows one answer while the dashboard obeys
+                // another, and pressing Save writes the screen's guess over the top.
+                sel.value = data.settings.software_renewal_surface || 'dashboard';
+            } catch (e) {
+                console.error('Could not read renewal settings:', e);
+            }
+        }
+
+        async function saveRenewalSettings(e) {
+            e.preventDefault();
+            const btn = document.getElementById('renewalSaveBtn');
+            btn.disabled = true;
+            try {
+                const res = await fetch(API_SYSTEM_SETTINGS + 'save_system_settings.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ settings: {
+                        software_renewal_surface: document.getElementById('renewalSurface').value,
+                    }})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    // Rebuild the calendar so it matches the new choice straight
+                    // away, rather than at whatever the next licence edit happens
+                    // to be. Best-effort: the setting is saved either way.
+                    try { await fetch(API_BASE + 'sync_renewal_calendar.php', { method: 'POST' }); } catch (err) {}
+                    showToast(window.t('software.settings.renewal_saved'), 'success');
+                } else {
+                    showToast(data.error || 'Failed', 'error');
+                }
+            } catch (err) {
+                showToast('Failed', 'error');
+            }
+            btn.disabled = false;
+        }
 
         async function loadKeys() {
             try {
@@ -476,8 +586,8 @@ $translationNamespaces = ['common', 'software'];
                 // the user which way the click will toggle. delete class
                 // is only used for the trash icon (red on hover).
                 const toggleTitle = isActive ? window.t('software.settings.action_revoke') : window.t('software.settings.action_activate');
-                const label = key.label || '<span style="color:#bbb">—</span>';
-                const owner = key.analyst_name || '<span style="color:#bbb">—</span>';
+                const label = key.label || '<span style="color:var(--text-faint, #bbb)">—</span>';
+                const owner = key.analyst_name || '<span style="color:var(--text-faint, #bbb)">—</span>';
 
                 return `
                 <tr>
@@ -511,12 +621,13 @@ $translationNamespaces = ['common', 'software'];
             return key.substring(0, 6) + '\u2022'.repeat(20) + key.substring(key.length - 6);
         }
 
+        // created_at is a server-stamped UTC timestamp — parse as UTC and render
+        // in the analyst's display zone (kind 1).
         function formatDate(dateStr) {
             if (!dateStr) return '';
-            const d = new Date(dateStr);
-            if (isNaN(d)) return dateStr;
-            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            const d = parseUTCDate(dateStr);
+            if (!d || isNaN(d)) return dateStr;
+            return fmtDateTime(d);
         }
 
         async function generateKey() {
@@ -592,16 +703,11 @@ $translationNamespaces = ['common', 'software'];
         }
 
         function copyKey(key) {
-            navigator.clipboard.writeText(key).then(() => {
-                // Brief visual feedback - could enhance later
-            }).catch(() => {
-                // Fallback for older browsers
-                const ta = document.createElement('textarea');
-                ta.value = key;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
+            // ⚠️ An API KEY. Failing to copy this silently is the worst case of
+            // the lot: it is shown once, and somebody who believes they have it
+            // closes the box. copyToClipboard reports honestly - see clipboard.js.
+            copyToClipboard(key).then(ok => {
+                if (!ok) alert('Could not copy the key automatically. Select it and copy it by hand before closing this box.');
             });
         }
 
@@ -615,9 +721,10 @@ $translationNamespaces = ['common', 'software'];
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

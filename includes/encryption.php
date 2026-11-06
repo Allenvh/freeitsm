@@ -3,21 +3,29 @@
  * AES-256-GCM Encryption Helper
  *
  * Provides encrypt/decrypt functions for sensitive database values.
- * Key file is stored outside the web root at D:\encryption_keys\sdtickets.key
+ * The key file is stored outside the web root. Its location is resolved (in
+ * order of precedence): a define('ENCRYPTION_KEY_PATH', ...) in config.php, then
+ * the ENCRYPTION_KEY_PATH environment variable (used by Docker), then an
+ * OS-specific default.
  *
  * Encrypted values are stored as: ENC: followed by base64(iv + tag + ciphertext)
  * The ENC: prefix allows gradual migration - unencrypted values pass through unchanged.
  */
 
-// Key path: check environment variable first, then fall back to default
-// Docker sets ENCRYPTION_KEY_PATH env var; manual installs use the default below
-$_encKeyPath = getenv('ENCRYPTION_KEY_PATH');
-if ($_encKeyPath === false || $_encKeyPath === '') {
-    $_encKeyPath = PHP_OS_FAMILY === 'Windows'
-        ? 'c:\\wamp64\\encryption_keys\\sdtickets.key'
-        : '/var/www/encryption_keys/freeitsm.key';
+// Key path precedence: config.php constant (if the admin set one) wins; else the
+// ENCRYPTION_KEY_PATH env var (Docker); else the OS-specific default. The guard
+// lets config.php pre-define the constant without a "constant already defined"
+// notice — and leaves Docker's env-var behaviour untouched (its config doesn't
+// define the constant, so the env var still applies).
+if (!defined('ENCRYPTION_KEY_PATH')) {
+    $_encKeyPath = getenv('ENCRYPTION_KEY_PATH');
+    if ($_encKeyPath === false || $_encKeyPath === '') {
+        $_encKeyPath = PHP_OS_FAMILY === 'Windows'
+            ? 'c:\\wamp64\\encryption_keys\\sdtickets.key'
+            : '/var/www/encryption_keys/freeitsm.key';
+    }
+    define('ENCRYPTION_KEY_PATH', $_encKeyPath);
 }
-define('ENCRYPTION_KEY_PATH', $_encKeyPath);
 define('ENCRYPTION_CIPHER', 'aes-256-gcm');
 define('ENCRYPTION_IV_LENGTH', 12);   // 96-bit nonce (recommended for GCM)
 define('ENCRYPTION_TAG_LENGTH', 16);  // 128-bit auth tag
@@ -41,6 +49,17 @@ define('ENCRYPTED_SETTING_KEYS', [
     'cmdb_ai_api_key',
     'workflow_ai_api_key',
     'forms_ai_api_key',
+    // problem_ai shipped without being listed here, so its key was being stored
+    // in the clear. decryptValue() passes an unencrypted value straight through,
+    // so adding it now is safe: the existing value still reads, and re-encrypts
+    // the next time it is saved.
+    'problem_ai_api_key',
+    'lms_ai_api_key',
+    'knowledge_writeup_api_key',
+    'warroom_ai_api_key',
+    'projects_ai_api_key',
+    'zabbix_token',   // the secret Zabbix sends; shown to administrators to paste into Zabbix, so not masked
+    'threecx_token',  // the secret 3CX sends; carried in the template an administrator downloads, so not masked
 ]);
 
 /**
@@ -62,10 +81,17 @@ define('MASKED_SETTING_KEYS', [
     'cmdb_ai_api_key',
     'workflow_ai_api_key',
     'forms_ai_api_key',
+    'problem_ai_api_key',
+    'lms_ai_api_key',
+    'knowledge_writeup_api_key',
+    'warroom_ai_api_key',
+    'projects_ai_api_key',
 ]);
 
 /**
  * Check if a system_settings key should be masked when returned to the client.
+ *
+ * @param mixed $key  a system_settings.setting_key, matched exactly against MASKED_SETTING_KEYS
  */
 function isMaskedSettingKey($key) {
     return in_array($key, MASKED_SETTING_KEYS, true);
@@ -73,6 +99,8 @@ function isMaskedSettingKey($key) {
 
 /**
  * Produce a "****<last4>" mask. Empty input returns ''.
+ *
+ * @param mixed $value  the plaintext secret (string or null); under 4 characters gives just "****"
  */
 function maskSecret($value) {
     if ($value === null || $value === '') return '';
@@ -84,6 +112,8 @@ function maskSecret($value) {
  * Treat a save-time value as "leave existing untouched" when it's empty,
  * null, or starts with one or more asterisks (i.e. the user submitted the
  * masked placeholder unchanged).
+ *
+ * @param mixed $value  the value submitted from a settings form (string or null)
  */
 function isMaskedNoChangeValue($value) {
     if ($value === null || $value === '') return true;
@@ -100,20 +130,82 @@ define('ENCRYPTED_MAILBOX_COLUMNS', [
     'oauth_redirect_uri',
     'imap_server',
     'target_mailbox',
-    'imap_host',
+    // Basic IMAP / SMTP mailboxes (username + password auth).
     'imap_username',
-    'imap_password_encrypted',
-    'smtp_host',
+    'imap_password',
+    'smtp_server',
+    // Separate SMTP credentials, for the same reason as the IMAP pair above: a
+    // plaintext sending login in a backup, a replica or a dump is send-as access
+    // to the organisation's own mail domain, which is worth rather more to an
+    // attacker than read access. Adding them here is ALL that is needed —
+    // decryptMailboxRow() reverses this list, and db_verify's backfill walks it
+    // column by column, so an install carrying plaintext values re-encrypts them
+    // on the next verification run.
     'smtp_username',
-    'smtp_password_encrypted',
-    'smtp_from_address',
+    'smtp_password',
+    // The OAuth access + refresh tokens, as JSON. This column was missing from the
+    // list, so azure_client_secret was encrypted while the tokens minted WITH it sat
+    // in the next column in the clear. That inversion matters: a refresh token is
+    // durable delegated mailbox access on its own — it needs no client secret, no
+    // tenant ID and no further interaction — so a read-only leak of this table (a
+    // backup, a replica, a dump) WAS immediate mailbox access, the exact outcome the
+    // encryption layer exists to prevent. decryptValue() passes unencrypted values
+    // straight through, so existing plaintext rows keep working and re-encrypt on the
+    // next token refresh. Reported privately by Erlend Volden against f7f1e9dd.
+    'token_data',
 ]);
 
 /**
- * Check if a system_settings key should be encrypted
+ * system_settings keys that match the secret-suffix rule below but must NOT be
+ * encrypted. Empty today, and that is the point: adding a key here is a decision
+ * someone has to write down and justify, whereas forgetting to add one to an
+ * allow-list is silent.
+ */
+define('SETTING_KEYS_NEVER_ENCRYPT', [
+]);
+
+/**
+ * Should this system_settings key be encrypted at rest?
+ *
+ * A RULE first, a list second. This used to be an allow-list of known secrets,
+ * which fails open by construction: every new secret is stored in the clear until
+ * somebody remembers to register it, and nothing anywhere complains. That is not a
+ * hypothetical — problem_ai_api_key shipped that way (see the comment on the list
+ * above), and auditing a live install while fixing F3 turned up five more nobody
+ * had registered: csat_token_secret and the four *_cron_token values, all sitting
+ * in plaintext. The cron tokens authenticate endpoints that are deliberately
+ * reachable without a login, so they are bearer credentials.
+ *
+ * Inverting it means a key called *_password / *_secret / *_token / *_api_key is
+ * encrypted the moment it exists, and the failure mode of forgetting becomes
+ * "encrypted something harmless" instead of "leaked something that mattered".
+ *
+ * Masking is deliberately NOT inverted — see isMaskedSettingKey(). Encryption is
+ * invisible to the user, so defaulting it on costs nothing; masking changes what an
+ * administrator can see and copy (the cron tokens have to stay readable to build a
+ * cron URL), so it stays an explicit, per-key decision.
+ *
+ * Safe to switch on for values already stored in plaintext: decryptValue() passes
+ * an unencrypted value straight through, so old rows keep reading and re-encrypt on
+ * the next save. db_verify re-encrypts the existing ones in place.
+ *
+ * @param mixed $key  a system_settings.setting_key
  */
 function isEncryptedSettingKey($key) {
-    return in_array($key, ENCRYPTED_SETTING_KEYS, true);
+    if (in_array($key, SETTING_KEYS_NEVER_ENCRYPT, true)) return false;
+    if (in_array($key, ENCRYPTED_SETTING_KEYS, true))     return true;
+    return isSecretSettingName($key);
+}
+
+/**
+ * Is this key named like a credential (*_password, *_secret, *_token, *_api_key)?
+ * The rule isEncryptedSettingKey() falls back on, shared so a reader can refuse to
+ * send such a key in the clear (api/settings/get_system_settings.php).
+ *
+ * @param mixed $key  a system_settings.setting_key; cast to string, matched case-insensitively
+ */
+function isSecretSettingName($key) {
+    return (bool)preg_match('/_(password|secret|token|api_key)$/i', (string)$key);
 }
 
 /**
@@ -146,7 +238,7 @@ function encryptValue($plaintext) {
     }
 
     // Don't double-encrypt
-    if (strpos($plaintext, ENCRYPTION_PREFIX) === 0) {
+    if (str_starts_with($plaintext, ENCRYPTION_PREFIX)) {
         return $plaintext;
     }
 
@@ -188,7 +280,7 @@ function decryptValue($encrypted) {
     }
 
     // Not encrypted - return as-is (supports migration)
-    if (strpos($encrypted, ENCRYPTION_PREFIX) !== 0) {
+    if (!str_starts_with($encrypted, ENCRYPTION_PREFIX)) {
         return $encrypted;
     }
 
@@ -240,5 +332,64 @@ function decryptMailboxRow($row) {
         }
     }
     return $row;
+}
+
+/**
+ * Read system_settings values with any encryption already undone.
+ *
+ * ⚠️ WHY THIS EXISTS. Inverting the secret rule (isEncryptedSettingKey() above) was
+ * the right call — it stopped new secrets shipping in plaintext because nobody
+ * remembered to register them — but it silently widened WHAT IS CIPHERTEXT ON DISK,
+ * and every place still doing a bare `SELECT setting_value` kept handing that
+ * ciphertext to whatever it fed. Two features broke that way and neither threw an
+ * error: the webhook cron URL printed `?token=ENC%3A…` for an admin to copy, and the
+ * knowledge base authenticated to SMTP with the literal string `ENC:…`. Both were
+ * found by Erlend Volden on his re-review, not by us, and the reason we missed them
+ * is that the test asserted the value in the DATABASE was ciphertext — which is
+ * exactly what a broken read path also looks like. Assert round-trips, not storage.
+ *
+ * So: anything that reads a setting in order to USE it goes through here. decryptValue()
+ * passes plaintext straight through, so this is safe on a row that has not been migrated
+ * yet, on a value the rule does not cover, and on a re-run.
+ *
+ * ⚠️ NOT for the settings UI. A screen that shows a secret to an administrator wants
+ * maskSecret() on top of this; a screen that merely says "configured" should not
+ * decrypt at all.
+ *
+ * @param string[] $keys  the system_settings.setting_key values to load; an empty list returns []
+ * @return array<string,string> key => plaintext value, missing keys absent
+ */
+function settingsGetDecrypted(PDO $conn, array $keys): array
+{
+    if (!$keys) return [];
+    $in    = implode(',', array_fill(0, count($keys), '?'));
+    $stmt  = $conn->prepare("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ($in)");
+    $stmt->execute(array_values($keys));
+
+    $out = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        try {
+            $out[$row['setting_key']] = decryptValue($row['setting_value']);
+        } catch (Exception $e) {
+            // A value that will not decrypt (key rotated, row corrupted) must not take
+            // the whole page down — but it must not be passed off as the plaintext
+            // either, or we are back to handing "ENC:…" to an SMTP server.
+            error_log('settings: could not decrypt ' . $row['setting_key'] . ': ' . $e->getMessage());
+            $out[$row['setting_key']] = '';
+        }
+    }
+    return $out;
+}
+
+/**
+ * One setting, decrypted. See settingsGetDecrypted().
+ *
+ * @param string $key  the system_settings.setting_key to load
+ * @param string $default  returned when no row exists (a value that will not decrypt still gives '')
+ */
+function settingGetDecrypted(PDO $conn, string $key, string $default = ''): string
+{
+    $values = settingsGetDecrypted($conn, [$key]);
+    return (string)($values[$key] ?? $default);
 }
 ?>

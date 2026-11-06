@@ -1,4 +1,10 @@
 <?php
+/**
+ * API: list supplier contacts, with each one's supplier name, sorted by surname.
+ *
+ * @input  supplier_id  optional - only this supplier's contacts
+ * @output {success, contacts: [...]}
+ */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
@@ -9,6 +15,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('contracts');
 
 try {
     $conn = connectToDatabase();

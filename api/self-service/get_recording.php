@@ -11,6 +11,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';   // analystCanAccessTicket() — see F9
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) {
@@ -36,23 +37,43 @@ try {
         exit('Not found');
     }
 
-    // Authorisation: an analyst can view any recording attached to a ticket.
-    // A self-service user can view a recording only if they own the ticket OR
-    // they uploaded it (pending state, before the ticket exists yet).
+    // Authorisation.
+    //
+    // ⚠️ The analyst branch below used to be empty — a bare `// analyst can view any`
+    // with no check of any kind, while `id` is a raw ticket_recordings.id off the
+    // query string. Any analyst at all, including one scoped to a single company and
+    // with no Tickets access whatsoever, could count upwards and stream every
+    // client's customer screen recordings. The self-service half of this same file
+    // was correctly scoped throughout, which is what made it easy to miss.
     if ($analystId) {
-        // analyst can view any
+        if (!analystCanAccessModule($conn, (int)$analystId, 'tickets')) {
+            http_response_code(403);
+            exit('Forbidden');
+        }
+        // A recording only has a company through its ticket. One that is still
+        // pending (uploaded before the ticket existed) belongs to the portal user
+        // who recorded it and to nobody else — there is nothing yet to authorise
+        // an analyst against, so there is no answer to give.
+        if (empty($rec['ticket_id']) || !analystCanAccessTicket($conn, (int)$analystId, (int)$rec['ticket_id'])) {
+            http_response_code(404);
+            exit('Not found');
+        }
     } elseif ($ssUserId) {
         $owns = false;
         if ($rec['ticket_id']) {
-            $check = $conn->prepare("SELECT user_id FROM tickets WHERE id = ?");
-            $check->execute([(int)$rec['ticket_id']]);
-            $owns = ((int)$check->fetchColumn() === (int)$ssUserId);
+            // The SAME rule as the ticket page (includes/managers.php): its
+            // requester, or one of their managers - never through a confidential
+            // stub, and never on a ticket in the trash (#62).
+            require_once __DIR__ . '/../../includes/managers.php';
+            $access = portalTicketAccess($conn, (int)$ssUserId, (int)$rec['ticket_id']);
+            $owns = $access && !$access['stub'];
         } elseif ((int)$rec['recorded_by_user_id'] === (int)$ssUserId) {
             $owns = true; // pending recording uploaded by this user
         }
         if (!$owns) {
-            http_response_code(403);
-            exit('Forbidden');
+            // Not found, never forbidden: a refusal must not confirm it exists.
+            http_response_code(404);
+            exit('Not found');
         }
     }
 
@@ -88,6 +109,7 @@ try {
         header("Content-Range: bytes $start-$end/$size");
     }
     header("Content-Type: $contentType");
+    header("X-Content-Type-Options: nosniff");   // a video is played, never sniffed into something else
     header("Accept-Ranges: bytes");
     header("Content-Length: $length");
     header('Cache-Control: private, max-age=600');

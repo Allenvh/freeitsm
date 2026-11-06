@@ -4,8 +4,14 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/timezone.php';
+require_once '../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('wiki');
 
 $current_page = 'browse';
 $path_prefix = '../';
@@ -13,15 +19,21 @@ $path_prefix = '../';
 $translationNamespaces = ['common', 'system-wiki'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('system-wiki.file.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('wiki', t('system-wiki.file.page_title'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
     <style>
+        body { --accent: var(--wiki-accent, #c62828); }
+
         .wiki-detail {
             height: calc(100vh - 48px);
             overflow-y: auto;
@@ -34,24 +46,24 @@ $translationNamespaces = ['common', 'system-wiki'];
         }
         .breadcrumb {
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-bottom: 16px;
         }
-        .breadcrumb a { color: #c62828; text-decoration: none; }
+        .breadcrumb a { color: var(--wiki-accent, #c62828); text-decoration: none; }
         .breadcrumb a:hover { text-decoration: underline; }
         .breadcrumb span { margin: 0 6px; color: #ccc; }
 
         .file-header {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
             padding: 24px;
             margin-bottom: 20px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.06));
         }
         .file-title {
             font-size: 22px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             display: flex;
             align-items: center;
             gap: 10px;
@@ -59,7 +71,7 @@ $translationNamespaces = ['common', 'system-wiki'];
         }
         .file-path {
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-bottom: 12px;
             font-family: monospace;
         }
@@ -70,44 +82,44 @@ $translationNamespaces = ['common', 'system-wiki'];
         }
         .meta-item {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
-        .meta-item strong { color: #333; }
+        .meta-item strong { color: var(--text, #333); }
         .file-description {
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 1px solid #eee;
+            border-top: 1px solid var(--border-soft, #eee);
             font-size: 14px;
-            color: #555;
+            color: var(--text-muted, #555);
             line-height: 1.5;
         }
 
         .section {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
             margin-bottom: 16px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.06));
         }
         .section-header {
             padding: 14px 20px;
             font-size: 14px;
             font-weight: 600;
-            color: #333;
-            border-bottom: 1px solid #eee;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--border-soft, #eee);
             display: flex;
             align-items: center;
             gap: 8px;
             cursor: pointer;
             user-select: none;
         }
-        .section-header:hover { background: #fafafa; }
+        .section-header:hover { background: var(--surface-2, #fafafa); }
         .section-count {
-            background: #f0f0f0;
+            background: var(--surface-hover, #f0f0f0);
             padding: 1px 8px;
             border-radius: 10px;
             font-size: 11px;
             font-weight: 500;
-            color: #888;
+            color: var(--text-dim, #888);
         }
         .section-body { padding: 0; }
         .section-body.collapsed { display: none; }
@@ -121,7 +133,7 @@ $translationNamespaces = ['common', 'system-wiki'];
             text-align: left;
             padding: 8px 16px;
             background: #f9f9f9;
-            color: #666;
+            color: var(--text-muted, #666);
             font-weight: 600;
             font-size: 11px;
             text-transform: uppercase;
@@ -132,7 +144,7 @@ $translationNamespaces = ['common', 'system-wiki'];
             border-bottom: 1px solid #f5f5f5;
         }
         .detail-table tr:last-child td { border-bottom: none; }
-        .detail-table a { color: #c62828; text-decoration: none; }
+        .detail-table a { color: var(--wiki-accent, #c62828); text-decoration: none; }
         .detail-table a:hover { text-decoration: underline; }
 
         .type-badge {
@@ -180,16 +192,27 @@ $translationNamespaces = ['common', 'system-wiki'];
         .access-badge.read { background: #e3f2fd; color: #1565c0; }
         .access-badge.write { background: #fff3e0; color: #e65100; }
 
-        .line-ref { color: #aaa; font-family: monospace; font-size: 12px; }
-        .empty-section { padding: 16px 20px; color: #aaa; font-size: 13px; font-style: italic; }
+        .line-ref { color: var(--text-faint, #aaa); font-family: monospace; font-size: 12px; }
+        .empty-section { padding: 16px 20px; color: var(--text-faint, #aaa); font-size: 13px; font-style: italic; }
+
+        /* ---- Dark mode: colours whose light values don't match a token exactly ---- */
+        [data-theme-mode="dark"] .wiki-detail { background: var(--app-bg, #f5f7fa); }
+        [data-theme-mode="dark"] .breadcrumb span { color: var(--text-faint, #ccc); }
+        [data-theme-mode="dark"] .detail-table th { background: var(--surface-3, #f9f9f9); }
+        [data-theme-mode="dark"] .detail-table td { border-bottom-color: var(--border-soft, #f5f5f5); }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> block, or a rule at
+         equal specificity loses on document order (Techniques §9).
+         WARNING: includes/header.php emits a <style> INSIDE the BODY, which is
+         later still (§24) - the hover-rail rules there need !important. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="wiki" data-mobile-page="wiki-file">
     <?php include 'includes/header.php'; ?>
 
     <div class="wiki-detail">
         <div class="detail-content" id="content">
-            <div style="text-align:center;padding:60px;color:#aaa;"><?php echo htmlspecialchars(t('system-wiki.file.loading')); ?></div>
+            <div style="text-align:center;padding:60px;color:var(--text-faint,#aaa);"><?php echo htmlspecialchars(t('system-wiki.file.loading')); ?></div>
         </div>
     </div>
 
@@ -201,7 +224,7 @@ $translationNamespaces = ['common', 'system-wiki'];
 
         async function loadFileDetail() {
             if (!fileId) {
-                document.getElementById('content').innerHTML = '<div style="text-align:center;padding:60px;color:#888;">' + esc(window.t('system-wiki.file.no_id')) + '</div>';
+                document.getElementById('content').innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-dim,#888);">' + esc(window.t('system-wiki.file.no_id')) + '</div>';
                 return;
             }
 
@@ -210,7 +233,7 @@ $translationNamespaces = ['common', 'system-wiki'];
                 const data = await res.json();
 
                 if (!data.success) {
-                    document.getElementById('content').innerHTML = '<div style="text-align:center;padding:60px;color:#c62828;">' + esc(window.t('system-wiki.file.error_prefix')) + esc(data.error) + '</div>';
+                    document.getElementById('content').innerHTML = '<div style="text-align:center;padding:60px;color:var(--wiki-accent,#c62828);">' + esc(window.t('system-wiki.file.error_prefix')) + esc(data.error) + '</div>';
                     return;
                 }
 
@@ -238,7 +261,7 @@ $translationNamespaces = ['common', 'system-wiki'];
             const sizeKb = (f.file_size_bytes / 1024).toFixed(1);
 
             // Last modified
-            const modified = f.last_modified ? new Date(f.last_modified).toLocaleDateString() : window.t('system-wiki.file.unknown');
+            const modified = f.last_modified ? fmtDate(f.last_modified) : window.t('system-wiki.file.unknown');
 
             let html = `
                 <div class="breadcrumb">${breadcrumb}</div>
@@ -286,7 +309,7 @@ $translationNamespaces = ['common', 'system-wiki'];
                     <td><span class="dep-badge ${dep.dependency_type}">${dep.dependency_type}</span></td>
                     <td>${dep.resolved_file_id
                         ? `<a href="file.php?id=${dep.resolved_file_id}">${esc(dep.resolved_name)}</a>`
-                        : `<span style="color:#aaa">${esc(dep.target_path)}</span>`}</td>
+                        : `<span style="color:var(--text-faint,#aaa)">${esc(dep.target_path)}</span>`}</td>
                     <td class="line-ref">L${dep.line_number || ''}</td>
                 </tr>
             `, `<th>${esc(window.t('system-wiki.file.col_type'))}</th><th>${esc(window.t('system-wiki.file.col_target'))}</th><th>${esc(window.t('system-wiki.file.col_line'))}</th>`);
@@ -342,8 +365,9 @@ $translationNamespaces = ['common', 'system-wiki'];
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

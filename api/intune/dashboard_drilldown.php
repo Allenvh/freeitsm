@@ -35,6 +35,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('reporting');
+requireModuleOnJson(connectToDatabase(), 'assets');   // GH #217: device data - not while Assets is switched off
 
 $filter   = $_GET['filter']    ?? '';
 $value    = $_GET['value']     ?? '';
@@ -46,6 +48,10 @@ $format   = ($_GET['format'] ?? 'json') === 'csv' ? 'csv' : 'json';
  * Resolve a filter type + value into a SQL WHERE fragment + bound params.
  * All filter types are validated against this whitelist; nothing user-supplied
  * goes into the SQL string directly.
+ *
+ * @param string $filter  the drill-down type from the request, e.g. 'compliance', 'os', 'last_sync', 'kpi_stale'
+ * @param string $value  the clicked value for that type (untrusted - always bound, never put in the SQL)
+ * @param ?string $friendly  set by reference to a human label for the filter, shown above the device list
  */
 function buildFilter(string $filter, string $value, ?string &$friendly): array
 {
@@ -205,11 +211,15 @@ try {
         $out = fopen('php://output', 'w');
         // UTF-8 BOM so Excel opens it correctly
         fwrite($out, "\xEF\xBB\xBF");
+        // ⚠️ $escape passed explicitly: PHP 8.4 deprecates relying on its
+        // default, and on a server with display_errors on that notice lands
+        // INSIDE the downloaded file. Empty string also turns off backslash
+        // escaping, which is what Excel expects. (Same fix as #935's label CSV.)
         fputcsv($out, [
             'Device Name', 'User', 'User Email', 'OS', 'OS Version',
             'Compliance', 'Owner Type', 'Manufacturer', 'Model',
             'Encrypted', 'Last Sync', 'Enrolled'
-        ]);
+        ], ',', '"', '');
         while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
             fputcsv($out, [
                 $r['device_name'],
@@ -224,7 +234,7 @@ try {
                 $r['is_encrypted'] === null ? '' : ($r['is_encrypted'] ? 'Yes' : 'No'),
                 $r['last_sync_datetime'],
                 $r['enrolled_datetime'],
-            ]);
+            ], ',', '"', '');
         }
         fclose($out);
         exit;

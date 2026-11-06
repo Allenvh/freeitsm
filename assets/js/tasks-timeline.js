@@ -16,7 +16,6 @@ const SCROLLBAR_PAD = 14;  // reserve space so a vertical scrollbar doesn't trig
 const STATUS_ORDER = ['To Do', 'In Progress', 'Blocked', 'Done', 'Cancelled'];
 
 // Locale for date formatting — matches the page's i18n locale
-const UI_LOCALE = document.documentElement.lang || 'en';
 
 // ── State ──────────────────────────────────────────────────────────
 let currentFilter = 'my';
@@ -29,6 +28,9 @@ let statuses = [];
 let priorities = [];
 let groupBy = 'analyst';
 let surfaceTags = false;
+// Priority placement from Settings → Card, so the timeline reads the same way
+// as the board. 'dot' matches what this view has always shown.
+let priorityStyle = 'dot';
 
 // Drag-to-edit state — set on mousedown over a bar, cleared on mouseup
 let dragState = null;
@@ -64,15 +66,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
+/** Loads the Tasks settings the timeline uses - whether tags show and how priority is drawn on a bar. */
 async function loadSettings() {
     try {
         const d = await fetch(API_BASE + 'get_settings.php').then(r => r.json());
         if (d.success && d.settings.tag_settings) {
             surfaceTags = !!d.settings.tag_settings.surface_calendar;
         }
+        if (d.success && d.settings.card_fields) {
+            priorityStyle = TasksPriority.normaliseStyle(d.settings.card_fields.priority);
+        }
     } catch (e) { console.error('Failed to load settings:', e); }
 }
 
+/** Loads analysts and teams and fills the Analyst and Team filter drop-downs. */
 async function loadDropdowns() {
     try {
         const [aRes, tRes] = await Promise.all([
@@ -94,6 +101,7 @@ async function loadDropdowns() {
     } catch (e) { console.error('Failed to load dropdowns:', e); }
 }
 
+/** Loads the active task statuses for the quick-look panel. */
 async function loadStatuses() {
     try {
         const d = await fetch(API_BASE + 'get_task_statuses.php').then(r => r.json());
@@ -101,6 +109,7 @@ async function loadStatuses() {
     } catch (e) { console.error('Failed to load statuses:', e); }
 }
 
+/** Loads the active task priorities for the quick-look panel. */
 async function loadPriorities() {
     try {
         const d = await fetch(API_BASE + 'get_task_priorities.php').then(r => r.json());
@@ -108,6 +117,7 @@ async function loadPriorities() {
     } catch (e) { console.error('Failed to load priorities:', e); }
 }
 
+/** Loads the tasks for the current filter and redraws the timeline. */
 async function loadTasks() {
     let url = API_BASE + 'list.php?filter=' + currentFilter;
     if (currentFilter === 'team' && currentFilterTeamId) url += '&team_id=' + currentFilterTeamId;
@@ -134,6 +144,7 @@ function setFilter(filter) {
     loadTasks();
 }
 
+/** Shows one team's tasks, or goes back to My tasks when cleared. */
 function setTeamFilter(teamId) {
     if (!teamId) { setFilter('my'); return; }
     currentFilter = 'team';
@@ -144,6 +155,7 @@ function setTeamFilter(teamId) {
     loadTasks();
 }
 
+/** Shows one analyst's tasks, or goes back to My tasks when cleared. */
 function setAnalystFilter(analystId) {
     if (!analystId) { setFilter('my'); return; }
     currentFilter = 'analyst';
@@ -154,6 +166,7 @@ function setAnalystFilter(analystId) {
     loadTasks();
 }
 
+/** Regroups the timeline rows (by analyst, by status, or none) and redraws. */
 function setGroupBy(value) { groupBy = value; render(); }
 
 // ── Rendering ──────────────────────────────────────────────────────
@@ -212,7 +225,7 @@ function render() {
             if (m !== -1) {
                 const cd = addDays(rangeStartStr, mStart);
                 monthCells += `<div class="tl-month" style="width:${(i - mStart) * dayW}px">` +
-                    cd.toLocaleDateString(UI_LOCALE, { month: 'long', year: 'numeric' }) + '</div>';
+                    fmtNaiveMonthYear(cd) + '</div>';
             }
             m = mm; mStart = i;
         }
@@ -251,9 +264,9 @@ function render() {
                     `<span class="mini-tag-dot" style="background:${esc(tg.colour || '#6b7280')}"></span>`).join('')
                 : '';
             body += `<div class="tl-row" style="width:${innerW}px">
-                <div class="tl-row-label" style="width:${LABEL_W}px" title="${esc(t.title)}"
-                     onclick="openTask(${t.id})">
-                    <span class="priority-dot ${(t.priority || 'medium').toLowerCase()}"></span>
+                <div class="tl-row-label" title="${esc(t.title)}"
+                     onclick="openTask(${t.id})"${TasksPriority.accentAttrs(t.priority, t.priority_colour, priorityStyle, `width:${LABEL_W}px;`)}>
+                    ${TasksPriority.markup(t.priority, t.priority_colour, priorityStyle)}
                     <span class="tl-row-title">${esc(t.title)}</span>
                 </div>
                 <div class="tl-row-track" style="width:${trackW}px">
@@ -292,6 +305,12 @@ function render() {
     scrollToToday();
 }
 
+/**
+ * Groups the dated tasks into timeline rows by analyst, status or one group, each sorted by start
+ * date.
+ *
+ * Status groups follow STATUS_ORDER; analyst groups are alphabetical with Unassigned last.
+ */
 function buildGroups(items) {
     const map = new Map();
     const unassigned = window.t('tasks.timeline.unassigned');
@@ -320,6 +339,7 @@ function buildGroups(items) {
     return groups;
 }
 
+/** Scrolls the timeline so today's marker sits a third of the way across. */
 function scrollToToday() {
     const host = document.getElementById('tlScroll');
     const marker = host.querySelector('.tl-today');
@@ -338,28 +358,32 @@ function ymd(d) {
         String(d.getDate()).padStart(2, '0');
 }
 
+/** Returns a Date the given number of days after a YYYY-MM-DD. */
 function addDays(ds, n) {
     const d = new Date(ds + 'T00:00:00');
     d.setDate(d.getDate() + n);
     return d;
 }
 
+/** Returns the whole days from date string a to date string b. */
 function dayDiff(a, b) {
     return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 }
 
+/** Formats a YYYY-MM-DD as a short day and month. */
 function fmt(ds) {
-    return new Date(ds + 'T00:00:00').toLocaleDateString(UI_LOCALE,
-        { day: 'numeric', month: 'short' });
+    return fmtNaiveDayMonth(new Date(ds + 'T00:00:00'));
 }
 
+/** HTML-escapes a value through a text node; null and undefined become an empty string. */
 function esc(text) {
     if (text == null) return '';
     const div = document.createElement('div');
     div.textContent = String(text);
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** Returns the YYYY-MM-DD the given number of days after another. */
 function addDayStr(ds, n) { return ymd(addDays(ds, n)); }
 
 // ── Drag-to-edit dates ─────────────────────────────────────────────
@@ -389,6 +413,7 @@ function onBarMouseDown(e) {
     e.preventDefault();
 }
 
+/** Moves or resizes the dragged bar, snapped to whole days and never narrower than one day. */
 function onDragMove(e) {
     if (!dragState) return;
     const dx = e.clientX - dragState.startX;
@@ -410,6 +435,13 @@ function onDragMove(e) {
     }
 }
 
+/**
+ * Ends a bar drag - a drag with no movement opens the task, otherwise the new start and due dates are
+ * saved through save.php and the timeline reloads.
+ *
+ * Stretching the right edge also saves the original start date, so a deadline-only task becomes a
+ * range.
+ */
 async function onDragUp(e) {
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup',   onDragUp);

@@ -1,3 +1,5 @@
+> **Historical fork documentation.** The full 4.10 upgrade replaces these custom screens and mail paths with upstream implementations. Use [the current upgrade guide](upstream-4.10-upgrade.md).
+
 # Native LDAP / Active Directory authentication
 
 This fork now uses the upstream FreeITSM LDAP authentication core from `edmozley/freeitsm` commit `61163c1a1bf17071079765a44d8fdef14708091e` (`includes/ldap.php` and `includes/sso_identity.php`, under the repository's MIT license). Its UI and API integration are adapted to this fork's existing paths and schema. This is a selective authentication integration, not a wholesale upgrade to the newer upstream application.

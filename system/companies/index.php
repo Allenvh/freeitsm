@@ -7,42 +7,66 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/timezone.php';
+require_once '../../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'companies';
+require_once __DIR__ . '/../includes/page_gate.php';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'system'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('system.companies.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('system', t('system.companies.title'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
+        /* System module accent (blue-grey) — pin the generic --accent so shared
+           components (inbox.css, header) pick up the module colour. */
+        body {
+            /* System is the FIRST module whose DARK accent is a LIGHT colour (#90a4ae).
+               inbox.css renders .btn-primary/.add-btn as background:var(--accent) +
+               color:var(--on-accent) — and the global --on-accent stays WHITE in dark.
+               So pinning --accent alone would put white text on a light button. Pin
+               --on-accent too: it flips to near-black in dark. */
+            --accent: var(--sys-accent, #546e7a);
+            --accent-hover: var(--sys-accent-hover, #37474f);
+            --on-accent: var(--sys-on-accent, #fff);
+        }
+
         /* flex:1 (not a hardcoded 100vh-48px height) so a taller/wrapping header
            can't push the page off-screen — see the tickets/settings fix (#535). */
-        .companies-container { flex: 1; overflow-y: auto; padding: 30px 20px; }
-        .page-title { font-size: 22px; font-weight: 600; color: #333; margin: 0 0 6px 0; }
-        .page-subtitle { font-size: 13px; color: #888; margin: 0 0 30px 0; }
+        /* 🔴 ...but flex:1 only means something inside a flex column. inbox.css
+           makes body 100vh + overflow:hidden and leaves it a block, so the
+           container grew to its content and the bottom of the page (public
+           email domains) was cut off with no way to scroll to it. */
+        body { display: flex; flex-direction: column; }
+        .companies-container { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 20px; }
+        .page-title { font-size: 22px; font-weight: 600; color: var(--text, #333); margin: 0 0 6px 0; }
+        .page-subtitle { font-size: 13px; color: var(--text-dim, #888); margin: 0 0 30px 0; }
 
-        .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
+        .settings-card { background: var(--surface, #fff); border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08)); margin-bottom: 24px; }
 
         .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; }
-        .btn-primary { background: #546e7a; color: #fff; }
+        .btn-primary { background: var(--sys-accent, #546e7a); color: var(--sys-on-accent, #fff); }
         .btn-primary:hover { background: #455a64; }
-        .btn-secondary { background: #eceff1; color: #455a64; }
+        .btn-secondary { background: var(--sys-accent-soft, #eceff1); color: #455a64; }
         .btn-secondary:hover { background: #cfd8dc; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Companies table */
         .companies-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-        .add-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: #546e7a; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .add-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--sys-accent, #546e7a); color: var(--sys-on-accent, #fff); border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
         .add-btn:hover { background: #455a64; }
         table.companies { width: 100%; border-collapse: collapse; font-size: 13px; }
-        table.companies th { text-align: left; color: #888; font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid #eee; }
-        table.companies td { padding: 10px; border-bottom: 1px solid #f2f2f2; color: #444; vertical-align: middle; }
+        table.companies th { text-align: left; color: var(--text-dim, #888); font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border-soft, #eee); }
+        table.companies td { padding: 10px; border-bottom: 1px solid var(--border-soft, #f2f2f2); color: var(--text, #444); vertical-align: middle; }
         table.companies tr:last-child td { border-bottom: none; }
         .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
         .status-badge.on { background: #e8f5e9; color: #2e7d32; }
@@ -51,67 +75,99 @@ $translationNamespaces = ['common', 'system'];
         .domain-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #ede7f6; color: #5e35b1; margin: 2px 4px 2px 0; }
 
         /* Public email domains card */
-        .card-title { font-size: 16px; font-weight: 600; color: #333; margin: 0 0 6px 0; }
-        .card-hint { font-size: 13px; color: #888; margin: 0 0 16px 0; line-height: 1.5; }
-        .freemail-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 14px; font-size: 12px; background: #eceff1; color: #37474f; margin: 2px 6px 2px 0; }
+        .card-title { font-size: 16px; font-weight: 600; color: var(--text, #333); margin: 0 0 6px 0; }
+        .card-hint { font-size: 13px; color: var(--text-dim, #888); margin: 0 0 16px 0; line-height: 1.5; }
+        .freemail-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 14px; font-size: 12px; background: var(--sys-accent-soft, #eceff1); color: #37474f; margin: 2px 6px 2px 0; }
         .freemail-chip button { background: none; border: none; cursor: pointer; color: #90a4ae; font-size: 14px; line-height: 1; padding: 0 2px; border-radius: 50%; }
         .freemail-chip button:hover { color: #c62828; }
-        .freemail-none { color: #aaa; font-size: 12px; font-style: italic; }
+        .freemail-none { color: var(--text-faint, #aaa); font-size: 12px; font-style: italic; }
         .builtin-freemail { margin-top: 16px; }
         .builtin-toggle { background: none; border: none; padding: 0; cursor: pointer; color: #607d8b; font-size: 12px; font-weight: 600; }
         .builtin-toggle:hover { text-decoration: underline; }
         #builtinFreemailList { margin-top: 8px; }
-        .builtin-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #f5f5f5; color: #999; margin: 2px 4px 2px 0; }
-        .domains-none { color: #bbb; }
+        .builtin-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--surface-3, #f5f5f5); color: var(--text-faint, #999); margin: 2px 4px 2px 0; }
+        .domains-none { color: var(--text-faint, #bbb); }
+        #freemailInput { background: var(--surface, #fff); color: var(--text, #333); }
         .table-action-btn { background: none; border: none; cursor: pointer; color: #607d8b; padding: 4px 8px; font-size: 13px; border-radius: 4px; }
-        .table-action-btn:hover { background: #eceff1; }
-        .empty-row td { text-align: center; color: #aaa; padding: 24px; font-style: italic; }
+        .table-action-btn:hover { background: var(--sys-accent-soft, #eceff1); }
+        .empty-row td { text-align: center; color: var(--text-faint, #aaa); padding: 24px; font-style: italic; }
 
         /* Modal — namespaced (co-) so it doesn't inherit inbox.css's global .modal
            framework, whose .modal rule sets opacity:0/visibility:hidden by default. */
         .co-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 2100; align-items: center; justify-content: center; }
         .co-modal-overlay.open { display: flex; }
-        .co-modal { background: #fff; border-radius: 10px; width: 480px; max-width: 92vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-        .co-modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; color: #333; }
+        .co-modal { background: var(--surface, #fff); border-radius: 10px; width: 480px; max-width: 92vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .co-modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-soft, #eee); font-size: 16px; font-weight: 600; color: var(--text, #333); }
         .co-modal-body { padding: 20px 24px; }
-        .co-modal-footer { padding: 16px 24px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 10px; }
+        .co-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-soft, #eee); display: flex; justify-content: flex-end; gap: 10px; }
         .form-field { margin-bottom: 16px; }
-        .form-field label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 4px; }
-        .form-field .hint { font-size: 12px; color: #999; font-weight: 400; margin-bottom: 6px; }
-        .form-field input[type=text] { width: 100%; padding: 9px 11px; border: 1px solid #ddd; border-radius: 5px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
-        .form-field input:focus { outline: none; border-color: #546e7a; }
+        .form-field label { display: block; font-size: 13px; font-weight: 600; color: var(--text, #444); margin-bottom: 4px; }
+        .form-field .hint { font-size: 12px; color: var(--text-faint, #999); font-weight: 400; margin-bottom: 6px; }
+        .form-field input[type=text] { width: 100%; padding: 9px 11px; border: 1px solid var(--border, #ddd); border-radius: 5px; font-size: 13px; font-family: inherit; box-sizing: border-box; background: var(--surface, #fff); color: var(--text, #333); }
+        .form-field input:focus { outline: none; border-color: var(--sys-accent, #546e7a); }
         .checkbox-field { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
         .checkbox-field input { margin-top: 3px; }
-        .checkbox-field .cb-label { font-size: 13px; color: #444; }
+        .checkbox-field .cb-label { font-size: 13px; color: var(--text, #444); }
         .checkbox-field .cb-label strong { display: block; }
-        .checkbox-field .cb-label span { color: #999; font-size: 12px; }
+        .checkbox-field .cb-label span { color: var(--text-faint, #999); font-size: 12px; }
 
         /* "How email reaches this company" — derived routing summary panel */
-        .routing-panel { background: #f7f9fa; border: 1px solid #e3e8ea; border-radius: 6px; padding: 12px 14px; }
-        .routing-path { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eceff1; }
+        .routing-panel { background: #f7f9fa; border: 1px solid var(--border, #e3e8ea); border-radius: 6px; padding: 12px 14px; }
+        .routing-path { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-soft, #eceff1); }
         .routing-path:last-child { border-bottom: none; }
         .routing-path .rp-icon { flex: 0 0 auto; font-size: 15px; line-height: 1.3; }
         .routing-path .rp-body { flex: 1; min-width: 0; }
-        .routing-path .rp-kind { font-size: 12px; font-weight: 600; color: #455a64; }
+        .routing-path .rp-kind { font-size: 12px; font-weight: 600; color: var(--text, #455a64); }
         .routing-path .rp-kind .rp-flag { font-weight: 600; color: #c62828; font-size: 11px; margin-left: 6px; }
-        .routing-path .rp-desc { font-size: 12px; color: #666; margin-top: 2px; }
-        .routing-path .rp-desc strong { color: #444; font-weight: 600; }
-        .routing-note { font-size: 12px; color: #777; margin-top: 10px; font-style: italic; }
+        .routing-path .rp-desc { font-size: 12px; color: var(--text-muted, #666); margin-top: 2px; }
+        .routing-path .rp-desc strong { color: var(--text, #444); font-weight: 600; }
+        .routing-note { font-size: 12px; color: var(--text-dim, #777); margin-top: 10px; font-style: italic; }
         .routing-warn { display: flex; gap: 8px; font-size: 12px; color: #8a5a00; background: #fff8e1; border: 1px solid #ffe0a3; border-radius: 5px; padding: 8px 10px; margin-top: 8px; }
-        .routing-empty { font-size: 12px; color: #aaa; font-style: italic; }
+        .routing-empty { font-size: 12px; color: var(--text-faint, #aaa); font-style: italic; }
+
+        /* Inline-rendered rows (domains / senders lists, JS-built) */
+        .domain-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border: 1px solid var(--border, #eee); border-radius: 5px; margin-bottom: 6px; font-size: 13px; color: var(--text, #333); }
+        .list-none { color: var(--text-faint, #aaa); font-size: 12px; font-style: italic; padding: 6px 0; }
+
+        /* SSO help banner */
+        .sso-banner { display: flex; align-items: center; gap: 12px; text-decoration: none; background: linear-gradient(135deg, #eef2ff, #e0e7ff); border: 1px solid #c7d2fe; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; }
+        .sso-banner svg { flex-shrink: 0; }
+        .sso-banner .sso-text { flex: 1; color: #3730a3; font-size: 13.5px; line-height: 1.45; }
+        .sso-banner .sso-text strong { display: block; font-size: 14px; margin-bottom: 1px; }
+        .sso-banner .sso-arrow { color: #6366f1; font-weight: 700; font-size: 18px; }
+
+        /* ---- Dark mode overrides: pale washes / tinted pills that would glow ---- */
+        [data-theme-mode="dark"] .btn-primary:hover,
+        [data-theme-mode="dark"] .add-btn:hover { background: var(--sys-accent-hover, #455a64); color: var(--sys-on-accent, #fff); }
+        [data-theme-mode="dark"] .btn-secondary { color: var(--text, #eceff1); }
+        [data-theme-mode="dark"] .btn-secondary:hover { background: #37474f; }
+        [data-theme-mode="dark"] .freemail-chip { color: var(--text, #eceff1); }
+        [data-theme-mode="dark"] .builtin-toggle,
+        [data-theme-mode="dark"] .table-action-btn { color: var(--sys-accent, #90a4ae); }
+        [data-theme-mode="dark"] .status-badge.on { background: #16331f; color: #86efac; }
+        [data-theme-mode="dark"] .status-badge.off { background: #2b313a; color: #9aa3af; }
+        [data-theme-mode="dark"] .badge-default { background: #1e3a5f; color: #90caf9; }
+        [data-theme-mode="dark"] .domain-chip { background: #332a45; color: #c9b6ec; }
+        [data-theme-mode="dark"] .routing-panel { background: #20242b; }
+        [data-theme-mode="dark"] .routing-warn { color: #fcd34d; background: #3a2e12; border-color: #5a4a1e; }
+        [data-theme-mode="dark"] .routing-path .rp-kind .rp-flag,
+        [data-theme-mode="dark"] .freemail-chip button:hover { color: #fca5a5; }
+        [data-theme-mode="dark"] .sso-banner { filter: brightness(0.82); }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="system" data-mobile-page="companies">
     <?php include '../includes/header.php'; ?>
 
     <div class="companies-container">
         <h1 class="page-title"><?php echo htmlspecialchars(t('system.companies.title')); ?></h1>
         <p class="page-subtitle"><?php echo htmlspecialchars(t('system.companies.subtitle')); ?></p>
 
-        <a href="../help/sso.php" style="display:flex;align-items:center;gap:12px;text-decoration:none;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-            <span style="flex:1;color:#3730a3;font-size:13.5px;line-height:1.45;"><strong style="display:block;font-size:14px;margin-bottom:1px;">Setting up single sign-on for the self-service portal?</strong>Click here for the step-by-step guide — it covers both single-company and multi-company (MSP) setups.</span>
-            <span style="color:#6366f1;font-weight:700;font-size:18px;">&rarr;</span>
+        <a href="../help/sso.php" class="sso-banner">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+            <span class="sso-text"><strong>Setting up single sign-on for the self-service portal?</strong>Click here for the step-by-step guide — it covers both single-company and multi-company (MSP) setups.</span>
+            <span class="sso-arrow">&rarr;</span>
         </a>
 
         <div class="settings-card">
@@ -124,6 +180,7 @@ $translationNamespaces = ['common', 'system'];
                     <tr>
                         <th><?php echo htmlspecialchars(t('system.companies.col_name')); ?></th>
                         <th><?php echo htmlspecialchars(t('system.companies.col_domains')); ?></th>
+                        <th id="codeColHead" style="display:none;"><?php echo htmlspecialchars(t('system.companies.col_ticket_code')); ?></th>
                         <th><?php echo htmlspecialchars(t('system.companies.col_status')); ?></th>
                         <th style="text-align:right;"><?php echo htmlspecialchars(t('system.companies.col_actions')); ?></th>
                     </tr>
@@ -137,7 +194,7 @@ $translationNamespaces = ['common', 'system'];
         <!-- Public email domains (global). Only meaningful once there's more
              than one company (shared-intake routing), so hidden at N=1. -->
         <div class="settings-card" id="freemailCard" style="display: none;">
-            <h2 class="card-title"><?php echo htmlspecialchars(t('system.companies.freemail_title')); ?></h2>
+            <h2 id="freemail" class="card-title"><?php echo htmlspecialchars(t('system.companies.freemail_title')); ?></h2>
             <p class="card-hint"><?php echo htmlspecialchars(t('system.companies.freemail_hint')); ?></p>
 
             <div id="customFreemailList"></div>
@@ -163,6 +220,30 @@ $translationNamespaces = ['common', 'system'];
                     <label><?php echo htmlspecialchars(t('system.companies.field_name')); ?></label>
                     <div class="hint"><?php echo htmlspecialchars(t('system.companies.field_name_hint')); ?></div>
                     <input type="text" id="fName" placeholder="<?php echo htmlspecialchars(t('system.companies.field_name_placeholder')); ?>">
+                </div>
+                <?php /* The short code that stands in for this company in a ticket
+                         number. Shown only when it can matter — one company means
+                         {COMPANY} has nothing to distinguish. */ ?>
+                <div class="form-field" id="ticketCodeSection" style="display: none;">
+                    <label><?php echo htmlspecialchars(t('system.companies.field_code')); ?></label>
+                    <div class="hint"><?php echo htmlspecialchars(t('system.companies.field_code_hint')); ?></div>
+                    <input type="text" id="fCode" maxlength="12" autocomplete="off" spellcheck="false"
+                           style="text-transform: uppercase; max-width: 200px;"
+                           placeholder="<?php echo htmlspecialchars(t('system.companies.field_code_placeholder')); ?>">
+                    <div class="hint" id="codeDerivedHint" style="margin-top:6px;"></div>
+                </div>
+                <?php /* The company's own logo - shown on the Files desktop for people
+                         working in this company. Existing companies only: it saves
+                         straight away through api/system/tenant_logo.php. */ ?>
+                <div class="form-field" id="logoSection" style="display: none;">
+                    <label><?php echo htmlspecialchars(t('system.companies.logo_label')); ?></label>
+                    <div class="hint"><?php echo htmlspecialchars(t('system.companies.logo_hint')); ?></div>
+                    <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+                        <div id="coLogoPreview" style="width:120px;height:48px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-dim);overflow:hidden;"></div>
+                        <input type="file" id="coLogoFile" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" style="display:none;">
+                        <button type="button" class="btn btn-secondary" id="coLogoPick"><?php echo htmlspecialchars(t('system.companies.logo_choose')); ?></button>
+                        <button type="button" class="btn btn-secondary" id="coLogoRemove" style="display:none;"><?php echo htmlspecialchars(t('system.companies.logo_remove')); ?></button>
+                    </div>
                 </div>
                 <div class="checkbox-field">
                     <input type="checkbox" id="fActive" checked>
@@ -210,7 +291,9 @@ $translationNamespaces = ['common', 'system'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <script>
     const API = '<?php echo $path_prefix; ?>api/';
     let companies = [];
@@ -240,25 +323,120 @@ $translationNamespaces = ['common', 'system'];
         return domains.map(d => '<span class="domain-chip">' + esc(d) + '</span>').join('');
     }
 
+    /** Whether the ticket code is worth showing at all. One company means
+        {COMPANY} has nothing to tell apart, so the column and the field stay out
+        of the way entirely. Adding a company counts, because that is the moment
+        it starts to matter. */
+    function codeRelevant(adding) { return companies.length > 1 || !!adding; }
+
+    /** Companies whose effective code is shared with another — the thing that
+        would quietly break per-company numbering. Worked out here as well as on
+        the server so the list can mark them without a round trip. */
+    function clashingCodes() {
+        const seen = {}, clash = {};
+        companies.forEach(c => {
+            const code = (c.effective_ticket_code || '');
+            if (seen[code]) clash[code] = true;
+            seen[code] = true;
+        });
+        return clash;
+    }
+
     function renderCompanies() {
         const body = document.getElementById('companiesBody');
+        const showCode = codeRelevant(false);
+        document.getElementById('codeColHead').style.display = showCode ? '' : 'none';
         if (!companies.length) {
-            body.innerHTML = '<tr class="empty-row"><td colspan="4">' + window.t('system.companies.no_companies', { add: '<strong>' + window.t('system.companies.add_strong') + '</strong>' }) + '</td></tr>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="5">' + window.t('system.companies.no_companies', { add: '<strong>' + window.t('system.companies.add_strong') + '</strong>' }) + '</td></tr>';
             return;
         }
-        body.innerHTML = companies.map(c => `
+        const clash = clashingCodes();
+        body.innerHTML = companies.map(c => {
+            const code = c.effective_ticket_code || '';
+            // A derived code is shown in a lighter weight than one that was
+            // typed, so "FreeITSM guessed this" and "somebody chose this" are
+            // not presented as the same fact.
+            const derived = !c.ticket_code;
+            const cell = !showCode ? '' : `<td>${code
+                ? `<code style="font-size:12px;${derived ? 'opacity:.65;' : ''}">${esc(code)}</code>`
+                  + (clash[code] ? ` <span title="${esc(window.t('system.companies.code_clash'))}" style="color: var(--danger-text, #c0392b);">&#9888;</span>` : '')
+                : '<span style="opacity:.5;">&mdash;</span>'}</td>`;
+            return `
             <tr>
                 <td><strong>${esc(c.name)}</strong>${c.is_default ? '<span class="badge-default">' + window.t('system.companies.default') + '</span>' : ''}</td>
                 <td>${renderDomainCell(c.domains)}</td>
+                ${cell}
                 <td><span class="status-badge ${c.is_active ? 'on' : 'off'}">${c.is_active ? window.t('system.companies.active') : window.t('system.companies.inactive')}</span></td>
                 <td style="text-align:right;">
                     <button class="table-action-btn" data-edit="${c.id}">${window.t('system.companies.edit')}</button>
                 </td>
-            </tr>`).join('');
+            </tr>`;
+        }).join('');
+    }
+
+    /** The code that will be used if the box is left empty.
+     *
+     * ⚠️ For an EXISTING company this comes from the server, never from a rule
+     * repeated here: the real rule also considers the company's slug, and a
+     * second copy of it in JavaScript would eventually disagree. A brand-new
+     * company has no slug and is not saved yet, so there it is derived from the
+     * name — the one case where the two rules cannot differ. */
+    function updateDerivedHint(existing) {
+        const hint = document.getElementById('codeDerivedHint');
+        if (!hint) return;
+        if (document.getElementById('fCode').value.trim() !== '') { hint.textContent = ''; return; }
+        if (existing) {
+            hint.textContent = existing.effective_ticket_code
+                ? window.t('system.companies.field_code_derived', { code: existing.effective_ticket_code })
+                : window.t('system.companies.field_code_underivable');
+            return;
+        }
+        const derived = document.getElementById('fName').value.trim()
+            .replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 3);
+        hint.textContent = derived
+            ? window.t('system.companies.field_code_derived', { code: derived })
+            : window.t('system.companies.field_code_underivable');
     }
 
     // ---------- Modal ----------
     const modal = document.getElementById('companyModal');
+    function renderCoLogo(url) {
+        const box = document.getElementById('coLogoPreview');
+        box.innerHTML = '';
+        if (url) {
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = '';
+            img.style.cssText = 'max-width:100%;max-height:100%;';
+            box.appendChild(img);
+        } else {
+            box.textContent = window.t('system.companies.logo_none');
+        }
+        document.getElementById('coLogoRemove').style.display = url ? '' : 'none';
+    }
+    async function sendCoLogo(fd) {
+        fd.append('tenant_id', document.getElementById('companyId').value);
+        const r = await fetch(API + 'system/tenant_logo.php', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!j.success) { showToast(j.error, 'error'); return; }
+        renderCoLogo(j.logo_url);
+        const co = companies.find(x => String(x.id) === document.getElementById('companyId').value);
+        if (co) co.logo_url = j.logo_url;
+    }
+    document.getElementById('coLogoPick').addEventListener('click', () => document.getElementById('coLogoFile').click());
+    document.getElementById('coLogoFile').addEventListener('change', function () {
+        if (!this.files[0]) return;
+        const fd = new FormData();
+        fd.append('logo', this.files[0]);
+        this.value = '';
+        sendCoLogo(fd);
+    });
+    document.getElementById('coLogoRemove').addEventListener('click', () => {
+        const fd = new FormData();
+        fd.append('remove', '1');
+        sendCoLogo(fd);
+    });
+
     function openModal(c) {
         document.getElementById('modalTitle').textContent = c ? window.t('system.companies.modal_edit_title') : window.t('system.companies.modal_add_title');
         document.getElementById('companyId').value = c ? c.id : '';
@@ -267,6 +445,21 @@ $translationNamespaces = ['common', 'system'];
         active.checked = c ? !!c.is_active : true;
         // The default company is always active and can't be deactivated.
         active.disabled = !!(c && c.is_default);
+
+        // Ticket code — only where it can matter, and only ever pre-filled with
+        // what was actually saved, so an empty box always means "derive one".
+        const codeSection = document.getElementById('ticketCodeSection');
+        const codeInput   = document.getElementById('fCode');
+        codeInput.value = (c && c.ticket_code) ? c.ticket_code : '';
+        codeSection.style.display = codeRelevant(!c) ? '' : 'none';
+        updateDerivedHint(c || null);
+        codeInput.oninput = function () { updateDerivedHint(c || null); };
+        document.getElementById('fName').oninput = function () { updateDerivedHint(c || null); };
+
+        // Company logo (Files desktop): existing companies only.
+        const logoSection = document.getElementById('logoSection');
+        logoSection.style.display = (c && c.id) ? '' : 'none';
+        renderCoLogo(c ? c.logo_url : null);
 
         // Email domains: only when editing an existing company on a multi-company
         // install (shared-intake routing is meaningless with a single company).
@@ -310,11 +503,11 @@ $translationNamespaces = ['common', 'system'];
     function renderDomains() {
         const list = document.getElementById('domainsList');
         if (!currentDomains.length) {
-            list.innerHTML = '<div style="color:#aaa; font-size:12px; font-style:italic; padding:6px 0;">' + esc(window.t('system.companies.domains_none')) + '</div>';
+            list.innerHTML = '<div class="list-none">' + esc(window.t('system.companies.domains_none')) + '</div>';
             return;
         }
         list.innerHTML = currentDomains.map(d => `
-            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; border:1px solid #eee; border-radius:5px; margin-bottom:6px; font-size:13px;">
+            <div class="domain-row">
                 <span>${esc(d.domain)}</span>
                 <button type="button" class="table-action-btn" data-remove-domain="${d.id}">${esc(window.t('system.companies.domain_remove'))}</button>
             </div>`).join('');
@@ -375,11 +568,11 @@ $translationNamespaces = ['common', 'system'];
     function renderSenders() {
         const list = document.getElementById('sendersList');
         if (!currentSenders.length) {
-            list.innerHTML = '<div style="color:#aaa; font-size:12px; font-style:italic; padding:6px 0;">' + esc(window.t('system.companies.senders_none')) + '</div>';
+            list.innerHTML = '<div class="list-none">' + esc(window.t('system.companies.senders_none')) + '</div>';
             return;
         }
         list.innerHTML = currentSenders.map(s => `
-            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; border:1px solid #eee; border-radius:5px; margin-bottom:6px; font-size:13px;">
+            <div class="domain-row">
                 <span>${esc(s.email)}</span>
                 <button type="button" class="table-action-btn" data-remove-sender="${s.id}">${esc(window.t('system.companies.sender_remove'))}</button>
             </div>`).join('');
@@ -530,7 +723,10 @@ $translationNamespaces = ['common', 'system'];
         const payload = {
             id: document.getElementById('companyId').value || 0,
             name: document.getElementById('fName').value.trim(),
-            is_active: document.getElementById('fActive').checked ? 1 : 0
+            is_active: document.getElementById('fActive').checked ? 1 : 0,
+            // Sent even when the section is hidden — an empty string means
+            // "derive one", which is the same answer the server would reach.
+            ticket_code: document.getElementById('fCode').value.trim()
         };
         if (!payload.name) {
             showToast(window.t('system.companies.required_name'), 'error');
@@ -634,5 +830,6 @@ $translationNamespaces = ['common', 'system'];
 
     loadCompanies();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

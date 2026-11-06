@@ -22,7 +22,8 @@ return [
     'copied'       => 'కాపీ చేయబడింది',
     'retry'        => 'మళ్ళీ ప్రయత్నించు',
     'export'       => 'ఎగుమతి',
-    'open'         => 'తెరువు',
+    'back'         => 'వెనుకకు',
+    'open'         =>  'తెరువు',
     'apply'        => 'వర్తింపజేయి',
 
     'yes'          => 'అవును',
@@ -43,6 +44,7 @@ return [
     'optional'     => 'ఐచ్ఛికం',
     'select_one'   => 'ఎంచుకోండి…',
     'search'       => 'శోధన',
+    'filter'       => 'ఫిల్టర్',
 
     'error_generic'       => 'ఏదో తప్పు జరిగింది.',
     'error_network'       => 'నెట్‌వర్క్ లోపం',
@@ -140,6 +142,33 @@ return [
             'friday'    => 'శుక్రవారం',
             'saturday'  => 'శనివారం',
             'sunday'    => 'ఆదివారం',
+        ],
+
+        // Abbreviated forms, used by the date formatter for the
+        // "25 Aug 2026" family of formats (GH #105).
+        'months_short' => [
+            'january'   => 'జనవరి',
+            'february'  => 'ఫిబ్రవరి',
+            'march'     => 'మార్చి',
+            'april'     => 'ఏప్రిల్',
+            'may'       => 'మే',
+            'june'      => 'జూన్',
+            'july'      => 'జూలై',
+            'august'    => 'ఆగస్టు',
+            'september' => 'సెప్టెంబర్',
+            'october'   => 'అక్టోబర్',
+            'november'  => 'నవంబర్',
+            'december'  => 'డిసెంబర్',
+        ],
+
+        'weekdays_short' => [
+            'monday'    => 'సోమ',
+            'tuesday'   => 'మంగళ',
+            'wednesday' => 'బుధ',
+            'thursday'  => 'గురు',
+            'friday'    => 'శుక్ర',
+            'saturday'  => 'శని',
+            'sunday'    => 'ఆది',
         ],
     ],
 ];

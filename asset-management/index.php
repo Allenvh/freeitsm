@@ -4,35 +4,81 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('assets');
+
+// Company context for the New asset form's Company picker and the Key info
+// Company field (2.6.0). Single-company installs get multi=false and see
+// neither. Defensive: this page must render even if tenancy cannot be read.
+require_once '../includes/tenancy.php';
+require_once '../includes/services/asset_type_layout.php';
+
+// GH #200 part D: a link to an asset that has since been merged into another opens the kept one.
+if (!empty($_GET['asset_id']) && ctype_digit((string)$_GET['asset_id'])) {
+    require_once '../includes/services/asset_merge.php';
+    $assetNow = AssetMergeService::current(connectToDatabase(), (int)$_GET['asset_id']);
+    if ($assetNow !== null && $assetNow !== (int)$_GET['asset_id']) {
+        header('Location: ?asset_id=' . $assetNow);
+        exit;
+    }
+}
+$assetTenancy = ['multi' => false, 'active' => 0, 'all' => false, 'default' => 0];
+try {
+    $tconn = connectToDatabase();
+    $tAid  = (int)($_SESSION['analyst_id'] ?? 0);
+    $assetTenancy = [
+        'multi'   => isMultiTenant($tconn),
+        'active'  => getActiveTenantId($tconn, $tAid),
+        'all'     => isActiveTenantAll($tconn),
+        'default' => getDefaultTenantId($tconn),
+    ];
+} catch (Exception $e) { /* single-company behaviour */ }
 
 $current_page = 'assets';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'asset-management'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('asset-management.title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('assets')); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/record-preview.css?v=1">
+    <script src="../assets/js/record-preview.js?v=1"></script>
+    <?php
+    // This page renders its detail pane in JavaScript, so it takes the panel's
+    // assets here and mounts the component itself — renderDocumentsPanel() is for
+    // server-rendered records like contracts/edit.php.
+    require_once __DIR__ . '/../includes/documents_panel.php';
+    documentsPanelAssets('../');
+    ?>
     <style>
         .assets-container {
             display: flex;
             flex: 1;
             overflow: hidden;
             gap: 1px;
-            background-color: #e0e0e0;
+            background-color: var(--border, #e0e0e0);
         }
 
         .assets-list-container {
             width: 400px;
             min-width: 300px;
-            background-color: #fff;
+            background-color: var(--surface, #fff);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -40,20 +86,20 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .assets-list-header {
             padding: 15px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
         }
 
         .assets-list-header h3 {
             margin: 0 0 10px 0;
             font-size: 16px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .search-box {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 14px;
             box-sizing: border-box;
@@ -61,7 +107,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .search-box:focus {
             outline: none;
-            border-color: #0078d4;
+            border-color: var(--accent, #0078d4);
             box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.1);
         }
 
@@ -72,23 +118,129 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .asset-item {
             padding: 12px 15px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             cursor: pointer;
             transition: background-color 0.15s;
         }
 
         .asset-item:hover {
-            background-color: #f5f5f5;
+            background-color: var(--app-bg, #f5f5f5);
         }
 
         .asset-item.selected {
-            background-color: #e8f4fc;
-            border-left: 3px solid #0078d4;
+            background-color: var(--accent-soft, #e8f4fc);
+            border-left: 3px solid var(--accent, #0078d4);
         }
+
+        /* Picked for a batch (#935). Deliberately a different treatment from
+           .selected — that means "this is the one you're looking at", this means
+           "this is in the pile" — and both can be true of the same row. */
+        .asset-item.multi-selected {
+            background-color: var(--surface-hover, #eef2f6);
+            box-shadow: inset 3px 0 0 var(--success-accent, #16a34a);
+        }
+
+        /* Add / Scan / Assign tags (Ed). Was space-between with the count at
+           one end; the count now lives in the heading, so the row is just the
+           three actions. They WRAP rather than shrink — this panel is narrow and
+           resizable, and a squashed "Assign tags" over two cramped lines is
+           worse than a button on its own row. */
+        .asset-count-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        /* An <a> styled as a button: Scan and Assign tags are navigations and
+           stay anchors, so they keep middle-click and "open in new tab". Only
+           the shared .btn padding needs re-stating, because <a> brings its own
+           line-height and underline. */
+        .asset-count-row .btn {
+            display: inline-flex;
+            align-items: center;
+            text-decoration: none;
+            white-space: nowrap;
+            line-height: 1.4;
+        }
+
+        .asset-tag-chip {
+            display: inline-block;
+            margin-right: 6px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: var(--surface-3, #eef1f4);
+            color: var(--text-muted, #556);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        /* Retired assets (they have left the estate): a plain marker on the row, a
+           banner with the date and reason in the panel, and the switch that shows them. */
+        .asset-retired-chip {
+            display: inline-block;
+            margin-right: 6px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border, #ddd);
+            color: var(--text-muted, #556);
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .asset-retired-banner {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-top: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px dashed var(--border, #ccc);
+            color: var(--text, #333);
+            font-size: 13px;
+        }
+        .asset-retired-reason {
+            flex: 1 1 220px;
+            min-width: 0;
+            padding: 4px 8px;
+            border: 1px solid var(--border, #ccc);
+            border-radius: 4px;
+            background: var(--surface, #fff);
+            color: var(--text, #333);
+            font: inherit;
+        }
+        .asset-show-retired {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--text-muted, #556);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .asset-select-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: var(--surface-hover, #eef2f6);
+            border: 1px solid var(--border, #dde3ea);
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text, #333);
+        }
+        .asset-select-bar[hidden] { display: none; }
+        .asset-select-actions { display: flex; gap: 6px; }
 
         .asset-hostname {
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 4px;
             font-family: monospace;
             font-size: 14px;
@@ -96,7 +248,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .asset-meta {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             display: flex;
             gap: 15px;
         }
@@ -106,12 +258,12 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .asset-unassigned {
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .asset-detail-container {
             flex: 1;
-            background-color: #fff;
+            background-color: var(--surface, #fff);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -121,28 +273,46 @@ $translationNamespaces = ['common', 'asset-management'];
             flex-shrink: 0;
         }
 
-        .asset-detail-scroll {
+        /* Body below the sticky header+tabs. The active tab panel fills it; each
+           panel owns its own scrolling so a long device/software list never pushes
+           the page off the bottom. min-height:0 lets the flex child actually shrink. */
+        .asset-detail-body {
             flex: 1;
-            overflow-y: auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         .asset-detail-header {
             padding: 20px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
         }
 
         .asset-detail-hostname {
             font-size: 22px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin: 0 0 4px 0;
         }
 
         .asset-detail-subtitle {
             font-size: 14px;
-            color: #666;
+            color: var(--text-muted, #666);
             margin: 0;
+        }
+
+        /* View History / Custody / Print label. This carried `style="margin-top:10px"`
+           inline until #1495; it needs a class of its own so the mobile layer can pin
+           it to the bottom of the pane without an `!important` fight with the inline
+           style. The desktop rendering is unchanged — same margin, same three buttons
+           with their words on them; only the icon each one now carries is hidden. */
+        .asset-detail-actions {
+            margin-top: 10px;
+        }
+
+        .asset-detail-actions .asset-act-icon {
+            display: none;
         }
 
         .asset-assigned-bar {
@@ -151,7 +321,7 @@ $translationNamespaces = ['common', 'asset-management'];
             gap: 15px;
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--border, #e0e0e0);
         }
 
         .asset-assigned-info {
@@ -164,22 +334,30 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .asset-assigned-info .user-name {
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             font-size: 14px;
         }
+        /* The holder's name links to their record. It inherits the weight and
+           size above and only takes the accent colour, so the panel does not
+           suddenly read as a row of links. */
+        .user-name-link {
+            color: var(--accent, #0078d4);
+            text-decoration: none;
+        }
+        .user-name-link:hover { text-decoration: underline; }
 
         .asset-assigned-info .user-email {
-            color: #666;
+            color: var(--text-muted, #666);
             font-size: 13px;
         }
 
         .asset-assigned-info .user-assigned-date {
-            color: #999;
+            color: var(--text-faint, #999);
             font-size: 12px;
         }
 
         .asset-assigned-info .unassigned-text {
-            color: #999;
+            color: var(--text-faint, #999);
             font-size: 13px;
             font-style: italic;
         }
@@ -195,7 +373,7 @@ $translationNamespaces = ['common', 'asset-management'];
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             padding: 20px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
         }
 
         .info-item {
@@ -205,23 +383,41 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .info-label {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-bottom: 4px;
             text-transform: uppercase;
         }
 
         .info-value {
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
+        }
+
+        /* First/last seen (discussion #97). The date is the fact and keeps the
+           normal weight; the relative phrase is a hint and steps back. */
+        .seen-ago {
+            font-size: 12px;
+            color: var(--text-dim, #888);
+        }
+        /* Amber, matching the Watchtower card that counts these machines — not
+           red: a laptop in a drawer for a fortnight is not a fault. */
+        .seen-ago.stale {
+            color: #b45309;
+            font-weight: 600;
+        }
+        [data-theme-mode="dark"] .seen-ago.stale { color: #fcd34d; }
+        .seen-never {
+            color: var(--text-dim, #888);
+            font-style: italic;
         }
 
         .info-value-select {
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
             padding: 4px 8px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
-            background-color: #fff;
+            background-color: var(--surface, #fff);
             cursor: pointer;
             max-width: 200px;
         }
@@ -234,11 +430,11 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .info-value-input {
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
             padding: 4px 8px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
-            background-color: #fff;
+            background-color: var(--surface, #fff);
             max-width: 200px;
             width: 100%;
             box-sizing: border-box;
@@ -258,8 +454,8 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .section-header {
             padding: 15px 20px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -267,7 +463,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .section-title {
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .btn {
@@ -280,12 +476,12 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .btn-primary {
-            background-color: #0078d4;
+            background-color: var(--accent, #0078d4);
             color: white;
         }
 
         .btn-primary:hover {
-            background-color: #106ebe;
+            background-color: var(--accent-hover, #106ebe);
         }
 
         .btn-danger {
@@ -312,11 +508,11 @@ $translationNamespaces = ['common', 'asset-management'];
             justify-content: space-between;
             align-items: center;
             padding: 12px 20px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
         }
 
         .user-row:hover {
-            background-color: #f5f5f5;
+            background-color: var(--app-bg, #f5f5f5);
         }
 
         .user-info {
@@ -326,17 +522,17 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .user-name {
             font-weight: 500;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .user-email {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .user-assigned-date {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-top: 2px;
         }
 
@@ -345,7 +541,7 @@ $translationNamespaces = ['common', 'asset-management'];
             align-items: center;
             justify-content: center;
             flex: 1;
-            color: #888;
+            color: var(--text-dim, #888);
             font-size: 14px;
             padding: 40px;
             text-align: center;
@@ -362,7 +558,7 @@ $translationNamespaces = ['common', 'asset-management'];
             width: 30px;
             height: 30px;
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #0078d4;
+            border-top: 3px solid var(--accent, #0078d4);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -372,13 +568,22 @@ $translationNamespaces = ['common', 'asset-management'];
             100% { transform: rotate(360deg); }
         }
 
-        .asset-count {
-            font-size: 12px;
-            color: #888;
-            margin-top: 8px;
-        }
+        /* #assetCount is now the <h3> heading itself, styled by
+           .assets-list-header h3 — the separate count line it used to sit on is
+           gone (Ed). The old .asset-count rule went with it rather than being
+           left behind as a selector matching nothing. */
 
-        /* Modal Styles */
+        /* Modal Styles
+           ⚠️ These OVERRIDE the shared definitions in assets/css/inbox.css,
+           which this page already loads. inbox.css is the canonical source for
+           .modal / .modal-content / .modal-header / .modal-body / .modal-footer
+           / .modal-actions, and the house rule is not to redefine them.
+           The overrides here narrow the dialog (500px / 80vh vs 900px / 90vh)
+           and drop the entrance transition; because .modal-content ends up
+           without a scroll container, .modal-actions cannot stick to it, so
+           every modal on this page must use the header / body / footer layout.
+           Left in place deliberately — removing them resizes every dialog on
+           this page and needs its own look-over. */
         .modal {
             display: none;
             position: fixed;
@@ -397,19 +602,19 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .modal-content {
-            background: white;
+            background: var(--surface, #fff);
             border-radius: 8px;
             width: 500px;
             max-width: 90%;
             max-height: 80vh;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 20px var(--shadow, rgba(0, 0, 0, 0.2));
         }
 
         .modal-header {
             padding: 16px 20px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
             font-weight: 600;
             font-size: 16px;
             display: flex;
@@ -422,12 +627,12 @@ $translationNamespaces = ['common', 'asset-management'];
             border: none;
             font-size: 24px;
             cursor: pointer;
-            color: #666;
+            color: var(--text-muted, #666);
             line-height: 1;
         }
 
         .modal-close:hover {
-            color: #333;
+            color: var(--text, #333);
         }
 
         .modal-body {
@@ -438,7 +643,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .modal-footer {
             padding: 16px 20px;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--border, #e0e0e0);
             display: flex;
             justify-content: flex-end;
             gap: 10px;
@@ -452,26 +657,26 @@ $translationNamespaces = ['common', 'asset-management'];
             display: block;
             margin-bottom: 5px;
             font-weight: 500;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .form-select {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 14px;
         }
 
         .form-select:focus {
             outline: none;
-            border-color: #0078d4;
+            border-color: var(--accent, #0078d4);
         }
 
         .user-search-results {
             height: 300px;
             overflow-y: auto;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             margin-top: 10px;
         }
@@ -479,7 +684,7 @@ $translationNamespaces = ['common', 'asset-management'];
         .user-search-item {
             padding: 10px 12px;
             cursor: pointer;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
         }
 
         .user-search-item:last-child {
@@ -487,11 +692,11 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .user-search-item:hover {
-            background-color: #f5f5f5;
+            background-color: var(--app-bg, #f5f5f5);
         }
 
         .user-search-item.selected {
-            background-color: #e8f4fc;
+            background-color: var(--accent-soft, #e8f4fc);
         }
 
         .user-search-name {
@@ -500,7 +705,7 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .user-search-email {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .btn-secondary {
@@ -533,27 +738,27 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .history-table thead th {
-            background-color: #f8f9fa;
+            background-color: var(--surface-3, #f8f9fa);
             padding: 10px 14px;
             text-align: left;
             font-size: 11px;
             font-weight: 600;
-            color: #666;
+            color: var(--text-muted, #666);
             text-transform: uppercase;
             letter-spacing: 0.3px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid var(--border, #e0e0e0);
         }
 
         .history-table tbody td {
             padding: 9px 14px;
             font-size: 13px;
-            color: #333;
-            border-bottom: 1px solid #f0f0f0;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--surface-hover, #f0f0f0);
             vertical-align: top;
         }
 
         .history-table tbody tr:hover {
-            background-color: #f9f9f9;
+            background-color: var(--surface-3, #f9f9f9);
         }
 
         .history-field-badge {
@@ -567,7 +772,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .history-value-old {
-            color: #999;
+            color: var(--text-faint, #999);
             text-decoration: line-through;
         }
 
@@ -577,18 +782,97 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .history-arrow {
-            color: #999;
+            color: var(--text-faint, #999);
             margin: 0 4px;
         }
 
         .history-meta {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
+
+        /* Add-an-asset modal (#1132) */
+        .new-asset-intro {
+            margin: 0 0 16px 0; font-size: 13px; line-height: 1.5;
+            color: var(--text-muted, #666);
+        }
+        /* .modal-content is a flex column capped at 80vh, so a <form> wrapping
+           the whole dialog has to become that column itself — otherwise
+           .modal-body cannot scroll and the footer is pushed off the bottom. */
+        .modal-form {
+            display: flex; flex-direction: column;
+            flex: 1; min-height: 0;
+        }
+        /* This page had no .form-hint (it lives on the settings page). Defined
+           here rather than borrowed, because there is no shared modal CSS. */
+        /* Same values as the settings page's copy — --text-dim, not
+           --text-muted — so a hint reads identically in both places. */
+        .form-hint {
+            margin-top: 4px; font-size: 12px; line-height: 1.4;
+            color: var(--text-dim, #888);
+        }
+        .new-asset-next { margin: 4px 0 0 0; }
+        /* Separates the built-in columns from the type's own fields. Without it
+           "Manufacturer" and "Make" read as the same question asked twice. */
+        .na-group-title {
+            margin: 18px 0 10px 0; padding-top: 14px;
+            border-top: 1px solid var(--border-soft, #eee);
+            font-size: 11px; font-weight: 600; letter-spacing: 0.4px;
+            text-transform: uppercase; color: var(--text-muted, #666);
+        }
+        /* In the dialog a custom field is a .form-group like any other, so it
+           needs no grid — it stacks with Manufacturer and Model. Only the
+           number+unit pair needs a row, and the unit must not stretch. */
+        #naNext .cf-numrow { display: flex; align-items: center; gap: 8px; }
+        #naNext .cf-numrow .search-box { flex: 1 1 auto; min-width: 0; }
+
+        /* Asset type icons (#1146) */
+        .asset-type-icon { vertical-align: -2px; margin-right: 7px; color: var(--text-muted, #666); flex-shrink: 0; }
+        .asset-detail-hostname .asset-type-icon { vertical-align: -2px; margin-right: 10px; color: var(--accent, #0078d4); }
+
+        /* Custom fields (docs/design/flexible-asset-fields.md) */
+        .custom-fields-section {
+            border-top: 1px solid var(--border, #e0e0e0);
+        }
+        .custom-fields-section .section-header { display: flex; align-items: baseline; gap: 10px; }
+        .cf-count { font-size: 12px; color: var(--text-muted, #666); }
+        .cf-set { padding-bottom: 4px; }
+        .cf-set-head { padding: 10px 20px 0 20px; }
+        .cf-setname { font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+                      text-transform: uppercase; color: var(--text-muted, #666); }
+        /* A set attached to THIS asset alone. Visible and removable, so the
+           extra fields are never magic. */
+        .cf-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 3px 6px 3px 10px; border-radius: 999px;
+            background: var(--surface-3, #f8f9fa);
+            border: 1px solid var(--border, #e0e0e0);
+            font-size: 12px; color: var(--text, #333);
+        }
+        .cf-chip-x {
+            border: 0; background: none; cursor: pointer; line-height: 1;
+            font-size: 15px; color: var(--text-muted, #666); padding: 0 2px;
+        }
+        .cf-chip-x:hover { color: var(--danger-text, #c0392b); }
+        .cf-req { color: var(--danger-text, #c0392b); margin-left: 3px; }
+        .cf-numrow { display: flex; align-items: center; gap: 6px; }
+        .cf-numrow .info-value-input { flex: 1 1 auto; min-width: 0; }
+        .cf-unit { font-size: 12px; color: var(--text-muted, #666); flex-shrink: 0; }
+        .cf-hint { display: block; font-size: 11px; color: var(--text-muted, #666); margin-top: 3px; }
+        .cf-empty { padding: 14px 20px; font-size: 13px; color: var(--text-faint, #999); }
+        .cf-toggle {
+            margin: 4px 20px 12px 20px; padding: 0; border: 0; background: none;
+            /* ⚠️ --link does NOT exist. This module's link colour is --accent,
+               which is what every other control on this page already uses. */
+            cursor: pointer; font-size: 12px; color: var(--accent, #0066cc);
+        }
+        .cf-toggle:hover { text-decoration: underline; }
+        .cf-addset { padding: 0 20px 16px 20px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .cf-addset-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted, #666); }
 
         /* Disk Usage Section */
         .disks-section {
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--border, #e0e0e0);
         }
 
         .disks-grid {
@@ -599,7 +883,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .disk-card {
-            background: #f8f9fa;
+            background: var(--surface-3, #f8f9fa);
             border: 1px solid #e8e8e8;
             border-radius: 8px;
             padding: 14px 16px;
@@ -615,13 +899,13 @@ $translationNamespaces = ['common', 'asset-management'];
         .disk-drive {
             font-weight: 600;
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
             font-family: monospace;
         }
 
         .disk-label {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             max-width: 120px;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -629,7 +913,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .disk-bar-container {
-            background: #e0e0e0;
+            background: var(--border, #e0e0e0);
             border-radius: 4px;
             height: 8px;
             overflow: hidden;
@@ -643,6 +927,66 @@ $translationNamespaces = ['common', 'asset-management'];
             transition: width 0.8s ease-out;
         }
 
+        /* The Drives band sits BETWEEN two grids, so it needs the rule above it
+           that .disks-section only draws for the first one. */
+        #physicalDisksSection .section-header { border-top: 1px solid var(--border, #e0e0e0); }
+
+        /* A drive's model is a sentence ("NVMe Samsung SSD 980 1TB"), not a
+           drive letter, so it wraps instead of being clipped like .disk-label. */
+        .pdisk-model {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text, #333);
+            word-break: break-word;
+        }
+        /* Monospace, because the only thing anyone does with a serial is compare
+           it character by character against a sticker or a supplier's portal. */
+        .pdisk-serial {
+            font-family: monospace;
+            font-size: 12px;
+            color: var(--text, #333);
+            word-break: break-all;
+        }
+        .pdisk-serial.none { font-family: inherit; color: var(--text-dim, #888); font-style: italic; }
+
+        /* Hide / Show on a drive card (#97). Quiet until the card is hovered:
+           it is an occasional tidy-up, not something to compete with the serial
+           for attention. Kept visible on a touch device, where there is no
+           hover to reveal it with. */
+        .pdisk-hide {
+            flex-shrink: 0;
+            border: 1px solid var(--border, #e0e0e0);
+            background: transparent;
+            color: var(--text-muted, #666);
+            border-radius: 4px;
+            padding: 1px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.12s;
+        }
+        .disk-card:hover .pdisk-hide,
+        .pdisk-hide:focus-visible { opacity: 1; }
+        .pdisk-hide:hover { color: var(--text, #333); border-color: var(--text-dim, #999); }
+        @media (hover: none) { .pdisk-hide { opacity: 1; } }
+
+        /* A hidden drive, while "Show hidden" is on. Dimmed and dashed so it
+           reads as withheld rather than as another drive. */
+        .disk-card.pdisk-is-hidden { opacity: 0.62; border-style: dashed; }
+        .disk-card.pdisk-is-hidden .pdisk-hide { opacity: 1; }
+        .pdisk-hidden-badge {
+            display: inline-block;
+            margin-bottom: 8px;
+            padding: 1px 7px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            background: var(--surface-hover, #eee);
+            color: var(--text-muted, #666);
+        }
+
         .disk-bar-fill.usage-low { background: #4caf50; }
         .disk-bar-fill.usage-medium { background: #ff9800; }
         .disk-bar-fill.usage-high { background: #f44336; }
@@ -651,7 +995,7 @@ $translationNamespaces = ['common', 'asset-management'];
             display: flex;
             justify-content: space-between;
             font-size: 12px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .disk-percent {
@@ -666,6 +1010,9 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .software-list {
             padding: 0;
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
         }
 
         .software-table {
@@ -676,12 +1023,12 @@ $translationNamespaces = ['common', 'asset-management'];
         .software-table thead th {
             position: sticky;
             top: 0;
-            background-color: #f0f0f0;
+            background-color: var(--surface-hover, #f0f0f0);
             padding: 8px 20px;
             text-align: left;
             font-size: 11px;
             font-weight: 600;
-            color: #666;
+            color: var(--text-muted, #666);
             text-transform: uppercase;
             letter-spacing: 0.3px;
             z-index: 1;
@@ -690,12 +1037,12 @@ $translationNamespaces = ['common', 'asset-management'];
         .software-table tbody td {
             padding: 7px 20px;
             font-size: 13px;
-            color: #333;
-            border-bottom: 1px solid #f0f0f0;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--surface-hover, #f0f0f0);
         }
 
         .software-table tbody tr:hover {
-            background-color: #f9f9f9;
+            background-color: var(--surface-3, #f9f9f9);
         }
 
         .software-count-badge {
@@ -713,15 +1060,16 @@ $translationNamespaces = ['common', 'asset-management'];
             display: flex;
             gap: 0;
             padding: 0 20px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #fff;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface, #fff);
+            flex-shrink: 0;
         }
 
         .sw-filter-tab {
             padding: 8px 16px;
             font-size: 12px;
             font-weight: 500;
-            color: #666;
+            color: var(--text-muted, #666);
             cursor: pointer;
             border: none;
             background: none;
@@ -730,7 +1078,7 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .sw-filter-tab:hover {
-            color: #333;
+            color: var(--text, #333);
         }
 
         .sw-filter-tab.active {
@@ -740,8 +1088,8 @@ $translationNamespaces = ['common', 'asset-management'];
 
         .sw-filter-tab .sw-tab-count {
             display: inline-block;
-            background-color: #eee;
-            color: #666;
+            background-color: var(--border-soft, #eee);
+            color: var(--text-muted, #666);
             padding: 1px 6px;
             border-radius: 10px;
             font-size: 10px;
@@ -753,20 +1101,227 @@ $translationNamespaces = ['common', 'asset-management'];
             color: #3f51b5;
         }
 
+        /* Tickets raised against this asset (discussion #57). Themed from real
+           tokens throughout so dark mode needs no override block. */
+        .asset-tickets-list { padding: 4px 0; }
+
+        /* The documents panel brings no padding of its own — the host page owns
+           its spacing, or the panel would double up inside a form that already
+           has some (as contracts does). 20px matches .asset-info-grid, so the
+           Documents tab lines up with Key info rather than nearly lining up. */
+        #assetDocuments { padding: 20px; }
+        .asset-tickets-empty {
+            padding: 24px 16px;
+            color: var(--text-faint, #9ca3af);
+            font-style: italic;
+            font-size: 13px;
+            text-align: center;
+        }
+        .asset-tickets-group {
+            padding: 10px 16px 4px;
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
+            color: var(--text-faint, #9ca3af);
+        }
+        .asset-ticket-row {
+            display: grid;
+            /* Five columns, the last being the ⓘ preview badge (#91). It is a
+               column of its own rather than a passenger in the date cell so it
+               lines up down the panel, and so it survives the phone layout
+               below — where the reference and the date are hidden. */
+            grid-template-columns: minmax(90px, auto) 1fr auto auto auto;
+            gap: 12px;
+            align-items: center;
+            padding: 9px 16px;
+            border-bottom: 1px solid var(--border-soft, #f0f0f0);
+            text-decoration: none;
+            color: inherit;
+            font-size: 13px;
+        }
+        .asset-ticket-row:hover { background-color: var(--surface-hover, #f8f9fa); }
+
+        /* Contracts covering this asset (#106). Same shape as the ticket rows
+           above, deliberately: two lists in one tab strip that look different
+           read as two different kinds of thing. */
+        .asset-contract-row {
+            display: grid;
+            /* Five columns: reference, title, supplier, ends, notice. The two
+               dates are separate cells rather than one stacked cell (Ed) - they
+               are two different deadlines, and stacking made the earlier and
+               more urgent one look like a footnote to the later one. Fixed
+               widths on the dates so they line up down the list; a column that
+               shifts row to row is no easier to scan than no column. */
+            /* ⚠️ EVERY column except the title is a FIXED width, and that is
+               what makes the headings line up. The heading row and each data
+               row are separate grids, so an `auto` column resolves to its own
+               content in each one — "Supplier" and "Nexus IT" are not the same
+               width, and the heading ends up a few pixels off the thing it
+               labels. Only 1fr, which fills what is left, is safe to share. */
+            grid-template-columns: 110px 1fr 140px 150px 165px;
+            gap: 12px;
+            align-items: center;
+            padding: 9px 16px;
+            border-bottom: 1px solid var(--border-soft, #f0f0f0);
+            text-decoration: none;
+            color: inherit;
+            font-size: 13px;
+        }
+        .asset-contract-row:hover { background-color: var(--surface-hover, #f8f9fa); }
+        .asset-contract-ref {
+            color: var(--text-dim, #6b7280); font-family: monospace; font-size: 12px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .asset-contract-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* The link's own note - a phone number, a line ID - reads as a detail of
+           the title rather than a field of its own. */
+        .asset-contract-title em { color: var(--text-muted, #6b7280); font-style: normal; font-size: 12px; }
+        /* Now that it has a fixed width, a long supplier name has to be told
+           what to do rather than pushing the dates out of line. */
+        .asset-contract-meta {
+            color: var(--text-muted, #6b7280); font-size: 12px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .asset-contract-when { color: var(--text-muted, #6b7280); font-size: 12px; text-align: right; }
+        /* The notice date is the one people miss, so it keeps the warning colour
+           even now that it has a column of its own. */
+        .asset-contract-notice {
+            color: var(--warning-text, #92400e);
+            font-size: 12px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        /* The row and its remove button. The button is a sibling of the link,
+           not inside it, so clicking it cannot also navigate. */
+        .asset-contract-item { display: flex; align-items: center; }
+        .asset-contract-item .asset-contract-row { flex: 1; min-width: 0; border-bottom: none; }
+        .asset-contract-item { border-bottom: 1px solid var(--border-soft, #f0f0f0); }
+        .asset-contract-remove {
+            flex-shrink: 0; width: 26px; height: 26px; margin-right: 10px; line-height: 1;
+            border: none; background: none; cursor: pointer;
+            font-size: 18px; color: var(--text-faint, #bbb); border-radius: 4px;
+        }
+        .asset-contract-remove:hover { background: var(--danger-bg, #fee2e2); color: var(--danger-text, #991b1b); }
+        /* Stands in for the remove button on the heading row, so the columns
+           line up with the cells they label. Width must track .asset-contract-
+           remove above: 26px plus its 10px right margin. */
+        .asset-contract-remove-spacer { flex-shrink: 0; width: 26px; margin-right: 10px; }
+        /* ⚠️ The heading row is a separate element from the rows it labels, so
+           every item added beside a row has to be added to the head as an empty
+           stand-in of the same width. Miss one and the headings sit a badge to
+           the right of the columns they name. */
+        .asset-contract-item > .rp-badge { flex-shrink: 0; margin: 0 2px 0 6px; }
+        .asset-contract-preview-spacer { flex-shrink: 0; width: 20px; margin: 0 2px 0 6px; }
+
+        .asset-contract-head .asset-contract-row {
+            padding-top: 12px;
+            padding-bottom: 6px;
+            cursor: default;
+        }
+        .asset-contract-head span {
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            /* One colour for every heading. The notice column is coloured in the
+               DATA because that date is urgent; a coloured heading would say the
+               column itself is a warning. */
+            color: var(--text-faint, #999);
+        }
+        .asset-contract-head:hover { background: none; }
+
+        .asset-contract-add-bar { padding: 10px 16px 4px; }
+        .asset-contract-add {
+            border: 1px solid var(--border, #ddd); background: var(--surface, #fff);
+            color: var(--accent, #0078d4); border-radius: 6px;
+            padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+        }
+        .asset-contract-add:hover { background: var(--surface-hover, #f5f5f5); }
+
+        .contract-pick-results { max-height: 320px; overflow-y: auto; margin-top: 10px; }
+        .ctr-pick-search {
+            width: 100%; box-sizing: border-box; padding: 8px 10px;
+            border: 1px solid var(--border, #ddd); border-radius: 6px;
+            font: inherit; font-size: 13px;
+            background: var(--surface, #fff); color: var(--text, #333);
+        }
+        .ctr-pick-search:focus { outline: none; border-color: var(--accent, #0078d4); }
+        .contract-pick {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            padding: 9px 10px; border: none; border-radius: 6px;
+            background: none; font: inherit; color: var(--text, #333);
+        }
+        .contract-pick:hover { background: var(--surface-hover, #f5f5f5); }
+        .contract-pick-name { display: block; font-size: 13px; font-weight: 500; }
+        .contract-pick-meta { display: block; font-size: 12px; color: var(--text-muted, #6b7280); }
+
+        /* Right-click menu. The menu itself, its items and its flyouts come from
+           .ticket-context-menu in inbox.css, which this page already loads; only
+           the parts that menu has never needed are defined here. */
+        .asset-ctx-sep { height: 1px; margin: 4px 0; background: var(--border-soft, #eee); }
+        /* A fixed-width gutter so the labels line up whether or not a row is the
+           current value - a tick that shifts the text is worse than no tick. */
+        .asset-ctx-tick { display: inline-block; width: 14px; color: var(--accent, #0078d4); }
+        .asset-ctx-empty { color: var(--text-dim, #999); cursor: default; }
+        .asset-ctx-empty:hover { background: none; }
+        .asset-ticket-ref { color: var(--text-dim, #6b7280); font-family: monospace; font-size: 12px; }
+        .asset-ticket-subject {
+            color: var(--text, #111827);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .asset-ticket-status {
+            color: #fff;
+            padding: 2px 9px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .asset-ticket-when { color: var(--text-faint, #9ca3af); font-size: 12px; white-space: nowrap; }
+
+        @media (max-width: 700px) {
+            /* Ref and date drop away first — the subject and its status are what
+               you are actually scanning for on a phone. */
+            /* Subject, status, and the preview badge — which keeps its column
+               here precisely because the reference and the date have gone: on a
+               phone the badge is the only way left to see what the ticket is
+               without leaving the asset. */
+            .asset-ticket-row { grid-template-columns: 1fr auto auto; }
+            .asset-ticket-ref, .asset-ticket-when { display: none; }
+
+            /* The contract rows lose the reference and the supplier, but KEEP
+               both dates: when it ends and when notice is due is the whole
+               reason for looking. The fixed date widths go too — on a phone
+               there is not room to reserve them. */
+            .asset-contract-row { grid-template-columns: 1fr auto auto; }
+            .asset-contract-ref, .asset-contract-meta { display: none; }
+        }
+
         /* Detail Tabs */
+        /* Never squeezed: a tab keeps its label on one line and the strip scrolls
+           sideways when there are more than fit - as it already did on a phone
+           (mobile.css). Connected (GH #200 part C) made nine, plus Intune. */
         .detail-tabs {
             display: flex;
             gap: 0;
-            border-top: 1px solid #e0e0e0;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f8f9fa;
+            border-bottom: 1px solid var(--border, #e0e0e0);
+            background-color: var(--surface-3, #f8f9fa);
+            overflow-x: auto;
+            scrollbar-width: thin;
         }
 
         .detail-tab {
-            padding: 10px 20px;
+            white-space: nowrap;
+            flex: 0 0 auto;
+            padding: 10px 16px;
             font-size: 13px;
             font-weight: 500;
-            color: #666;
+            color: var(--text-muted, #666);
             cursor: pointer;
             border: none;
             background: none;
@@ -775,18 +1330,18 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .detail-tab:hover {
-            color: #333;
+            color: var(--text, #333);
         }
 
         .detail-tab.active {
-            color: #0078d4;
-            border-bottom-color: #0078d4;
+            color: var(--accent, #0078d4);
+            border-bottom-color: var(--accent, #0078d4);
         }
 
         .detail-tab .tab-count {
             display: inline-block;
-            background-color: #eee;
-            color: #666;
+            background-color: var(--border-soft, #eee);
+            color: var(--text-muted, #666);
             padding: 1px 6px;
             border-radius: 10px;
             font-size: 10px;
@@ -794,28 +1349,47 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .detail-tab.active .tab-count {
-            background-color: #e0ecf8;
-            color: #0078d4;
+            background-color: var(--accent-soft, #e0ecf8);
+            color: var(--accent, #0078d4);
         }
 
         .detail-tab-panel {
             display: none;
         }
 
+        /* Active panel fills the body. Devices/Software are flex columns whose
+           inner list scrolls; "--scroll" panels (Key info, Intune) scroll as a block. */
         .detail-tab-panel.active {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .detail-tab-panel--scroll.active {
             display: block;
+            overflow-y: auto;
+            /* Breathing room under whatever happens to be last (Ed). The panel
+               ends on a full-bleed section, so its final card sat hard against
+               the bottom of the pane with only the grid's own 16px under it and
+               nothing after — it read as though the list had been cut off.
+               Here rather than on the Drives grid because "last" changes: Drives
+               on a reporting machine, Storage on one without, custom fields on a
+               television. Bottom only, so no section loses its full width. */
+            padding-bottom: 20px;
         }
 
         /* Devices Section */
         .devices-search {
             padding: 10px 20px;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid var(--surface-hover, #f0f0f0);
+            flex-shrink: 0;
         }
 
         .devices-search input {
             width: 100%;
             padding: 7px 10px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 13px;
             outline: none;
@@ -823,11 +1397,14 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         .devices-search input:focus {
-            border-color: #0078d4;
+            border-color: var(--accent, #0078d4);
         }
 
         .devices-list {
             padding: 0;
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
         }
 
         .devices-table {
@@ -838,12 +1415,12 @@ $translationNamespaces = ['common', 'asset-management'];
         .devices-table thead th {
             position: sticky;
             top: 0;
-            background-color: #f0f0f0;
+            background-color: var(--surface-hover, #f0f0f0);
             padding: 8px 20px;
             text-align: left;
             font-size: 11px;
             font-weight: 600;
-            color: #666;
+            color: var(--text-muted, #666);
             text-transform: uppercase;
             letter-spacing: 0.3px;
             z-index: 1;
@@ -852,25 +1429,25 @@ $translationNamespaces = ['common', 'asset-management'];
         .devices-table tbody td {
             padding: 7px 20px;
             font-size: 13px;
-            color: #333;
-            border-bottom: 1px solid #f0f0f0;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--surface-hover, #f0f0f0);
         }
 
         .devices-table tbody tr:hover {
-            background-color: #f9f9f9;
+            background-color: var(--surface-3, #f9f9f9);
         }
 
         .device-class-row td {
-            background-color: #f8f9fa;
+            background-color: var(--surface-3, #f8f9fa);
             font-weight: 600;
             font-size: 12px;
-            color: #555;
+            color: var(--text-muted, #555);
             padding: 6px 20px !important;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
         }
 
         .device-class-row:hover td {
-            background-color: #f8f9fa !important;
+            background-color: var(--surface-3, #f8f9fa) !important;
         }
 
         .device-status {
@@ -895,18 +1472,190 @@ $translationNamespaces = ['common', 'asset-management'];
             background-color: #fff3e0;
             color: #e65100;
         }
+        /* The people/analyst switch in the assign dialog. Two buttons rather
+           than a <select>: with exactly two choices both are readable at once,
+           and the one in force is visible without opening anything. */
+        .assign-kind-toggle {
+            display: inline-flex;
+            border: 1px solid var(--border-color, #ddd);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .assign-kind-btn {
+            padding: 6px 16px;
+            font-size: 13px;
+            font-family: inherit;
+            border: none;
+            background: var(--bg-secondary, #f5f5f5);
+            color: var(--text-primary, #333);
+            cursor: pointer;
+        }
+        .assign-kind-btn + .assign-kind-btn {
+            border-left: 1px solid var(--border-color, #ddd);
+        }
+        .assign-kind-btn.active {
+            background: var(--primary-color, #4a90d9);
+            color: #fff;
+        }
+        .holder-kind-tag {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 7px;
+            border-radius: 10px;
+            font-size: 11px;
+            background: var(--bg-secondary, #eee);
+            color: var(--text-muted, #666);
+        }
+        /* Expiry flags beside a warranty or lease date. Colour is never the only
+           signal - each carries its own words - so it still reads correctly to
+           somebody who cannot tell the two apart. */
+        .expiry-flag {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 7px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-align: middle;
+        }
+        .expiry-flag-past {
+            background: #fdeaea;
+            color: #b3261e;
+        }
+        .expiry-flag-soon {
+            background: #fef3e2;
+            color: #a15c07;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .expiry-flag-past { background: #4a1c1a; color: #ffb4ab; }
+            :root:not([data-theme="light"]) .expiry-flag-soon { background: #4a3410; color: #ffd18c; }
+        }
+        :root[data-theme="dark"] .expiry-flag-past { background: #4a1c1a; color: #ffb4ab; }
+        :root[data-theme="dark"] .expiry-flag-soon { background: #4a3410; color: #ffd18c; }
+
+        /* Asset type layouts (GH #200). A class, not the hidden attribute: .detail-tab and
+           .info-item set their own display, which would beat [hidden]. */
+        .atl-hidden { display: none !important; }
+        .atl-revealed { outline: 1px dashed var(--text-muted, #999); outline-offset: -1px; }
+        .detail-tab.atl-revealed { opacity: .75; }
+        .atl-notice {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+            margin: 0 0 12px; padding: 8px 12px; border-radius: 6px; font-size: 13px;
+            background: var(--info-bg, #eef4fb); color: var(--info-text, #31506b); border: 1px solid var(--info-border, #cfe0f1);
+        }
+        .atl-link {
+            border: none; background: none; padding: 0; cursor: pointer; font: inherit;
+            color: var(--accent, #0078d4); text-decoration: underline;
+        }
+        .detail-tab.atl-show { color: var(--text-muted, #666); font-weight: normal; text-decoration: underline; }
+
+        /* Inventory freshness (GH #200 Part B). Amber for stale, as Last seen; red only for a
+           failed import, which is the one state somebody may need to act on. */
+        .inv-lines { padding: 10px 20px 0; font-size: 12px; color: var(--text-dim, #888); }
+        .inv-lines:empty { display: none; }
+        .inv-line + .inv-line { margin-top: 2px; }
+        .inv-line.stale { color: #b45309; font-weight: 600; }
+        .inv-line.failed { color: #b91c1c; }
+        [data-theme-mode="dark"] .inv-line.stale, [data-theme-mode="dark"] .inv-state.stale { color: #fcd34d; }
+        [data-theme-mode="dark"] .inv-line.failed, [data-theme-mode="dark"] .inv-state.failed,
+        [data-theme-mode="dark"] .inv-error { color: #fca5a5; }
+        .inv-panel { margin-top: 20px; }
+        .inv-source { margin: 0 20px 16px; }
+        .inv-source-name { font-size: 13px; font-weight: 600; color: var(--text, #333); margin-bottom: 4px; }
+        .inv-source-ref { font-weight: normal; color: var(--text-dim, #888); margin-left: 6px; }
+        .inv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .inv-table th { text-align: left; font-weight: 600; color: var(--text-muted, #666); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border, #ddd); }
+        .inv-table td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--border-soft, #eee); vertical-align: top; color: var(--text, #333); }
+        .inv-table td.num { text-align: right; }
+        .inv-state.stale { color: #b45309; font-weight: 600; }
+        .inv-state.failed { color: #b91c1c; font-weight: 600; }
+        .inv-state.quiet { color: var(--text-dim, #888); }
+        .inv-error { display: block; color: #b91c1c; font-size: 11px; margin-top: 2px; }
+
+        /* A mapped manufacturer or model (GH #200 part D). */
+        .nm-shown { font-size: 11px; color: var(--text-dim, #888); margin-top: 3px; }
+        /* Protected values (GH #200 part D). */
+        .prot-btn { border: none; background: none; padding: 0 0 0 6px; cursor: pointer; color: var(--text-dim, #999); vertical-align: -1px; }
+        .prot-btn:hover { color: var(--text, #333); }
+        .prot-btn.on { color: var(--accent, #0078d4); }
+        .prot-conflict { font-size: 11px; color: #b45309; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+        [data-theme-mode="dark"] .prot-conflict { color: #fcd34d; }
+
+        /* Connected assets (GH #200 part C). */
+        .conn-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; flex-wrap: wrap; }
+        .conn-intro { font-size: 12px; color: var(--text-dim, #888); flex: 1 1 260px; }
+        .conn-list { padding: 0 20px; }
+        .conn-item { border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface, #fff); }
+        .conn-item-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+        .conn-name { font-weight: 600; }
+        .conn-name a { color: var(--accent, #0078d4); text-decoration: none; }
+        .conn-name svg, .conn-history svg, .contract-pick-name svg { vertical-align: -2px; margin-right: 5px; }
+        .conn-desc { font-size: 12px; color: var(--text-dim, #888); flex: 1; }
+        .conn-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted, #666); padding: 3px 0; flex-wrap: wrap; }
+        .conn-row .btn { margin-left: auto; }
+        .conn-chip { font-size: 11px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border, #ddd); color: var(--text-muted, #666); white-space: nowrap; }
+        .conn-chip.manual { border-color: var(--accent, #0078d4); color: var(--accent, #0078d4); }
+        .conn-history-head { margin-top: 10px; }
+        .conn-history { margin: 0 20px 16px; width: calc(100% - 40px); }
+        .conn-history a { color: var(--accent, #0078d4); text-decoration: none; }
     </style>
+    <?php /* Mobile-friendly opt-in (#936). Deliberately AFTER this page's own
+             <style> block so its @media rules win on ties — the ordering rule
+             from the wiki's Mobile-Friendly-Techniques. Every rule inside it is
+             gated at 768px, so the desktop layout is untouched. */ ?>
+    <link rel="stylesheet" href="../assets/css/project-links.css?v=1">
+    <link rel="stylesheet" href="../assets/css/ci-asset-link.css?v=3">
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
+    <?php /* The heading carries the count (Ed) - "Assets - 633 found" - and
+             since #185 it is the action row's title, beside New.
+             ⚠️ The static label is the FALLBACK: renderAssetsList() replaces
+             the title's whole textContent (#assetCount) once the list arrives. */
+          require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('asset-management.nav.assets'), [actionRowNew('openNewAssetModal()', t('asset-management.list.new_asset'))], ['title_id' => 'assetCount']); ?>
 
     <div class="main-container assets-container">
         <!-- Assets List -->
         <div class="assets-list-container">
             <div class="assets-list-header">
-                <h3><?php echo htmlspecialchars(t('asset-management.nav.assets')); ?></h3>
+                <?php /* The heading carries the count (Ed) — it used to say
+                         "Assets" and then repeat "597 assets" on its own line
+                         underneath, which is two lines to say one thing. It
+                         still names the module, because a bare "597 assets"
+                         loses where you are.
+
+                         ⚠️ The static label is the FALLBACK, not decoration:
+                         renderAssetsList() replaces the whole textContent once
+                         the list arrives, and an empty heading until then would
+                         read as a page that failed to load. */ ?>
                 <input type="text" class="search-box" id="assetSearch" placeholder="<?php echo htmlspecialchars(t('asset-management.list.search_placeholder')); ?>" oninput="searchAssets()" autocomplete="off">
-                <div class="asset-count" id="assetCount"></div>
+                <div class="asset-count-row">
+                    <?php /* Adding by hand (#1132), bulk tagging (#935) and
+                             scanning (#938) — all occasional jobs done standing
+                             up with a phone, which is why they sit together and
+                             below the search box rather than competing with it.
+                             Buttons rather than links (Ed): they are actions,
+                             and three underlined words in a row read as a
+                             breadcrumb. Outline rather than filled, so they
+                             still do not outrank the search. */ ?>
+                    <a class="btn btn-outline btn-sm" href="scanner.php"><?php echo htmlspecialchars(t('asset-management.list.scan')); ?></a>
+                    <a class="btn btn-outline btn-sm" href="assign-tags.php"><?php echo htmlspecialchars(t('asset-management.list.assign_tags')); ?></a>
+                    <?php /* Retired assets have left the estate: hidden until asked for. */ ?>
+                    <label class="asset-show-retired"><input type="checkbox" id="assetShowRetired" onchange="toggleShowRetired(this.checked)"> <?php echo htmlspecialchars(t('asset-management.retired.show')); ?></label>
+                </div>
+                <?php /* Appears only once more than one asset is picked with
+                         Ctrl/Shift — see handleAssetRowClick(). Hidden by default
+                         so the list is unchanged for anyone not using it. */ ?>
+                <div class="asset-select-bar" id="assetSelectBar" hidden>
+                    <span id="assetSelectCount"></span>
+                    <span class="asset-select-actions">
+                        <?php /* Plural: this bar only ever appears for 2+. */ ?>
+                        <button class="btn btn-outline btn-sm" onclick="printSelectedLabels()"><?php echo htmlspecialchars(t('asset-management.list.print_labels')); ?></button>
+                        <button class="btn btn-outline btn-sm" onclick="clearAssetSelection()"><?php echo htmlspecialchars(t('asset-management.list.clear_selection')); ?></button>
+                    </span>
+                </div>
             </div>
             <div class="assets-list" id="assetsList">
                 <div class="loading">
@@ -923,6 +1672,105 @@ $translationNamespaces = ['common', 'asset-management'];
         </div>
     </div>
 
+    <?php /* New asset (#1132).
+             CORE FIELDS ONLY, deliberately. Custom fields are filled in on the
+             asset itself where there is room and the "3 of 3 filled in" counter
+             says what is outstanding — a modal is the wrong place to answer
+             eight questions. The agent-synced hardware columns (CPU, BIOS,
+             memory…) are absent too: typing them in would be overwritten by the
+             next sync on anything that does report for itself. */ ?>
+    <div class="modal" id="newAssetModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span><?php echo htmlspecialchars(t('asset-management.new.heading')); ?></span>
+            </div>
+            <?php /* ⚠️ header / .modal-body / .modal-footer — the canonical
+                     3-pane modal layout documented in assets/css/inbox.css,
+                     which this page loads. See #assignUserModal below.
+
+                     inbox.css offers TWO layouts and says when each applies:
+                       - fields directly in .modal-content  → .modal-actions
+                       - header / body / footer (this one)  → .modal-footer
+                     .modal-actions is sticky against .modal-content as the
+                     scroll container. This page OVERRIDES .modal-content
+                     locally (500px / 80vh, no overflow), so it is not a scroll
+                     container — which is why the first version of this dialog,
+                     written with .modal-actions and no .modal-body, had its
+                     buttons sitting on top of the content and no padding at all.
+
+                     🔑 The local overrides at ~line 464 are the actual problem:
+                     inbox.css already defines .modal / .modal-content /
+                     .modal-body / .modal-footer, and redefining them is what
+                     makes markup non-portable between two pages of the same
+                     module. Not unpicked here — it would resize every modal on
+                     this page. */ ?>
+            <form id="newAssetForm" class="modal-form">
+                <div class="modal-body">
+                    <p class="new-asset-intro"><?php echo t('asset-management.new.intro'); ?></p>
+                    <?php /* 2.6.0. Only on a multi-company install, and only when
+                             the analyst can reach more than one company (JS
+                             reveals it). In the All companies view it starts
+                             EMPTY and must be answered - a customer found new
+                             assets landing in whichever company they had last
+                             picked. Changing it reloads the three lists below
+                             for that company. */ ?>
+                    <div class="form-group" id="naCompanyGroup" hidden>
+                        <label class="form-label" for="naCompany"><?php echo htmlspecialchars(t('asset-management.new.company')); ?></label>
+                        <select class="search-box" id="naCompany"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naName"><?php echo htmlspecialchars(t('asset-management.new.name')); ?></label>
+                        <input type="text" class="search-box" id="naName" required maxlength="50" autocomplete="off"
+                               placeholder="<?php echo htmlspecialchars(t('asset-management.new.name_ph')); ?>">
+                        <div class="form-hint"><?php echo htmlspecialchars(t('asset-management.new.name_hint')); ?></div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naAssetTag"><?php echo htmlspecialchars(t('asset-management.field.asset_tag')); ?></label>
+                        <input type="text" class="search-box" id="naAssetTag" maxlength="64" autocomplete="off"
+                               placeholder="<?php echo htmlspecialchars(t('asset-management.new.asset_tag_ph_auto')); ?>">
+                        <div class="form-hint"><?php echo htmlspecialchars(t('asset-management.new.asset_tag_hint')); ?></div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naType"><?php echo htmlspecialchars(t('asset-management.field.type')); ?></label>
+                        <select class="search-box" id="naType"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naStatus"><?php echo htmlspecialchars(t('asset-management.field.status')); ?></label>
+                        <select class="search-box" id="naStatus"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naLocation"><?php echo htmlspecialchars(t('asset-management.field.location')); ?></label>
+                        <select class="search-box" id="naLocation"></select>
+                    </div>
+                    <?php /* The built-in columns every asset has, whatever it is.
+                             Headed, because the type's own fields follow and the
+                             two can legitimately look similar (Manufacturer here,
+                             "Make" below) — unlabelled, that reads as the same
+                             question asked twice. */ ?>
+                    <div class="na-group-title"><?php echo htmlspecialchars(t('asset-management.new.builtin')); ?></div>
+                    <div class="form-group">
+                        <label class="form-label" for="naManufacturer"><?php echo htmlspecialchars(t('asset-management.field.manufacturer')); ?></label>
+                        <input type="text" class="search-box" id="naManufacturer" maxlength="50" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naModel"><?php echo htmlspecialchars(t('asset-management.field.model')); ?></label>
+                        <input type="text" class="search-box" id="naModel" maxlength="50" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="naSerial"><?php echo htmlspecialchars(t('asset-management.detail.service_tag')); ?></label>
+                        <input type="text" class="search-box" id="naSerial" maxlength="50" autocomplete="off">
+                    </div>
+                    <?php /* The chosen type's own fields, rendered live. */ ?>
+                    <div class="new-asset-next" id="naNext" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeNewAssetModal()"><?php echo htmlspecialchars(t('asset-management.common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary" id="naSaveBtn"><?php echo htmlspecialchars(t('asset-management.common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Assign User Modal -->
     <div class="modal" id="assignUserModal">
         <div class="modal-content">
@@ -930,6 +1778,18 @@ $translationNamespaces = ['common', 'asset-management'];
                 <span><?php echo htmlspecialchars(t('asset-management.assign.heading')); ?></span>
             </div>
             <div class="modal-body">
+                <div class="form-group">
+                    <?php /* Which directory to search. Analysts are not in
+                             `users` - on a real install most of the desk has no
+                             requester record at all - so this genuinely changes
+                             where the names come from, not just how they are
+                             filtered. */ ?>
+                    <label class="form-label"><?php echo htmlspecialchars(t('asset-management.assign.who_label')); ?></label>
+                    <div class="assign-kind-toggle">
+                        <button type="button" class="assign-kind-btn active" data-kind="user" onclick="setAssignKind('user')"><?php echo htmlspecialchars(t('asset-management.assign.kind_user')); ?></button>
+                        <button type="button" class="assign-kind-btn" data-kind="analyst" onclick="setAssignKind('analyst')"><?php echo htmlspecialchars(t('asset-management.assign.kind_analyst')); ?></button>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label class="form-label"><?php echo htmlspecialchars(t('asset-management.assign.search_label')); ?></label>
                     <input type="text" class="search-box" id="userSearchInput" placeholder="<?php echo htmlspecialchars(t('asset-management.assign.search_placeholder')); ?>" oninput="searchUsersForAssign()">
@@ -949,7 +1809,134 @@ $translationNamespaces = ['common', 'asset-management'];
         </div>
     </div>
 
+    <?php /* Hiding a physical drive (#97). One dialog for both directions: it
+             asks before hiding, and it warns before showing something back that
+             is hidden everywhere, because both decisions can reach past the
+             asset in front of you. The "others like this" count is fetched when
+             the dialog opens rather than for every drive on every asset. */ ?>
+    <div class="modal" id="diskHideModal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <span id="diskHideHeading"></span>
+            </div>
+            <div class="modal-body">
+                <div id="diskHideWhat" style="font-weight:600; margin-bottom:6px;"></div>
+                <div id="diskHideIntro" style="color: var(--text-muted, #666); font-size: 13px;"></div>
+                <label id="diskHideOthersRow" style="display:none; align-items:flex-start; gap:8px; margin-top:14px; cursor:pointer;">
+                    <input type="checkbox" id="diskHideOthers" style="margin-top:3px;">
+                    <span id="diskHideOthersLabel" style="font-size:13px;"></span>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDiskHideModal()"><?php echo htmlspecialchars(t('asset-management.common.cancel')); ?></button>
+                <button class="btn btn-primary" id="diskHideConfirm" onclick="confirmDiskVisibility()"></button>
+            </div>
+        </div>
+    </div>
+
     <!-- Asset History Modal -->
+    <!-- Add this equipment to a contract (discussion #106) -->
+    <?php /* GH #200 part C: pick the asset to connect. Same look as the contract picker. */ ?>
+    <div class="modal" id="connectPickerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span><?php echo htmlspecialchars(t('asset-management.connections.picker_title')); ?></span>
+            </div>
+            <div class="modal-body">
+                <p class="form-hint" style="margin-top:0;"><?php echo htmlspecialchars(t('asset-management.connections.picker_intro')); ?></p>
+                <input type="text" id="connectPickerSearch" class="ctr-pick-search" autocomplete="off"
+                       oninput="connectPickerInput()"
+                       placeholder="<?php echo htmlspecialchars(t('asset-management.connections.search_ph')); ?>">
+                <div id="connectPickerResults" class="contract-pick-results"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConnectPicker()"><?php echo htmlspecialchars(t('asset-management.common.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="contractPickerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span><?php echo htmlspecialchars(t('asset-management.detail.contract_picker_title')); ?></span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="contractPickerSearch" class="ctr-pick-search" autocomplete="off"
+                       oninput="contractPickerInput()"
+                       placeholder="<?php echo htmlspecialchars(t('asset-management.detail.contract_search_placeholder')); ?>">
+                <div id="contractPickerResults" class="contract-pick-results"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeContractPicker()"><?php echo htmlspecialchars(t('asset-management.common.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!--
+      Right-click an asset (Ed's request).
+
+      ⚠️ Reuses the .ticket-context-menu classes from inbox.css, which this page
+      already loads. The names say "ticket" and the styles are entirely
+      structural - menu, header, item, submenu parent with a flyout, and the
+      left-flip when there is no room on the right. A second copy of all that
+      under an asset-flavoured name is how two menus end up looking different.
+    -->
+    <div class="ticket-context-menu" id="assetContextMenu" role="menu">
+        <div class="ticket-context-menu-header" id="assetCtxHeader"></div>
+
+        <button class="ticket-context-menu-item" type="button" data-action="open">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.open')); ?></span>
+        </button>
+
+        <div class="asset-ctx-sep"></div>
+
+        <div class="ticket-context-menu-item ticket-context-menu-parent" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.status')); ?></span>
+            <span class="ctx-sub-arrow">&rsaquo;</span>
+            <div class="ticket-context-submenu" id="assetCtxStatus"></div>
+        </div>
+        <div class="ticket-context-menu-item ticket-context-menu-parent" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.type')); ?></span>
+            <span class="ctx-sub-arrow">&rsaquo;</span>
+            <div class="ticket-context-submenu" id="assetCtxType"></div>
+        </div>
+        <div class="ticket-context-menu-item ticket-context-menu-parent" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.location')); ?></span>
+            <span class="ctx-sub-arrow">&rsaquo;</span>
+            <div class="ticket-context-submenu" id="assetCtxLocation"></div>
+        </div>
+
+        <div class="asset-ctx-sep"></div>
+
+        <button class="ticket-context-menu-item" type="button" data-action="contract" id="assetCtxContract">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.add_to_contract')); ?></span>
+        </button>
+        <button class="ticket-context-menu-item" type="button" data-action="assign">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.assign')); ?></span>
+        </button>
+
+        <div class="asset-ctx-sep"></div>
+
+        <button class="ticket-context-menu-item" type="button" data-action="label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.print_label')); ?></span>
+        </button>
+        <button class="ticket-context-menu-item" type="button" data-action="copy-tag">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.copy_tag')); ?></span>
+        </button>
+        <button class="ticket-context-menu-item" type="button" data-action="copy-serial">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span><?php echo htmlspecialchars(t('asset-management.ctx.copy_serial')); ?></span>
+        </button>
+    </div>
+
     <div class="modal" id="assetHistoryModal">
         <div class="modal-content modal-wide">
             <div class="modal-header">
@@ -982,12 +1969,30 @@ $translationNamespaces = ['common', 'asset-management'];
     <script>
         const API_BASE = '../api/assets/';
         const API_TICKETS = '../api/tickets/';
+        // 2.6.0 — see the PHP at the top. `active` is the company this list
+        // shows; `all` is the All companies view, where it is only the LAST one
+        // picked, which is why adding an asset there must ask.
+        const ASSET_TENANCY = <?php echo json_encode($assetTenancy); ?>;
+        let assetCompanies = [];   // the companies this analyst can reach
+        // The detail pane's "nothing selected" state, as the page drew it, so an
+        // asset moved out of this company can leave the pane as it started.
+        const ASSET_DETAIL_EMPTY = document.getElementById('assetDetail').innerHTML;
+        function showNoAssetSelected() {
+            document.getElementById('assetDetail').innerHTML = ASSET_DETAIL_EMPTY;
+        }
         let assets = [];
         let selectedAssetId = null;
         let selectedAsset = null;
         let searchTimeout = null;
         let selectedUserForAssign = null;
         let currentAssignedUserId = null;
+        // An asset can be held by a requester OR by a member of the desk. Both
+        // kinds are tracked separately rather than as one id plus a flag,
+        // because the two ids come from different tables and a single variable
+        // holding "3" would be ambiguous at every read.
+        let selectedAnalystForAssign = null;
+        let currentAssignedAnalystId = null;
+        let assignTargetKind = 'user';
         let assetTypes = [];
         let assetStatusTypes = [];
         let assetLocations = [];
@@ -998,18 +2003,48 @@ $translationNamespaces = ['common', 'asset-management'];
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            loadAssets();
-            loadAssetTypesForDropdown();
-            loadAssetStatusTypesForDropdown();
-            loadLocationsForDropdown();
-            loadAssetSuppliersForDropdown();
+            // Load the list and the lookups the detail view needs, then honour a
+            // deep link (?asset_id=N) — e.g. from the command palette. We wait for
+            // the lookups so the selected asset's Type/Status/Location dropdowns
+            // render populated rather than empty on first paint.
+            Promise.all([
+                loadAssets(),
+                loadAssetTypesForDropdown(),
+                loadAssetStatusTypesForDropdown(),
+                loadLocationsForDropdown(),
+                loadAssetSuppliersForDropdown()
+            ]).then(function() {
+                // `asset_id` is the canonical spelling (includes/entity_links.php).
+                // `asset` is accepted as a LEGACY alias because the table view
+                // sent it until issue #84 was fixed, so it is already sitting in
+                // people's history and bookmarks.
+                //
+                // Accepted, but NOT silently: selectAsset() rewrites the address
+                // bar to the canonical form, so an old link works once and then
+                // corrects itself. That is deliberately different from being
+                // tolerant — a reader that quietly accepts both spellings is how
+                // the two drifted apart without anyone noticing (see GH #91).
+                var params = new URLSearchParams(window.location.search);
+                // ?new=1: New in the table view's action row lands here (#185).
+                if (params.get('new') === '1') { openNewAssetModal(); return; }
+                var aid = params.get('asset_id') || params.get('asset');
+                if (aid) {
+                    var n = parseInt(aid, 10);
+                    if (n) selectAsset(n);
+                }
+            });
         });
 
         async function loadAssetTypesForDropdown() {
             try {
                 const response = await fetch(API_BASE + 'get_asset_types.php');
                 const data = await response.json();
-                if (data.success) assetTypes = data.asset_types.filter(t => t.is_active);
+                if (data.success) {
+                    assetTypes = data.asset_types.filter(t => t.is_active);
+                    assetTypeLayouts = {};
+                    data.asset_types.forEach(t => { if (t.layout) assetTypeLayouts[t.id] = t.layout; });
+                    if (selectedAsset) applyAssetLayout();
+                }
             } catch (e) { console.error('Error loading asset types:', e); }
         }
 
@@ -1041,8 +2076,10 @@ $translationNamespaces = ['common', 'asset-management'];
         //   UK
         //      London
         //         Office 1
-        function buildLocationOptions(selectedId) {
-            const childrenOf = (pid) => assetLocations.filter(l => l.parent_id === pid);
+        // `list` defaults to the page's locations; the New asset form passes
+        // another company's when its Company picker names one (2.6.0).
+        function buildLocationOptions(selectedId, list = assetLocations) {
+            const childrenOf = (pid) => list.filter(l => l.parent_id === pid);
             const opts = [`<option value="">${window.t('asset-management.common.none_option')}</option>`];
             const walk = (pid, depth) => {
                 childrenOf(pid).forEach(loc => {
@@ -1072,6 +2109,21 @@ $translationNamespaces = ['common', 'asset-management'];
                 if (data.success) {
                     const asset = assets.find(a => a.id == selectedAssetId);
                     if (asset) asset[field] = value || null;
+                    // The panel is rendered from selectedAsset, not from the list,
+                    // so both copies have to move or the next re-render puts the
+                    // old value straight back.
+                    if (selectedAsset && selectedAsset.id == selectedAssetId) {
+                        selectedAsset[field] = value || null;
+                    }
+                    refreshExpiryFlag(field, value);
+                    // A status may retire the asset (or bring it back): reload, so the
+                    // date the server stamped shows, and the panel redraws with it.
+                    if (field === 'asset_status_id') {
+                        const keep = selectedAssetId;
+                        loadAssets(document.getElementById('assetSearch').value || '').then(() => selectAsset(keep));
+                    }
+                    // A new type brings its own layout (GH #200). Values are untouched.
+                    if (field === 'asset_type_id' || atlFinancialFields.includes(field)) applyAssetLayout();
                 } else {
                     showToast(window.t('asset-management.toast.update_error', { error: data.error }), 'error');
                 }
@@ -1080,11 +2132,70 @@ $translationNamespaces = ['common', 'asset-management'];
             }
         }
 
+        /**
+         * Save the asset tag (#935). Its own endpoint, because the tag is unique
+         * per company — see api/assets/save_asset_tag.php.
+         *
+         * On a clash the field is put back to what it was: leaving the rejected
+         * value on screen would let somebody walk away believing they'd numbered
+         * the asset, and then print a label that says something else.
+         */
+        async function saveAssetTag(value) {
+            if (!selectedAssetId) return;
+            const input = document.getElementById('assetTagInput');
+            const asset = assets.find(a => a.id == selectedAssetId);
+            const previous = asset ? (asset.asset_tag || '') : '';
+            try {
+                const response = await fetch(API_BASE + 'save_asset_tag.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: selectedAssetId, asset_tag: value })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    if (asset) asset.asset_tag = data.asset_tag || null;
+                    if (selectedAsset) selectedAsset.asset_tag = data.asset_tag || null;
+                    renderAssetsList();
+                } else {
+                    showToast(data.error, 'error');
+                    if (input) input.value = previous;
+                }
+            } catch (error) {
+                showToast(window.t('asset-management.toast.update_error', { error: 'network' }), 'error');
+                if (input) input.value = previous;
+            }
+        }
+
+        /** Open the printable label sheet for one asset. */
+        function printAssetLabel(assetId) {
+            window.open('labels.php?ids=' + encodeURIComponent(assetId), '_blank');
+        }
+
         // Load assets from API
+        // Retired assets (they have left the estate) are left out unless the switch
+        // is on - remembered in this browser. The asset open in the panel, or named
+        // in the address bar, is always included, so a link to a retired asset from
+        // a ticket or a search still opens it.
+        let showRetired = false;
+        try { showRetired = localStorage.getItem('assets_show_retired') === '1'; } catch (e) {}
+        function assetListUrl(search) {
+            const p = new URLSearchParams();
+            if (search) p.set('search', search);
+            if (showRetired) p.set('include_retired', '1');
+            const also = selectedAssetId || new URLSearchParams(window.location.search).get('asset_id');
+            if (also) p.set('also_id', String(also));
+            return API_BASE + 'get_assets.php?' + p.toString();
+        }
+        function toggleShowRetired(on) {
+            showRetired = !!on;
+            try { localStorage.setItem('assets_show_retired', showRetired ? '1' : '0'); } catch (e) {}
+            loadAssets(document.getElementById('assetSearch').value || '');
+        }
+        document.addEventListener('DOMContentLoaded', () => { const c = document.getElementById('assetShowRetired'); if (c) c.checked = showRetired; });
+
         async function loadAssets(search = '') {
             try {
-                const url = search ? `${API_BASE}get_assets.php?search=${encodeURIComponent(search)}` : API_BASE + 'get_assets.php';
-                const response = await fetch(url);
+                const response = await fetch(assetListUrl(search));
                 const data = await response.json();
 
                 if (data.success) {
@@ -1099,28 +2210,150 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         // Render assets list
+        /**
+         * The icon for an asset's type, as an <svg> string (#1146).
+         *
+         * Returns '' for no type, no icon, or a library that failed to load —
+         * so the list is byte-identical on an install that has never picked one.
+         * The markup is our own, from a fixed library, never user input.
+         */
+        function assetTypeIcon(typeId, size) {
+            if (!typeId || !window.nmRenderIcon) return '';
+            const t = assetTypes.find(x => x.id == typeId);
+            if (!t || !t.icon_key) return '';
+            return window.nmRenderIcon(t.icon_key, size || 15, 'class="asset-type-icon"');
+        }
+
         function renderAssetsList() {
             const container = document.getElementById('assetsList');
             const countEl = document.getElementById('assetCount');
 
             if (assets.length === 0) {
                 container.innerHTML = `<div class="empty-state">${window.t('asset-management.list.no_assets')}</div>`;
-                countEl.textContent = window.t('asset-management.list.count', { count: 0 });
+                countEl.textContent = window.t('asset-management.list.count_heading', { count: 0 });
                 return;
             }
 
-            countEl.textContent = window.t('asset-management.list.count', { count: assets.length });
+            countEl.textContent = window.t('asset-management.list.count_heading', { count: assets.length });
 
             container.innerHTML = assets.map(asset => `
-                <div class="asset-item ${selectedAssetId == asset.id ? 'selected' : ''}" onclick="selectAsset(${asset.id})">
-                    <div class="asset-hostname">${escapeHtml(asset.hostname)}</div>
+                <div class="asset-item ${selectedAssetId == asset.id ? 'selected' : ''} ${assetSelection.has(asset.id) ? 'multi-selected' : ''}"
+                     data-asset-id="${asset.id}" onclick="handleAssetRowClick(event, ${asset.id})"
+                     oncontextmenu="return openAssetContextMenu(event, ${asset.id});">
+                    <?php /* The type's icon (#1146) — the whole point of the
+                             feature. 576 rows of near-identical text become
+                             scannable, and a television stops looking like a
+                             laptop. Absent when the type has no icon, or has no
+                             type at all, so nothing shifts for an install that
+                             never sets one. */ ?>
+                    <div class="asset-hostname">${assetTypeIcon(asset.asset_type_id)}${escapeHtml(asset.hostname)}</div>
                     <div class="asset-meta">
+                        ${asset.asset_tag ? `<span class="asset-tag-chip">${escapeHtml(asset.asset_tag)}</span>` : ''}
+                        ${asset.retired_datetime ? `<span class="asset-retired-chip">${escapeHtml(window.t('asset-management.retired.badge'))}</span>` : ''}
                         <span class="${asset.user_count > 0 ? 'asset-assigned' : 'asset-unassigned'}">
                             ${asset.user_count > 0 ? window.t('asset-management.status.assigned') : window.t('asset-management.status.unassigned')}
                         </span>
                     </div>
                 </div>
             `).join('');
+
+            renderAssetSelectionBar();
+        }
+
+        // ===================================================================
+        // Picking several assets — for printing a batch of labels (#935)
+        // ===================================================================
+        //
+        // Same idiom as the ticket inbox (#910): a plain click still OPENS the
+        // asset, exactly as before, and Ctrl/Shift build a selection on top.
+        // No checkboxes and no "selection mode" toggle — both would change the
+        // list for everyone to serve an occasional job.
+        let assetSelection = new Set();
+        let assetSelectionAnchor = null;
+
+        /**
+         * Stop Shift-click smearing the browser's text selection across the list.
+         *
+         * The selection starts on MOUSEDOWN, so a `user-select: none` class
+         * toggled in the click handler is always one beat too late — the text is
+         * already highlighted by then. Cancelling the mousedown default is what
+         * actually prevents it, and it takes Edge's selection mini-menu with it:
+         * that popup is triggered BY having text selected, so the two symptoms
+         * are one cause.
+         */
+        document.addEventListener('mousedown', function (e) {
+            if (!e.shiftKey) return;
+            if (e.target.closest && e.target.closest('#assetsList')) e.preventDefault();
+        });
+
+        function handleAssetRowClick(event, assetId) {
+            const ctrl = event.ctrlKey || event.metaKey;
+
+            if (ctrl) {
+                if (assetSelection.has(assetId)) assetSelection.delete(assetId);
+                else assetSelection.add(assetId);
+                assetSelectionAnchor = assetId;
+            } else if (event.shiftKey && assetSelectionAnchor !== null) {
+                // A block, from the anchor to here, in the order the list is in.
+                const ids = assets.map(a => a.id);
+                const from = ids.indexOf(assetSelectionAnchor);
+                const to   = ids.indexOf(assetId);
+                if (from !== -1 && to !== -1) {
+                    const [lo, hi] = from <= to ? [from, to] : [to, from];
+                    for (let i = lo; i <= hi; i++) assetSelection.add(ids[i]);
+                }
+            } else {
+                // Plain click: open it. selectAsset() reseeds the selection to
+                // just this asset, so a following Ctrl-click gives you two.
+                selectAsset(assetId);
+                return;
+            }
+
+            paintAssetSelection();
+            renderAssetSelectionBar();
+        }
+
+        /** Toggle the highlight in place — no re-render, so the list doesn't jump. */
+        function paintAssetSelection() {
+            // Belt and braces: if a selection did start (a drag, or a browser
+            // that ignores the mousedown cancel), clear it rather than leave the
+            // list looking smeared.
+            const sel = window.getSelection && window.getSelection();
+            if (sel && !sel.isCollapsed) sel.removeAllRanges();
+            document.querySelectorAll('#assetsList .asset-item').forEach(el => {
+                const id = Number(el.dataset.assetId);
+                el.classList.toggle('multi-selected', assetSelection.has(id));
+            });
+        }
+
+        function renderAssetSelectionBar() {
+            const bar = document.getElementById('assetSelectBar');
+            if (!bar) return;
+            const n = assetSelection.size;
+            // One picked asset is just "the open one" — the bar would be noise.
+            if (n < 2) { bar.hidden = true; return; }
+            document.getElementById('assetSelectCount').textContent =
+                window.t('asset-management.list.n_selected', { count: n });
+            bar.hidden = false;
+        }
+
+        /**
+         * Drop the extras, back to just the asset that's open.
+         * NOT back to nothing: something is on screen, and a list where the row
+         * you are looking at claims not to be selected is the same inconsistency
+         * this whole fix is about.
+         */
+        function clearAssetSelection() {
+            assetSelection = selectedAssetId ? new Set([Number(selectedAssetId)]) : new Set();
+            assetSelectionAnchor = selectedAssetId ? Number(selectedAssetId) : null;
+            paintAssetSelection();
+            renderAssetSelectionBar();
+        }
+
+        /** Print labels for everything picked, in one sheet. */
+        function printSelectedLabels() {
+            if (!assetSelection.size) return;
+            window.open('labels.php?ids=' + encodeURIComponent(Array.from(assetSelection).join(',')), '_blank');
         }
 
         // Search assets with debounce
@@ -1133,9 +2366,53 @@ $translationNamespaces = ['common', 'asset-management'];
         }
 
         // Select an asset and show details
+        /**
+         * A retired asset's banner: when it left (stamped with its status) and why,
+         * the reason editable in place - "Transferred to the Ministry of Education".
+         */
+        function retiredBanner(a) {
+            const when = window.fmtDateTime ? fmtDateTime(String(a.retired_datetime).replace(' ', 'T') + 'Z') : a.retired_datetime;
+            return `<div class="asset-retired-banner"><strong>${escapeHtml(window.t('asset-management.retired.since', { date: when }))}</strong>`
+                + `<input type="text" class="asset-retired-reason" maxlength="255" value="${escapeHtml(a.retired_reason || '')}"`
+                + ` placeholder="${escapeHtml(window.t('asset-management.retired.reason_placeholder'))}" aria-label="${escapeHtml(window.t('asset-management.retired.reason'))}"`
+                + ` onchange="updateAssetField('retired_reason', this.value.trim())"></div>`;
+        }
+
         async function selectAsset(assetId) {
             selectedAssetId = assetId;
             selectedAsset = assets.find(a => a.id == assetId);
+
+            // The recent trail (#124).
+            if (window.trailVisit) window.trailVisit('asset', assetId);
+
+            // Put the open asset in the address bar, so the URL can be copied,
+            // bookmarked or reloaded and land back on the same asset. replaceState
+            // rather than pushState: the list stays on screen, so choosing an
+            // asset is not navigation — pushing would fill the Back button with
+            // steps that never visibly go anywhere. Matches the portal ticket
+            // list (self-service/tickets.php).
+            //
+            // It also normalises the legacy `?asset=` spelling on arrival, so an
+            // old link corrects itself the moment it lands.
+            //
+            // Guarded: history writes throw in some contexts (file:// origins,
+            // strict embedders), and a URL nicety must never stop the asset
+            // itself loading.
+            try {
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState({ assetId: Number(assetId) }, '',
+                        window.location.pathname + '?asset_id=' + Number(assetId));
+                }
+            } catch (e) { /* not fatal */ }
+
+            // The asset you have OPEN is part of the selection — the way the
+            // highlighted row is in Explorer and Outlook. Opening one and then
+            // Ctrl-clicking a second must give you two, not one; seeding here
+            // (rather than in the click handler) also covers arriving by deep
+            // link, so the rule holds however the asset came to be open.
+            assetSelection = new Set([Number(assetId)]);
+            assetSelectionAnchor = Number(assetId);
+
             renderAssetsList();
 
             if (!selectedAsset) return;
@@ -1144,11 +2421,22 @@ $translationNamespaces = ['common', 'asset-management'];
             detailContainer.innerHTML = `
                 <div class="asset-detail-sticky">
                     <div class="asset-detail-header">
-                        <h2 class="asset-detail-hostname">${escapeHtml(selectedAsset.hostname)}</h2>
+                        <h2 class="asset-detail-hostname">${assetTypeIcon(selectedAsset.asset_type_id, 20)}${escapeHtml(selectedAsset.hostname)}</h2>
+                        ${selectedAsset.retired_datetime ? retiredBanner(selectedAsset) : ''}
                         <div class="asset-detail-subtitle">${window.t('asset-management.detail.service_tag')}: ${escapeHtml(selectedAsset.service_tag) || '-'}</div>
-                        <div style="margin-top: 10px;">
-                            <button class="btn btn-outline btn-sm" onclick="openHistoryModal(${selectedAsset.id})">${window.t('asset-management.detail.view_history')}</button>
-                            <button class="btn btn-outline btn-sm" onclick="openCheckoutLog(${selectedAsset.id})">${window.t('asset-management.detail.custody')}</button>
+                        <?php /* The three asset actions. On a phone mobile.css (LAYER 14b)
+                                 lifts this row out of the header and pins it along the bottom
+                                 of the pane, icon-only — the treatment a knowledge article's
+                                 actions already get. Each button therefore carries BOTH an icon
+                                 and its label: the icon is hidden on the desktop, the label on
+                                 a phone, and `title` keeps the word available to a reader or a
+                                 hover either way. */ ?>
+                        <div class="asset-detail-actions">
+                            <button class="btn btn-outline btn-sm" onclick="openHistoryModal(${selectedAsset.id})" title="${window.t('asset-management.detail.view_history')}"><span class="asset-act-icon" aria-hidden="true">🕘</span><span class="asset-act-label">${window.t('asset-management.detail.view_history')}</span></button>
+                            <button class="btn btn-outline btn-sm" onclick="openCheckoutLog(${selectedAsset.id})" title="${window.t('asset-management.detail.custody')}"><span class="asset-act-icon" aria-hidden="true">🔄</span><span class="asset-act-label">${window.t('asset-management.detail.custody')}</span></button>
+                            <?php /* QR label (#935). Opens the print sheet for this one asset;
+                                     the sheet takes a list, so a future multi-select prints many. */ ?>
+                            <button class="btn btn-outline btn-sm" onclick="printAssetLabel(${selectedAsset.id})" title="${window.t('asset-management.detail.print_label')}"><span class="asset-act-icon" aria-hidden="true">🏷️</span><span class="asset-act-label">${window.t('asset-management.detail.print_label')}</span></button>
                         </div>
                         <div class="asset-assigned-bar" id="assignedBar">
                             <div class="asset-assigned-info" id="assignedInfo">
@@ -1157,7 +2445,34 @@ $translationNamespaces = ['common', 'asset-management'];
                             <span id="assignButtons"></span>
                         </div>
                     </div>
+                    <div class="detail-tabs" id="detailTabs">
+                        <button class="detail-tab active" onclick="switchDetailTab('keyinfo')" data-dtab="keyinfo">${window.t('asset-management.detail.tab_keyinfo')}</button>
+                        <button class="detail-tab" onclick="switchDetailTab('financial')" data-dtab="financial">${window.t('asset-management.detail.tab_financial')}</button>
+                        <button class="detail-tab" onclick="switchDetailTab('devices')" data-dtab="devices">${window.t('asset-management.detail.tab_devices')} <span class="tab-count" id="devicesCountBadge">...</span></button>
+                        ${window.ASSET_MODULE_ON.software ? `<button class="detail-tab" onclick="switchDetailTab('software')" data-dtab="software">${window.t('asset-management.detail.tab_software')} <span class="tab-count" id="softwareCountBadge">...</span></button>` : ''}<?php /* GH #217 */ ?>
+                        <button class="detail-tab" onclick="switchDetailTab('connected')" data-dtab="connected">${window.t('asset-management.detail.tab_connected')} <span class="tab-count" id="connectedCountBadge">...</span></button>
+                        <button class="detail-tab" onclick="switchDetailTab('tickets')" data-dtab="tickets">${window.t('asset-management.detail.tab_tickets')} <span class="tab-count" id="ticketsCountBadge">...</span></button>
+                        ${window.ASSET_MODULE_ON.contracts ? `<button class="detail-tab" onclick="switchDetailTab('contracts')" data-dtab="contracts">${window.t('asset-management.detail.tab_contracts')} <span class="tab-count" id="contractsCountBadge">...</span></button>` : ''}<?php /* GH #217 */ ?>
+                        ${window.ASSET_SHOW_PROJECTS ? `<button class="detail-tab" onclick="switchDetailTab('projects')" data-dtab="projects">${window.tf ? window.tf('projects.links_other.title', 'Projects') : 'Projects'}</button>` : ''}
+                        <button class="detail-tab" onclick="switchDetailTab('documents')" data-dtab="documents">${window.t('common.documents.heading')}</button>
+                    </div>
+                </div>
+                <div class="asset-detail-body" id="detailBody">
+                    <div class="detail-tab-panel detail-tab-panel--scroll active" id="keyinfoPanel" data-dtab-panel="keyinfo">
+                    <div class="atl-notice atl-hidden" id="layoutNotice" role="status"></div>
+                    <div class="atl-notice atl-hidden" id="reviewNotice" role="status"></div>
                     <div class="asset-info-grid">
+                        <?php /* The number printed on the label. Saved on change through its
+                                 own endpoint, because it is unique per company and the generic
+                                 field writer has no reason to know about tenants. */ ?>
+                        <div class="info-item">
+                            <span class="info-label">${window.t('asset-management.field.asset_tag')}</span>
+                            <input type="text" class="info-value-input" id="assetTagInput" maxlength="64"
+                                   value="${escapeHtml(selectedAsset.asset_tag || '')}"
+                                   placeholder="${window.t('asset-management.field.asset_tag_ph')}"
+                                   onchange="saveAssetTag(this.value)">
+                        </div>
+                        ${assetCompanyFieldHtml(selectedAsset)}
                         <div class="info-item">
                             <span class="info-label">${window.t('asset-management.field.type')}</span>
                             <select class="info-value-select" onchange="updateAssetField('asset_type_id', this.value)">
@@ -1178,42 +2493,140 @@ $translationNamespaces = ['common', 'asset-management'];
                                 ${buildLocationOptions(selectedAsset.location_id)}
                             </select>
                         </div>
-                        <div class="info-item">
+                        <?php /* Editable since #1143. On a machine that reports
+                                 in these are overwritten by the next sync, which
+                                 is why they used to be read-only — but nothing
+                                 will ever report a television's model, and a
+                                 typo made while adding one by hand had no way
+                                 to be corrected. saveCoreField() warns rather
+                                 than blocks; see it for the reasoning. */ ?>
+                        <div class="info-item" data-layout-section="make_model" data-protect-field="manufacturer">
                             <span class="info-label">${window.t('asset-management.field.manufacturer')}</span>
-                            <span class="info-value">${escapeHtml(selectedAsset.manufacturer) || '-'}</span>
+                            <input type="text" class="info-value-input" maxlength="50"
+                                   value="${escapeHtml(selectedAsset.manufacturer || '')}" placeholder="-"
+                                   onchange="saveCoreField('manufacturer', this)">
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="make_model" data-protect-field="model">
                             <span class="info-label">${window.t('asset-management.field.model')}</span>
-                            <span class="info-value">${escapeHtml(selectedAsset.model) || '-'}</span>
+                            <input type="text" class="info-value-input" maxlength="50"
+                                   value="${escapeHtml(selectedAsset.model || '')}" placeholder="-"
+                                   onchange="saveCoreField('model', this)">
                         </div>
                         <div class="info-item">
+                            <span class="info-label">${window.t('asset-management.detail.service_tag')}</span>
+                            <input type="text" class="info-value-input" maxlength="50"
+                                   value="${escapeHtml(selectedAsset.service_tag || '')}" placeholder="-"
+                                   onchange="saveCoreField('service_tag', this)">
+                        </div>
+                        <?php /* The NAME. Shown here as well as in the heading
+                                 because the heading is a title, not a control —
+                                 and this is the field most likely to carry a
+                                 typo from the Add dialog. */ ?>
+                        <div class="info-item" data-protect-field="hostname">
+                            <span class="info-label">${window.t('asset-management.new.name')}</span>
+                            <input type="text" class="info-value-input" maxlength="50"
+                                   value="${escapeHtml(selectedAsset.hostname || '')}"
+                                   onchange="saveCoreField('hostname', this)">
+                        </div>
+                        <div class="info-item" data-layout-section="hardware">
                             <span class="info-label">${window.t('asset-management.field.cpu')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.cpu_name) || '-'}</span>
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="hardware">
                             <span class="info-label">${window.t('asset-management.field.cpu_speed')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.speed) || '-'}</span>
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="hardware">
                             <span class="info-label">${window.t('asset-management.field.memory')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.memory) || '-'}</span>
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="os">
                             <span class="info-label">${window.t('asset-management.field.operating_system')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.operating_system) || '-'}</span>
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="os">
                             <span class="info-label">${window.t('asset-management.field.feature_release')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.feature_release) || '-'}</span>
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="os">
                             <span class="info-label">${window.t('asset-management.field.build_number')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.build_number) || '-'}</span>
                         </div>
-                        <div class="info-item">
+                        <div class="info-item" data-layout-section="os">
                             <span class="info-label">${window.t('asset-management.field.bios_version')}</span>
                             <span class="info-value">${escapeHtml(selectedAsset.bios_version) || '-'}</span>
                         </div>
+                        <?php /* When the agent last reported (discussion #97).
+                                 Last, and in that order, because they close the
+                                 agent-reported block above rather than opening
+                                 the purchase block below — and because the
+                                 question they answer is "is any of the above
+                                 still true?". Watchtower has counted machines
+                                 that stopped reporting for a long time; until
+                                 now the asset itself would not say when. */ ?>
+                        <div class="info-item" data-layout-section="reporting">
+                            <span class="info-label">${window.t('asset-management.field.first_seen')}</span>
+                            <span class="info-value">${seenHtml(selectedAsset.first_seen, false)}</span>
+                        </div>
+                        <div class="info-item" data-layout-section="reporting">
+                            <span class="info-label">${window.t('asset-management.field.last_seen')}</span>
+                            <span class="info-value">${seenHtml(selectedAsset.last_seen, true)}</span>
+                        </div>
+                    </div>
+                    <?php /* Custom fields (docs/design/flexible-asset-fields.md).
+                             Sits between the built-in details and Storage: it is
+                             more of the same question ("what is this thing?"),
+                             not a separate topic, so it does not earn a tab.
+                             Empty for a plain laptop, and silent when so. */ ?>
+                    <div class="custom-fields-section" id="customFieldsSection" style="display:none;">
+                        <div class="section-header">
+                            <span class="section-title">${window.t('asset-management.detail.cf_heading')}</span>
+                            <span class="cf-count" id="cfCount"></span>
+                        </div>
+                        <div id="assetCustomFields"></div>
+                    </div>
+                    <?php /* GH #201: the configuration item this asset is the same equipment as. A layout
+                             section, so a type that will never be a CI (a monitor) can hide it. */ ?>
+                    <div class="ci-link-section" data-layout-section="cmdb" id="ciLinkSection"></div>
+                    <div class="disks-section" data-layout-section="storage">
+                        <div class="section-header">
+                            <span class="section-title">${window.t('asset-management.detail.storage')}</span>
+                        </div>
+                        <div class="inv-lines" id="invLinesStorage"></div>
+                        <div class="disks-grid" id="disksGrid">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+                        <?php /* The physical drives (discussion #97). Cards in a
+                                 second grid rather than a table, deliberately:
+                                 they belong to the same question as the volumes
+                                 directly above, the grid already wraps on a
+                                 phone, and a table here would need its own
+                                 mobile card-feed rules to say the same thing.
+                                 Hidden outright when the agent has reported
+                                 none — a heading over an empty space reads as a
+                                 failure to load. */ ?>
+                        <div id="physicalDisksSection" style="display:none;">
+                            <div class="section-header">
+                                <span class="section-title">${window.t('asset-management.disk.drives')}</span>
+                                <?php /* The way back. Only rendered when this
+                                         asset actually has something hidden —
+                                         a permanent "Show hidden (0)" would be
+                                         a control that never does anything. */ ?>
+                                <a href="#" id="diskHiddenToggle" style="display:none; font-size:12px;" onclick="toggleHiddenDrives(event)"></a>
+                            </div>
+                            <div class="disks-grid" id="physicalDisksGrid"></div>
+                        </div>
+                    </div>
+                    <?php /* GH #200 Part B: every source that reports this asset, and how fresh each of
+                             its lists is. NOT a layout section - it is how a hidden list's freshness
+                             stays reachable, so no type's layout hides it. Empty (and so not shown)
+                             for an asset nothing reports, such as a monitor. */ ?>
+                    <div class="inv-panel" id="inventorySourcesPanel" style="display:none;"></div>
+                    </div>
+                    <?php /* Financial (3.5.0): purchase, supplier, cost centre, warranty and lease -
+                             everything to do with money, moved out of a busy Key info. */ ?>
+                    <div class="detail-tab-panel detail-tab-panel--scroll" id="financialPanel" data-dtab-panel="financial">
+                    <div class="asset-info-grid">
                         <div class="info-item">
                             <span class="info-label">${window.t('asset-management.field.purchase_date')}</span>
                             <input type="date" class="info-value-input" value="${selectedAsset.purchase_date || ''}" onchange="updateAssetField('purchase_date', this.value)">
@@ -1230,29 +2643,34 @@ $translationNamespaces = ['common', 'asset-management'];
                             </select>
                         </div>
                         <div class="info-item">
+                            <span class="info-label">${window.t('asset-management.field.cost_centre')}</span>
+                            <select class="info-value-select" id="assetCostCentre" onchange="updateAssetField('cost_centre_id', this.value)">
+                                <option value="">${window.t('asset-management.common.none_option')}</option>
+                                ${selectedAsset.cost_centre_id ? `<option value="${selectedAsset.cost_centre_id}" selected>${escapeHtml(selectedAsset.cost_centre_label || '')}</option>` : ''}
+                            </select>
+                        </div>
+                        <div class="info-item">
                             <span class="info-label">${window.t('asset-management.field.order_number')}</span>
                             <input type="text" class="info-value-input" value="${escapeHtml(selectedAsset.order_number || '')}" placeholder="-" onchange="updateAssetField('order_number', this.value)">
                         </div>
                         <div class="info-item">
-                            <span class="info-label">${window.t('asset-management.field.warranty_expiry')}</span>
+                            <span class="info-label">${window.t('asset-management.field.warranty_expiry')}<span class="expiry-slot" data-expiry-field="warranty_expiry">${expiryFlag(selectedAsset.warranty_expiry)}</span></span>
                             <input type="date" class="info-value-input" value="${selectedAsset.warranty_expiry || ''}" onchange="updateAssetField('warranty_expiry', this.value)">
                         </div>
-                    </div>
-                </div>
-                <div class="asset-detail-scroll">
-                    <div class="disks-section">
-                        <div class="section-header">
-                            <span class="section-title">${window.t('asset-management.detail.storage')}</span>
+                        <div class="info-item">
+                            <span class="info-label">${window.t('asset-management.field.lease_start')}</span>
+                            <input type="date" class="info-value-input" value="${selectedAsset.lease_start || ''}" onchange="updateAssetField('lease_start', this.value)">
                         </div>
-                        <div class="disks-grid" id="disksGrid">
-                            <div class="loading"><div class="spinner"></div></div>
+                        <div class="info-item">
+                            <span class="info-label">${window.t('asset-management.field.lease_expiry')}<span class="expiry-slot" data-expiry-field="lease_expiry">${expiryFlag(selectedAsset.lease_expiry)}</span></span>
+                            <input type="date" class="info-value-input" value="${selectedAsset.lease_expiry || ''}" onchange="updateAssetField('lease_expiry', this.value)">
                         </div>
+                        <?php /* Assets -> Leases (3.5.0): which lease it is on. Filled by loadAssetLease(). */ ?>
+                        <div class="info-item" id="assetLeaseLine" style="grid-column:1/-1;display:none;font-size:13px;color:var(--text-muted);"></div>
                     </div>
-                    <div class="detail-tabs" id="detailTabs">
-                        <button class="detail-tab active" onclick="switchDetailTab('devices')" data-dtab="devices">${window.t('asset-management.detail.tab_devices')} <span class="tab-count" id="devicesCountBadge">...</span></button>
-                        <button class="detail-tab" onclick="switchDetailTab('software')" data-dtab="software">${window.t('asset-management.detail.tab_software')} <span class="tab-count" id="softwareCountBadge">...</span></button>
                     </div>
-                    <div class="detail-tab-panel active" id="devicesPanel" data-dtab-panel="devices">
+                    <div class="detail-tab-panel" id="devicesPanel" data-dtab-panel="devices">
+                        <div class="inv-lines" id="invLinesDevices"></div>
                         <div class="devices-search">
                             <input type="text" id="devicesSearch" placeholder="${window.t('asset-management.devices.filter_placeholder')}" oninput="filterDevices()" autocomplete="off">
                         </div>
@@ -1261,6 +2679,7 @@ $translationNamespaces = ['common', 'asset-management'];
                         </div>
                     </div>
                     <div class="detail-tab-panel" id="softwarePanel" data-dtab-panel="software">
+                        <div class="inv-lines" id="invLinesSoftware"></div>
                         <div class="sw-filter-tabs">
                             <button class="sw-filter-tab active" data-swfilter="apps" onclick="switchSwTab('apps')">${window.t('asset-management.software.applications')} <span class="sw-tab-count" id="swCountApps">0</span></button>
                             <button class="sw-filter-tab" data-swfilter="components" onclick="switchSwTab('components')">${window.t('asset-management.software.components')} <span class="sw-tab-count" id="swCountComponents">0</span></button>
@@ -1270,15 +2689,488 @@ $translationNamespaces = ['common', 'asset-management'];
                             <div class="loading"><div class="spinner"></div></div>
                         </div>
                     </div>
+                    <?php /* GH #200 part C: physical connections, from both ends. */ ?>
+                    <div class="detail-tab-panel detail-tab-panel--scroll" id="connectedPanel" data-dtab-panel="connected">
+                        <div class="conn-head">
+                            <span class="conn-intro">${escapeHtml(window.t('asset-management.connections.intro'))}</span>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="openConnectPicker()">${escapeHtml(window.t('asset-management.connections.connect'))}</button>
+                        </div>
+                        <div id="connectionsList"><div class="loading"><div class="spinner"></div></div></div>
+                    </div>
+                    <div class="detail-tab-panel detail-tab-panel--scroll" id="ticketsPanel" data-dtab-panel="tickets">
+                        <div class="asset-tickets-list" id="assetTicketsList">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+                    </div>
+                    <div class="detail-tab-panel detail-tab-panel--scroll" id="contractsPanel" data-dtab-panel="contracts">
+                        <div class="asset-contracts-list" id="assetContractsList">
+                            <div class="loading"><div class="spinner"></div></div>
+                        </div>
+                    </div>
+                    ${window.ASSET_SHOW_PROJECTS ? '<div class="detail-tab-panel detail-tab-panel--scroll" id="projectsPanel" data-dtab-panel="projects"><div id="assetProjects" style="padding:4px 2px"></div></div>' : ''}
+                    <div class="detail-tab-panel detail-tab-panel--scroll" id="documentsPanel" data-dtab-panel="documents">
+                        <div id="assetDocuments"></div>
+                    </div>
                 </div>
             `;
+
+            // The type's layout (GH #200): which sections and tabs show, and what they hide.
+            atlStartAsset();
+            applyAssetLayout();
+            document.getElementById('assetDocuments').addEventListener('fd:count', e => atlSaw('documents', e.detail.total));
 
             // Load assigned users, disks, devices, installed software, and (if matched) Intune data
             loadAssignedUsers(assetId);
             loadDisks(assetId);
             loadDevices(assetId);
-            loadInstalledSoftware(assetId);
+            if (window.ASSET_MODULE_ON.software) loadInstalledSoftware(assetId);   // GH #217: not while switched off
+            loadInventoryStatus(assetId);
+            loadConnections(assetId);
             loadIntuneDevice(assetId);
+            loadAssetTickets(assetId);
+            if (window.ASSET_MODULE_ON.contracts) loadAssetContracts(assetId);
+            loadAssetCostCentres(selectedAsset);
+            // Projects (3.2.0): the projects this asset is part of.
+            if (window.ASSET_SHOW_PROJECTS && window.ProjectLinks) ProjectLinks.mount(document.getElementById('assetProjects'), { kind: 'asset', id: assetId, base: window.APP_BASE || '../', bare: true });
+            loadCustomFields(assetId);
+            // GH #217: an empty section while CMDB is off
+            if (window.CiAssetLink && window.ASSET_MODULE_ON.cmdb) CiAssetLink.mount(document.getElementById('ciLinkSection'), {
+                side: 'asset', id: assetId, base: window.APP_BASE || '../',
+                cardClass: 'ci-link-block', headClass: 'section-header', titleClass: 'section-title',
+                onState: s => { if (Number(selectedAssetId) === Number(assetId)) atlSaw('cmdb', s.linked ? 1 : 0); }
+            });
+
+            // ⚠️ MOUNTED, not re-pointed. This detail pane rebuilds its whole DOM
+            // on every asset you click, so the previous panel's element is already
+            // gone — there is nothing to call setParent() on. A server-rendered
+            // page like contracts/edit.php uses renderDocumentsPanel() instead;
+            // this one loads the assets in the head and calls the JS directly,
+            // which is why documentsPanelAssets() is separate from the renderer.
+            FreeITSMDocuments.mount(document.getElementById('assetDocuments'), {
+                parentType: 'asset',
+                parentId:   assetId,
+                apiBase:    '../api/documents/'
+            });
+            loadAssetLease(assetId);
+        }
+
+        /**
+         * Assets -> Leases (3.5.0): "On lease X - schedule" under the lease
+         * dates, linking to the lease. The dates above ARE the lease's for an
+         * asset on one; typing new ones here makes them this asset's own.
+         */
+        async function loadAssetLease(assetId) {
+            const line = document.getElementById('assetLeaseLine');
+            if (!line) return;
+            try {
+                const r = await fetch('../api/assets/leases/for_asset.php?asset_id=' + encodeURIComponent(assetId));
+                const d = await r.json();
+                if (!d.success || !d.leases || !d.leases.length || !selectedAsset || selectedAsset.id != assetId) { line.style.display = 'none'; return; }
+                const l = d.leases[0];
+                const T = k => window.t('asset-management.leases.' + k);
+                // One span: .info-item is a flex column, so loose pieces would stack.
+                line.innerHTML = `<span>${escapeHtml(l.active ? T('panel_on_lease') : T('panel_was_on'))}: `
+                    + `<a href="leases/view.php?id=${l.lease_id}" style="color:var(--accent);text-decoration:none;">${escapeHtml(l.lease_name)}</a>`
+                    + (l.schedule_name ? ` · ${escapeHtml(l.schedule_name)}` : '')
+                    + (l.active ? '' : ` · ${escapeHtml(l.outcome_name || '')}`)
+                    + (l.active && l.own_dates ? ` <em>(${escapeHtml(T('panel_own_dates'))})</em>` : '') + '</span>';
+                line.style.display = '';
+            } catch (e) { line.style.display = 'none'; }
+        }
+
+        /**
+         * Tickets raised against this asset (discussion #57).
+         *
+         * The half of the feature that pays for the linking: the answer to "has
+         * this thing broken before?" is only visible from the asset's side.
+         * Open tickets first, then closed ones as history — the endpoint caps
+         * closed at 20 and returns the true total so a long-suffering monitor
+         * doesn't render five years of rows.
+         */
+        /**
+         * Contracts covering this asset (discussion #106).
+         *
+         * The half of the linking that pays for it: standing on a handset and
+         * asking what agreement it is on, when it ends, and by when you have to
+         * give notice. The notice date is the one people actually miss, so it is
+         * shown on the row rather than left on the contract page.
+         *
+         * ⚠️ An analyst without the Contracts module gets a sentence saying so,
+         * not an empty list. "No contracts" and "you may not see contracts" are
+         * different answers and reading one as the other is how somebody
+         * concludes a contract was never set up.
+         */
+        // The cost centres this asset can be charged to (GH #160): its own
+        // company's active ones, plus its current one if that has been switched off.
+        async function loadAssetCostCentres(asset) {
+            const sel = document.getElementById('assetCostCentre');
+            if (!sel || !asset) return;
+            try {
+                const q = new URLSearchParams({ company_id: asset.tenant_id || '', keep: asset.cost_centre_id || '' });
+                const r = await fetch('../api/cost-centres/options.php?' + q, { credentials: 'same-origin' });
+                const d = await r.json();
+                if (!d.success || document.getElementById('assetCostCentre') !== sel) return;
+                sel.innerHTML = '<option value="">' + escapeHtml(window.t('asset-management.common.none_option')) + '</option>'
+                    + d.cost_centres.map(c => `<option value="${c.id}"${c.id == asset.cost_centre_id ? ' selected' : ''}>${escapeHtml(c.code + ' ' + c.name)}${c.is_active ? '' : ' (' + escapeHtml(window.t('asset-management.field.cost_centre_inactive')) + ')'}</option>`).join('');
+            } catch (e) { /* the current value stays shown */ }
+        }
+
+        async function loadAssetContracts(assetId) {
+            const list  = document.getElementById('assetContractsList');
+            const badge = document.getElementById('contractsCountBadge');
+            if (!list) return;
+            try {
+                const response = await fetch(`../api/assets/get_asset_contracts.php?asset_id=${assetId}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'failed');
+
+                if (!data.permitted) {
+                    if (badge) badge.textContent = '';
+                    list.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.detail.contracts_no_access'))}</div>`;
+                    return;
+                }
+
+                const rows = data.contracts || [];
+                if (badge) badge.textContent = rows.length;
+
+                // The Add bar shows whenever contracts are permitted, INCLUDING
+                // when the list is empty — an empty tab with no way to fill it is
+                // where the feature looks unfinished.
+                const addBar = `<div class="asset-contract-add-bar">
+                        <button type="button" class="asset-contract-add" onclick="openContractPicker()">
+                            ${escapeHtml(window.t('asset-management.detail.add_contract'))}
+                        </button>
+                    </div>`;
+
+                if (!rows.length) {
+                    list.innerHTML = addBar
+                        + `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.detail.no_contracts'))}</div>`;
+                    return;
+                }
+
+                // Headings, so the dates do not have to introduce themselves on
+                // every row. Same grid as a row, plus a spacer standing in for
+                // the remove button, or the columns would not line up with what
+                // they label.
+                const head = `<div class="asset-contract-item asset-contract-head">
+                        <div class="asset-contract-row">
+                            <span class="asset-contract-ref">${escapeHtml(window.t('asset-management.detail.col_number'))}</span>
+                            <span class="asset-contract-title">${escapeHtml(window.t('asset-management.detail.col_contract'))}</span>
+                            <span class="asset-contract-meta">${escapeHtml(window.t('asset-management.detail.col_supplier'))}</span>
+                            <span class="asset-contract-when">${escapeHtml(window.t('asset-management.detail.contract_ends'))}</span>
+                            <span class="asset-contract-notice">${escapeHtml(window.t('asset-management.detail.contract_notice_by'))}</span>
+                        </div>
+                        <span class="asset-contract-preview-spacer"></span>
+                        <span class="asset-contract-remove-spacer"></span>
+                    </div>`;
+
+                list.innerHTML = addBar + head + rows.map(c => {
+                    const supplier = c.party_label || c.supplier_trading_name || c.supplier_name || '';   // supplier or customer (#153)
+                    // Bare dates. The words that used to prefix them are now
+                    // column headings (Ed) — "Ends" and "Notice by" repeated on
+                    // every row is the same two words said as many times as you
+                    // have contracts, and it crowds out the thing you came to
+                    // read. A contract with no notice date still gets its cell,
+                    // so the dates below stay in a straight line.
+                    const ends = c.contract_end
+                        ? escapeHtml(c.contract_end)
+                        : escapeHtml(window.t('asset-management.detail.contract_no_end'));
+                    const notice = c.notice_date ? escapeHtml(c.notice_date) : '';
+                    // The remove button is a SIBLING of the anchor, not inside
+                    // it: a button nested in a link is a link, and clicking it
+                    // would navigate as well as unlink.
+                    return `
+                    <div class="asset-contract-item">
+                        <a class="asset-contract-row" href="../contracts/view.php?id=${c.contract_id}">
+                            <span class="asset-contract-ref">${escapeHtml(c.contract_number || '')}</span>
+                            <span class="asset-contract-title">${escapeHtml(c.title || '')}${c.reference ? ` <em>${escapeHtml(c.reference)}</em>` : ''}</span>
+                            <span class="asset-contract-meta">${escapeHtml(supplier)}</span>
+                            <span class="asset-contract-when">${ends}</span>
+                            <span class="asset-contract-notice">${notice}</span>
+                        </a>
+                        ${assetPreviewBadge('contract', c.contract_id)}
+                        <button type="button" class="asset-contract-remove"
+                                title="${escapeHtml(window.t('asset-management.detail.remove_contract'))}"
+                                onclick="unlinkAssetContract(${c.link_id})">&times;</button>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                if (badge) badge.textContent = '0';
+                list.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.detail.contracts_load_failed'))}</div>`;
+            }
+        }
+
+        // ── Right-click an asset (Ed's request) ──────────────────────────────
+        //
+        // Every item is backed by something that ALREADY works: the three
+        // submenus go through update_asset_field.php, which is a thin adapter
+        // over AssetsService::updateFields, so validation, the audit trail and
+        // the warranty-calendar sync come with them. A context menu that writes
+        // its own SQL is a second set of rules nobody remembers to update.
+        //
+        // ⚠️ Right-clicking an asset SELECTS it first. The menu acts on the
+        // selection, and acting on a row you have not selected is how somebody
+        // changes the status of the wrong machine.
+        let ctxAssetId = null;
+
+        function openAssetContextMenu(event, assetId) {
+            event.preventDefault();
+
+            // Select first, so the panel on the right and the menu agree about
+            // which asset this is. Skipped when it is already selected, because
+            // re-selecting rebuilds the whole detail pane for nothing.
+            if (selectedAssetId != assetId) selectAsset(assetId);
+            ctxAssetId = assetId;
+
+            const asset = assets.find(a => a.id == assetId);
+            const menu  = document.getElementById('assetContextMenu');
+            document.getElementById('assetCtxHeader').textContent = asset ? assetDisplayName(asset) : '';
+
+            buildCtxSubmenu('assetCtxStatus',   assetStatusTypes, 'asset_status_id', asset && asset.asset_status_id);
+            buildCtxSubmenu('assetCtxType',     assetTypes,       'asset_type_id',   asset && asset.asset_type_id);
+            buildCtxSubmenu('assetCtxLocation', assetLocations,   'location_id',     asset && asset.location_id);
+
+            // Copying is only offered when there is something to copy — an item
+            // that silently does nothing is worse than one that is not there.
+            toggleCtxItem('copy-tag',    !!(asset && asset.asset_tag));
+            toggleCtxItem('copy-serial', !!(asset && asset.service_tag));
+
+            menu.classList.add('active');
+
+            // Position, then correct if it would hang off the edge. Measured
+            // after showing, because a hidden element has no height.
+            const w = menu.offsetWidth, h = menu.offsetHeight;
+            const x = Math.min(event.clientX, window.innerWidth  - w - 8);
+            const y = Math.min(event.clientY, window.innerHeight - h - 8);
+            menu.style.left = Math.max(8, x) + 'px';
+            menu.style.top  = Math.max(8, y) + 'px';
+
+            // Flyouts open leftwards when there is no room to the right.
+            menu.classList.toggle('flip-sub', (x + w + 200) > window.innerWidth);
+            return false;
+        }
+
+        /** A readable name for an asset, matching what the list shows. */
+        function assetDisplayName(a) {
+            return a.hostname || a.asset_tag || a.service_tag
+                || [a.manufacturer, a.model].filter(Boolean).join(' ')
+                || ('#' + a.id);
+        }
+
+        function toggleCtxItem(action, show) {
+            const el = document.querySelector(`#assetContextMenu [data-action="${action}"]`);
+            if (el) el.style.display = show ? '' : 'none';
+        }
+
+        /**
+         * Fill one flyout from a lookup list, ticking the current value.
+         *
+         * The tick matters: without it the menu tells you what you COULD set and
+         * never what it currently is, so you cannot tell a no-op from a change.
+         */
+        function buildCtxSubmenu(elementId, items, field, currentId) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            if (!items || !items.length) {
+                el.innerHTML = `<div class="ticket-context-menu-item asset-ctx-empty">${escapeHtml(window.t('asset-management.ctx.none_configured'))}</div>`;
+                return;
+            }
+            el.innerHTML = items.map(i => `
+                <button class="ticket-context-menu-item" type="button"
+                        onclick="ctxSetField('${field}', ${i.id})">
+                    <span class="asset-ctx-tick">${String(i.id) === String(currentId) ? '&check;' : ''}</span>
+                    <span>${escapeHtml(i.name)}</span>
+                </button>`).join('');
+        }
+
+        async function ctxSetField(field, value) {
+            closeAssetContextMenu();
+            if (!ctxAssetId) return;
+            // updateAssetField acts on selectedAssetId, and the menu has already
+            // made this asset the selected one.
+            await updateAssetField(field, value);
+            loadAssets(document.getElementById('assetSearch').value || '');
+        }
+
+        function closeAssetContextMenu() {
+            const menu = document.getElementById('assetContextMenu');
+            if (menu) menu.classList.remove('active');
+        }
+
+        document.addEventListener('click', closeAssetContextMenu);
+        document.addEventListener('scroll', closeAssetContextMenu, true);
+        window.addEventListener('resize', closeAssetContextMenu);
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAssetContextMenu(); });
+
+        document.getElementById('assetContextMenu').addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const asset = assets.find(a => a.id == ctxAssetId);
+            closeAssetContextMenu();
+            switch (btn.dataset.action) {
+                case 'open':        selectAsset(ctxAssetId); break;
+                case 'contract':    openContractPicker(); break;
+                case 'assign':      openAssignModal(); break;
+                case 'label':       printAssetLabel(ctxAssetId); break;
+                // ⚠️ copyToClipboard, never navigator.clipboard — the native API
+                // is undefined outside a secure context and throws synchronously,
+                // so a .catch() fallback never runs.
+                case 'copy-tag':    if (asset) copyToClipboard(asset.asset_tag); break;
+                case 'copy-serial': if (asset) copyToClipboard(asset.service_tag); break;
+            }
+        });
+
+        // ── Linking a contract from the equipment's side (#106) ──────────────
+        //
+        // The same links as the contract page manages, reached from the other
+        // end: somebody standing on a new handset should not have to go and find
+        // the agreement first. Both ends call the SAME endpoints, so there is one
+        // set of rules about who may link what.
+        let contractPickerTimer = null;
+
+        function openContractPicker() {
+            if (!selectedAssetId) return;
+            document.getElementById('contractPickerModal').classList.add('active');
+            const box = document.getElementById('contractPickerSearch');
+            box.value = '';
+            box.focus();
+            searchLinkableContracts();
+        }
+
+        function closeContractPicker() {
+            document.getElementById('contractPickerModal').classList.remove('active');
+        }
+
+        function contractPickerInput() {
+            clearTimeout(contractPickerTimer);
+            contractPickerTimer = setTimeout(searchLinkableContracts, 200);
+        }
+
+        async function searchLinkableContracts() {
+            const results = document.getElementById('contractPickerResults');
+            const q = document.getElementById('contractPickerSearch').value.trim();
+            try {
+                const resp = await fetch(`${API_BASE}search_linkable_contracts.php?asset_id=${selectedAssetId}&q=${encodeURIComponent(q)}`);
+                const data = await resp.json();
+                if (!data.success) {
+                    results.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(data.error || window.t('asset-management.detail.contracts_load_failed'))}</div>`;
+                    return;
+                }
+                if (!data.contracts.length) {
+                    results.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.detail.no_contracts_found'))}</div>`;
+                    return;
+                }
+                results.innerHTML = data.contracts.map(c => {
+                    const supplier = c.party_label || c.supplier_trading_name || c.supplier_name || '';   // supplier or customer (#153)
+                    const ends = c.contract_end
+                        ? `${window.t('asset-management.detail.contract_ends')} ${c.contract_end}`
+                        : window.t('asset-management.detail.contract_no_end');
+                    return `
+                    <button type="button" class="contract-pick" onclick="linkAssetContract(${c.contract_id})">
+                        <span class="contract-pick-name">${escapeHtml(c.contract_number || '')} ${escapeHtml(c.title || '')}</span>
+                        <span class="contract-pick-meta">${escapeHtml(supplier)}${supplier ? ' &bull; ' : ''}${escapeHtml(ends)}</span>
+                    </button>`;
+                }).join('');
+            } catch (e) {
+                results.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.detail.contracts_load_failed'))}</div>`;
+            }
+        }
+
+        async function linkAssetContract(contractId) {
+            try {
+                const resp = await fetch('../api/contracts/save_contract_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contract_id: contractId, asset_id: selectedAssetId })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    showToast(data.error || window.t('asset-management.detail.contracts_load_failed'), 'error');
+                    return;
+                }
+                closeContractPicker();
+                loadAssetContracts(selectedAssetId);
+            } catch (e) {
+                showToast(window.t('asset-management.detail.contracts_load_failed'), 'error');
+            }
+        }
+
+        async function unlinkAssetContract(linkId) {
+            // Same wording as the contract side, for the same reason: "Remove"
+            // beside a contract reads as "cancel the contract" to enough people
+            // to be worth a sentence.
+            const okToGo = typeof window.showConfirm === 'function'
+                ? await window.showConfirm({
+                      title: window.t('asset-management.detail.remove_contract'),
+                      message: window.t('asset-management.detail.remove_contract_message'),
+                      okLabel: window.t('asset-management.detail.remove_contract'), okClass: 'danger'
+                  })
+                : confirm(window.t('asset-management.detail.remove_contract_message'));
+            if (!okToGo) return;
+
+            try {
+                const resp = await fetch('../api/contracts/delete_contract_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ link_id: linkId })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    showToast(data.error || window.t('asset-management.detail.contracts_load_failed'), 'error');
+                    return;
+                }
+                loadAssetContracts(selectedAssetId);
+            } catch (e) {
+                showToast(window.t('asset-management.detail.contracts_load_failed'), 'error');
+            }
+        }
+
+        async function loadAssetTickets(assetId) {
+            const list  = document.getElementById('assetTicketsList');
+            const badge = document.getElementById('ticketsCountBadge');
+            if (!list) return;
+            try {
+                const response = await fetch(`${API_BASE}get_asset_tickets.php?id=${assetId}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'failed');
+
+                const open   = data.open || [];
+                const closed = data.closed || [];
+                if (badge) badge.textContent = open.length + closed.length;
+
+                if (open.length === 0 && closed.length === 0) {
+                    list.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.tickets.empty'))}</div>`;
+                    return;
+                }
+
+                const row = tk => {
+                    const when = tk.status_is_closed ? tk.closed_datetime : tk.updated_datetime;
+                    return `
+                    <a class="asset-ticket-row" href="../tickets/index.php?ticket_id=${tk.id}" title="${escapeHtml(window.t('asset-management.tickets.open_title'))}">
+                        <span class="asset-ticket-ref">${escapeHtml(tk.ticket_number || '')}</span>
+                        <span class="asset-ticket-subject">${escapeHtml(tk.subject || '')}</span>
+                        <span class="asset-ticket-status" style="background:${escapeHtml(tk.status_colour || '#6b7280')}">${escapeHtml(tk.status || '')}</span>
+                        <span class="asset-ticket-when">${escapeHtml((when || '').substring(0, 10))}</span>
+                        ${assetPreviewBadge('ticket', tk.id)}
+                    </a>`;
+                };
+
+                let html = '';
+                if (open.length) {
+                    html += `<div class="asset-tickets-group">${escapeHtml(window.t('asset-management.tickets.group_open'))}</div>`;
+                    html += open.map(row).join('');
+                }
+                if (closed.length) {
+                    const total = data.total_closed || closed.length;
+                    const label = total > closed.length
+                        ? window.t('asset-management.tickets.group_closed_capped', { shown: closed.length, total: total })
+                        : window.t('asset-management.tickets.group_closed');
+                    html += `<div class="asset-tickets-group">${escapeHtml(label)}</div>`;
+                    html += closed.map(row).join('');
+                }
+                list.innerHTML = html;
+            } catch (e) {
+                if (badge) badge.textContent = '0';
+                list.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(window.t('asset-management.tickets.empty'))}</div>`;
+            }
         }
 
         // Load assigned users for an asset
@@ -1291,22 +3183,37 @@ $translationNamespaces = ['common', 'asset-management'];
                 const buttonsSpan = document.getElementById('assignButtons');
 
                 if (data.success) {
-                    const user = data.users.length > 0 ? data.users[0] : null;
+                    const holder = data.users.length > 0 ? data.users[0] : null;
 
-                    if (user) {
-                        currentAssignedUserId = user.user_id;
+                    if (holder) {
+                        const isAnalyst = (holder.holder_type === 'analyst');
+                        currentAssignedUserId = isAnalyst ? null : holder.user_id;
+                        currentAssignedAnalystId = isAnalyst ? holder.analyst_id : null;
+                        // The holder's name is a link to their record (Ed). The
+                        // journey already worked the other way round after #85;
+                        // this is the return leg, so "who has this?" and "what
+                        // do they have?" are each one click from the other.
+                        //
+                        // An analyst has no `users` record to link to, so their
+                        // name is plain text with a tag saying which kind of
+                        // person they are. A link to users.php with an analyst
+                        // id would open somebody else's record entirely.
+                        const nameHtml = isAnalyst
+                            ? `${escapeHtml(holder.display_name || window.t('asset-management.common.unknown'))}<span class="holder-kind-tag">${window.t('asset-management.assign.kind_analyst')}</span>`
+                            : `<a class="user-name-link" href="users.php?user_id=${holder.user_id}">${escapeHtml(holder.display_name || window.t('asset-management.common.unknown'))}</a>`;
                         infoSpan.innerHTML = `
-                            <span class="user-name">${escapeHtml(user.display_name || window.t('asset-management.common.unknown'))}</span>
-                            <span class="user-email">${escapeHtml(user.email || '')}</span>
-                            <span class="user-assigned-date">${window.t('asset-management.detail.assigned_on', { date: formatDate(user.assigned_datetime) })}</span>
-                            ${user.expected_return_date ? `<span class="user-assigned-date">${window.t('asset-management.detail.due_back', { date: escapeHtml(user.expected_return_date) })}</span>` : ''}
+                            <span class="user-name">${nameHtml}</span>
+                            <span class="user-email">${escapeHtml(holder.email || '')}</span>
+                            <span class="user-assigned-date">${window.t('asset-management.detail.assigned_on', { date: formatDate(holder.assigned_datetime) })}</span>
+                            ${holder.expected_return_date ? `<span class="user-assigned-date">${window.t('asset-management.detail.due_back', { date: escapeHtml(holder.expected_return_date) })}</span>` : ''}
                         `;
                         buttonsSpan.innerHTML = `
                             <button class="btn btn-primary btn-sm" onclick="reassignUser()">${window.t('asset-management.detail.reassign')}</button>
-                            <button class="btn btn-danger btn-sm" onclick="unassignUser(${user.user_id})">${window.t('asset-management.detail.remove')}</button>
+                            <button class="btn btn-danger btn-sm" onclick="unassignUser(${isAnalyst ? holder.analyst_id : holder.user_id}, '${isAnalyst ? 'analyst' : 'user'}')">${window.t('asset-management.detail.remove')}</button>
                         `;
                     } else {
                         currentAssignedUserId = null;
+                        currentAssignedAnalystId = null;
                         infoSpan.innerHTML = `<span class="unassigned-text">${window.t('asset-management.status.unassigned')}</span>`;
                         buttonsSpan.innerHTML = `
                             <button class="btn btn-primary btn-sm" onclick="openAssignModal()">${window.t('asset-management.detail.assign')}</button>
@@ -1320,6 +3227,663 @@ $translationNamespaces = ['common', 'asset-management'];
             }
         }
 
+        /**
+         * Save one of the four fields that used to be read-only (#1143):
+         * name, service tag, manufacturer, model.
+         *
+         * 🔑 WARNS, NEVER BLOCKS. Plenty of assets never report in, and a
+         * blanket refusal would put us back where we started — unable to fix a
+         * typo on a television.
+         *
+         * ⚠️ Renaming is the one that can actually hurt: the inventory agent
+         * upserts on the NAME, so renaming a machine that reports in means the
+         * next report does not recognise it and creates a SECOND asset. The
+         * confirm says exactly that, and only appears when the asset looks like
+         * it reports — judged by data only an automated source ever fills in.
+         */
+        function assetLooksReported(a) {
+            return !!(a && (a.cpu_name || a.bios_version || a.operating_system));
+        }
+
+        async function saveCoreField(field, el) {
+            const value = el.value.trim();
+
+            if (field === 'hostname') {
+                if (value === '') {
+                    showToast(window.t('asset-management.detail.name_required'), 'error');
+                    el.value = selectedAsset.hostname || '';
+                    return;
+                }
+                // 🔑 TWO ways an asset can be recognised by its name, and both
+                // break the same way when it is renamed here.
+                //
+                // The agent upserts on the name, so a renamed machine is not
+                // recognised by its next report. An IMPORT matches on whatever
+                // its match keys are, so a renamed asset is not found by the
+                // next import of the same file. Either way you get a second,
+                // duplicate record.
+                //
+                // The import case had no warning at all until #1144, because an
+                // imported television has none of the hardware data that flags
+                // an agent asset — the more dangerous half was the silent one.
+                if (value !== (selectedAsset.hostname || '')) {
+                    let warning = null;
+                    if (assetLooksReported(selectedAsset)) {
+                        warning = window.t('asset-management.detail.rename_reported_confirm');
+                    } else if (selectedAsset.from_import) {
+                        warning = window.t('asset-management.detail.rename_imported_confirm');
+                    }
+                    // ⚠️ The SHARED confirm, not the browser's. showConfirm takes
+                    // an options OBJECT and returns a promise; its body is a <p>
+                    // with white-space: pre-wrap, so the blank lines in these
+                    // messages survive.
+                    if (warning && !(await showConfirm({
+                        title:    window.t('asset-management.detail.rename_title'),
+                        message:  warning,
+                        okLabel:  window.t('asset-management.detail.rename_ok'),
+                        okClass:  'danger'
+                    }))) {
+                        el.value = selectedAsset.hostname || '';
+                        return;
+                    }
+                }
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}update_asset_field.php`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: selectedAsset.id, field, value })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                selectedAsset[field] = value;
+                if (field === 'hostname') {
+                    // Keep the heading in step, and the list — the row's label
+                    // just changed, and leaving the old one on screen would look
+                    // like the save had failed.
+                    const h = document.querySelector('.asset-detail-hostname');
+                    if (h) h.textContent = value;
+                    await loadAssets(document.getElementById('assetSearch').value || '');
+                }
+                // GH #200 part D: a correction on an asset a tool reports is protected from it.
+                const wasProtected = !!((invStatus && invStatus.protected) || {})[field];
+                showToast(window.t(data.protected && !wasProtected ? 'asset-management.protect.saved_protected' : 'asset-management.detail.saved'), 'success');
+                if (['hostname', 'manufacturer', 'model'].includes(field)) loadInventoryStatus(selectedAsset.id);
+            } catch (e) {
+                showToast(e.message || window.t('asset-management.detail.save_failed'), 'error');
+                // Put the stored value back, so the screen never shows something
+                // the database does not hold.
+                el.value = selectedAsset[field] || '';
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        //  Adding an asset by hand (#1132)
+        //
+        //  The inventory agent, Intune and vCenter cover everything that
+        //  reports for itself. This covers everything that does not: printers,
+        //  monitors, headsets, televisions.
+        // ════════════════════════════════════════════════════════════════
+
+        /* The companies this analyst can reach (2.6.0), for the New asset
+           Company picker and the Key info Company field. Fetched once: the list
+           does not change while somebody works. Empty on a single-company
+           install, which hides both. Same source as the Tasks move picker. */
+        async function loadAssetCompanies() {
+            if (!ASSET_TENANCY.multi) return;
+            try {
+                const res  = await fetch('../api/system/get_tenants.php?accessible=1');
+                const data = await res.json();
+                assetCompanies = (data && data.success && data.companies) ? data.companies : [];
+            } catch (e) { assetCompanies = []; }
+        }
+        loadAssetCompanies();
+
+        // Fill the form's three lists. `lists` is the page's own arrays for the
+        // company on screen, or a freshly fetched set for another company.
+        function naFillLists(lists) {
+            const none = `<option value="">${window.t('asset-management.common.none_option')}</option>`;
+            document.getElementById('naType').innerHTML = none + lists.types.map(ty =>
+                `<option value="${ty.id}">${escapeHtml(ty.name)}</option>`).join('');
+            document.getElementById('naStatus').innerHTML = none + lists.statuses.map(s =>
+                `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+            document.getElementById('naLocation').innerHTML = buildLocationOptions(null, lists.locations);
+            naSyncNext();
+        }
+
+        // The chosen company's types, statuses and locations. The company on
+        // screen uses what the page already holds; any other is fetched, since
+        // types and statuses can be company-specific and locations always are.
+        async function naLoadListsFor(tenantId) {
+            if (!tenantId || tenantId === ASSET_TENANCY.active) {
+                naFillLists({ types: assetTypes, statuses: assetStatusTypes, locations: assetLocations });
+                return;
+            }
+            const q = `?for_tenant=${encodeURIComponent(tenantId)}`;
+            try {
+                const [ty, st, lo] = await Promise.all([
+                    fetch(`${API_BASE}get_asset_types.php${q}`).then(r => r.json()),
+                    fetch(`${API_BASE}get_asset_status_types.php${q}`).then(r => r.json()),
+                    fetch(`${API_BASE}get_asset_locations.php${q}`).then(r => r.json())
+                ]);
+                naFillLists({
+                    types:     (ty.asset_types || []).filter(x => x.is_active !== false),
+                    statuses:  (st.asset_status_types || []).filter(x => x.is_active !== false),
+                    locations: lo.locations || []
+                });
+            } catch (e) {
+                naFillLists({ types: [], statuses: [], locations: [] });
+            }
+        }
+
+        /* The Key info Company field (2.6.0): shows which company the asset is
+           in, and changing it MOVES the asset. Empty string on a single-company
+           install or for someone who can reach only one company. */
+        function assetCompanyFieldHtml(asset) {
+            if (!ASSET_TENANCY.multi || assetCompanies.length < 2 || !asset) return '';
+            const current = asset.tenant_id != null ? Number(asset.tenant_id) : ASSET_TENANCY.default;
+            return `
+                <div class="info-item">
+                    <span class="info-label">${window.t('asset-management.field.company')}</span>
+                    <select class="info-value-select" data-previous="${current}" onchange="moveAssetToCompany(this)">
+                        ${assetCompanies.map(co => `<option value="${co.id}" ${co.id === current ? 'selected' : ''}>${escapeHtml(co.name)}</option>`).join('')}
+                    </select>
+                </div>`;
+        }
+
+        /**
+         * Move the open asset to the company just chosen in Key info.
+         *
+         * Asks first, because it can clear the location, type or status. On a
+         * refusal or a cancel the select is put BACK, so it never shows a
+         * company the asset is not in. A moved asset leaves this list (the list
+         * shows one company), so the detail pane is closed afterwards.
+         */
+        async function moveAssetToCompany(sel) {
+            const id       = selectedAssetId;
+            const chosen   = parseInt(sel.value, 10);
+            const previous = sel.dataset.previous || '';
+            if (!id || !chosen) return;
+            const co = assetCompanies.find(c => c.id === chosen);
+            const ok = await showConfirm({
+                title:   window.t('asset-management.move.confirm_title', { company: co ? co.name : '' }),
+                message: window.t('asset-management.move.confirm_body'),
+                okLabel: window.t('asset-management.move.confirm_ok')
+            });
+            if (!ok) { sel.value = previous; return; }
+            sel.disabled = true;
+            try {
+                const res  = await fetch(`${API_BASE}move_to_company.php`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: id, tenant_id: chosen })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    sel.value = previous;
+                    showToast(data.error || window.t('asset-management.move.failed'), 'error');
+                    return;
+                }
+                sel.dataset.previous = String(chosen);
+                showToast(data.message, 'success');
+                if (data.moved && chosen !== ASSET_TENANCY.active) {
+                    selectedAssetId = null;
+                    selectedAsset   = null;
+                    await loadAssets();
+                    showNoAssetSelected();
+                } else {
+                    await loadAssets();
+                    selectAsset(id);
+                }
+            } catch (e) {
+                sel.value = previous;
+                showToast(window.t('asset-management.move.failed'), 'error');
+            } finally {
+                sel.disabled = false;
+            }
+        }
+
+        function openNewAssetModal() {
+            const typeSel = document.getElementById('naType');
+            const coGroup = document.getElementById('naCompanyGroup');
+            const coSel   = document.getElementById('naCompany');
+
+            document.getElementById('newAssetForm').reset();
+
+            // Company picker: only worth asking when there is a choice to make.
+            // In the All companies view it starts empty and must be answered.
+            const ask = ASSET_TENANCY.multi && assetCompanies.length > 1;
+            coGroup.hidden = !ask;
+            if (ask) {
+                const choose = ASSET_TENANCY.all
+                    ? `<option value="">${escapeHtml(window.t('asset-management.new.company_choose'))}</option>` : '';
+                coSel.innerHTML = choose + assetCompanies.map(co =>
+                    `<option value="${co.id}">${escapeHtml(co.name)}</option>`).join('');
+                coSel.value = ASSET_TENANCY.all ? '' : String(ASSET_TENANCY.active);
+                coSel.onchange = () => naLoadListsFor(parseInt(coSel.value, 10) || 0);
+            }
+
+            naFillLists({ types: assetTypes, statuses: assetStatusTypes, locations: assetLocations });
+            typeSel.onchange = naSyncNext;
+
+            document.getElementById('newAssetModal').classList.add('active');
+            (ask && ASSET_TENANCY.all ? coSel : document.getElementById('naName')).focus();
+        }
+
+        function closeNewAssetModal() {
+            document.getElementById('newAssetModal').classList.remove('active');
+        }
+
+        /**
+         * Render the chosen type's OWN fields into the dialog.
+         *
+         * 🔑 Originally this just said "3 other details are coming". That was
+         * wrong, and confusing for a reason worth writing down: the built-in
+         * boxes above ask for Manufacturer and Model, so on a Television the
+         * dialog asked for the model and then announced a second, different
+         * model question for later. Asking both, together and clearly labelled,
+         * is the only version that makes sense.
+         */
+        async function naSyncNext() {
+            const box    = document.getElementById('naNext');
+            const typeId = parseInt(document.getElementById('naType').value, 10) || 0;
+            box.innerHTML = '';
+            if (!typeId) { box.style.display = 'none'; return; }
+            try {
+                const res  = await fetch(`${API_BASE}get_asset_fields.php`);
+                const data = await res.json();
+                if (!data.success || !data.schema_ready) { box.style.display = 'none'; return; }
+
+                const setIds = (data.type_sets && data.type_sets[typeId]) || [];
+                const blocks = [];
+                setIds.forEach(sid => {
+                    const set = (data.sets || []).find(s => s.id === sid);
+                    if (!set || !(set.fields || []).length) return;
+
+                    // ⚠️ get_asset_fields.php returns the SET's membership rows
+                    // (field_key/field_type/is_required), not the per-asset shape
+                    // cfFieldRow expects. Map it rather than teaching the
+                    // renderer a second input shape.
+                    const rows = set.fields
+                        .filter(m => m.field_type !== 'ref')   // see the 'ref' case
+                        .map(m => {
+                            const cat = (data.fields || []).find(x => x.id === m.field_id) || {};
+                            return cfFieldRow({
+                                key:       m.field_key,
+                                label:     m.label,
+                                type:      m.field_type,
+                                config:    cat.config || {},
+                                required:  m.is_required,
+                                help_text: cat.help_text || null,
+                                value:     null,
+                                options:   cat.options || []
+                            }, 'create');
+                        }).join('');
+                    if (!rows) return;
+                    // No grid wrapper: cfFieldRow emits .form-group rows in
+                    // create mode, so they stack exactly like Manufacturer and
+                    // Model above. A two-column grid here made the custom fields
+                    // half-width and visibly a different kind of thing.
+                    blocks.push(`
+                        <div class="na-group-title">${escapeHtml(set.name)}</div>
+                        ${rows}`);
+                });
+
+                if (!blocks.length) { box.style.display = 'none'; return; }
+                box.innerHTML = blocks.join('');
+                box.style.display = '';
+            } catch (e) {
+                // Never block a create over this. The fields can be filled in on
+                // the asset afterwards, which is where they live anyway.
+                box.style.display = 'none';
+            }
+        }
+
+        document.getElementById('newAssetForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            // The Company question must be answered when it is asked (2.6.0).
+            const coGroup = document.getElementById('naCompanyGroup');
+            const coVal   = document.getElementById('naCompany').value;
+            if (!coGroup.hidden && !coVal) {
+                showToast(window.t('asset-management.new.company_required'), 'error');
+                document.getElementById('naCompany').focus();
+                return;
+            }
+            const btn = document.getElementById('naSaveBtn');
+            btn.disabled = true;   // a duplicate hostname is refused, but a
+                                   // double-click should not even ask twice
+            try {
+                const res = await fetch(`${API_BASE}create_asset.php`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tenant_id:       coGroup.hidden ? null : (parseInt(coVal, 10) || null),
+                        hostname:        document.getElementById('naName').value.trim(),
+                        asset_tag:       document.getElementById('naAssetTag')?.value.trim() || '',
+                        asset_type_id:   document.getElementById('naType').value,
+                        asset_status_id: document.getElementById('naStatus').value,
+                        location_id:     document.getElementById('naLocation').value,
+                        manufacturer:    document.getElementById('naManufacturer').value.trim(),
+                        model:           document.getElementById('naModel').value.trim(),
+                        service_tag:     document.getElementById('naSerial').value.trim()
+                    })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                // The type's own fields, in a second call: the asset has to
+                // exist before anything can be recorded against it.
+                //
+                // ⚠️ If THIS half fails the asset still exists, so it says so
+                // plainly and still opens the record — silently swallowing it
+                // would leave somebody looking at blank fields they had filled
+                // in, with no idea why.
+                const values = {};
+                document.querySelectorAll('#naNext [data-na-key]').forEach(el => {
+                    values[el.getAttribute('data-na-key')] = el.value;
+                });
+                let fieldWarning = null;
+                if (Object.keys(values).length) {
+                    try {
+                        const r2 = await fetch(`${API_BASE}save_asset_custom_fields.php`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ asset_id: data.id, values })
+                        });
+                        const d2 = await r2.json();
+                        if (!d2.success) fieldWarning = d2.error;
+                    } catch (e2) {
+                        fieldWarning = e2.message;
+                    }
+                }
+
+                closeNewAssetModal();
+                // Added to a company other than the one on screen: say where,
+                // rather than opening a record this list is not showing.
+                if (data.in_active === false) {
+                    showToast(fieldWarning || window.t('asset-management.new.created_elsewhere', { company: data.company_name }),
+                              fieldWarning ? 'error' : 'success');
+                    return;
+                }
+                const successMsg = data.asset_tag
+                    ? window.t('asset-management.new.created_with_tag', { tag: data.asset_tag })
+                    : window.t('asset-management.new.created');
+                showToast(fieldWarning || successMsg,
+                          fieldWarning ? 'error' : 'success');
+                await loadAssets();
+                selectAsset(data.id);
+            } catch (err) {
+                showToast(err.message || window.t('asset-management.new.failed'), 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ════════════════════════════════════════════════════════════════
+        //  Custom fields on the asset
+        //  docs/design/flexible-asset-fields.md §5.2
+        // ════════════════════════════════════════════════════════════════
+
+        let cfState = { assetId: 0, sets: [], available: [], showBlanks: false };
+
+        function cfd(key, vars) { return window.t('asset-management.detail.' + key, vars); }
+
+        async function loadCustomFields(assetId) {
+            const section = document.getElementById('customFieldsSection');
+            if (!section) return;
+            try {
+                const res  = await fetch(`${API_BASE}get_asset_custom_fields.php?asset_id=${assetId}`);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                cfState = {
+                    assetId:    assetId,
+                    sets:       data.sets || [],
+                    available:  data.available_sets || [],
+                    showBlanks: false,
+                    filled:     data.filled || 0,
+                    total:      data.total || 0
+                };
+
+                // Hidden entirely when this kind of asset records nothing extra
+                // AND there is nothing to add — an empty panel on 560 laptops is
+                // noise. It appears the moment there is either.
+                const nothing = !cfState.sets.length && !cfState.available.length;
+                section.style.display = nothing ? 'none' : '';
+                if (nothing) return;
+
+                renderCustomFields();
+            } catch (e) {
+                section.style.display = '';
+                document.getElementById('assetCustomFields').innerHTML =
+                    `<div class="cf-empty">${escapeHtml(e.message || '')}</div>`;
+            }
+        }
+
+        function renderCustomFields() {
+            // "6 of 8 filled in" is always shown, zeroes included: a field
+            // nobody has filled in and a panel that failed to load must never
+            // look the same.
+            const count = document.getElementById('cfCount');
+            if (count) {
+                count.textContent = cfState.total
+                    ? cfd('cf_filled', { filled: cfState.filled, total: cfState.total })
+                    : '';
+            }
+
+            const blanks = cfState.total - cfState.filled;
+            const parts  = [];
+
+            cfState.sets.forEach(set => {
+                const rows = set.fields
+                    .filter(f => cfState.showBlanks || f.value !== null)
+                    .map(f => cfFieldRow(f, 'edit')).join('');
+
+                // A set attached to THIS asset alone gets a removable chip, so
+                // "why does this TV have a field its type doesn't?" answers
+                // itself on the page.
+                const chip = set.via === 'asset'
+                    ? `<span class="cf-chip" title="${escapeHtml(cfd('cf_via_asset'))}">${escapeHtml(set.name)}
+                         <button type="button" class="cf-chip-x" onclick="cfRemoveSet(${set.id})"
+                                 aria-label="${escapeHtml(cfd('cf_remove_set'))}">&times;</button>
+                       </span>`
+                    : `<span class="cf-setname">${escapeHtml(set.name)}</span>`;
+
+                parts.push(`
+                    <div class="cf-set">
+                        <div class="cf-set-head">${chip}</div>
+                        <div class="asset-info-grid">${rows}</div>
+                    </div>`);
+            });
+
+            if (blanks > 0) {
+                parts.push(`
+                    <button type="button" class="cf-toggle" onclick="cfToggleBlanks()">
+                        ${cfState.showBlanks ? cfd('cf_hide_blanks') : cfd('cf_show_blanks', { n: blanks })}
+                    </button>`);
+            }
+
+            if (cfState.available.length) {
+                parts.push(`
+                    <div class="cf-addset">
+                        <select id="cfAddSetSelect">
+                            ${cfState.available.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
+                        </select>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="cfAddSet()">${cfd('cf_add_set')}</button>
+                        <div class="cf-addset-hint">${cfd('cf_add_set_hint')}</div>
+                    </div>`);
+            }
+
+            if (!cfState.sets.length) {
+                parts.unshift(`<div class="cf-empty">${cfd('cf_none')}<br><span class="cf-hint">${cfd('cf_none_hint')}</span></div>`);
+            }
+
+            document.getElementById('assetCustomFields').innerHTML = parts.join('');
+        }
+
+        /** One editable row. The control matches the field's declared type. */
+        /**
+         * One editable row. The control matches the field's declared type.
+         *
+         * @param mode 'edit'   — on an existing asset; each control saves itself
+         *             'create' — inside the Add dialog; controls are tagged with
+         *                        data-na-key and read once on submit, because
+         *                        there is no asset to save to yet.
+         *
+         * 🔑 ONE renderer for both. A second copy would drift, and the
+         * three-state boolean / unit / date-mode rules are exactly the things
+         * that must not be got subtly differently in two places.
+         */
+        function cfFieldRow(f, mode) {
+            const create = (mode === 'create');
+
+            // 🔑 The CLASSES change with the mode, not just the save handler.
+            // On the asset page these are detail-grid rows; in the dialog they
+            // must be indistinguishable from the built-in form fields sitting
+            // right above them, or a custom field reads as something bolted on.
+            // Sharing the renderer is about the TYPE rules — three-state
+            // booleans, unit suffixes, date modes — not about the chrome.
+            const c = create
+                ? { wrap: 'form-group', label: 'form-label', input: 'search-box',  hint: 'form-hint' }
+                : { wrap: 'info-item',  label: 'info-label', input: 'info-value-input', hint: 'cf-hint' };
+            const sel = create ? c.input : 'info-value-select';
+
+            const label = `<label class="${c.label}">${escapeHtml(f.label)}${f.required ? '<span class="cf-req">*</span>' : ''}</label>`;
+            const hint  = f.help_text ? `<span class="${c.hint}">${escapeHtml(f.help_text)}</span>` : '';
+            // In the dialog a required field is marked `required`, so the browser
+            // blocks submit. Without it the asset would be created and only THEN
+            // the values rejected — leaving a half-made record behind.
+            const save  = create
+                ? `data-na-key="${escapeHtml(f.key)}"${f.required ? ' required' : ''}`
+                : `onchange="cfSave('${f.key}', this)"`;
+            let control;
+
+            switch (f.type) {
+                case 'boolean':
+                    // ⚠️ THREE states, not two. "Not set" is a real option and
+                    // must stay reachable — absent is not No.
+                    control = `
+                        <select class="${sel}" ${save}>
+                            <option value=""  ${f.value === null  ? 'selected' : ''}>${cfd('cf_not_set')}</option>
+                            <option value="1" ${f.value === true  ? 'selected' : ''}>${cfd('cf_yes')}</option>
+                            <option value="0" ${f.value === false ? 'selected' : ''}>${cfd('cf_no')}</option>
+                        </select>`;
+                    break;
+                case 'dropdown':
+                    control = `
+                        <select class="${sel}" ${save}>
+                            <option value="">${cfd('cf_not_set')}</option>
+                            ${(f.options || []).map(o =>
+                                `<option value="${escapeHtml(o.option_value)}" ${f.value === o.option_value ? 'selected' : ''}>${escapeHtml(o.option_value)}</option>`
+                            ).join('')}
+                        </select>`;
+                    break;
+                case 'number': {
+                    const step = f.config && f.config.decimals ? (1 / Math.pow(10, f.config.decimals)) : 1;
+                    const input = `<input type="number" step="${step}" class="${c.input}" value="${f.value !== null ? f.value : ''}" ${save}>`;
+                    // .info-item is a COLUMN, so a bare sibling span drops onto
+                    // its own line under the box. The unit belongs beside the
+                    // number it qualifies, hence the row wrapper.
+                    control = (f.config && f.config.unit)
+                        ? `<span class="cf-numrow">${input}<span class="cf-unit">${escapeHtml(f.config.unit)}</span></span>`
+                        : input;
+                    break;
+                }
+                case 'date': {
+                    const mode = (f.config && f.config.date_mode) || 'date';
+                    const input = mode === 'time' ? 'time' : (mode === 'datetime' ? 'datetime-local' : 'date');
+                    control = `<input type="${input}" class="${c.input}" value="${cfDateValue(f.value, mode)}" ${save}>`;
+                    break;
+                }
+                case 'ref':
+                    // Read-only for now: picking a person or another asset needs
+                    // a searchable picker, which is its own piece of work. The
+                    // value still displays, so an imported link is visible.
+                    // ⚠️ In the dialog it is skipped entirely (see the caller):
+                    // an unfillable REQUIRED control would block Save with no
+                    // way to satisfy it.
+                    control = `<span class="info-value">${f.value_label ? escapeHtml(f.value_label) : (f.value !== null ? '#' + f.value : '-')}</span>`;
+                    break;
+                case 'url':
+                    control = `<input type="url" class="${c.input}" value="${escapeHtml(f.value || '')}" ${save}>`;
+                    break;
+                case 'email':
+                    control = `<input type="email" class="${c.input}" value="${escapeHtml(f.value || '')}" ${save}>`;
+                    break;
+                default:
+                    control = (f.config && f.config.multiline)
+                        ? `<textarea class="${c.input}" rows="2" ${save}>${escapeHtml(f.value || '')}</textarea>`
+                        : `<input type="text" class="${c.input}" value="${escapeHtml(f.value || '')}" ${save}>`;
+            }
+
+            return `<div class="${c.wrap}">${label}${control}${hint}</div>`;
+        }
+
+        /** Stored 'Y-m-d H:i:s' -> what the matching input element expects. */
+        function cfDateValue(v, mode) {
+            if (!v) return '';
+            const s = String(v).replace(' ', 'T');
+            if (mode === 'time')     return s.substring(11, 16);
+            if (mode === 'datetime') return s.substring(0, 16);
+            return s.substring(0, 10);
+        }
+
+        async function cfSave(key, el) {
+            const raw = el.value;
+            // An empty control CLEARS the field. Sent as '' rather than omitted,
+            // because omitting it would mean "leave alone" — a different thing.
+            try {
+                const res = await fetch(`${API_BASE}save_asset_custom_fields.php`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: cfState.assetId, values: { [key]: raw } })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+                showToast(cfd('cf_saved'), 'success');
+                await loadCustomFields(cfState.assetId);
+            } catch (e) {
+                showToast(e.message || cfd('cf_save_failed'), 'error');
+                // Put the stored value back, so the screen never shows a value
+                // the database does not hold.
+                await loadCustomFields(cfState.assetId);
+            }
+        }
+
+        function cfToggleBlanks() {
+            cfState.showBlanks = !cfState.showBlanks;
+            renderCustomFields();
+        }
+
+        async function cfAddSet() {
+            const sel = document.getElementById('cfAddSetSelect');
+            if (!sel || !sel.value) return;
+            await cfSetMembership(parseInt(sel.value, 10), 'attach');
+        }
+
+        async function cfRemoveSet(setId) {
+            const set = cfState.sets.find(s => s.id === setId);
+            if (set && !(await showConfirm({
+                title:   cfd('cf_remove_set'),
+                message: cfd('cf_remove_confirm', { name: set.name }),
+                okLabel: cfd('cf_remove_set'),
+                okClass: 'danger'
+            }))) return;
+            await cfSetMembership(setId, 'detach');
+        }
+
+        async function cfSetMembership(setId, action) {
+            try {
+                const res = await fetch(`${API_BASE}set_asset_field_set.php`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: cfState.assetId, set_id: setId, action })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+                showToast(cfd('cf_saved'), 'success');
+                await loadCustomFields(cfState.assetId);
+            } catch (e) {
+                showToast(e.message || cfd('cf_save_failed'), 'error');
+            }
+        }
+
         // Load disks for an asset
         async function loadDisks(assetId) {
             try {
@@ -1329,10 +3893,10 @@ $translationNamespaces = ['common', 'asset-management'];
 
                 if (data.success && data.disks.length > 0) {
                     container.innerHTML = data.disks.map(disk => {
-                        const pct = parseFloat(disk.used_percent) || 0;
-                        const sizeGB = (disk.size_bytes / 1073741824).toFixed(1);
-                        const freeGB = (disk.free_bytes / 1073741824).toFixed(1);
-                        const usedGB = (sizeGB - freeGB).toFixed(1);
+                        const pct = disk.used_percent == null ? null : parseFloat(disk.used_percent);
+                        const sizeGB = disk.size_bytes == null ? '\u2014' : (disk.size_bytes / 1073741824).toFixed(1);
+                        const freeGB = disk.free_bytes == null ? '\u2014' : (disk.free_bytes / 1073741824).toFixed(1);
+                        const usedGB = disk.size_bytes == null || disk.free_bytes == null ? '\u2014' : ((disk.size_bytes-disk.free_bytes)/1073741824).toFixed(1);
                         const level = pct >= 90 ? 'high' : pct >= 75 ? 'medium' : 'low';
 
                         return `<div class="disk-card">
@@ -1340,16 +3904,20 @@ $translationNamespaces = ['common', 'asset-management'];
                                 <span class="disk-drive">${escapeHtml(disk.drive)}</span>
                                 <span class="disk-label">${escapeHtml(disk.label || '')}</span>
                             </div>
-                            <div class="disk-bar-container">
-                                <div class="disk-bar-fill usage-${level}" data-pct="${pct}"></div>
+                            <div class="disk-bar-container" ${pct == null ? 'hidden' : ''}>
+                                <div class="disk-bar-fill usage-${level}" data-pct="${pct == null ? 0 : pct}"></div>
                             </div>
                             <div class="disk-details">
                                 <span>${window.t('asset-management.disk.used_of', { used: usedGB, total: sizeGB })}</span>
-                                <span class="disk-percent usage-${level}">${pct}%</span>
+                                <span class="disk-percent usage-${level}">${pct == null ? '\u2014' : pct + '%'}</span>
                             </div>
                             <div class="disk-details" style="margin-top: 4px;">
                                 <span>${window.t('asset-management.disk.free', { free: freeGB })}</span>
                                 <span>${escapeHtml(disk.file_system || '')}</span>
+                            </div>
+                            <div class="disk-details" style="margin-top: 4px;">
+                                <span>${window.t('common.inventory_source')}</span>
+                                <span>${escapeHtml(disk.source || '')}</span>
                             </div>
                         </div>`;
                     }).join('');
@@ -1360,11 +3928,218 @@ $translationNamespaces = ['common', 'asset-management'];
                         });
                     });
                 } else if (data.success) {
-                    container.innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.disk.no_data')}</div>`;
+                    container.innerHTML = invEmptyHtml('storage', window.t('asset-management.disk.no_data'));
                 }
+
+                renderPhysicalDisks(data.success ? (data.physical_disks || []) : []);
+                if (data.success) atlSaw('storage', (data.disks || []).length + (data.physical_disks || []).length);
             } catch (error) {
                 console.error('Error loading disks:', error);
+                renderPhysicalDisks([]);
                 document.getElementById('disksGrid').innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.disk.load_error')}</div>`;
+            }
+        }
+
+        /**
+         * The physical drives, under the volumes (discussion #97).
+         *
+         * 🔑 The SERIAL is the reason this list exists — it is what a warranty
+         * claim and a disposal certificate both ask for — so it gets its own
+         * labelled line rather than being tucked in with the size. A drive that
+         * reports no serial says so in words: a blank there would read as "not
+         * loaded yet" against the drive beside it that has one.
+         *
+         * Empty means hidden, not an empty-state: a machine whose agent predates
+         * this, or an install that has not run Database Verification, has no
+         * drives recorded and never will until it reports again. A permanent
+         * "No drives" panel under every volume would be noise on every asset in
+         * the estate on the day this ships.
+         */
+        let allPhysicalDisks = [];
+        let showHiddenDrives = false;
+
+        function renderPhysicalDisks(disks) {
+            const section = document.getElementById('physicalDisksSection');
+            const grid = document.getElementById('physicalDisksGrid');
+            if (!section || !grid) return;
+
+            allPhysicalDisks = disks;
+            const hiddenCount = disks.filter(d => d.hidden).length;
+            const visible = showHiddenDrives ? disks : disks.filter(d => !d.hidden);
+
+            // Hidden when there is nothing to draw AND nothing being withheld.
+            // A machine whose only drive is hidden still shows the section, so
+            // the "Show hidden" way back is reachable — hiding the control that
+            // undoes the hiding is how you get a setting nobody can turn off.
+            if (!disks.length) {
+                section.style.display = 'none';
+                grid.innerHTML = '';
+                return;
+            }
+
+            const toggle = document.getElementById('diskHiddenToggle');
+            if (toggle) {
+                if (hiddenCount > 0) {
+                    toggle.style.display = '';
+                    toggle.textContent = showHiddenDrives
+                        ? window.t('asset-management.disk.hide_hidden')
+                        : window.t('asset-management.disk.show_hidden') + ' (' + hiddenCount + ')';
+                } else {
+                    toggle.style.display = 'none';
+                }
+            }
+
+            grid.innerHTML = visible.map(d => {
+                // ⚠️ MB under a gigabyte. Windows reports mounted virtual disks
+                // (a 31 MB "Microsoft Virtual Disk" is on most machines) through
+                // the same WMI class as real hardware, and rounding those to
+                // "0.0 GB" reads as a broken row rather than as a small one.
+                // They are not filtered out — the agent found them attached, and
+                // hiding reported hardware is a worse lie than listing it.
+                const bytes  = d.size_bytes ? Number(d.size_bytes) : 0;
+                const sizeGB = !bytes ? ''
+                    : bytes < 1073741824 ? (bytes / 1048576).toFixed(1) + ' MB'
+                    : (bytes / 1073741824).toFixed(1) + ' GB';
+                // Media type and interface are each a word, and often one is
+                // missing — joined rather than given a line apiece.
+                const spec = [sizeGB, d.media_type, d.interface_type]
+                    .filter(v => v !== null && v !== undefined && String(v).trim() !== '')
+                    .map(v => escapeHtml(String(v).trim()))
+                    .join(' · ');
+                const serial = (d.serial || '').trim();
+                // 🔑 Identified by MODEL + SIZE, never by row id — the agent
+                // reissues those on every report. Passed through a data
+                // attribute rather than an inline onclick argument so a model
+                // containing a quote cannot break out into the handler.
+                return `<div class="disk-card${d.hidden ? ' pdisk-is-hidden' : ''}">
+                    <div class="disk-card-header">
+                        <span class="pdisk-model">${escapeHtml(d.model || '-')}</span>
+                        <button type="button" class="pdisk-hide" title="${d.hidden ? window.t('asset-management.disk.show') : window.t('asset-management.disk.hide')}"
+                                data-model="${escapeHtml(d.model || '')}"
+                                data-size="${d.size_bytes === null || d.size_bytes === undefined ? '' : escapeHtml(String(d.size_bytes))}"
+                                data-hidden="${d.hidden ? '1' : '0'}"
+                                onclick="openDiskHideModal(this)">${d.hidden ? window.t('asset-management.disk.show') : window.t('asset-management.disk.hide')}</button>
+                    </div>
+                    ${d.hidden ? `<div class="pdisk-hidden-badge">${window.t('asset-management.disk.hidden_badge')}</div>` : ''}
+                    <div class="disk-details" style="margin-bottom: 4px;">
+                        <span>${window.t('asset-management.disk.serial')}</span>
+                        <span class="pdisk-serial${serial ? '' : ' none'}">${serial ? escapeHtml(serial) : window.t('asset-management.disk.no_serial')}</span>
+                    </div>
+                    ${spec ? `<div class="disk-details"><span>${spec}</span></div>` : ''}
+                </div>`;
+            }).join('');
+            section.style.display = '';
+        }
+
+        function toggleHiddenDrives(e) {
+            e.preventDefault();
+            showHiddenDrives = !showHiddenDrives;
+            renderPhysicalDisks(allPhysicalDisks);
+        }
+
+        // ─── Hiding a drive (#97) ────────────────────────────────────────────
+        //
+        // One dialog both ways. Hiding offers to take the others like it with
+        // it; showing WARNS when the rule reaches past this asset, because
+        // "Show" that quietly un-hides six hundred drives elsewhere is not a
+        // thing anybody asked for. The count is fetched on open — it is the
+        // whole substance of the question, and worthless out of date.
+        let diskHideTarget = null;
+
+        function openDiskHideModal(btn) {
+            const model  = btn.dataset.model || null;
+            const size   = btn.dataset.size === '' ? null : btn.dataset.size;
+            const hidden = btn.dataset.hidden === '1';
+            diskHideTarget = { model: model, size: size, hidden: hidden };
+
+            const heading = document.getElementById('diskHideHeading');
+            const what    = document.getElementById('diskHideWhat');
+            const intro   = document.getElementById('diskHideIntro');
+            const row     = document.getElementById('diskHideOthersRow');
+            const label   = document.getElementById('diskHideOthersLabel');
+            const cb      = document.getElementById('diskHideOthers');
+            const confirm = document.getElementById('diskHideConfirm');
+
+            what.textContent = model || '-';
+            cb.checked = false;
+            row.style.display = 'none';
+            label.textContent = '';
+
+            if (hidden) {
+                heading.textContent = window.t('asset-management.disk.show_title');
+                intro.textContent   = window.t('asset-management.disk.hide_counting');
+                confirm.textContent = window.t('asset-management.disk.show');
+            } else {
+                heading.textContent = window.t('asset-management.disk.hide_title');
+                intro.textContent   = window.t('asset-management.disk.hide_intro');
+                confirm.textContent = window.t('asset-management.disk.hide');
+                row.style.display = 'flex';
+                label.textContent = window.t('asset-management.disk.hide_counting');
+            }
+            document.getElementById('diskHideModal').classList.add('active');
+
+            // The count. A failure leaves the dialog usable for the single
+            // drive in front of you rather than blocking on it — but the
+            // "others" offer stays hidden, because offering to hide an unknown
+            // number is worse than not offering at all.
+            const params = new URLSearchParams({ asset_id: selectedAsset.id });
+            if (model !== null) params.set('model', model);
+            if (size !== null) params.set('size_bytes', size);
+            fetch(`${API_BASE}count_matching_disks.php?${params.toString()}`)
+                .then(r => r.json())
+                .then(d => {
+                    if (!d.success) throw new Error(d.error || 'count failed');
+                    if (hidden) {
+                        intro.textContent = d.others > 0
+                            ? window.t('asset-management.disk.show_everywhere', { count: d.others })
+                            : window.t('asset-management.disk.show_scoped');
+                    } else if (d.others > 0) {
+                        label.textContent = d.others === 1
+                            ? window.t('asset-management.disk.hide_others_one')
+                            : window.t('asset-management.disk.hide_others', { count: d.others });
+                    } else {
+                        row.style.display = 'none';
+                        intro.textContent = window.t('asset-management.disk.hide_others_none');
+                    }
+                })
+                .catch(() => {
+                    row.style.display = 'none';
+                    if (hidden) intro.textContent = '';
+                });
+        }
+
+        function closeDiskHideModal() {
+            document.getElementById('diskHideModal').classList.remove('active');
+            diskHideTarget = null;
+        }
+
+        async function confirmDiskVisibility() {
+            if (!diskHideTarget || !selectedAsset) return;
+            const btn = document.getElementById('diskHideConfirm');
+            btn.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}save_disk_hide_rule.php`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        asset_id:   selectedAsset.id,
+                        model:      diskHideTarget.model,
+                        size_bytes: diskHideTarget.size,
+                        hidden:     !diskHideTarget.hidden,
+                        everywhere: document.getElementById('diskHideOthers').checked
+                    })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'save failed');
+                closeDiskHideModal();
+                // Reloaded rather than patched in memory: a rule can change
+                // several rows at once, and the server is the only thing that
+                // knows which.
+                loadDisks(selectedAsset.id);
+            } catch (e) {
+                alert(window.t('asset-management.disk.hide_failed') + ' ' + e.message);
+            } finally {
+                btn.disabled = false;
             }
         }
 
@@ -1382,8 +4157,8 @@ $translationNamespaces = ['common', 'asset-management'];
                     renderDevices(allDevices);
                 } else {
                     allDevices = [];
-                    badge.textContent = '0';
-                    document.getElementById('devicesList').innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.devices.no_data')}</div>`;
+                    badge.textContent = invNeverCollected('devices') ? '–' : '0';
+                    document.getElementById('devicesList').innerHTML = invEmptyHtml('devices', window.t('asset-management.devices.no_data'));
                 }
             } catch (error) {
                 console.error('Error loading devices:', error);
@@ -1454,6 +4229,585 @@ $translationNamespaces = ['common', 'asset-management'];
             document.querySelectorAll('.detail-tab-panel').forEach(p => p.classList.toggle('active', p.dataset.dtabPanel === tab));
         }
 
+        // ════════════════════════════════════════════════════════════════
+        //  Asset type layouts (GH #200)
+        //
+        //  The type decides which built-in Key info sections and tabs show
+        //  (includes/services/asset_type_layout.php). PRESENTATION ONLY: the
+        //  page still loads everything, so counts keep arriving for hidden tabs
+        //  and the asset can say when it holds details its type hides. That is
+        //  the difference between "hidden by this profile" and "not there".
+        // ════════════════════════════════════════════════════════════════
+
+        let assetTypeLayouts = {};    // type id -> layout, from get_asset_types.php
+        let atlReveal = false;        // "Show them" pressed for the open asset
+        let atlCounts = {};           // what the async loads found: storage, devices, software, tickets, contracts, documents
+        let atlBadgeWatch = null;
+
+        const atlSectionFields = {
+            make_model: ['manufacturer', 'model'],
+            hardware:   ['cpu_name', 'speed', 'memory'],
+            os:         ['operating_system', 'feature_release', 'build_number', 'bios_version'],
+            reporting:  ['first_seen', 'last_seen'],
+        };
+        const atlFinancialFields = ['purchase_date', 'purchase_cost', 'supplier_id', 'order_number', 'warranty_expiry',
+                                    'lease_start', 'lease_expiry', 'cost_centre_id'];
+        const atlBadges = { devices: 'devicesCountBadge', software: 'softwareCountBadge', connected: 'connectedCountBadge', tickets: 'ticketsCountBadge', contracts: 'contractsCountBadge' };
+
+        /** A fresh asset: nothing revealed, nothing counted, and the badges watched for their numbers. */
+        function atlStartAsset() {
+            atlReveal = false;
+            atlCounts = {};
+            if (atlBadgeWatch) atlBadgeWatch.disconnect();
+            const strip = document.getElementById('detailTabs');
+            if (!strip || !window.MutationObserver) return;
+            // The badges are filled by four loaders in several formats; reading them here
+            // keeps this feature out of each loader. The leading number is the count.
+            atlBadgeWatch = new MutationObserver(() => {
+                let changed = false;
+                Object.entries(atlBadges).forEach(([tab, id]) => {
+                    const el = document.getElementById(id);
+                    const n = el ? parseInt(el.textContent, 10) : NaN;
+                    if (!isNaN(n) && atlCounts[tab] !== n) { atlCounts[tab] = n; changed = true; }
+                });
+                if (changed) atlRenderNotice();
+            });
+            atlBadgeWatch.observe(strip, { subtree: true, childList: true, characterData: true });
+        }
+
+        /** An async load reporting how many rows it found. */
+        function atlSaw(key, n) {
+            atlCounts[key] = Number(n) || 0;
+            atlRenderNotice();
+        }
+
+        /** The open asset's layout: its type's, or everything shown. */
+        function atlLayout() {
+            const L = selectedAsset && assetTypeLayouts[selectedAsset.asset_type_id];
+            return L || <?php echo json_encode(AssetTypeLayout::defaults()); ?>;
+        }
+
+        /** Does the open asset hold anything in this hidden section or tab? A count, true, or false. */
+        function atlHasData(key) {
+            const a = selectedAsset || {};
+            if (atlSectionFields[key]) return atlSectionFields[key].some(f => a[f] !== null && a[f] !== undefined && String(a[f]).trim() !== '');
+            if (key === 'financial') return atlFinancialFields.some(f => a[f] !== null && a[f] !== undefined && String(a[f]).trim() !== '');
+            return atlCounts[key] > 0 ? atlCounts[key] : false;
+        }
+
+        /** Shows, hides and orders the sections and tabs for the open asset's type. */
+        function applyAssetLayout() {
+            const L = atlLayout();
+            document.querySelectorAll('#keyinfoPanel [data-layout-section]').forEach(el => {
+                const hidden = L.sections[el.dataset.layoutSection] === false;
+                el.classList.toggle('atl-hidden', hidden && !atlReveal);
+                el.classList.toggle('atl-revealed', hidden && atlReveal);
+                if (hidden && atlReveal) el.title = window.t('asset-management.layout.hidden_marker'); else el.removeAttribute('title');
+            });
+            const strip = document.getElementById('detailTabs');
+            if (strip) {
+                // Key info first, then the type's order; anything else (the Intune tab) keeps its place after.
+                const keyinfo = strip.querySelector('[data-dtab="keyinfo"]');
+                let anchor = keyinfo;
+                L.tabs.forEach(t => {
+                    const btn = strip.querySelector('[data-dtab="' + t.key + '"]');
+                    if (!btn) return;
+                    anchor.after(btn);
+                    anchor = btn;
+                    const hidden = !t.shown;
+                    btn.classList.toggle('atl-hidden', hidden && !atlReveal);
+                    btn.classList.toggle('atl-revealed', hidden && atlReveal);
+                    if (hidden && atlReveal) btn.title = window.t('asset-management.layout.hidden_marker'); else btn.removeAttribute('title');
+                });
+                // Never leave the reader on a tab that has just been hidden.
+                const active = strip.querySelector('.detail-tab.active');
+                if (active && active.classList.contains('atl-hidden')) switchDetailTab('keyinfo');
+            }
+            atlRenderNotice();
+        }
+
+        /**
+         * The way back to hidden details. With asset_layout_hidden_notice = 'notice' (the default),
+         * a line on Key info names what is hidden AND holds data; otherwise - or when nothing hidden
+         * holds data - a quiet "Show hidden" at the end of the tab strip. Once shown, a line says so.
+         */
+        function atlRenderNotice() {
+            const box = document.getElementById('layoutNotice');
+            const strip = document.getElementById('detailTabs');
+            if (!box || !strip) return;
+            const L = atlLayout();
+            const T = (k, p) => window.t('asset-management.layout.' + k, p);
+            const hiddenKeys = Object.keys(L.sections).filter(k => L.sections[k] === false)
+                .concat(L.tabs.filter(t => !t.shown).map(t => t.key));
+
+            let link = strip.querySelector('.atl-show');
+            if (link) link.remove();
+            box.classList.add('atl-hidden');
+            box.innerHTML = '';
+            if (!hiddenKeys.length) return;
+
+            if (atlReveal) {
+                box.innerHTML = `<span>${escapeHtml(T('revealed_line'))}</span> <button type="button" class="atl-link" onclick="atlSetReveal(false)">${escapeHtml(T('hide_them'))}</button>`;
+                box.classList.remove('atl-hidden');
+                return;
+            }
+            const withData = [];
+            hiddenKeys.forEach(k => {
+                const d = atlHasData(k);
+                if (d === false) return;
+                const name = T(L.sections[k] === false ? 'section_' + k : 'tab_' + k);
+                withData.push(typeof d === 'number' ? T('item_count', { name: name, n: d }) : name);
+            });
+            if (window.ASSET_LAYOUT_NOTICE !== 'link' && withData.length) {
+                box.innerHTML = `<span>${escapeHtml(T('hidden_line', { items: withData.join(', ') }))}</span> <button type="button" class="atl-link" onclick="atlSetReveal(true)">${escapeHtml(T('show_them'))}</button>`;
+                box.classList.remove('atl-hidden');
+                return;
+            }
+            link = document.createElement('button');
+            link.type = 'button';
+            link.className = 'detail-tab atl-show';
+            link.textContent = T('show_hidden');
+            link.onclick = () => atlSetReveal(true);
+            strip.appendChild(link);
+        }
+
+        function atlSetReveal(on) {
+            atlReveal = !!on;
+            applyAssetLayout();
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        //  Inventory freshness (GH #200 Part B)
+        //
+        //  Per source and section, from api/assets/get_asset_inventory_status.php:
+        //  when the last good data was observed, and what the last attempt came
+        //  to. Worked out from what each source DID - never from the type's
+        //  layout, so a hidden tab is "hidden by this profile", not "not there".
+        //  "Never collected" needs BOTH no record and no rows: an asset the agent
+        //  reported before 3.15.0 has rows and no record, and says nothing.
+        // ════════════════════════════════════════════════════════════════
+
+        let invStatus = null;
+        const invSections = ['software', 'disks', 'physical_disks', 'network_adapters', 'devices'];
+        const invTabSections = { software: ['software'], devices: ['devices'], storage: ['disks', 'physical_disks'] };
+
+        async function loadInventoryStatus(assetId) {
+            invStatus = null;
+            try {
+                const response = await fetch(`${API_BASE}get_asset_inventory_status.php?asset_id=${assetId}`);
+                const data = await response.json();
+                if (!data.success || Number(selectedAssetId) !== Number(assetId)) return;
+                invStatus = data;
+            } catch (e) {
+                return;   // the lists still show; only their freshness is missing
+            }
+            renderInventoryPanel();
+            renderInventoryLines();
+            renderReviewNotice();
+            renderProtection();
+            renderShownAs();
+        }
+
+        /**
+         * GH #200 part D: a manufacturer or model shown elsewhere under a mapped name says
+         * so under the field, which keeps the stored (editable) value.
+         */
+        function renderShownAs() {
+            ['manufacturer', 'model'].forEach(field => {
+                const item = document.querySelector(`#keyinfoPanel [data-protect-field="${field}"]`);
+                if (!item || !selectedAsset) return;
+                let hint = item.querySelector('.nm-shown');
+                if (hint) hint.remove();
+                const shown = selectedAsset[field + '_display'];
+                if (shown && shown !== selectedAsset[field]) {
+                    hint = document.createElement('div');
+                    hint.className = 'nm-shown';
+                    hint.textContent = window.t('asset-management.names.shown_as', { name: shown });
+                    item.appendChild(hint);
+                }
+            });
+        }
+
+        /**
+         * GH #200 part D: protected values. A padlock on Name, Manufacturer and Model; a
+         * protected one is never overwritten by the agent or Intune, and what they report
+         * instead is shown under it with Release. State comes with the inventory status.
+         */
+        const PROT_ICON_ON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+        const PROT_ICON_OFF = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.9-1"/></svg>';
+
+        function renderProtection() {
+            if (!invStatus) return;
+            const prot = invStatus.protected || {};
+            const P = (k, v) => window.t('asset-management.protect.' + k, v);
+            document.querySelectorAll('#keyinfoPanel [data-protect-field]').forEach(item => {
+                const field = item.dataset.protectField;
+                const on = !!prot[field];
+                const label = item.querySelector('.info-label');
+                let btn = item.querySelector('.prot-btn');
+                if (!btn) {
+                    btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'prot-btn';
+                    btn.onclick = () => setProtected(field, !btn.classList.contains('on'));
+                    label.appendChild(btn);
+                }
+                btn.classList.toggle('on', on);
+                btn.innerHTML = on ? PROT_ICON_ON : PROT_ICON_OFF;
+                btn.title = P(on ? 'on_title' : 'off_title');
+                btn.setAttribute('aria-label', btn.title);
+                let line = item.querySelector('.prot-conflict');
+                if (line) line.remove();
+                const p = prot[field];
+                if (on && p.reported_value) {
+                    line = document.createElement('div');
+                    line.className = 'prot-conflict';
+                    const src = (p.reported_source || '').replace(/^./, c => c.toUpperCase());
+                    line.innerHTML = `<span>${escapeHtml(P('conflict', { source: src, value: p.reported_value }))}</span>
+                        <button type="button" class="atl-link">${escapeHtml(P('release'))}</button>`;
+                    line.querySelector('button').onclick = () => setProtected(field, false);
+                    item.appendChild(line);
+                }
+            });
+        }
+
+        async function setProtected(field, protect) {
+            const assetId = selectedAssetId;
+            try {
+                const res = await fetch(API_BASE + 'protect_field.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: Number(assetId), field: field, protect: protect })
+                });
+                const data = await res.json();
+                if (!data.success) { showToast(data.error || window.t('asset-management.detail.save_failed'), 'error'); return; }
+                showToast(window.t('asset-management.protect.' + (protect ? 'protected_toast' : 'released_toast')), 'success');
+                loadInventoryStatus(assetId);
+            } catch (e) {
+                showToast(window.t('asset-management.detail.save_failed'), 'error');
+            }
+        }
+
+        /**
+         * GH #200 part D: this asset is in the review list (shares a serial, wears a reused
+         * name, or a tool reported a device on it that matches nothing). Says so, with the
+         * way to decide - the Review tab is where merging and "different" happen.
+         */
+        function renderReviewNotice() {
+            const box = document.getElementById('reviewNotice');
+            if (!box || !invStatus) return;
+            const items = invStatus.review || [];
+            box.classList.toggle('atl-hidden', !items.length);
+            if (!items.length) { box.innerHTML = ''; return; }
+            const R = (k, p) => window.t('asset-management.review.' + k, p);
+            const what = items.map(it => {
+                const other = it.asset_id === Number(selectedAssetId) ? it.other : it.asset;
+                const d = it.detail || {};
+                if (it.kind === 'shared_serial') return R('label_shared_serial') + ': ' + ((other && other.hostname) || '') + ' (' + (d.serial || '') + ')';
+                if (it.kind === 'hostname_reused') return R('label_hostname_reused') + ': ' + ((other && other.hostname) || '');
+                return R('label_' + it.kind) + ': ' + (d.serial || '');
+            }).join('; ');
+            box.innerHTML = `<span>${escapeHtml(R('asset_line', { what: what }))}</span> <a class="atl-link" href="settings/?tab=review">${escapeHtml(R('asset_link'))}</a>`;
+        }
+
+        function invT(key, vars) { return window.t('asset-management.inventory.' + key, vars); }
+
+        /** The stored row tag for a source: the agent's own, or 'rest:<name>'. */
+        function invTag(source) { return source === 'agent' ? 'agent' : 'rest:' + source; }
+
+        function invSourceName(source, inline) {
+            if (source === 'agent') return invT(inline ? 'source_agent_inline' : 'source_agent');
+            return inline ? source : invT('source_rest', { name: source });
+        }
+
+        /** Elapsed, never calendar - see seenHtml(). */
+        function invAgo(iso) {
+            const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+            if (mins < 1) return invT('just_now');
+            if (mins < 60) return invT('ago_minutes', { n: mins });
+            const hours = Math.floor(mins / 60);
+            if (hours < 24) return invT('ago_hours', { n: hours });
+            const days = Math.floor(hours / 24);
+            return days === 1 ? invT('ago_one_day') : invT('ago_days', { n: days });
+        }
+
+        function invIsStale(iso) {
+            return !!iso && (Date.now() - new Date(iso).getTime()) >= (invStatus.stale_days || 7) * 86400000;
+        }
+
+        /** No source has ever recorded this section, and no rows hold it. False until the status has loaded. */
+        function invNeverCollected(section) {
+            if (!invStatus) return false;
+            if (invStatus.sources.some(s => s.sections[section])) return false;
+            return !Object.values(invStatus.rows || {}).some(r => (r[section] || 0) > 0);
+        }
+
+        /**
+         * The empty message under a list: "never reported" once we know nothing has ever
+         * collected it, the list's own message otherwise. One message, not two.
+         */
+        function invEmptyHtml(tab, fallback) {
+            const never = invTabSections[tab].every(invNeverCollected);
+            return `<div class="empty-state" style="padding: 20px;">${escapeHtml(never ? invT('never_' + tab) : fallback)}</div>`;
+        }
+
+        /** One line above a list: what one source's last attempt at one section came to. */
+        function invLine(source, rec, sectionLabel) {
+            const name = invSourceName(source, true);
+            const prefix = sectionLabel ? sectionLabel + ': ' : '';
+            const at = d => `<span title="${escapeHtml(fmtDateTime(new Date(d)))}">${escapeHtml(invAgo(d))}</span>`;
+            const kept = rec.observed_at ? ' ' + invT('kept_from', { ago: '\u0000' }).split('\u0000').map(escapeHtml).join(at(rec.observed_at)) : '';
+            const fill = (key, vars, agoIso) => escapeHtml(invT(key, Object.assign({}, vars, { ago: '\u0000' }))).split('\u0000').join(at(agoIso));
+            if (rec.last_outcome === 'failed') {
+                // The error is the source's own words and may not end a sentence.
+                const error = (rec.last_error || '').trim();
+                const stop = /[.!?]$/.test(error) ? '' : '.';
+                return `<div class="inv-line failed">${escapeHtml(prefix)}${fill('line_failed', { source: name, error: error }, rec.last_attempt_at)}${stop}${rec.observed_at ? kept : ' ' + escapeHtml(invT('nothing_kept'))}</div>`;
+            }
+            if (rec.last_outcome === 'skipped') {
+                return `<div class="inv-line">${escapeHtml(prefix)}${fill('line_skipped', { source: name }, rec.last_attempt_at)}${kept}</div>`;
+            }
+            const stale = invIsStale(rec.observed_at);
+            const title = stale ? ` title="${escapeHtml(invT('stale_title', { days: invStatus.stale_days }))}"` : '';
+            return `<div class="inv-line${stale ? ' stale' : ''}"${title}>${escapeHtml(prefix)}${fill(rec.last_outcome === 'empty' ? 'line_empty' : 'line_current', { source: name }, rec.observed_at)}</div>`;
+        }
+
+        /** The lines above Storage, Devices and Software, and the "never collected" dash on a tab's count. */
+        function renderInventoryLines() {
+            if (!invStatus) return;
+            const boxes = { software: 'invLinesSoftware', devices: 'invLinesDevices', storage: 'invLinesStorage' };
+            Object.entries(invTabSections).forEach(([tab, sections]) => {
+                const box = document.getElementById(boxes[tab]);
+                if (!box) return;
+                const lines = [];
+                invStatus.sources.forEach(src => sections.forEach(section => {
+                    const rec = src.sections[section];
+                    if (rec) lines.push(invLine(src.source, rec, sections.length > 1 ? invT('section_' + section) : ''));
+                }));
+                box.innerHTML = lines.join('');
+            });
+            // The status may arrive after a list drew its empty message - say "never reported" there.
+            const empties = { storage: ['disksGrid', 'asset-management.disk.no_data'], devices: ['devicesList', 'asset-management.devices.no_data'],
+                              software: ['installedSoftwareList', 'asset-management.software.no_data'] };
+            Object.entries(empties).forEach(([tab, [id, key]]) => {
+                const el = document.getElementById(id);
+                const only = el && el.children.length === 1 && el.firstElementChild.classList.contains('empty-state') ? el.firstElementChild : null;
+                if (only && only.textContent === window.t(key) && (tab !== 'software' || !allAssetSoftware.length)) el.innerHTML = invEmptyHtml(tab, window.t(key));
+            });
+            const devBadge = document.getElementById('devicesCountBadge');
+            if (devBadge && devBadge.textContent === '0' && invNeverCollected('devices')) devBadge.textContent = '–';
+            const swBadge = document.getElementById('softwareCountBadge');
+            if (swBadge && !allAssetSoftware.length && swBadge.textContent === '0' && invNeverCollected('software')) swBadge.textContent = '–';
+        }
+
+        /** Key info's Inventory sources panel: every source, and every list it keeps. */
+        function renderInventoryPanel() {
+            const panel = document.getElementById('inventorySourcesPanel');
+            if (!panel || !invStatus) return;
+            if (!invStatus.sources.length) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+            const blocks = invStatus.sources.map(src => {
+                const rows = (invStatus.rows || {})[invTag(src.source)] || {};
+                const sections = invSections.filter(s => src.sections[s] || rows[s]);
+                const body = sections.map(section => {
+                    const rec = src.sections[section];
+                    let state = '', cls = 'quiet', observed = invT('never');
+                    if (rec) {
+                        const stale = invIsStale(rec.observed_at);
+                        if (rec.last_outcome === 'failed') { state = invT('status_failed'); cls = 'failed'; }
+                        else if (rec.last_outcome === 'skipped') { state = invT('status_skipped'); }
+                        else if (rec.last_outcome === 'empty') { state = invT('status_empty'); cls = stale ? 'stale' : ''; }
+                        else { state = invT(stale ? 'status_stale' : 'status_current'); cls = stale ? 'stale' : ''; }
+                        if (rec.observed_at) observed = `<span title="${escapeHtml(fmtDateTime(new Date(rec.observed_at)))}">${escapeHtml(invAgo(rec.observed_at))}</span>`;
+                        else observed = escapeHtml(observed);
+                    } else {
+                        observed = escapeHtml(observed);
+                    }
+                    const error = rec && rec.last_outcome === 'failed' && rec.last_error
+                        ? `<span class="inv-error">${escapeHtml(rec.last_error)} (${escapeHtml(invAgo(rec.last_attempt_at))})</span>` : '';
+                    return `<tr>
+                        <td>${escapeHtml(invT('section_' + section))}</td>
+                        <td><span class="inv-state ${cls}">${escapeHtml(state || '-')}</span>${error}</td>
+                        <td>${observed}</td>
+                        <td class="num">${rows[section] || 0}</td>
+                    </tr>`;
+                }).join('');
+                const ref = src.source_device_ref ? `<span class="inv-source-ref">${escapeHtml(invT('device_ref', { ref: src.source_device_ref }))}</span>` : '';
+                return `<div class="inv-source">
+                    <div class="inv-source-name">${escapeHtml(invSourceName(src.source, false))}${ref}</div>
+                    <table class="inv-table">
+                        <thead><tr><th>${escapeHtml(invT('col_list'))}</th><th>${escapeHtml(invT('col_status'))}</th><th>${escapeHtml(invT('col_observed'))}</th><th class="num">${escapeHtml(invT('col_items'))}</th></tr></thead>
+                        <tbody>${body}</tbody>
+                    </table>
+                </div>`;
+            }).join('');
+            panel.innerHTML = `<div class="section-header"><span class="section-title">${escapeHtml(invT('panel_heading'))}</span></div>${blocks}`;
+            panel.style.display = '';
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        //  Connected assets (GH #200 part C)
+        //
+        //  One row per source (AssetConnectionsService). Shown grouped by the
+        //  other asset, each source's row beside the others, so a tool that
+        //  disagrees with a person is visible rather than overwriting them.
+        //  A tool's row is worded "last observed connected", never as a
+        //  current assignment. Only a person's row has Disconnect.
+        // ════════════════════════════════════════════════════════════════
+
+        let connPickerTimer = null;
+
+        function connT(key, vars) { return window.t('asset-management.connections.' + key, vars); }
+
+        function connSourceName(source) {
+            if (source === 'manual') return connT('source_person');
+            return source.indexOf('rest:') === 0 ? source.slice(5) : source;
+        }
+
+        async function loadConnections(assetId) {
+            const box = document.getElementById('connectionsList');
+            const badge = document.getElementById('connectedCountBadge');
+            try {
+                const response = await fetch(`${API_BASE}get_asset_connections.php?asset_id=${assetId}`);
+                const data = await response.json();
+                if (Number(selectedAssetId) !== Number(assetId) || !box) return;
+                if (!data.success) throw new Error(data.error || '');
+                if (badge) badge.textContent = data.current.length;
+                renderConnections(data);
+            } catch (e) {
+                if (badge) badge.textContent = '0';
+                if (box) box.innerHTML = `<div class="empty-state" style="padding: 20px;">${escapeHtml(connT('load_error'))}</div>`;
+            }
+        }
+
+        function renderConnections(data) {
+            const box = document.getElementById('connectionsList');
+            const assetLink = o => `<a href="?asset_id=${o.id}" onclick="event.preventDefault(); openConnectedAsset(${o.id})">${assetTypeIcon(o.asset_type_id, 14)}${escapeHtml(o.hostname || ('#' + o.id))}</a>`;
+            const when = iso => iso ? `<span title="${escapeHtml(fmtDateTime(new Date(iso)))}">${escapeHtml(fmtDate(new Date(iso)))}</span>` : '-';
+            let html = '';
+            if (!data.current.length) {
+                html += `<div class="empty-state" style="padding: 20px;">${escapeHtml(connT('none'))}</div>`;
+            } else {
+                html += '<div class="conn-list">' + data.current.map(group => {
+                    const hasManual = group.rows.some(r => r.manual);
+                    const lines = group.rows.map(r => {
+                        if (r.manual) {
+                            const text = r.confirmed_by ? connT('confirmed_by', { name: r.confirmed_by, date: '\u0000' }) : connT('confirmed_anon', { date: '\u0000' });
+                            return `<div class="conn-row"><span class="conn-chip manual">${escapeHtml(connSourceName('manual'))}</span>
+                                <span>${escapeHtml(text).split('\u0000').join(when(r.connected_at))}</span>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="disconnectAsset(${r.id}, '${escapeHtml(group.other.hostname || '')}')">${escapeHtml(connT('disconnect'))}</button></div>`;
+                        }
+                        const ago = r.last_observed_at ? invAgoOrDate(r.last_observed_at) : '';
+                        return `<div class="conn-row"><span class="conn-chip">${escapeHtml(connSourceName(r.source))}</span>
+                            <span title="${escapeHtml(r.last_observed_at ? fmtDateTime(new Date(r.last_observed_at)) : '')}">${escapeHtml(connT('observed_by', { source: connSourceName(r.source), ago: ago }))}</span></div>`;
+                    }).join('');
+                    const confirm = hasManual ? '' : `<button type="button" class="btn btn-outline btn-sm" title="${escapeHtml(connT('confirm_title'))}" onclick="connectAsset(${group.other.id})">${escapeHtml(connT('confirm'))}</button>`;
+                    const desc = [group.other.manufacturer, group.other.model].filter(Boolean).join(' ');
+                    return `<div class="conn-item">
+                        <div class="conn-item-head"><span class="conn-name">${assetLink(group.other)}</span>
+                            <span class="conn-desc">${escapeHtml(desc)}</span>${confirm}</div>
+                        ${lines}
+                    </div>`;
+                }).join('') + '</div>';
+            }
+            if (data.history.length) {
+                html += `<div class="section-header conn-history-head"><span class="section-title">${escapeHtml(connT('history_heading'))}</span></div>
+                    <table class="inv-table conn-history"><tbody>` + data.history.map(r => {
+                        const ended = r.manual
+                            ? (r.disconnected_by ? connT('ended_by_person', { name: r.disconnected_by }) : '')
+                            : connT('ended_by_source');
+                        const from = r.manual ? r.connected_at : (r.first_observed_at || r.connected_at);
+                        return `<tr><td>${assetLink(r.other)}</td>
+                            <td>${escapeHtml(connT('history_row', { from: '\u0000', to: '\u0001' })).split('\u0000').join(when(from)).split('\u0001').join(when(r.disconnected_at))}</td>
+                            <td><span class="conn-chip${r.manual ? ' manual' : ''}">${escapeHtml(connSourceName(r.source))}</span> ${escapeHtml(ended)}</td></tr>`;
+                    }).join('') + '</tbody></table>';
+            }
+            box.innerHTML = html;
+        }
+
+        /** "3 hr ago" while recent, the date once it is old - an old observation should read as old. */
+        function invAgoOrDate(iso) {
+            const days = (Date.now() - new Date(iso).getTime()) / 86400000;
+            return days < 7 ? invAgo(iso) : fmtDate(new Date(iso));
+        }
+
+        function openConnectedAsset(id) {
+            if (assets.some(a => Number(a.id) === Number(id))) { selectAsset(id); return; }
+            window.location.href = '?asset_id=' + Number(id);
+        }
+
+        function openConnectPicker() {
+            if (!selectedAssetId) return;
+            document.getElementById('connectPickerModal').classList.add('active');
+            const box = document.getElementById('connectPickerSearch');
+            box.value = '';
+            document.getElementById('connectPickerResults').innerHTML = '';
+            box.focus();
+        }
+
+        function closeConnectPicker() {
+            document.getElementById('connectPickerModal').classList.remove('active');
+        }
+
+        function connectPickerInput() {
+            clearTimeout(connPickerTimer);
+            connPickerTimer = setTimeout(searchConnectable, 250);
+        }
+
+        async function searchConnectable() {
+            const results = document.getElementById('connectPickerResults');
+            const q = document.getElementById('connectPickerSearch').value.trim();
+            if (q.length < 2) { results.innerHTML = ''; return; }
+            try {
+                const resp = await fetch(`${API_BASE}get_assets.php?search=${encodeURIComponent(q)}`);
+                const data = await resp.json();
+                const found = (data.assets || []).filter(a => Number(a.id) !== Number(selectedAssetId)).slice(0, 25);
+                if (!found.length) {
+                    results.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(connT('no_results'))}</div>`;
+                    return;
+                }
+                results.innerHTML = found.map(a => `
+                    <button type="button" class="contract-pick" onclick="connectAsset(${Number(a.id)})">
+                        <span class="contract-pick-name">${assetTypeIcon(a.asset_type_id, 14)}${escapeHtml(a.hostname || '')}</span>
+                        <span class="contract-pick-meta">${escapeHtml([a.asset_tag, a.service_tag, [a.manufacturer, a.model].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</span>
+                    </button>`).join('');
+            } catch (e) {
+                results.innerHTML = `<div class="asset-tickets-empty">${escapeHtml(connT('load_error'))}</div>`;
+            }
+        }
+
+        async function connectAsset(otherId) {
+            const assetId = selectedAssetId;
+            try {
+                const resp = await fetch(API_BASE + 'connect_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asset_id: Number(assetId), other_asset_id: Number(otherId) })
+                });
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error || connT('load_error'), 'error'); return; }
+                closeConnectPicker();
+                showToast(connT('connected_toast'), 'success');
+                loadConnections(assetId);
+            } catch (e) {
+                showToast(connT('load_error'), 'error');
+            }
+        }
+
+        async function disconnectAsset(connectionId, name) {
+            if (!confirm(connT('disconnect_confirm', { name: name }))) return;
+            const assetId = selectedAssetId;
+            try {
+                const resp = await fetch(API_BASE + 'disconnect_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connection_id: Number(connectionId) })
+                });
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error || connT('load_error'), 'error'); return; }
+                showToast(connT('disconnected_toast'), 'success');
+                loadConnections(assetId);
+            } catch (e) {
+                showToast(connT('load_error'), 'error');
+            }
+        }
+
         // Load Intune device data for this asset, if any. Renders a third tab when matched.
         async function loadIntuneDevice(assetId) {
             try {
@@ -1468,8 +4822,8 @@ $translationNamespaces = ['common', 'asset-management'];
 
         function renderIntuneTab(d) {
             const tabs = document.getElementById('detailTabs');
-            const scrollContainer = tabs ? tabs.parentNode : null;
-            if (!tabs || !scrollContainer) return;
+            const body = document.getElementById('detailBody');
+            if (!tabs || !body) return;
 
             const tabBtn = document.createElement('button');
             tabBtn.className = 'detail-tab';
@@ -1479,10 +4833,10 @@ $translationNamespaces = ['common', 'asset-management'];
             tabs.appendChild(tabBtn);
 
             const panel = document.createElement('div');
-            panel.className = 'detail-tab-panel';
+            panel.className = 'detail-tab-panel detail-tab-panel--scroll';
             panel.dataset.dtabPanel = 'intune';
             panel.innerHTML = renderIntuneTabBody(d);
-            scrollContainer.appendChild(panel);
+            body.appendChild(panel);
         }
 
         function renderIntuneTabBody(d) {
@@ -1550,12 +4904,16 @@ $translationNamespaces = ['common', 'asset-management'];
             }
         }
 
+        function softwareIdentityCount(items) {
+            return new Set(items.map(s => s.app_id || JSON.stringify([s.display_name,s.publisher]))).size;
+        }
+
         function updateSwTabCounts() {
             const apps = allAssetSoftware.filter(s => !parseInt(s.system_component));
             const components = allAssetSoftware.filter(s => parseInt(s.system_component));
-            document.getElementById('swCountApps').textContent = apps.length;
-            document.getElementById('swCountComponents').textContent = components.length;
-            document.getElementById('swCountAll').textContent = allAssetSoftware.length;
+            document.getElementById('swCountApps').textContent = softwareIdentityCount(apps);
+            document.getElementById('swCountComponents').textContent = softwareIdentityCount(components);
+            document.getElementById('swCountAll').textContent = softwareIdentityCount(allAssetSoftware);
         }
 
         function switchSwTab(filter) {
@@ -1577,10 +4935,12 @@ $translationNamespaces = ['common', 'asset-management'];
                 software = software.filter(s => parseInt(s.system_component));
             }
 
-            badge.textContent = software.length;
+            badge.textContent = !allAssetSoftware.length && invNeverCollected('software') ? '–' : softwareIdentityCount(software);
 
             if (software.length === 0) {
-                container.innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.software.no_data')}</div>`;
+                container.innerHTML = allAssetSoftware.length
+                    ? `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.software.no_data')}</div>`
+                    : invEmptyHtml('software', window.t('asset-management.software.no_data'));
                 return;
             }
 
@@ -1591,6 +4951,7 @@ $translationNamespaces = ['common', 'asset-management'];
                             <th>${window.t('asset-management.software.col_application')}</th>
                             <th>${window.t('asset-management.software.col_publisher')}</th>
                             <th>${window.t('asset-management.software.col_version')}</th>
+                            <th>${window.t('common.inventory_source')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1599,6 +4960,7 @@ $translationNamespaces = ['common', 'asset-management'];
                                 <td>${escapeHtml(sw.display_name)}</td>
                                 <td>${escapeHtml(sw.publisher || '\u2014')}</td>
                                 <td>${escapeHtml(sw.display_version || '\u2014')}</td>
+                                <td>${escapeHtml(sw.source || '\u2014')}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -1606,24 +4968,109 @@ $translationNamespaces = ['common', 'asset-management'];
             `;
         }
 
+        /**
+         * A small red or amber flag beside a date that has passed or is about
+         * to. Returns an empty string for everything else, so a date with
+         * years left on it - and a field left blank, which is most of them -
+         * adds nothing to the screen at all.
+         *
+         * The 30-day window is fixed here on purpose. The configurable windows
+         * under Assets -> Settings decide what reaches the DASHBOARD and the
+         * CALENDAR, where a number too large would bury everything else. This
+         * is a mark on a record somebody has already chosen to look at, so
+         * there is nothing for it to crowd out.
+         *
+         * Dates are compared as plain calendar days. A lease ends on a date,
+         * not at an instant, and turning it into a timestamp would make the
+         * answer depend on the reader's timezone - so a lease would read as
+         * expired in Auckland and current in London on the same day.
+         */
+        function expiryFlag(dateStr) {
+            if (!dateStr) { return ''; }
+            const d = String(dateStr).slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { return ''; }
+
+            const today = new Date();
+            const todayStr = today.getFullYear() + '-'
+                + String(today.getMonth() + 1).padStart(2, '0') + '-'
+                + String(today.getDate()).padStart(2, '0');
+
+            // Both are YYYY-MM-DD, so a string comparison IS a date comparison
+            // and needs no parsing to get right.
+            if (d < todayStr) {
+                return ` <span class="expiry-flag expiry-flag-past">${window.t('asset-management.detail.expired')}</span>`;
+            }
+            const days = Math.round((Date.parse(d + 'T00:00:00') - Date.parse(todayStr + 'T00:00:00')) / 86400000);
+            if (days <= 30) {
+                return ` <span class="expiry-flag expiry-flag-soon">${window.t('asset-management.detail.expires_in_days', { days: days })}</span>`;
+            }
+            return '';
+        }
+
+        /**
+         * Re-draw the pill beside a date that has just been saved.
+         *
+         * Called after the save rather than on change: a pill that updates
+         * optimistically and then fails to save leaves the screen stating a
+         * date the asset does not have, which is worse than a stale pill
+         * because it looks freshly correct.
+         *
+         * Silently does nothing for any other field, so every call site can
+         * hand it whatever was edited without asking what kind of field it is.
+         */
+        function refreshExpiryFlag(field, value) {
+            if (field === 'lease_start' || field === 'lease_expiry') { loadAssetLease(selectedAsset && selectedAsset.id); }
+            if (field !== 'warranty_expiry' && field !== 'lease_expiry') { return; }
+            const slot = document.querySelector(`.expiry-slot[data-expiry-field="${field}"]`);
+            if (slot) { slot.innerHTML = expiryFlag(value); }
+        }
+
         // Open assign user modal
         function openAssignModal() {
             selectedUserForAssign = null;
+            selectedAnalystForAssign = null;
+            setAssignKind('user');
             document.getElementById('userSearchInput').value = '';
-            document.getElementById('userSearchResults').innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.assign.type_to_search')}</div>`;
             document.getElementById('assignExpectedReturn').value = '';
             document.getElementById('assignBtn').disabled = true;
             document.getElementById('assignUserModal').classList.add('active');
             document.getElementById('userSearchInput').focus();
         }
 
+        /**
+         * Switch the picker between the two directories.
+         *
+         * CLEARS THE SELECTION. Somebody who picks a name, changes their mind
+         * about which directory they wanted and picks nothing would otherwise
+         * assign the person they had already chosen - from the wrong table, to
+         * a holder column that does not match. Forgetting is the safe behaviour
+         * here even though it costs a click.
+         */
+        function setAssignKind(kind) {
+            assignTargetKind = (kind === 'analyst') ? 'analyst' : 'user';
+            selectedUserForAssign = null;
+            selectedAnalystForAssign = null;
+            document.getElementById('assignBtn').disabled = true;
+            document.querySelectorAll('.assign-kind-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.kind === assignTargetKind);
+            });
+            const input = document.getElementById('userSearchInput');
+            input.placeholder = window.t(assignTargetKind === 'analyst'
+                ? 'asset-management.assign.search_placeholder_analyst'
+                : 'asset-management.assign.search_placeholder');
+            document.getElementById('userSearchResults').innerHTML =
+                `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.assign.type_to_search')}</div>`;
+            if (input.value) { searchUsersForAssign(); }
+        }
+
         // Close assign modal
         function closeAssignModal() {
             document.getElementById('assignUserModal').classList.remove('active');
             selectedUserForAssign = null;
+            selectedAnalystForAssign = null;
         }
 
-        // Search users for assignment
+        // Search the chosen directory for somebody to give the asset to
         async function searchUsersForAssign() {
             const search = document.getElementById('userSearchInput').value;
 
@@ -1632,33 +5079,44 @@ $translationNamespaces = ['common', 'asset-management'];
                 return;
             }
 
+            const analystMode = (assignTargetKind === 'analyst');
+            const url = analystMode
+                ? `${API_BASE}get_analysts.php?search=${encodeURIComponent(search)}`
+                : `${API_TICKETS}get_users.php?search=${encodeURIComponent(search)}`;
+
             try {
-                const response = await fetch(`${API_TICKETS}get_users.php?search=${encodeURIComponent(search)}`);
+                const response = await fetch(url);
                 const data = await response.json();
 
                 const container = document.getElementById('userSearchResults');
+                const rows = data.success ? (analystMode ? data.analysts : data.users) : [];
+                const selectedId = analystMode ? selectedAnalystForAssign : selectedUserForAssign;
 
-                if (data.success && data.users.length > 0) {
-                    container.innerHTML = data.users.map(user => `
-                        <div class="user-search-item ${selectedUserForAssign == user.id ? 'selected' : ''}" onclick="selectUserForAssign(${user.id}, '${escapeHtml(user.display_name)}')">
-                            <div class="user-search-name">${escapeHtml(user.display_name || window.t('asset-management.common.unknown'))}</div>
-                            <div class="user-search-email">${escapeHtml(user.email || '')}</div>
+                if (rows && rows.length > 0) {
+                    container.innerHTML = rows.map(person => `
+                        <div class="user-search-item ${selectedId == person.id ? 'selected' : ''}" onclick="selectUserForAssign(${person.id})">
+                            <div class="user-search-name">${escapeHtml(person.display_name || window.t('asset-management.common.unknown'))}</div>
+                            <div class="user-search-email">${escapeHtml(person.email || '')}</div>
                         </div>
                     `).join('');
                 } else {
-                    container.innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t('asset-management.assign.no_users')}</div>`;
+                    container.innerHTML = `<div class="empty-state" style="padding: 20px;">${window.t(analystMode ? 'asset-management.assign.no_analysts' : 'asset-management.assign.no_users')}</div>`;
                 }
             } catch (error) {
-                console.error('Error searching users:', error);
+                console.error('Error searching for an asset holder:', error);
             }
         }
 
-        // Select a user for assignment
-        function selectUserForAssign(userId, userName) {
-            selectedUserForAssign = userId;
+        // Select somebody for assignment. The id lands in whichever variable
+        // matches the directory it came from - see setAssignKind.
+        function selectUserForAssign(personId) {
+            if (assignTargetKind === 'analyst') {
+                selectedAnalystForAssign = personId;
+            } else {
+                selectedUserForAssign = personId;
+            }
             document.getElementById('assignBtn').disabled = false;
 
-            // Update UI to show selection
             document.querySelectorAll('.user-search-item').forEach(item => {
                 item.classList.remove('selected');
             });
@@ -1670,33 +5128,41 @@ $translationNamespaces = ['common', 'asset-management'];
             openAssignModal();
         }
 
-        // Confirm user assignment (handles both assign and re-assign)
+        // Confirm the assignment (handles both assign and re-assign, and both
+        // kinds of holder).
         async function confirmAssignUser() {
-            if (!selectedUserForAssign || !selectedAssetId) return;
+            const analystMode = (assignTargetKind === 'analyst');
+            const chosenId = analystMode ? selectedAnalystForAssign : selectedUserForAssign;
+            if (!chosenId || !selectedAssetId) return;
 
             try {
+                // Re-assign removes whoever holds it now - which may be a
+                // requester or an analyst, and is not necessarily the same kind
+                // as the person taking it over.
                 const previousUserId = currentAssignedUserId;
+                const previousAnalystId = currentAssignedAnalystId;
 
-                // If re-assigning, remove current user first (skip audit, assign will log it)
-                if (previousUserId) {
+                if (previousUserId || previousAnalystId) {
+                    const removeBody = { asset_id: selectedAssetId, skip_audit: true };
+                    if (previousAnalystId) { removeBody.analyst_id = previousAnalystId; }
+                    else { removeBody.user_id = previousUserId; }
                     await fetch(API_BASE + 'unassign_asset_user.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            asset_id: selectedAssetId,
-                            user_id: previousUserId,
-                            skip_audit: true
-                        })
+                        body: JSON.stringify(removeBody)
                     });
                 }
 
                 const assignBody = {
                     asset_id: selectedAssetId,
-                    user_id: selectedUserForAssign,
                     expected_return_date: document.getElementById('assignExpectedReturn').value || null
                 };
-                if (previousUserId) {
-                    assignBody.previous_user_id = previousUserId;
+                if (analystMode) {
+                    assignBody.analyst_id = chosenId;
+                    if (previousAnalystId) { assignBody.previous_analyst_id = previousAnalystId; }
+                } else {
+                    assignBody.user_id = chosenId;
+                    if (previousUserId) { assignBody.previous_user_id = previousUserId; }
                 }
 
                 const response = await fetch(API_BASE + 'assign_asset_user.php', {
@@ -1716,23 +5182,25 @@ $translationNamespaces = ['common', 'asset-management'];
                     showToast(window.t('asset-management.toast.assign_error', { error: data.error }), 'error');
                 }
             } catch (error) {
-                console.error('Error assigning user:', error);
+                console.error('Error assigning asset:', error);
                 showToast(window.t('asset-management.toast.assign_failed'), 'error');
             }
         }
 
-        // Unassign a user from the asset
-        async function unassignUser(userId) {
+        // Take the asset back off whoever holds it. `kind` says which column the
+        // id belongs in - passing an analyst id as a user id would find no
+        // assignment and report "not found" for a row plainly on screen.
+        async function unassignUser(personId, kind) {
             if (!(await showConfirm({ title: window.t('asset-management.common.delete'), message: window.t('asset-management.confirm.remove_user'), okLabel: window.t('asset-management.common.delete'), okClass: 'danger' }))) return;
+
+            const body = { asset_id: selectedAssetId };
+            if (kind === 'analyst') { body.analyst_id = personId; } else { body.user_id = personId; }
 
             try {
                 const response = await fetch(API_BASE + 'unassign_asset_user.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        asset_id: selectedAssetId,
-                        user_id: userId
-                    })
+                    body: JSON.stringify(body)
                 });
                 const data = await response.json();
 
@@ -1750,23 +5218,30 @@ $translationNamespaces = ['common', 'asset-management'];
             }
         }
 
+        /**
+         * The ⓘ preview badge (#91). Guarded, so a page that somehow loaded
+         * without record-preview.js loses the preview rather than the panel it
+         * would have been drawn into.
+         */
+        function assetPreviewBadge(type, id) {
+            return window.FreeITSMPreview ? window.FreeITSMPreview.badge(type, id) : '';
+        }
+
         // Escape HTML for safe display
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
-        // Format date for display
+        // Format a stored UTC datetime as a date, in the analyst's display zone.
+        // Used for true audit/assignment timestamps (e.g. assigned_datetime,
+        // Intune enrolled_datetime) — NOT for date-only fields.
         function formatDate(dateString) {
             if (!dateString) return '-';
-            const date = new Date(dateString);
-            return date.toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric'
-            });
+            const date = parseUTCDate(dateString);
+            return fmtDate(date);
         }
 
         // Close modal on outside click
@@ -1820,7 +5295,8 @@ $translationNamespaces = ['common', 'asset-management'];
             // localise here. Legacy rows hold an English label (with spaces/capitals)
             // — those don't match a key, so we show them as-is.
             const FIELD_KEYS = ['type','status','location','supplier','purchase_date',
-                'purchase_cost','order_number','warranty_expiry','assigned_user'];
+                'purchase_cost','order_number','warranty_expiry','lease_start','lease_expiry','cost_centre','assigned_user',
+                'hostname','asset_created','asset_discovered','hostname_reused','connection','review','merged','protected','released','cmdb_link'];
 
             history.forEach(entry => {
                 const noneEm = `<em style="color:#999;">${window.t('asset-management.common.none')}</em>`;
@@ -1838,7 +5314,7 @@ $translationNamespaces = ['common', 'asset-management'];
                         <span class="history-arrow">&rarr;</span>
                         <span class="history-value-new">${newVal}</span>
                     </td>
-                    <td class="history-meta">${escapeHtml(entry.analyst_name || window.t('asset-management.common.unknown'))}</td>
+                    <td class="history-meta">${escapeHtml(entry.analyst_name || window.t(entry.analyst_id ? 'asset-management.common.unknown' : 'asset-management.history.automatic'))}</td>
                 </tr>`;
             });
 
@@ -1848,12 +5324,42 @@ $translationNamespaces = ['common', 'asset-management'];
 
         function formatDateTime(dateString) {
             if (!dateString) return '-';
-            const date = new Date(dateString + 'Z');
-            return date.toLocaleDateString('en-GB', {
-                day: '2-digit', month: 'short', year: 'numeric'
-            }) + ' ' + date.toLocaleTimeString('en-GB', {
-                hour: '2-digit', minute: '2-digit'
-            });
+            const date = parseUTCDate(dateString);
+            return fmtDateTime(date);
+        }
+
+        /**
+         * "First seen" / "Last seen" for the Key info grid (discussion #97).
+         *
+         * 🔑 MIRRORS WATCHTOWER. Seven days is not chosen here — it is the same
+         * seven that includes/watchtower_queries.php counts as "not seen", and
+         * the two have to agree or the dashboard says nine machines are offline
+         * and none of the nine looks it when you open them.
+         *
+         * The relative phrase is ELAPSED, never calendar ("1 day ago", not
+         * "yesterday"): the value is a UTC instant and the analysts reading it
+         * span sixteen hours of timezone, so whose yesterday it was has no one
+         * answer. The absolute timestamp is still the headline — "3 days ago" is
+         * the reassurance, the date is the fact.
+         */
+        const SEEN_STALE_AFTER_DAYS = 7;
+
+        function seenHtml(value, flagStale) {
+            if (!value) {
+                return `<span class="seen-never">${escapeHtml(window.t('asset-management.field.never_seen'))}</span>`;
+            }
+            const date = parseUTCDate(value);
+            if (!date || isNaN(date.getTime())) return '-';
+
+            const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+            const ago = days < 1 ? window.t('asset-management.field.seen_under_a_day')
+                      : days === 1 ? window.t('asset-management.field.seen_one_day')
+                      : window.t('asset-management.field.seen_days_ago', { count: days });
+            // Amber on the LAST seen only. A first_seen of two years ago is a
+            // long-serving machine, not a problem, and colouring it would make
+            // the whole estate look broken.
+            const stale = flagStale && days >= SEEN_STALE_AFTER_DAYS;
+            return `${escapeHtml(fmtDateTime(date))} <span class="seen-ago${stale ? ' stale' : ''}">${escapeHtml(ago)}</span>`;
         }
 
         function closeHistoryModal() {
@@ -1923,5 +5429,19 @@ $translationNamespaces = ['common', 'asset-management'];
             }
         });
     </script>
+    <?php /* Loaded LAST so it can wrap this page's own selectAsset() from the
+             outside rather than editing it — the wrap-don't-edit rule. Every
+             behaviour inside is gated on matchMedia(768px), so on desktop it is
+             inert. (#936) */ ?>
+    <script src="../assets/js/network-mapper-icons.js?v=3"></script>
+    <script>window.ASSET_LAYOUT_NOTICE = <?php echo json_encode(AssetTypeLayout::noticeMode(connectToDatabase())); ?>;</script>
+    <script>window.ASSET_SHOW_PROJECTS = <?php echo analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'projects') ? 'true' : 'false'; ?>;
+    // GH #217: the Software and Contracts tabs and the CI section go while that module is SWITCHED OFF.
+    // moduleIsEnabled, not access: a reader without the grant keeps today's tab / "restricted" wording.
+    window.ASSET_MODULE_ON = <?php echo json_encode(['software' => moduleIsEnabled(connectToDatabase(), 'software'), 'contracts' => moduleIsEnabled(connectToDatabase(), 'contracts'), 'cmdb' => moduleIsEnabled(connectToDatabase(), 'cmdb')]); ?>;
+    window.APP_BASE = window.APP_BASE || <?php echo json_encode(BASE_URL); ?>;</script>
+    <script src="../assets/js/project-links.js?v=1"></script>
+    <script src="../assets/js/ci-asset-link.js?v=5"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

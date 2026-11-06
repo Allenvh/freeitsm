@@ -15,6 +15,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 try {
     $conn = connectToDatabase();
@@ -58,9 +59,9 @@ try {
             'content-type: application/json',
         ],
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_SSL_VERIFYPEER => SSL_VERIFY_PEER,
         CURLOPT_TIMEOUT        => 15,
     ]);
+    sslApplyCurl($ch);
 
     $resp = curl_exec($ch);
     $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);

@@ -13,14 +13,18 @@ require_once '../../api/cmdb/_ai_helpers.php';
 
 header('Content-Type: application/json');
 if (!isset($_SESSION['analyst_id'])) { echo json_encode(['success' => false, 'error' => 'Not authenticated']); exit; }
+requireModuleAccessJson('problems');
 
 try {
     $conn = connectToDatabase();
     $analystId = (int) $_SESSION['analyst_id'];
     $cfg = aiSettingsLoad($conn, 'problem_ai');
-    if (($cfg['api_key'] ?? '') === '') throw new Exception('Problem AI is not configured. Set a provider + key in Problem Management → Settings.');
+    if (!aiConfigured($cfg)) throw new Exception('Problem AI is not configured. Set a provider + key in Problem Management → Settings.');
 
     [$tf, $tp] = ticketTenantFilter($conn, $analystId, 't');
+    // Subjects go to the AI provider - never a confidential ticket's (#62).
+    require_once __DIR__ . '/../../includes/ticket_sensitivity.php';
+    $tf .= ticketAiExclusionSql($conn, 't');
     $sql = "SELECT t.ticket_number, t.subject
             FROM tickets t
             WHERE t.deleted_datetime IS NULL AND t.closed_datetime IS NULL" . $tf . "

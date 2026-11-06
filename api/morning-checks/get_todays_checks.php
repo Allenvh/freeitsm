@@ -12,6 +12,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/services/morning_checks.php';   // resolveAssignment()
 
 header('Content-Type: application/json');
 
@@ -19,6 +20,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('morning-checks');
 
 try {
     $checkDate = $_GET['date'] ?? date('Y-m-d');
@@ -30,18 +32,39 @@ try {
 
     $conn = connectToDatabase();
 
+    // Discussion #64: the row now carries its group, its routing, and who
+    // completed it. CreatedBy has been written by the service layer since the
+    // service-layer refactor — it was simply never selected here, which is why
+    // "who confirmed this?" had no answer on screen despite the data existing.
     $sql = "SELECT c.CheckID, c.CheckName, c.CheckDescription, c.SortOrder,
+                   r.ResultID,
                    r.StatusID, r.Status AS OrphanLabel,
                    s.Label AS StatusLabel, s.Colour AS StatusColour,
                    s.RequiresNotes AS StatusRequiresNotes,
-                   r.Notes
+                   r.Notes,
+                   r.CreatedBy, r.ModifiedBy, r.ModifiedDate AS CompletedAt,
+                   c.GroupID, g.GroupName, g.SortOrder AS GroupSortOrder,
+                   c.AssignedAnalystID,
+                   ca.full_name AS CheckAnalystName,
+                   g.AssignedAnalystID AS GroupAnalystID,
+                   ga.full_name        AS GroupAnalystName,
+                   g.AssignedTeamID    AS GroupTeamID,
+                   gt.name             AS GroupTeamName
             FROM morningChecks_Checks c
             LEFT JOIN morningChecks_Results r
                 ON c.CheckID = r.CheckID AND r.CheckDate = ?
             LEFT JOIN morningChecks_Statuses s
                 ON r.StatusID = s.StatusID
+            LEFT JOIN morningChecks_Groups g ON g.GroupID = c.GroupID
+            LEFT JOIN analysts ca ON ca.id = c.AssignedAnalystID
+            LEFT JOIN analysts ga ON ga.id = g.AssignedAnalystID
+            LEFT JOIN teams    gt ON gt.id = g.AssignedTeamID
             WHERE c.IsActive = 1
-            ORDER BY c.SortOrder, c.CheckName";
+              AND (c.GroupID IS NULL OR g.IsActive = 1)
+            -- Ungrouped checks sort last: a round with some grouped and some not
+            -- reads better as \"the named sections, then the rest\" than as a
+            -- nameless block at the top.
+            ORDER BY (c.GroupID IS NULL), g.SortOrder, g.GroupName, c.SortOrder, c.CheckName";
 
     $stmt = $conn->prepare($sql);
     $stmt->execute([$checkDate]);
@@ -59,6 +82,10 @@ try {
         $requiresNotes  = $r['StatusRequiresNotes'] !== null ? (bool)$r['StatusRequiresNotes'] : null;
         $isOrphan       = ($statusId === null && $statusLabel !== null && $statusLabel !== '');
 
+        // Who it is routed to, most specific first — see
+        // MorningChecksService::resolveAssignment() for the precedence.
+        [$assignedAnalystId, $assignedLabel, $assignedSource] = MorningChecksService::resolveAssignment($r);
+
         $checks[] = [
             'CheckID'              => (int)$r['CheckID'],
             'CheckName'            => $r['CheckName'],
@@ -70,6 +97,19 @@ try {
             'StatusRequiresNotes'  => $requiresNotes,
             'IsOrphan'             => $isOrphan,
             'Notes'                => $r['Notes'],
+            // Discussion #64
+            'ResultID'             => $r['ResultID'] !== null ? (int)$r['ResultID'] : null,
+            // ModifiedBy first: the person who set the CURRENT status is the one who
+            // checked it. CreatedBy is the fallback for rows written before that
+            // column existed, and for the v1 API's own meaning of created_by.
+            'CompletedBy'          => $r['ModifiedBy'] ?: $r['CreatedBy'],
+            'CompletedAt'          => $r['ResultID'] !== null ? $r['CompletedAt'] : null,
+            'GroupID'              => $r['GroupID'] !== null ? (int)$r['GroupID'] : null,
+            'GroupName'            => $r['GroupName'],
+            'AssignedAnalystID'    => $assignedAnalystId,
+            'AssignedLabel'        => $assignedLabel,
+            'AssignedSource'       => $assignedSource,     // 'check' | 'group' | 'team' | null
+            'AssignedTeamID'       => $assignedSource === 'team' && $r['GroupTeamID'] !== null ? (int)$r['GroupTeamID'] : null,
         ];
     }
 

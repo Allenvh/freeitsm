@@ -10,10 +10,14 @@ session_start(['read_and_close' => true]);
 header('Content-Type: application/json');
 
 require_once '../../config.php';
-require_once '../../includes/ldap_transition.php';
+require_once __DIR__ . '/../../includes/db.php';   // dbConnectionOptions() — NOT in config.php, see GH #129
+require_once __DIR__ . '/../../includes/request_guard.php';   // origin + CSRF checks (S4) - this file skips functions.php
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
     $token = trim($input['token'] ?? '');
     $newPassword = $input['new_password'] ?? '';
     $confirmPassword = $input['confirm_password'] ?? '';
@@ -33,13 +37,14 @@ try {
         exit;
     }
 
-    if (strlen($newPassword) < 6) {
-        echo json_encode(['success' => false, 'error' => 'Password must be at least 6 characters.']);
+    require_once __DIR__ . '/../../includes/password_policy.php';   // the one rule for a new password
+    if ($why = passwordPolicyError($newPassword)) {
+        echo json_encode(['success' => false, 'error' => $why]);
         exit;
     }
 
     $dsn = "mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-    $conn = new PDO($dsn, DB_USERNAME, DB_PASSWORD);
+    $conn = new PDO($dsn, DB_USERNAME, DB_PASSWORD, dbConnectionOptions());   // UTC session — includes/db.php
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Look up token
@@ -53,15 +58,12 @@ try {
         exit;
     }
 
-    $assigned=$conn->prepare('SELECT auth_provider_id FROM analysts WHERE id=?');$assigned->execute([$resetToken['analyst_id']]);
-    if ($assigned->fetchColumn() || legacyAdMigrationPending($conn,'analyst_id',(int)$resetToken['analyst_id'])) throw new RuntimeException('Use your assigned identity provider.');
-
     if ($resetToken['used']) {
         echo json_encode(['success' => false, 'error' => 'This reset link has already been used. Please request a new one.']);
         exit;
     }
 
-    $expires = new DateTime($resetToken['expires_datetime']);
+    $expires = new DateTime($resetToken['expires_datetime'], new DateTimeZone('UTC'));   // stored in UTC: read in local time, every summer link expired at once
     $now = new DateTime('now', new DateTimeZone('UTC'));
     if ($now > $expires) {
         echo json_encode(['success' => false, 'error' => 'This reset link has expired. Please request a new one.']);

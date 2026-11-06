@@ -5,16 +5,67 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ticket_workspace.php';   // TicketWorkspaceMode (PR #211)
+require_once '../../includes/ticket_list.php';        // TicketListExport (PR #213)
 require_once '../../includes/i18n.php';
 require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 require_once '../../includes/ai_settings_panel.php';
+require_once '../../includes/messaging/MessagingProviderKind.php';   // the Messaging tab's provider badges
 I18n::initFromSession();
+Tz::init();
 
 // Check if user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../../login.php');
+    header('Location: ../../auth/login.php');
     exit;
 }
+
+// This page checked ONLY that you were logged in — it never checked module access, so any
+// analyst could open the service desk's settings by typing the URL.
+require_once '../../includes/settings_manifest.php';
+requireModuleAccess('tickets');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered — a tab they lack is never
+// emitted, so there is no hidden mailbox panel to un-hide. Administrators hold everything.
+$settingsManifest = settingsManifestFor('tickets');
+$conn             = connectToDatabase();
+$visibleTabs      = settingsVisibleTabs($conn, (int) $_SESSION['analyst_id'], $settingsManifest);
+// GH #217 slice 2: Tickets features switched off for the install. SLA keeps its tab
+// for the calendars alone (web chat's opening hours use them); the rest lose theirs.
+$slaOff = !moduleIsEnabled($conn, 'sla');
+$featureTabsOff = array_merge(
+    moduleIsEnabled($conn, 'csat') ? [] : ['csat'],
+    moduleIsEnabled($conn, 'time-tracking') ? [] : ['time-tracking'],
+    moduleIsEnabled($conn, 'rota') ? [] : ['rota', 'rota-locations']
+);
+if ($featureTabsOff) {
+    $visibleTabs = array_values(array_filter($visibleTabs, fn($tab) => !in_array($tab['id'], $featureTabsOff, true)));
+}
+// GH #217: no Checklists tab while Checklists is switched off for the install.
+if (!moduleIsEnabled($conn, 'checklists')) {
+    $visibleTabs = array_values(array_filter($visibleTabs, fn($tab) => $tab['id'] !== 'checklists'));
+}
+$activeTabId      = settingsFirstTabId($visibleTabs);
+
+// SOP checklists (PR #141) — resolved server-side so the tab opens on the value
+// actually in force, the same reason row display below is read here.
+require_once '../../includes/tenant_settings.php';
+$checklistClosureMode = ticketChecklistClosureMode($conn, null);
+$checklistEmptyClosureMode = function_exists('ticketChecklistEmptyClosureMode') ? ticketChecklistEmptyClosureMode($conn, null) : 'off';
+
+// Mandatory fields at closure — the same reason: the tab opens on what is in force.
+require_once '../../includes/service_context.php';
+require_once '../../includes/services/mandatory_fields.php';
+$mandatoryCfg = MandatoryFieldsService::settings($conn, null);
+
+// Row display (discussion #61) — what this analyst's own ticket rows show.
+// Resolved server-side so the tab opens on the values actually in force, rather
+// than on the shipped defaults with the real ones arriving a moment later.
+require_once '../../includes/inbox_display.php';
+require_once '../../includes/rbac.php';
+$rdConfig   = inboxDisplayForAnalyst($conn, (int) $_SESSION['analyst_id']);
+$rdPersonal = inboxDisplayIsPersonal($conn, (int) $_SESSION['analyst_id']);
 
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 
@@ -30,20 +81,90 @@ $path_prefix = '../../';  // Two levels up from tickets/settings/
 
 // Namespaces the inline JS needs (action-button tooltips, etc.)
 $translationNamespaces = ['common', 'tickets'];
+
+/**
+ * The oversized-email fields (GH #170), rendered twice: the install defaults on
+ * the Mailboxes tab (prefix 'ovd') and a mailbox's own rules in its dialog
+ * (prefix 'ovm', which also carries the two limits). files: oversizeFields()/
+ * setOversizeFields() in the script read and fill them by prefix.
+ *
+ * @param string $px  the element id prefix: 'ovd' for the install defaults, 'ovm' for a mailbox's own rules
+ * @param bool $withLimits  true to include the two size limits (the mailbox dialog)
+ */
+function renderOversizeFields(string $px, bool $withLimits): void
+{
+    // Styled like the SLA tab's Global settings (Ed, 2026-10-11): a two-column
+    // grid of .form-group cells, plain radio/checkbox labels, muted hints.
+    $o = fn(string $k) => htmlspecialchars(t('tickets.settings.oversize.' . $k));
+    $opt = 'display:block;font-weight:400;';
+    $hint = 'display:block;color:var(--text-muted, #666);margin-top:4px;';
+    ?>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <?php if ($withLimits): ?>
+        <div class="form-group">
+            <label for="<?php echo $px; ?>MaxMb"><?php echo $o('max_mb'); ?></label>
+            <input type="number" id="<?php echo $px; ?>MaxMb" min="1" max="102400" style="max-width:120px;"> MB
+        </div>
+        <div class="form-group">
+            <label for="<?php echo $px; ?>MaxTotalMb"><?php echo $o('max_total_mb'); ?></label>
+            <input type="number" id="<?php echo $px; ?>MaxTotalMb" min="0" max="102400" style="max-width:120px;"> MB
+            <small style="<?php echo $hint; ?>"><?php echo $o('max_total_hint'); ?></small>
+        </div>
+    <?php endif; ?>
+        <div class="form-group">
+            <label><?php echo $o('mode'); ?></label>
+            <label style="<?php echo $opt; ?>margin-top:6px;"><input type="radio" name="<?php echo $px; ?>Mode" value="strip"> <?php echo $o('mode_strip'); ?></label>
+            <label style="<?php echo $opt; ?>"><input type="radio" name="<?php echo $px; ?>Mode" value="reject"> <?php echo $o('mode_reject'); ?></label>
+        </div>
+        <div class="form-group" id="<?php echo $px; ?>OrderGroup">
+            <label for="<?php echo $px; ?>Order"><?php echo $o('order'); ?></label>
+            <select id="<?php echo $px; ?>Order" style="max-width:420px;">
+                <option value="largest"><?php echo $o('order_largest'); ?></option>
+                <option value="all"><?php echo $o('order_all'); ?></option>
+                <option value="order"><?php echo $o('order_order'); ?></option>
+            </select>
+            <small style="<?php echo $hint; ?>"><?php echo $o('order_hint'); ?></small>
+        </div>
+        <div class="form-group">
+            <label><?php echo $o('alert_heading'); ?></label>
+            <label style="<?php echo $opt; ?>margin-top:6px;"><input type="checkbox" id="<?php echo $px; ?>Alert"> <?php echo $o('alert'); ?></label>
+            <input type="text" id="<?php echo $px; ?>AlertTo" placeholder="it-team@example.com, manager@example.com" style="margin-top:6px;max-width:420px;">
+        </div>
+        <div class="form-group">
+            <label><?php echo $o('reply_heading'); ?></label>
+            <label style="<?php echo $opt; ?>margin-top:6px;"><input type="checkbox" id="<?php echo $px; ?>Reply"> <?php echo $o('reply'); ?></label>
+            <textarea id="<?php echo $px; ?>ReplyText" rows="5" style="margin-top:6px;"></textarea>
+            <small style="<?php echo $hint; ?>"><?php echo $o('reply_hint'); ?></small>
+        </div>
+        <div style="grid-column:span 2;">
+            <small style="<?php echo $hint; ?>"><?php echo $o('log_note'); ?></small>
+        </div>
+    </div>
+    <?php
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('tickets.settings.page_title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/theme.css?v=4">
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('tickets', t('tickets.nav.settings'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../../assets/css/ticket-type-rules.css?v=2">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
-    <script src="../../assets/js/ai-settings.js"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <script src="../../assets/js/ai-settings.js?v=4"></script>
+    <!-- Reply templates are rich text, so this page needs the same editor the reply
+         box uses. Loaded for every tab because the tab bar is server-rendered and
+         there is no navigation event to lazy-load on. -->
+    <script src="../../assets/js/tinymce/tinymce.min.js?v=8.10.0"></script>
     <style>
         /* Page-specific overrides for settings page */
+
+        /* SLA switched off for the install (GH #217): its columns and fields go. */
+        body.sla-off .sla-only { display: none; }
 
         /* Pin the header WITHOUT making it (or <body>) a positioned or flex
          * element:
@@ -58,7 +179,14 @@ $translationNamespaces = ['common', 'tickets'];
          * behaviour is unchanged. <body> keeps the inbox.css default (no flex),
          * so injected extension nodes can't disrupt the layout.
          * .container also drops the shared 1200px cap so settings fills the full
-         * width (#268-#270); padding-bottom clears the viewport bottom edge. */
+         * width (#268-#270); padding-bottom clears the viewport bottom edge.
+         *
+         * NOTE the `width: 100%; margin: 0` — dropping max-width is NOT enough on its
+         * own. inbox.css sets `.container { margin: 30px auto }`, and inside a flex
+         * column an AUTO CROSS-AXIS MARGIN cancels the default stretch: the item shrinks
+         * to fit its content and centres itself. So the page kept its 1200-ish gutters
+         * even with `max-width: none` applied, which reads exactly like the cap was still
+         * there. Reset the margin too. (LMS and Problem Management already did.) */
         .settings-shell {
             display: flex;
             flex-direction: column;
@@ -69,7 +197,10 @@ $translationNamespaces = ['common', 'tickets'];
             min-height: 0;
             overflow-y: auto;
             max-width: none;
-            padding-bottom: 24px;
+            width: 100%;
+            margin: 0;
+            box-sizing: border-box;
+            padding: 24px 32px 40px;
         }
 
         /* Intro-paragraph spacing on tabs that lead with a description block.
@@ -77,6 +208,78 @@ $translationNamespaces = ['common', 'tickets'];
          * so without this consecutive paragraphs collide visually. */
         .tab-content > p {
             margin-bottom: 14px;
+        }
+
+        /* ─── Row display tab (discussion #61) ────────────────────────────────
+           Controls on the left, a live sample row on the right. The sample is
+           the point: "block, top right" and "pill" are hard to choose between
+           from words alone. */
+        .rd-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+            gap: 32px;
+            align-items: start;
+        }
+        @media (max-width: 900px) { .rd-layout { grid-template-columns: 1fr; } }
+
+        .rd-field { margin-bottom: 22px; }
+        .rd-field-label {
+            display: block;
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: var(--text, #333);
+        }
+        .rd-options { display: flex; flex-wrap: wrap; gap: 8px; }
+        .rd-option {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border: 1px solid var(--border, #d5dbe1);
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            background: var(--surface, #fff);
+            transition: border-color .15s, background .15s;
+        }
+        .rd-option:hover { border-color: var(--accent, #0078d4); }
+        .rd-option:has(input:checked) {
+            border-color: var(--accent, #0078d4);
+            background: var(--accent-soft, #e8f4fd);
+            font-weight: 600;
+        }
+        .rd-help {
+            display: block;
+            margin-top: 7px;
+            color: var(--text-muted, #666);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .rd-preview-wrap { position: sticky; top: 12px; }
+        .rd-preview-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted, #666);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+        /* Deliberately the real inbox classes, on a real-width column, so the
+           sample cannot flatter itself. */
+        .rd-preview {
+            border: 1px solid var(--border, #d5dbe1);
+            border-radius: 8px;
+            overflow: hidden;
+            max-width: 420px;
+            background: var(--surface, #fff);
+        }
+        .rd-admin-sep {
+            width: 1px;
+            height: 26px;
+            background: var(--border, #d5dbe1);
+            margin: 0 4px;
         }
 
         /* Reply cleanup tab: two-column layout — form on the left, the
@@ -108,6 +311,11 @@ $translationNamespaces = ['common', 'tickets'];
             font-weight: 600;
             color: var(--text, #333);
         }
+
+        /* Custom fields dialog (#179): the ticket types a field is on. */
+        .tf-type-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 12px; margin: 6px 0 0 24px; max-height: 180px; overflow-y: auto; }
+        .tf-type-item { font-weight: 400 !important; }
+        .tab-content .action-btn[disabled] { opacity: 0.35; cursor: default; }
 
         /* Settings page uses .action-btn for table buttons */
         .tab-content .action-btn {
@@ -224,6 +432,125 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         /* Email-template body: Edit / Preview tabs */
+        /* Sender rules: scope editor, simulator, warning (#80). */
+        .tpl-scope-warn {
+            display: flex; gap: 12px; align-items: flex-start; justify-content: space-between;
+            background: var(--warning-bg, #fef3c7);
+            color: var(--warning-text, #92400e);
+            border: 1px solid var(--warning-border, #f0d9a8);
+            border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
+            font-size: 13px; line-height: 1.5;
+        }
+        .tpl-scope-warn button { flex: 0 0 auto; }
+        .tpl-sim {
+            border: 1px solid var(--border, #ddd); border-radius: 8px;
+            padding: 14px 16px; margin-bottom: 18px; background: var(--surface-2, #f9f9f9);
+        }
+        .tpl-sim label { display: block; font-weight: 600; margin-bottom: 6px; }
+        .tpl-sim-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .tpl-sim-row select, .tpl-sim-row input {
+            padding: 10px; border: 1px solid var(--border, #ddd); border-radius: 4px;
+            font-size: 14px; font-family: inherit;
+        }
+        .tpl-sim-row input { flex: 1; min-width: 220px; }
+        .tpl-sim-result {
+            margin-top: 10px; padding: 10px 12px; border-radius: 6px;
+            font-size: 13px; line-height: 1.5;
+            background: var(--surface, #fff); border: 1px solid var(--border, #ddd);
+        }
+        .tpl-sim-result.none { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); border-color: var(--warning-border, #f0d9a8); }
+        .tpl-scope-choice { display: inline-flex !important; align-items: center; gap: 6px; margin-right: 18px; font-weight: 400 !important; }
+        .tpl-rules-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+        .tpl-rule-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--surface-2, #f1f1f1); border: 1px solid var(--border, #ddd);
+            border-radius: 14px; padding: 3px 6px 3px 10px; font-size: 12px;
+        }
+        .tpl-rule-chip button {
+            border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1;
+            color: var(--text-muted, #666); padding: 0 4px;
+        }
+        .tpl-rule-add { display: flex; gap: 8px; align-items: center; max-width: 520px; }
+        .tpl-rule-add input {
+            flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--border, #ddd);
+            border-radius: 4px; font-size: 14px; font-family: inherit;
+        }
+        .tpl-scope-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; background: var(--surface-2, #f1f1f1);
+            border: 1px solid var(--border, #ddd); color: var(--text-muted, #666);
+        }
+        /* WHO the email goes to, beside WHICH customers it covers. Deliberately
+           a different shape from .tpl-scope-badge - the two answer different
+           questions and sit in the same cell, so they must not read as a pair
+           of the same thing. The analyst variant is tinted because an internal
+           notification going out to a customer is the mistake worth seeing. */
+        .tpl-audience-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 3px;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+            background: var(--surface-2, #f1f1f1);
+            border: 1px solid var(--border, #ddd); color: var(--text-muted, #666);
+        }
+        .tpl-audience-badge.analyst {
+            background: var(--accent-soft, #ede7f6);
+            border-color: var(--accent, #6a1b9a);
+            color: var(--accent, #6a1b9a);
+        }
+        /* Public web address panel — the setting [ticket_url] depends on (#80). */
+        .tpl-baseurl {
+            border: 1px solid var(--border, #ddd);
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            background: var(--surface-2, #f9f9f9);
+        }
+        /* ⚠️ A DISABLED BUTTON THAT LOOKS LIVE IS WORSE THAN NO GUARD AT ALL.
+           inbox.css styles .btn but has no disabled state, so `Renumber` — which
+           stays off until a preview has been looked at — rendered as a bright,
+           inviting primary button that silently did nothing when clicked. Scoped
+           to this tab rather than made global, so no other settings page changes
+           appearance for a fix that belongs to one destructive control. */
+        #numbering-tab .btn:disabled,
+        #numbering-tab .btn[disabled] {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .tpl-baseurl label { display: block; font-weight: 600; margin-bottom: 6px; }
+        .tpl-baseurl-row { display: flex; gap: 8px; align-items: center; max-width: 620px; }
+        /* Matches .form-group input in inbox.css deliberately — including leaving
+           background and colour unset, so this field inherits the same way every
+           other input on the page does and cannot drift in dark mode. */
+        .tpl-baseurl-row input {
+            flex: 1;
+            min-width: 0;
+            padding: 10px;
+            border: 1px solid var(--border, #ddd);
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .tpl-baseurl-example {
+            margin-top: 8px;
+            font-size: 12px;
+            font-family: Consolas, Monaco, monospace;
+            color: var(--text-muted, #666);
+            word-break: break-all;
+        }
+        .tpl-baseurl-warn {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            justify-content: space-between;
+            background: var(--warning-bg, #fef3c7);
+            color: var(--warning-text, #92400e);
+            border: 1px solid var(--warning-border, #f0d9a8);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .tpl-baseurl-warn button { flex: 0 0 auto; }
         .tpl-body-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
         .tpl-body-tab {
             padding: 6px 16px;
@@ -253,34 +580,124 @@ $translationNamespaces = ['common', 'tickets'];
             font-family: Arial, sans-serif;
             line-height: 1.6;
         }
+
+        /* Inbound / Outbound tabs on the mailbox activity modal. Theme tokens only —
+           --border-color / --text-muted / --surface all exist in theme.css. */
+        .mbx-log-tab {
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted, #666);
+            cursor: pointer;
+        }
+        .mbx-log-tab:hover { color: var(--text, #333); }
+        .mbx-log-tab.active {
+            color: #0078d4;
+            border-bottom-color: #0078d4;
+        }
+        .mbx-fail-badge {
+            display: inline-block;
+            min-width: 18px;
+            padding: 1px 6px;
+            margin-left: 4px;
+            background: #d13438;
+            color: #fff;
+            border-radius: 9px;
+            font-size: 11px;
+            font-weight: 700;
+            text-align: center;
+        }
+        .mbx-result {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+        .mbx-result.sent   { background: #d4edda; color: #155724; }
+        .mbx-result.failed { background: #f8d7da; color: #721c24; }
+        /* Deliberately not sent (#80) — neutral, because it is not a fault. */
+        .mbx-result.skipped { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+
+        /* The log panes size to the window rather than a fixed 450px, so a tall screen
+           shows far more rows than a laptop instead of both showing the same handful.
+           The subtracted 300px is the modal chrome above and below (header, tabs,
+           search row, pagination, actions); min-height keeps it usable if that
+           arithmetic is ever wrong on an unusual screen. */
+        .activity-log-pane {
+            max-height: calc(100vh - 300px);
+            min-height: 260px;
+            overflow-y: auto;
+        }
+        .activity-modal-content { max-height: 94vh; overflow-y: auto; }
+
+        /* The log tables carry an address and a subject that both want to be long, so
+           left to themselves the browser spreads five columns across 1500px and the
+           date ends up touching the sender. Fixed layout + explicit widths keeps them
+           readable at any modal width; widening the modal without this made it worse,
+           not better. */
+        .activity-log-pane table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .activity-log-pane th,
+        .activity-log-pane td {
+            padding: 8px 14px;
+            text-align: left;
+            vertical-align: top;
+            border-bottom: 1px solid var(--border, #e6e6e6);
+        }
+        .activity-log-pane th {
+            position: sticky;      /* headings stay put while a long log scrolls */
+            top: 0;
+            z-index: 1;
+            background: var(--surface, #fff);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .activity-log-pane tbody tr:hover td { background: var(--surface-hover, rgba(127,127,127,0.07)); }
+        /* Long unbroken addresses (microsoftexchange329e…@) must wrap rather than
+           force the column wider than its share. */
+        .activity-log-pane td { overflow-wrap: anywhere; }
+
+        /* Date/time · From/To · Subject · Action/Sent by · Reason/Result */
+        #inboundPane  th:nth-child(1), #inboundPane  td:nth-child(1),
+        #outboundPane th:nth-child(1), #outboundPane td:nth-child(1) { width: 150px; white-space: nowrap; }
+        #inboundPane  th:nth-child(2), #inboundPane  td:nth-child(2) { width: 27%; }
+        #outboundPane th:nth-child(2), #outboundPane td:nth-child(2) { width: 22%; }
+        #inboundPane  th:nth-child(4), #inboundPane  td:nth-child(4) { width: 110px; }
+        #outboundPane th:nth-child(4), #outboundPane td:nth-child(4) { width: 150px; }
+        #inboundPane  th:nth-child(5), #inboundPane  td:nth-child(5) { width: 150px; }
+        #outboundPane th:nth-child(5), #outboundPane td:nth-child(5) { width: 90px; }
+
+        /* On a phone the modal is the screen; the width cap and the tall pane both
+           get out of the way and the table scrolls sideways as it already does. */
+        @media (max-width: 768px) {
+            .activity-modal-content { width: 100%; max-width: none; }
+            .activity-log-pane { max-height: calc(100vh - 260px); }
+        }
     </style>
+    <!-- Mobile: LAYER 15e (container, tab strip, fields, all tables scroll).
+         data-mobile-shell="own" opts OUT of LAYER 2's flex body — this page
+         deliberately keeps <body> unstyled (see the .settings-shell comment
+         above) and builds its own scroll shell one level down. -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="settings" data-mobile-shell="own"<?php echo $slaOff ? ' class="sla-off"' : ''; ?>>
     <div class="settings-shell">
     <?php include '../includes/header.php'; ?>
 
     <div class="container">
-        <div class="tabs">
-            <button class="tab active" data-tab="departments" onclick="switchTab('departments')"><?php echo htmlspecialchars(t('tickets.settings.tabs.departments')); ?></button>
-            <button class="tab" data-tab="teams" onclick="switchTab('teams')"><?php echo htmlspecialchars(t('tickets.settings.tabs.teams')); ?></button>
-            <button class="tab" data-tab="ticket-types" onclick="switchTab('ticket-types')"><?php echo htmlspecialchars(t('tickets.settings.tabs.ticket_types')); ?></button>
-            <button class="tab" data-tab="ticket-origins" onclick="switchTab('ticket-origins')"><?php echo htmlspecialchars(t('tickets.settings.tabs.ticket_origins')); ?></button>
-            <button class="tab" data-tab="statuses" onclick="switchTab('statuses')"><?php echo htmlspecialchars(t('tickets.settings.tabs.statuses')); ?></button>
-            <button class="tab" data-tab="priorities" onclick="switchTab('priorities')"><?php echo htmlspecialchars(t('tickets.settings.tabs.priorities')); ?></button>
-            <button class="tab" data-tab="sla" onclick="switchTab('sla')"><?php echo htmlspecialchars(t('tickets.settings.tabs.sla')); ?></button>
-            <button class="tab" data-tab="rota-locations" onclick="switchTab('rota-locations')"><?php echo htmlspecialchars(t('tickets.settings.tabs.rota_locations')); ?></button>
-            <button class="tab" data-tab="mailboxes" onclick="switchTab('mailboxes')"><?php echo htmlspecialchars(t('tickets.settings.tabs.mailboxes')); ?></button>
-            <button class="tab" data-tab="messaging" onclick="switchTab('messaging')"><?php echo htmlspecialchars(t('tickets.settings.tab_messaging')); ?></button>
-            <button class="tab" data-tab="email-templates" onclick="switchTab('email-templates')"><?php echo htmlspecialchars(t('tickets.settings.tabs.email_templates')); ?></button>
-            <button class="tab" data-tab="rota" onclick="switchTab('rota')"><?php echo htmlspecialchars(t('tickets.settings.tabs.rota')); ?></button>
-            <button class="tab" data-tab="analysts" onclick="switchTab('analysts')"><?php echo htmlspecialchars(t('tickets.settings.tabs.analysts')); ?></button>
-            <button class="tab" data-tab="general" onclick="switchTab('general')"><?php echo htmlspecialchars(t('tickets.settings.tabs.general')); ?></button>
-            <button class="tab" data-tab="reply-cleanup" onclick="switchTab('reply-cleanup')"><?php echo htmlspecialchars(t('tickets.settings.tabs.reply_cleanup')); ?></button>
-            <button class="tab" data-tab="csat" onclick="switchTab('csat')"><?php echo htmlspecialchars(t('tickets.settings.tabs.csat')); ?></button>
-        </div>
+        <?php renderSettingsTabBar($visibleTabs, $activeTabId); ?>
 
         <!-- Departments Tab -->
-        <div class="tab-content active" id="departments-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'departments')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'departments' ? ' active' : ''; ?>" id="departments-tab" data-capability="<?php echo capKey(Cap::TICKETS_DEPARTMENTS); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.departments')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('department')"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -298,38 +715,16 @@ $translationNamespaces = ['common', 'tickets'];
                     </tr>
                 </thead>
                 <tbody id="departments-list">
-                    <tr><td colspan="6" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Teams Tab -->
-        <div class="tab-content" id="teams-tab">
-            <div class="section-header">
-                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.teams')); ?></h2>
-                <button class="add-btn" onclick="openAddModal('team')"><?php echo htmlspecialchars(t('common.add')); ?></button>
-            </div>
-            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.teams'); ?></p>
-            <table>
-                <thead>
-                    <tr>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.description')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.departments')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.analysts')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
-                    </tr>
-                </thead>
-                <tbody id="teams-list">
                     <tr><td colspan="7" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- Ticket Types Tab -->
-        <div class="tab-content" id="ticket-types-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'ticket-types')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'ticket-types' ? ' active' : ''; ?>" id="ticket-types-tab" data-capability="<?php echo capKey(Cap::TICKETS_TICKET_TYPES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.ticket_types')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('ticket-type')"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -349,10 +744,51 @@ $translationNamespaces = ['common', 'tickets'];
                     <tr><td colspan="5" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
+
+            <?php /* GH #230: the type a new ticket gets when nobody chose one. Filled by
+                     assets/js/ticket-type-rules.js from api/tickets/ticket_type_rules.php. */ ?>
+            <div class="ttr" id="ttrSection">
+                <div class="section-header" style="margin-top:36px;">
+                    <h2><?php echo htmlspecialchars(t('tickets.type_rules.title')); ?></h2>
+                </div>
+                <p class="ttr-intro"><?php echo t('tickets.type_rules.intro'); ?></p>
+                <div id="ttrBody"><p class="ttr-hint"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></p></div>
+            </div>
+
+            <div id="ttrModal" class="modal">
+                <div class="modal-content" style="max-width:720px;">
+                    <div class="modal-header" id="ttrModalTitle"></div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="ttrName"><?php echo htmlspecialchars(t('tickets.type_rules.rule_name')); ?></label>
+                            <input type="text" id="ttrName" class="form-control" maxlength="100" placeholder="<?php echo htmlspecialchars(t('tickets.type_rules.rule_name_ph')); ?>">
+                        </div>
+                        <div class="form-group">
+                            <label for="ttrType"><?php echo htmlspecialchars(t('tickets.type_rules.then_type')); ?></label>
+                            <select id="ttrType" class="form-control"></select>
+                        </div>
+                        <p class="ttr-hint"><?php echo htmlspecialchars(t('tickets.type_rules.when_hint')); ?></p>
+                        <div id="ttrCriteria"></div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <span class="toggle-switch"><input type="checkbox" id="ttrActive" checked><span class="toggle-slider"></span></span>
+                                <?php echo htmlspecialchars(t('tickets.type_rules.active')); ?>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" type="button" data-ttr-close><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                        <button class="btn btn-primary" type="button" id="ttrSave"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Ticket Origins Tab -->
-        <div class="tab-content" id="ticket-origins-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'ticket-origins')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'ticket-origins' ? ' active' : ''; ?>" id="ticket-origins-tab" data-capability="<?php echo capKey(Cap::TICKETS_TICKET_ORIGINS); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.ticket_origins')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('ticket-origin')"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -374,8 +810,320 @@ $translationNamespaces = ['common', 'tickets'];
             </table>
         </div>
 
+        <!-- Categories Tab -->
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'categories')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'categories' ? ' active' : ''; ?>" id="categories-tab" data-capability="<?php echo capKey(Cap::TICKETS_CATEGORIES); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.categories')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.categories.intro'); ?></p>
+
+            <!-- ── The three switches ──────────────────────────────────────
+                 At the TOP of this tab, above the list, so the thing and
+                 whether it is shown live in one place rather than being
+                 scattered across two tabs. -->
+            <div class="tc-alert" id="tcLoadError" hidden>
+                <strong><?php echo htmlspecialchars(t('tickets.settings.categories.load_failed')); ?></strong>
+                <span><?php echo htmlspecialchars(t('tickets.settings.categories.load_failed_desc')); ?></span>
+            </div>
+
+            <h3 class="tc-sub"><?php echo htmlspecialchars(t('tickets.settings.categories.fields_heading')); ?></h3>
+            <p class="tc-note"><?php echo htmlspecialchars(t('tickets.settings.categories.fields_intro')); ?></p>
+
+            <h4 class="tc-sub4"><?php echo htmlspecialchars(t('tickets.settings.categories.default_heading')); ?></h4>
+            <?php /* ⚠️ The real toggle classes are `toggle-switch` / `toggle-slider`
+                     (assets/css/inbox.css). There is no `.switch` / `.slider` rule
+                     anywhere in the product — using those names renders a bare
+                     checkbox, which is what the Time tracking tab was doing until
+                     this was noticed. */ ?>
+            <div class="tc-switches">
+                <div class="tc-switch-row">
+                    <div class="tc-switch-label">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.categories.field_category')); ?></strong>
+                        <span><?php echo htmlspecialchars(t('tickets.settings.categories.field_category_desc')); ?></span>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="tcDefCategory"><span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="tc-switch-row">
+                    <div class="tc-switch-label">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.categories.field_closure')); ?></strong>
+                        <span><?php echo htmlspecialchars(t('tickets.settings.categories.field_closure_desc')); ?></span>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="tcDefClosure"><span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="tc-switch-row">
+                    <div class="tc-switch-label">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.categories.field_resolution')); ?></strong>
+                        <span><?php echo htmlspecialchars(t('tickets.settings.categories.field_resolution_desc')); ?></span>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="tcDefResolution"><span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div id="tcCompaniesBlock" hidden>
+                <h4 class="tc-sub4"><?php echo htmlspecialchars(t('tickets.settings.categories.companies_heading')); ?></h4>
+                <p class="tc-note"><?php echo htmlspecialchars(t('tickets.settings.categories.companies_intro')); ?></p>
+                <table>
+                    <thead><tr>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_company')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.categories.field_category')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.categories.field_closure')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.categories.field_resolution')); ?></th>
+                    </tr></thead>
+                    <tbody id="tcCompaniesBody"></tbody>
+                </table>
+            </div>
+
+            <p class="tc-note"><?php echo htmlspecialchars(t('tickets.settings.categories.preserved_note')); ?></p>
+            <div style="margin: 12px 0 28px;">
+                <button class="btn btn-primary" id="tcSaveSettingsBtn"><?php echo htmlspecialchars(t('tickets.settings.categories.save')); ?></button>
+            </div>
+
+            <!-- ── The category tree ─────────────────────────────────────── -->
+            <div class="section-header" style="margin-top: 8px;">
+                <h3 class="tc-sub" style="margin:0;"><?php echo htmlspecialchars(t('tickets.settings.categories.list_heading')); ?></h3>
+                <button class="add-btn" id="tcAddCategoryBtn"><?php echo htmlspecialchars(t('common.add')); ?></button>
+            </div>
+            <p class="tc-note"><?php echo htmlspecialchars(t('tickets.settings.categories.list_intro')); ?></p>
+            <table>
+                <thead><tr>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_name')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_type')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_portal')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_order')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_status')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_actions')); ?></th>
+                </tr></thead>
+                <tbody id="tcCategoryList">
+                    <tr><td colspan="6" style="text-align:center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                </tbody>
+            </table>
+
+            <!-- ── Resolution codes ──────────────────────────────────────── -->
+            <div class="section-header" style="margin-top: 32px;">
+                <h3 class="tc-sub" style="margin:0;"><?php echo htmlspecialchars(t('tickets.settings.categories.codes_heading')); ?></h3>
+                <button class="add-btn" id="tcAddCodeBtn"><?php echo htmlspecialchars(t('common.add')); ?></button>
+            </div>
+            <p class="tc-note"><?php echo htmlspecialchars(t('tickets.settings.categories.codes_intro')); ?></p>
+            <table>
+                <thead><tr>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_name')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.columns.description')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_order')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_status')); ?></th>
+                    <th><?php echo htmlspecialchars(t('tickets.settings.categories.col_actions')); ?></th>
+                </tr></thead>
+                <tbody id="tcCodeList">
+                    <tr><td colspan="5" style="text-align:center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                </tbody>
+            </table>
+        </div>
+
         <!-- Statuses Tab -->
-        <div class="tab-content" id="statuses-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'checklists')): ?>
+        <!-- Checklists: what happens when a ticket with outstanding mandatory
+             SOP steps is closed (PR #141). Had been inside the Statuses tab's
+             visibility check, so a role granted Checklists but not Statuses got
+             the tab button and an empty panel. -->
+        <div class="tab-content<?php echo $activeTabId === 'checklists' ? ' active' : ''; ?>" id="checklists-tab" data-capability="<?php echo capKey(Cap::TICKETS_CHECKLISTS); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.checklists')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.checklists'); ?></p>
+
+            <div style="display: flex; flex-direction: column; gap: 14px; max-width: 720px;">
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="radio" name="chkClosureMode" value="per_template" style="margin-top: 3px;"<?php echo $checklistClosureMode !== 'block_all' ? ' checked' : ''; ?>>
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.checklists.per_template_title')); ?></div>
+                        <div style="font-size: 12px; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars(t('tickets.settings.checklists.per_template_desc')); ?></div>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="radio" name="chkClosureMode" value="block_all" style="margin-top: 3px;"<?php echo $checklistClosureMode === 'block_all' ? ' checked' : ''; ?>>
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.checklists.block_all_title')); ?></div>
+                        <div style="font-size: 12px; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars(t('tickets.settings.checklists.block_all_desc')); ?></div>
+                    </div>
+                </label>
+            </div>
+
+            <p style="margin-top: 18px; font-size: 12px; color: var(--text-muted, #64748b); max-width: 720px;">
+                <?php echo htmlspecialchars(t('tickets.settings.checklists.always_recorded')); ?>
+            </p>
+            <div style="margin-top: 32px; border-top: 1px solid var(--border, #e2e8f0); padding-top: 24px;">
+                <div class="section-header">
+                    <h2><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_section_title')); ?></h2>
+                </div>
+                <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_section_desc')); ?></p>
+
+                <div style="display: flex; flex-direction: column; gap: 14px; max-width: 720px;">
+                    <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                        <input type="radio" name="chkEmptyClosureMode" value="off" style="margin-top: 3px;"<?php echo $checklistEmptyClosureMode === 'off' ? ' checked' : ''; ?>>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_off_title')); ?></div>
+                            <div style="font-size: 12px; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_off_desc')); ?></div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                        <input type="radio" name="chkEmptyClosureMode" value="warn" style="margin-top: 3px;"<?php echo $checklistEmptyClosureMode === 'warn' ? ' checked' : ''; ?>>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_warn_title')); ?></div>
+                            <div style="font-size: 12px; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_warn_desc')); ?></div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                        <input type="radio" name="chkEmptyClosureMode" value="block" style="margin-top: 3px;"<?php echo $checklistEmptyClosureMode === 'block' ? ' checked' : ''; ?>>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_block_title')); ?></div>
+                            <div style="font-size: 12px; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars(t('tickets.settings.checklists.empty_block_desc')); ?></div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div style="margin-top: 22px;">
+                <button class="add-btn" id="chkClosureSave"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'mandatory-fields')): ?>
+        <!-- Mandatory fields: which ticket properties must be filled before a
+             ticket may close, and what happens when they are not. Rendered from
+             the stored values, so there is nothing to load - only to save. -->
+        <div class="tab-content<?php echo $activeTabId === 'mandatory-fields' ? ' active' : ''; ?>" id="mandatory-fields-tab" data-capability="<?php echo capKey(Cap::TICKETS_MANDATORY_FIELDS); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.mandatory_fields')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666); max-width: 720px;"><?php echo htmlspecialchars(t('tickets.settings.intros.mandatory_fields')); ?></p>
+
+            <h3 style="font-size: 14px; margin: 0 0 10px; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.mandatory.when_heading')); ?></h3>
+            <div style="display: flex; flex-direction: column; gap: 14px; max-width: 720px;">
+                <?php foreach (['warn', 'notify', 'block'] as $mfMode): ?>
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+                    <input type="radio" name="mfMode" value="<?php echo $mfMode; ?>" style="margin-top: 3px;"<?php echo $mandatoryCfg['mode'] === $mfMode ? ' checked' : ''; ?>>
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.mandatory.' . $mfMode . '_title')); ?></div>
+                        <div style="font-size: 12px; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars(t('tickets.settings.mandatory.' . $mfMode . '_desc')); ?></div>
+                    </div>
+                </label>
+                <?php if ($mfMode === 'notify'): ?>
+                <!-- Outside the option's <label>: a label may not contain another. -->
+                <div id="mfNotifyWrap" class="form-group" style="margin: -6px 0 0 28px; max-width: 480px;">
+                    <label for="mfNotify"><?php echo htmlspecialchars(t('tickets.settings.mandatory.notify_label')); ?></label>
+                    <input type="text" id="mfNotify" value="<?php echo htmlspecialchars(implode(', ', $mandatoryCfg['notify'])); ?>" placeholder="<?php echo htmlspecialchars(t('tickets.settings.mandatory.notify_placeholder')); ?>" autocomplete="off" spellcheck="false">
+                </div>
+                <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+
+            <label id="mfRecordRow" style="display: flex; align-items: flex-start; gap: 12px; margin-top: 18px; max-width: 720px; cursor: pointer;">
+                <input type="checkbox" id="mfRecord" style="margin-top: 3px;"<?php echo $mandatoryCfg['record'] ? ' checked' : ''; ?>>
+                <div>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.mandatory.record_title')); ?></div>
+                    <div style="font-size: 12px; color: var(--text-muted, #64748b);" id="mfRecordDesc"><?php echo htmlspecialchars(t('tickets.settings.mandatory.record_desc')); ?></div>
+                </div>
+            </label>
+
+            <h3 style="font-size: 14px; margin: 24px 0 6px; color: var(--text, #0f172a);"><?php echo htmlspecialchars(t('tickets.settings.mandatory.fields_heading')); ?></h3>
+            <p style="font-size: 12px; color: var(--text-muted, #64748b); margin: 0 0 10px; max-width: 720px;"><?php echo htmlspecialchars(t('tickets.settings.mandatory.fields_hint')); ?></p>
+            <div class="mf-field-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 20px; max-width: 720px;">
+                <?php foreach (array_keys(MandatoryFieldsService::FIELDS) as $mfKey): ?>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+                    <input type="checkbox" class="mf-field" value="<?php echo $mfKey; ?>"<?php echo in_array($mfKey, $mandatoryCfg['fields'], true) ? ' checked' : ''; ?>>
+                    <span><?php echo htmlspecialchars(t('tickets.settings.mandatory.fields.' . $mfKey)); ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+
+            <div style="margin-top: 22px;">
+                <button class="add-btn" id="mfSave"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'custom-fields')): ?>
+        <!-- Custom fields (#179): the extra details each ticket type asks for. -->
+        <div class="tab-content<?php echo $activeTabId === 'custom-fields' ? ' active' : ''; ?>" id="custom-fields-tab" data-capability="<?php echo capKey(Cap::TICKETS_CUSTOM_FIELDS); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.custom_fields')); ?></h2>
+                <button class="add-btn" onclick="tfOpen(null)"><?php echo htmlspecialchars(t('common.add')); ?></button>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.intros.custom_fields')); ?></p>
+            <?php /* Discussion #193: where the portal shows a requester their answers.
+                     Saved the moment it changes - this tab has no Save button. */ ?>
+            <div class="form-group" style="margin-bottom: 22px;">
+                <label for="portalFieldAnswers"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_answers_label')); ?></label>
+                <select id="portalFieldAnswers" style="max-width: 360px;">
+                    <option value="off"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_answers_off')); ?></option>
+                    <option value="header"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_answers_header')); ?></option>
+                    <option value="side"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_answers_side')); ?></option>
+                </select>
+                <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_answers_help')); ?></small>
+            </div>
+            <?php /* GH #218 part A: the built-in Department field - shown or hidden, and the
+                     department new tickets start in. Filled by the script below. */ ?>
+            <div class="form-group" id="deptFieldPanel" style="margin-bottom: 26px; padding: 16px 18px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px;">
+                <h3 style="margin: 0 0 6px;"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_heading')); ?></h3>
+                <p style="margin: 0 0 14px; color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_intro')); ?></p>
+                <div class="form-hint" id="dfLoadError" hidden style="color: var(--danger-text, #b91c1c);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_load_error')); ?></div>
+                <div id="dfStale" hidden style="color: var(--danger-text, #b91c1c); margin-bottom: 12px;"></div>
+                <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end;">
+                    <div><label for="dfShown"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_shown_label')); ?></label>
+                        <select id="dfShown" class="settings-table-select" disabled>
+                            <option value="1"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_show')); ?></option>
+                            <option value="0"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_hide')); ?></option>
+                        </select></div>
+                    <div><label for="dfDefault"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_default_label')); ?></label>
+                        <select id="dfDefault" class="settings-table-select" disabled></select></div>
+                </div>
+                <p id="dfWarn" hidden style="margin: 12px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--warning-bg, #fff8e1); color: var(--text, #333);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_warn_no_default')); ?></p>
+                <table class="settings-table" id="dfCompanies" hidden style="margin-top: 14px;">
+                    <thead><tr><th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_company')); ?></th><th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_shown_label')); ?></th><th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.dept_default_label')); ?></th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <div style="margin-top: 14px;"><button type="button" class="btn btn-primary" id="dfSave" disabled><?php echo htmlspecialchars(t('common.save')); ?></button></div>
+            </div>
+            <?php /* GH #218 part C: where the portal's New ticket page ASKS them. */ ?>
+            <div class="form-group" style="margin-bottom: 22px;">
+                <label for="portalFieldAsk"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_ask_label')); ?></label>
+                <select id="portalFieldAsk" style="max-width: 360px;">
+                    <option value="side"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_ask_side')); ?></option>
+                    <option value="main"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_ask_main')); ?></option>
+                </select>
+                <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.portal_ask_help')); ?></small>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.col_name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.col_kind')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.col_types')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.col_required')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.col_portal')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.custom_fields.col_actions')); ?></th>
+                    </tr>
+                </thead>
+                <tbody id="custom-fields-list">
+                    <tr><td colspan="6" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'statuses')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'statuses' ? ' active' : ''; ?>" id="statuses-tab" data-capability="<?php echo capKey(Cap::TICKETS_STATUSES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.statuses')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('status')"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -387,7 +1135,7 @@ $translationNamespaces = ['common', 'tickets'];
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.colour')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.closed')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.cols.pause_sla')); ?></th>
+                        <th class="sla-only"><?php echo htmlspecialchars(t('tickets.settings.cols.pause_sla')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.default')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
@@ -401,7 +1149,10 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
 
         <!-- Priorities Tab -->
-        <div class="tab-content" id="priorities-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'priorities')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'priorities' ? ' active' : ''; ?>" id="priorities-tab" data-capability="<?php echo capKey(Cap::TICKETS_PRIORITIES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.priorities')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('priority')"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -419,13 +1170,16 @@ $translationNamespaces = ['common', 'tickets'];
                     </tr>
                 </thead>
                 <tbody id="priorities-list">
-                    <tr><td colspan="6" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                    <tr><td colspan="7" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- SLA Tab — see docs/sla.md -->
-        <div class="tab-content" id="sla-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'sla')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'sla' ? ' active' : ''; ?>" id="sla-tab" data-capability="<?php echo capKey(Cap::TICKETS_SLA); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.sla.heading')); ?></h2>
             </div>
@@ -433,6 +1187,9 @@ $translationNamespaces = ['common', 'tickets'];
                 <?php echo t('tickets.settings.sla.intro'); ?>
             </p>
 
+            <?php if ($slaOff): ?>
+            <div class="settings-group"><p style="margin:0;"><strong><?php echo htmlspecialchars(moduleDisabledMessage('sla')); ?></strong> Switch it back on in System &rarr; Modules &rarr; Availability. The business calendars below stay, because web chat uses them for its opening hours.</p></div>
+            <?php else: ?>
             <!-- ===== Global SLA settings ===== -->
             <div class="settings-group">
                 <h3><?php echo htmlspecialchars(t('tickets.settings.sla.global_heading')); ?></h3>
@@ -523,6 +1280,8 @@ $translationNamespaces = ['common', 'tickets'];
                 </table>
             </div>
 
+            <?php endif; ?>
+
             <!-- ===== Business Calendars ===== -->
             <div class="settings-group">
                 <div class="section-header">
@@ -547,6 +1306,7 @@ $translationNamespaces = ['common', 'tickets'];
                 </table>
             </div>
 
+            <?php if (!$slaOff): ?>
             <!-- ===== Breach Notifications ===== -->
             <div class="settings-group">
                 <div class="section-header">
@@ -607,6 +1367,7 @@ $translationNamespaces = ['common', 'tickets'];
                     </tbody>
                 </table>
             </div>
+            <?php endif; /* !$slaOff */ ?>
         </div>
 
         <!-- ===== Breach Notification rule modal ===== -->
@@ -680,7 +1441,10 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
 
         <!-- Rota Locations Tab -->
-        <div class="tab-content" id="rota-locations-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'rota-locations')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'rota-locations' ? ' active' : ''; ?>" id="rota-locations-tab" data-capability="<?php echo capKey(Cap::TICKETS_ROTA_LOCATIONS); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.rota_locations')); ?></h2>
                 <button class="add-btn" onclick="openAddModal('rota-location')"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -698,13 +1462,16 @@ $translationNamespaces = ['common', 'tickets'];
                     </tr>
                 </thead>
                 <tbody id="rota-locations-list">
-                    <tr><td colspan="6" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                    <tr><td colspan="7" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- Mailboxes Tab -->
-        <div class="tab-content" id="mailboxes-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'mailboxes')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'mailboxes' ? ' active' : ''; ?>" id="mailboxes-tab" data-capability="<?php echo capKey(Cap::TICKETS_MAILBOXES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.mailboxes')); ?></h2>
                 <div>
@@ -751,10 +1518,22 @@ $translationNamespaces = ['common', 'tickets'];
                     <tr><td colspan="5" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
+
+            <!-- When an email is too large (GH #170): the install defaults. Each
+                 mailbox can override them, limits included, in its own dialog. -->
+            <div class="settings-group" id="oversize" style="margin-top:24px;">
+                <h3><?php echo htmlspecialchars(t('tickets.settings.oversize.heading')); ?></h3>
+                <p style="color:var(--text-muted, #666);margin-bottom:14px;" id="ovdLimitsLine"></p>
+                <?php renderOversizeFields('ovd', false); ?>
+                <div style="margin-top:8px;"><button type="button" class="btn btn-primary" onclick="saveOversizeDefaults()"><?php echo htmlspecialchars(t('common.save')); ?></button></div>
+            </div>
         </div>
 
         <!-- Messaging Tab (WhatsApp etc.) -->
-        <div class="tab-content" id="messaging-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'messaging')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'messaging' ? ' active' : ''; ?>" id="messaging-tab" data-capability="<?php echo capKey(Cap::TICKETS_MESSAGING); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.messaging.channels_heading')); ?></h2>
                 <button class="add-btn" onclick="openChannelModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -811,18 +1590,102 @@ $translationNamespaces = ['common', 'tickets'];
             </table>
         </div>
 
+        <!-- Web chat Tab -->
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'webchat')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'webchat' ? ' active' : ''; ?>" id="webchat-tab" data-capability="<?php echo capKey(Cap::TICKETS_WEBCHAT); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.webchat.heading')); ?></h2>
+                <button class="add-btn" onclick="openWidgetModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+            </div>
+            <p>
+                <?php echo htmlspecialchars(t('tickets.settings.webchat.intro')); ?>
+            </p>
+            <div id="widgetsResult" style="margin-bottom:12px;"></div>
+            <table>
+                <thead>
+                    <tr>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.webchat.col_origins')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.webchat.col_key')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
+                    </tr>
+                </thead>
+                <tbody id="widgets-list">
+                    <tr><td colspan="5" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                </tbody>
+            </table>
+        </div>
+
         <!-- Email Templates Tab -->
-        <div class="tab-content" id="email-templates-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'email-templates')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'email-templates' ? ' active' : ''; ?>" id="email-templates-tab" data-capability="<?php echo capKey(Cap::TICKETS_EMAIL_TEMPLATES); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.email_templates')); ?></h2>
                 <button class="add-btn" onclick="openTemplateModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
             </div>
             <p style="margin-bottom: 15px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.email_templates'); ?></p>
+
+            <!-- Public web address (discussion #80).
+                 Sits here rather than in a general settings page because this is where
+                 [ticket_url] is written, and a setting you are told about at the moment
+                 you need it is one you actually set. -->
+            <div class="tpl-baseurl">
+                <div class="tpl-baseurl-warn" id="tplBaseUrlWarning" style="display: none;">
+                    <div>
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.base_url.warn_title')); ?></strong>
+                        <div id="tplBaseUrlWarningBody" style="margin-top: 4px;"></div>
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="dismissBaseUrlWarning()"><?php echo htmlspecialchars(t('common.dismiss')); ?></button>
+                </div>
+                <label for="tplBaseUrl"><?php echo htmlspecialchars(t('tickets.settings.base_url.label')); ?></label>
+                <div class="tpl-baseurl-row">
+                    <input type="text" id="tplBaseUrl" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.settings.base_url.placeholder')); ?>">
+                    <button type="button" class="btn btn-secondary" onclick="savePublicBaseUrl()"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+                <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.base_url.help')); ?></small>
+                <div id="tplBaseUrlExample" class="tpl-baseurl-example"></div>
+            </div>
+
+            <!-- No catch-all warning + simulator (discussion #80).
+                 The warning catches the mistake; the simulator answers "what actually
+                 happens for this sender", which is the question an admin has to think
+                 to ask. Neither helps twelve months later when nobody visits this
+                 screen — that is what the Not sent rows in the send log are for. -->
+            <div class="tpl-scope-warn" id="tplScopeWarning" style="display: none;">
+                <div>
+                    <strong><?php echo htmlspecialchars(t('tickets.settings.scope.warn_title')); ?></strong>
+                    <div id="tplScopeWarningBody" style="margin-top: 4px;"></div>
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="dismissScopeWarning()"><?php echo htmlspecialchars(t('common.dismiss')); ?></button>
+            </div>
+
+            <div class="tpl-sim">
+                <label for="tplSimEmail"><?php echo htmlspecialchars(t('tickets.settings.scope.sim_label')); ?></label>
+                <div class="tpl-sim-row">
+                    <select id="tplSimEvent">
+                        <option value="new_ticket_email"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_new_ticket')); ?></option>
+                        <option value="ticket_assigned"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_assigned')); ?></option>
+                        <option value="analyst_assigned"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_analyst_assigned')); ?></option>
+                        <option value="ticket_closed"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_closed')); ?></option>
+                        <option value="note_shared"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_note_shared')); ?></option>
+                        <option value="csat_request"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_csat_request')); ?></option>
+                    </select>
+                    <input type="text" id="tplSimEmail" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.settings.scope.sim_placeholder')); ?>" onkeydown="if(event.key==='Enter'){event.preventDefault();runTemplateSimulator();}">
+                    <button type="button" class="btn btn-secondary" onclick="runTemplateSimulator()"><?php echo htmlspecialchars(t('tickets.settings.scope.sim_button')); ?></button>
+                </div>
+                <div id="tplSimResult" class="tpl-sim-result" style="display: none;"></div>
+            </div>
             <table>
                 <thead>
                     <tr>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.event')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.sends_to')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.subject')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
                         <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
@@ -830,13 +1693,146 @@ $translationNamespaces = ['common', 'tickets'];
                     </tr>
                 </thead>
                 <tbody id="email-templates-list">
-                    <tr><td colspan="6" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                    <tr><td colspan="7" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Merge Behaviour Tab -->
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'indexing')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'indexing' ? ' active' : ''; ?>" id="indexing-tab" data-capability="<?php echo capKey(Cap::TICKETS_INDEXING); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.indexing')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.indexing'); ?></p>
+            <form id="indexingForm" style="max-width: 820px;">
+
+                <div class="form-group">
+                    <label style="display:block;font-weight:400;">
+                        <input type="checkbox" id="extractCron">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.indexing.cron_label')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.indexing.cron_help')); ?></small>
+                    </label>
+
+                    <label style="display:block;margin-top:16px;font-weight:400;">
+                        <input type="checkbox" id="extractOpportunistic">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.indexing.opportunistic_label')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.indexing.opportunistic_help')); ?></small>
+                    </label>
+                </div>
+
+                <p style="margin-top:22px;color: var(--text-muted, #666);font-size:13px;">
+                    <?php echo t('tickets.settings.indexing.where_service'); ?>
+                </p>
+
+                <div class="form-actions" style="margin-top:18px;">
+                    <?php /* `btn btn-primary`, both classes: .btn carries the padding,
+                             radius and weight, .btn-primary only the colours. On its own
+                             it renders a bare coloured rectangle. Every other button on
+                             this page uses the pair. */ ?>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'merge-behaviour')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'merge-behaviour' ? ' active' : ''; ?>" id="merge-behaviour-tab" data-capability="<?php echo capKey(Cap::TICKETS_MERGE); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.merge_behaviour')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.merge_behaviour'); ?></p>
+            <form id="mergeBehaviourForm" style="max-width: 820px;">
+
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('tickets.settings.merge.reference_label')); ?></label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="mergeReferenceMode" value="survivor">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.merge.ref_survivor')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.merge.ref_survivor_help')); ?></small>
+                    </label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="mergeReferenceMode" value="new">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.merge.ref_new')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.merge.ref_new_help')); ?></small>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-top:28px;">
+                    <label><?php echo htmlspecialchars(t('tickets.settings.merge.originals_label')); ?></label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="mergeOriginalsMode" value="thread">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.merge.orig_thread')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.merge.orig_thread_help')); ?></small>
+                    </label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="mergeOriginalsMode" value="thread_html">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.merge.orig_thread_html')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.merge.orig_thread_html_help')); ?></small>
+                    </label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="mergeOriginalsMode" value="html">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.merge.orig_html')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.merge.orig_html_help')); ?></small>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-top:28px;">
+                    <label style="display:flex;align-items:center;gap:10px;font-weight:500;cursor:pointer;">
+                        <input type="checkbox" id="mergeAiSummary" style="width:auto;margin:0;">
+                        <span><?php echo htmlspecialchars(t('tickets.settings.merge.ai_label')); ?></span>
+                    </label>
+                    <small style="display:block;margin-left:26px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.merge.ai_help')); ?></small>
+                </div>
+
+                <div class="info-box" style="margin-top:22px;padding:12px 14px;border-radius:6px;background: var(--accent-soft, #eff6ff);border-left:4px solid var(--accent, #0078d4);">
+                    <small><?php echo t('tickets.settings.merge.note'); ?></small>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-start; margin-top: 30px;">
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Reply Templates Tab -->
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'reply-templates')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'reply-templates' ? ' active' : ''; ?>" id="reply-templates-tab" data-capability="<?php echo capKey(Cap::TICKETS_REPLY_TEMPLATES); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.reply_templates')); ?></h2>
+                <button class="add-btn" onclick="openReplyTemplateModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+            </div>
+            <p style="margin-bottom: 15px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.reply_templates'); ?></p>
+            <table>
+                <thead>
+                    <tr>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.name')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.preview')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.order')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
+                    </tr>
+                </thead>
+                <tbody id="reply-templates-list">
+                    <tr><td colspan="5" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- Rota Tab -->
-        <div class="tab-content" id="rota-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'rota')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'rota' ? ' active' : ''; ?>" id="rota-tab" data-capability="<?php echo capKey(Cap::TICKETS_ROTA); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.rota_shifts')); ?></h2>
                 <button class="add-btn" onclick="openRotaShiftModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
@@ -854,7 +1850,7 @@ $translationNamespaces = ['common', 'tickets'];
                     </tr>
                 </thead>
                 <tbody id="rota-shifts-list">
-                    <tr><td colspan="6" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                    <tr><td colspan="7" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                 </tbody>
             </table>
             <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
@@ -866,50 +1862,299 @@ $translationNamespaces = ['common', 'tickets'];
             </div>
         </div>
 
-        <!-- Analysts Tab -->
-        <div class="tab-content" id="analysts-tab">
-            <div class="section-header">
-                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.analysts')); ?></h2>
-                <button class="add-btn" onclick="openAnalystModal()"><?php echo htmlspecialchars(t('common.add')); ?></button>
-            </div>
-            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.analysts'); ?></p>
-            <table>
-                <thead>
-                    <tr>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.username')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.full_name')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.email')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.teams')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.status')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.last_login')); ?></th>
-                        <th><?php echo htmlspecialchars(t('tickets.settings.columns.actions')); ?></th>
-                    </tr>
-                </thead>
-                <tbody id="analysts-list">
-                    <tr><td colspan="7" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
-                </tbody>
-            </table>
-        </div>
-
         <!-- General Tab -->
-        <div class="tab-content" id="general-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'numbering')): ?>
+        <?php /* Ticket numbering (GH #71).
+                 Ordered so the consequential decisions come first: what the
+                 number LOOKS like, then what each counter counts, then the
+                 renumbering tool last and clearly separated — it rewrites the
+                 reference on every existing ticket. */ ?>
+        <div class="tab-content<?php echo $activeTabId === 'numbering' ? ' active' : ''; ?>" id="numbering-tab" data-capability="<?php echo capKey(Cap::TICKETS_NUMBERING); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.numbering.heading')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.numbering.intro'); ?></p>
+
+            <form id="numberingForm" style="max-width: 700px;">
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('tickets.settings.numbering.style')); ?></label>
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="numStyle" value="sequential" onchange="numSync()">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.numbering.style_sequential')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.numbering.style_sequential_help')); ?></small>
+                    </label>
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="numStyle" value="random" onchange="numSync()">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.numbering.style_random')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.numbering.style_random_help')); ?></small>
+                    </label>
+                </div>
+
+                <div id="numSequentialOnly">
+                    <div class="form-group">
+                        <label for="numFormat"><?php echo htmlspecialchars(t('tickets.settings.numbering.format')); ?></label>
+                        <input type="text" id="numFormat" oninput="numPreview()" autocomplete="off" spellcheck="false">
+                        <small style="color: var(--text-muted, #666);"><?php echo t('tickets.settings.numbering.format_help'); ?></small>
+                        <div id="numFormatError" style="display:none;margin-top:6px;color: var(--danger-text, #c0392b);font-size:13px;"></div>
+                    </div>
+
+                    <?php /* The live preview. Somebody should never have to create
+                             a ticket to find out what a format does. */ ?>
+                    <div class="info-box" style="margin:6px 0 18px 0;padding:12px 14px;border-radius:6px;background: var(--accent-soft, #eff6ff);border-left:4px solid var(--accent, #0078d4);">
+                        <small style="display:block;margin-bottom:6px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.numbering.preview_label')); ?></small>
+                        <strong id="numPreviewOut" style="font-family: ui-monospace, Consolas, monospace;">&mdash;</strong>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="numStart"><?php echo htmlspecialchars(t('tickets.settings.numbering.start')); ?></label>
+                        <input type="number" id="numStart" min="1" step="1" oninput="numPreview()" style="max-width:200px;">
+                        <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.numbering.start_help')); ?></small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="numScope"><?php echo htmlspecialchars(t('tickets.settings.numbering.scope')); ?></label>
+                        <select id="numScope" style="max-width:340px;" onchange="numPreview()">
+                            <option value="global"><?php echo htmlspecialchars(t('tickets.settings.numbering.scope_global')); ?></option>
+                            <option value="per_type"><?php echo htmlspecialchars(t('tickets.settings.numbering.scope_per_type')); ?></option>
+                            <option value="per_company"><?php echo htmlspecialchars(t('tickets.settings.numbering.scope_per_company')); ?></option>
+                        </select>
+                        <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.numbering.scope_help')); ?></small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="numReset"><?php echo htmlspecialchars(t('tickets.settings.numbering.reset')); ?></label>
+                        <select id="numReset" style="max-width:340px;">
+                            <option value="never"><?php echo htmlspecialchars(t('tickets.settings.numbering.reset_never')); ?></option>
+                            <option value="yearly"><?php echo htmlspecialchars(t('tickets.settings.numbering.reset_yearly')); ?></option>
+                            <option value="monthly"><?php echo htmlspecialchars(t('tickets.settings.numbering.reset_monthly')); ?></option>
+                        </select>
+                        <small style="color: var(--text-muted, #666);"><?php echo t('tickets.settings.numbering.reset_help'); ?></small>
+                    </div>
+                </div>
+
+                <?php /* ⚠️ The one thing an administrator MUST understand before
+                         changing anything, so it sits above the Save button and
+                         not in a help page. */ ?>
+                <div class="info-box" style="margin:18px 0;padding:12px 14px;border-radius:6px;background: var(--accent-soft, #eff6ff);border-left:4px solid var(--accent, #0078d4);">
+                    <small><?php echo t('tickets.settings.numbering.existing_note'); ?></small>
+                </div>
+
+                <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </form>
+
+            <?php /* ── Renumbering ─────────────────────────────────────────
+                     Deliberately below a rule and its own heading: it is a
+                     MIGRATION tool, not part of choosing a format. */ ?>
+            <hr style="margin:32px 0;border:0;border-top:1px solid var(--border, #e0e0e0);">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.numbering.renumber_heading')); ?></h2>
+            </div>
+            <p style="margin-bottom: 16px; color: var(--text-muted, #666); max-width:700px;"><?php echo t('tickets.settings.numbering.renumber_intro'); ?></p>
+
+            <div class="info-box" style="max-width:700px;margin-bottom:16px;padding:12px 14px;border-radius:6px;background: var(--warning-bg, #fff8e6);border-left:4px solid var(--warning-border, #d18b00);color: var(--warning-text, #6b4e00);">
+                <small><?php echo t('tickets.settings.numbering.renumber_safety'); ?></small>
+            </div>
+
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <button type="button" class="btn btn-outline" onclick="numRenumber('preview')"><?php echo htmlspecialchars(t('tickets.settings.numbering.renumber_preview')); ?></button>
+                <button type="button" class="btn btn-primary" id="numRenumberGo" onclick="numRenumber('live')" disabled><?php echo htmlspecialchars(t('tickets.settings.numbering.renumber_go')); ?></button>
+                <small id="numRenumberHint" style="color: var(--text-dim, #888);"><?php echo htmlspecialchars(t('tickets.settings.numbering.renumber_preview_first')); ?></small>
+            </div>
+            <div id="numRenumberOut" style="margin-top:16px;max-width:700px;"></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'general')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'general' ? ' active' : ''; ?>" id="general-tab" data-capability="<?php echo capKey(Cap::TICKETS_GENERAL); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.general_settings')); ?></h2>
             </div>
             <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.general'); ?></p>
             <form id="generalSettingsForm" style="max-width: 600px;">
+                <?php /* The system name moved to System -> Branding: it heads every
+                         module's page titles, not just Tickets'. A pointer for anyone
+                         who still looks here. */ ?>
+                <p style="color: var(--text-muted, #666); margin-bottom: 18px;">
+                    <?php echo t('tickets.settings.general.system_name_moved', ['link' => '<a href="' . htmlspecialchars(BASE_URL) . 'system/branding/">' . htmlspecialchars(t('tickets.settings.general.system_name_moved_link')) . '</a>']); ?>
+                </p>
+
                 <div class="form-group">
-                    <label for="systemName"><?php echo htmlspecialchars(t('tickets.settings.general.system_name')); ?></label>
-                    <input type="text" id="systemName" placeholder="<?php echo htmlspecialchars(t('tickets.settings.general.system_name_placeholder')); ?>">
-                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.system_name_help')); ?></small>
+                    <label><?php echo htmlspecialchars(t('tickets.settings.general.reopen_label')); ?></label>
+                    <label style="display:block;margin-top:6px;font-weight:400;">
+                        <input type="checkbox" id="reopenOnCustomerReply"> <?php echo htmlspecialchars(t('tickets.settings.general.reopen_toggle')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.reopen_help')); ?></small>
+                </div>
+
+                <?php /* The ticket workspace (PR #211): which tickets may be laid out
+                         for working. Off by default, so an upgrade changes nothing;
+                         see includes/ticket_workspace.php. */ ?>
+                <div class="form-group">
+                    <label for="ticketWorkspaceMode"><?php echo htmlspecialchars(t('tickets.workspace.layout')); ?></label>
+                    <select id="ticketWorkspaceMode">
+                        <?php foreach (TicketWorkspaceMode::cases() as $workspaceMode): ?>
+                        <option value="<?php echo $workspaceMode->value; ?>"><?php echo htmlspecialchars(t('tickets.workspace.' . $workspaceMode->value)); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.workspace.mode_help')); ?></small>
+                </div>
+
+                <?php /* Who may export the ticket table as CSV (PR #213). A bulk export
+                         of ticket data, so Administrators only unless changed; the
+                         endpoint checks it on every request. */ ?>
+                <div class="form-group">
+                    <label for="ticketListExport"><?php echo htmlspecialchars(t('tickets.queue.export_label')); ?></label>
+                    <select id="ticketListExport">
+                        <?php foreach (TicketListExport::cases() as $exportPolicy): ?>
+                        <option value="<?php echo $exportPolicy->value; ?>"><?php echo htmlspecialchars(t('tickets.queue.export_' . $exportPolicy->value)); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.queue.export_help')); ?></small>
                 </div>
 
                 <div class="form-group">
-                    <label for="systemTimezone"><?php echo htmlspecialchars(t('tickets.settings.general.timezone')); ?></label>
-                    <select id="systemTimezone" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                        <option value=""><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></option>
+                    <label for="snoozeWakeHour"><?php echo htmlspecialchars(t('tickets.settings.general.snooze_hour_label')); ?></label>
+                    <select id="snoozeWakeHour">
+                        <?php for ($h = 0; $h < 24; $h++): ?>
+                        <option value="<?php echo $h; ?>"><?php echo sprintf('%02d:00', $h); ?></option>
+                        <?php endfor; ?>
                     </select>
-                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.timezone_help')); ?></small>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.snooze_hour_help')); ?></small>
+                </div>
+
+                <!-- Long messages (discussion #104). Five knobs rather than one
+                     switch, because a service desk that lives in email and one
+                     that barely touches it want opposite defaults. -->
+                <h3 style="margin-top: 34px;"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_heading')); ?></h3>
+                <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_desc')); ?></p>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="collapseEnabled">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.collapse_enabled_label')); ?>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="collapseLines"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_lines_label')); ?></label>
+                    <input type="number" id="collapseLines" min="4" max="80" step="1" style="max-width: 120px;">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_lines_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="collapseExpandNewest">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.collapse_newest_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_newest_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="collapseQuoted">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.collapse_quoted_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_quoted_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="collapseRemember">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.collapse_remember_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.collapse_remember_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="groupOlder">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.group_older_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.group_older_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="groupShow"><?php echo htmlspecialchars(t('tickets.settings.general.group_show_label')); ?></label>
+                    <input type="number" id="groupShow" min="2" max="80" step="1" style="max-width: 120px;">
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="flagDuplicates">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.flag_duplicates_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.flag_duplicates_help')); ?></small>
+                </div>
+
+                <!-- GH #176. Which team folders analysts see. Display only - it never
+                     changes which tickets anyone can open. Default 'all' = as before. -->
+                <h3 style="margin-top: 34px;"><?php echo htmlspecialchars(t('tickets.settings.general.team_folders_heading')); ?></h3>
+                <div class="form-group">
+                    <label for="teamFolders"><?php echo htmlspecialchars(t('tickets.settings.general.team_folders_label')); ?></label>
+                    <select id="teamFolders" style="max-width: 360px;">
+                        <option value="all"><?php echo htmlspecialchars(t('tickets.settings.general.team_folders_all')); ?></option>
+                        <option value="mine"><?php echo htmlspecialchars(t('tickets.settings.general.team_folders_mine')); ?></option>
+                    </select>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.team_folders_help')); ?></small>
+                </div>
+
+                <!-- The two AI reading aids (#104, ideas 7 and 12).
+                     ⚠️ Both are OFF by default and that is deliberate. Every other
+                     setting on this page changes how something already free is
+                     displayed; these two spend money with the administrator's own
+                     API key, and a feature that starts billing on upgrade is not a
+                     good surprise. The provider itself is configured once, on the
+                     Reply cleanup tab. -->
+                <h3 style="margin-top: 34px;"><?php echo htmlspecialchars(t('tickets.settings.general.ai_heading')); ?></h3>
+                <p style="color: var(--text-muted, #666); margin-bottom: 16px;"><?php echo htmlspecialchars(t('tickets.settings.general.ai_desc')); ?></p>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="aiSummaryEnabled">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.ai_summary_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.ai_summary_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="aiSummaryAutoAfter"><?php echo htmlspecialchars(t('tickets.settings.general.ai_auto_label')); ?></label>
+                    <input type="number" id="aiSummaryAutoAfter" min="0" max="100" step="1" style="max-width: 120px;">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.ai_auto_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="aiSummaryMaxMessages"><?php echo htmlspecialchars(t('tickets.settings.general.ai_max_label')); ?></label>
+                    <input type="number" id="aiSummaryMaxMessages" min="5" max="200" step="1" style="max-width: 120px;">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.ai_max_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="aiSummaryIncludeNotes">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.ai_notes_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.ai_notes_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="aiReadEnabled">
+                        <?php echo htmlspecialchars(t('tickets.settings.general.ai_read_label')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.ai_read_help')); ?></small>
+                </div>
+
+                <?php /* Confidential tickets and AI (discussion #62). Covers EVERY AI
+                         feature that reads a ticket, not just the two above. */ ?>
+                <div class="form-group">
+                    <label for="aiConfidential"><?php echo htmlspecialchars(t('tickets.settings.general.ai_confidential_label')); ?></label>
+                    <select id="aiConfidential">
+                        <option value="block"><?php echo htmlspecialchars(t('tickets.settings.general.ai_confidential_block')); ?></option>
+                        <option value="allow"><?php echo htmlspecialchars(t('tickets.settings.general.ai_confidential_allow')); ?></option>
+                    </select>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.general.ai_confidential_help')); ?></small>
                 </div>
 
                 <div style="display: flex; gap: 10px; justify-content: flex-start; margin-top: 30px;">
@@ -919,8 +2164,54 @@ $translationNamespaces = ['common', 'tickets'];
 
         </div>
 
+        <?php endif; ?>
+
+        <!-- Privacy Tab -->
+        <?php if (settingsTabVisible($visibleTabs, 'privacy')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'privacy' ? ' active' : ''; ?>" id="privacy-tab" data-capability="<?php echo capKey(Cap::TICKETS_PRIVACY); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.privacy')); ?></h2>
+            </div>
+            <p style="margin-bottom: 20px; color: var(--text-muted, #666);"><?php echo t('tickets.settings.intros.privacy'); ?></p>
+            <form id="privacySettingsForm" style="max-width: 760px;">
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('tickets.settings.privacy.third_party_label')); ?></label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="thirdPartyVisibility" value="hide">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.privacy.opt_hide')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.privacy.opt_hide_help')); ?></small>
+                    </label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="thirdPartyVisibility" value="no_attachments">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.privacy.opt_no_attachments')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.privacy.opt_no_attachments_help')); ?></small>
+                    </label>
+
+                    <label style="display:block;margin-top:10px;font-weight:400;">
+                        <input type="radio" name="thirdPartyVisibility" value="show">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.privacy.opt_show')); ?></strong>
+                        <small style="display:block;margin-left:22px;color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.privacy.opt_show_help')); ?></small>
+                    </label>
+                </div>
+
+                <!-- --accent-soft, not --ss-accent-soft: this is an analyst page, and
+                     the ss- tokens are the portal's green. -->
+                <div class="info-box" style="margin-top:18px;padding:12px 14px;border-radius:6px;background: var(--accent-soft, #eff6ff);border-left:4px solid var(--accent, #0078d4);">
+                    <small><?php echo t('tickets.settings.privacy.always_visible_note'); ?></small>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-start; margin-top: 30px;">
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+        <?php endif; ?>
+
         <!-- Reply Cleanup Tab -->
-        <div class="tab-content" id="reply-cleanup-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'reply-cleanup')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'reply-cleanup' ? ' active' : ''; ?>" id="reply-cleanup-tab" data-capability="<?php echo capKey(Cap::TICKETS_REPLY_CLEANUP); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.reply_cleanup_ai')); ?></h2>
             </div>
@@ -979,7 +2270,10 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
 
         <!-- CSAT Tab -->
-        <div class="tab-content" id="csat-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'csat')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'csat' ? ' active' : ''; ?>" id="csat-tab" data-capability="<?php echo capKey(Cap::TICKETS_CSAT); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('tickets.settings.headings.csat')); ?></h2>
             </div>
@@ -1024,6 +2318,14 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="csatInChannel">
+                        <span><?php echo htmlspecialchars(t('tickets.settings.csat_tab.in_channel')); ?></span>
+                    </label>
+                    <small style="display: block; color: var(--text-muted, #666); margin-top: 4px; margin-left: 26px;"><?php echo t('tickets.settings.csat_tab.in_channel_help'); ?></small>
+                </div>
+
+                <div class="form-group">
                     <label><?php echo htmlspecialchars(t('tickets.settings.csat.scale_label')); ?></label>
                     <div style="display: flex; gap: 20px; margin-top: 6px;">
                         <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
@@ -1045,6 +2347,136 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
             </form>
         </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'time-tracking')): ?>
+        <!-- Time tracking (discussion #72). Two switches, because hiding the panel
+             and closing the API are different decisions: an install can tidy its
+             screens without breaking a billing export that nobody told it about. -->
+        <div class="tab-content<?php echo $activeTabId === 'time-tracking' ? ' active' : ''; ?>" id="time-tracking-tab" data-capability="<?php echo capKey(Cap::TICKETS_MANAGE); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.time_tracking')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #555);">
+                <?php echo htmlspecialchars(t('tickets.settings.time_tracking.intro')); ?>
+            </p>
+
+            <?php /* Shown when the settings could not be read. Without it, an
+                     unreachable endpoint renders as "both switches off" — which is
+                     how this very tab shipped broken for ten minutes. */ ?>
+            <div class="tt-load-error" id="ttLoadError" hidden>
+                <strong><?php echo htmlspecialchars(t('tickets.settings.time_tracking.load_failed')); ?></strong>
+                <span><?php echo htmlspecialchars(t('tickets.settings.time_tracking.load_failed_desc')); ?></span>
+            </div>
+
+            <div class="tt-block">
+                <h3 class="tt-sub" id="ttDefaultHeading"><?php echo htmlspecialchars(t('tickets.settings.time_tracking.default_heading')); ?></h3>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.time_tracking.ui_label')); ?></strong>
+                        <?php echo htmlspecialchars(t('tickets.settings.time_tracking.ui_desc')); ?>
+                    </div>
+                    <label class="toggle-switch"><input type="checkbox" id="ttDefaultUi"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-label">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.time_tracking.api_label')); ?></strong>
+                        <?php echo htmlspecialchars(t('tickets.settings.time_tracking.api_desc')); ?>
+                    </div>
+                    <label class="toggle-switch"><input type="checkbox" id="ttDefaultApi"><span class="toggle-slider"></span></label>
+                </div>
+            </div>
+
+            <?php /* Only rendered when there is more than one company. At N=1 this
+                     whole block is absent and the page is two switches, which is
+                     exactly what discussion #72 asked for. */ ?>
+            <div class="tt-block" id="ttCompaniesBlock" hidden>
+                <h3 class="tt-sub"><?php echo htmlspecialchars(t('tickets.settings.time_tracking.companies_heading')); ?></h3>
+                <p style="color: var(--text-muted, #555); font-size: 13px;">
+                    <?php echo htmlspecialchars(t('tickets.settings.time_tracking.companies_intro')); ?>
+                </p>
+                <table class="settings-table" id="ttCompaniesTable">
+                    <thead><tr>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.time_tracking.col_company')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.time_tracking.col_ui')); ?></th>
+                        <th><?php echo htmlspecialchars(t('tickets.settings.time_tracking.col_api')); ?></th>
+                    </tr></thead>
+                    <tbody id="ttCompaniesBody"></tbody>
+                </table>
+            </div>
+
+            <p class="tt-note"><?php echo htmlspecialchars(t('tickets.settings.time_tracking.preserved_note')); ?></p>
+
+            <div class="save-area">
+                <button class="btn btn-primary" id="ttSaveBtn"><?php echo htmlspecialchars(t('tickets.settings.time_tracking.save')); ?></button>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'row-display')): ?>
+        <!-- Row display (discussion #61). cap => null: a personal view preference,
+             so no data-capability attribute — there is nothing here to grant. The
+             one administrative control inside is gated separately, below. -->
+        <div class="tab-content<?php echo $activeTabId === 'row-display' ? ' active' : ''; ?>" id="row-display-tab">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('tickets.settings.headings.row_display')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #555);">
+                <?php echo htmlspecialchars(t('tickets.settings.row_display.intro')); ?>
+            </p>
+
+            <div class="rd-layout">
+                <div class="rd-controls">
+                    <?php
+                    // The registry is the single source of truth for which styles a
+                    // field accepts — the form is generated from it so the UI cannot
+                    // drift from what the server will actually store.
+                    $rdRegistry = inboxDisplayRegistry();
+                    foreach ($rdRegistry as $rdField => $rdSpec):
+                    ?>
+                    <div class="rd-field">
+                        <label class="rd-field-label"><?php echo htmlspecialchars(t('tickets.settings.row_display.field.' . $rdField)); ?></label>
+                        <div class="rd-options" data-field="<?php echo htmlspecialchars($rdField); ?>">
+                            <?php foreach ($rdSpec['styles'] as $rdStyle): ?>
+                            <label class="rd-option">
+                                <input type="radio"
+                                       name="rd_<?php echo htmlspecialchars($rdField); ?>"
+                                       value="<?php echo htmlspecialchars($rdStyle); ?>"
+                                       <?php echo ($rdConfig[$rdField] ?? '') === $rdStyle ? 'checked' : ''; ?>>
+                                <span><?php echo htmlspecialchars(t('tickets.settings.row_display.style.' . $rdStyle)); ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                        <small class="rd-help"><?php echo htmlspecialchars(t('tickets.settings.row_display.help.' . $rdField)); ?></small>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <!-- A live sample rather than a description. Every combination here
+                     is legal, including two stripes or two blocks at once, and the
+                     only honest way to choose between them is to look. -->
+                <div class="rd-preview-wrap">
+                    <div class="rd-preview-label"><?php echo htmlspecialchars(t('tickets.settings.row_display.preview')); ?></div>
+                    <div class="rd-preview" id="rdPreview"></div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 26px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="rdSave('me')"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                <button type="button" class="action-btn" onclick="rdSave('reset')"><?php echo htmlspecialchars(t('tickets.settings.row_display.reset')); ?></button>
+                <?php if (analystHasCapability($conn, (int)$_SESSION['analyst_id'], Cap::TICKETS_MANAGE)): ?>
+                <span class="rd-admin-sep"></span>
+                <button type="button" class="action-btn" onclick="rdSave('install')"><?php echo htmlspecialchars(t('tickets.settings.row_display.set_default')); ?></button>
+                <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.row_display.set_default_help')); ?></small>
+                <?php endif; ?>
+            </div>
+            <p id="rdFollowing" style="color: var(--text-muted, #666); font-size: 12px; margin-top: 12px;">
+                <?php echo htmlspecialchars($rdPersonal
+                    ? t('tickets.settings.row_display.using_personal')
+                    : t('tickets.settings.row_display.using_default')); ?>
+            </p>
+        </div>
+        <?php endif; ?>
     </div>
 
     <!-- Modal for Add/Edit -->
@@ -1076,6 +2508,14 @@ $translationNamespaces = ['common', 'tickets'];
                         <input type="checkbox" id="itemClosed"> <?php echo htmlspecialchars(t('tickets.settings.modals.lookup.closed_label')); ?>
                     </label>
                     <small style="display: block; color: var(--text-muted, #666); margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.modals.lookup.closed_help')); ?></small>
+                </div>
+
+                <!-- Discussion #62: departments only -->
+                <div class="form-group" id="itemConfidentialGroup" style="display: none;">
+                    <label>
+                        <input type="checkbox" id="itemConfidential"> <?php echo htmlspecialchars(t('tickets.settings.dept_confidential.label')); ?>
+                    </label>
+                    <small style="display: block; color: var(--text-muted, #666); margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.dept_confidential.help')); ?></small>
                 </div>
 
                 <div class="form-group" id="itemPausesSlaGroup" style="display: none;">
@@ -1116,6 +2556,186 @@ $translationNamespaces = ['common', 'tickets'];
     </div>
 
     <!-- Mailbox Modal -->
+    <!-- Ticket category add/edit (#1540). Its own dialog rather than the shared
+         lookup modal: a category carries a parent, a ticket type and a portal
+         flag, none of which the flat lookup lists have. -->
+    <!-- Custom ticket field add/edit (#179). -->
+    <div class="modal" id="tfModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header" id="tfModalTitle"></div>
+            <?php /* The canonical header / body / footer layout (inbox.css): the
+                     header stays put, only the body scrolls, and Cancel / Save sit
+                     in a footer the fields never run under. */ ?>
+            <form id="tfForm" onsubmit="tfSave(event)">
+                <div class="modal-body">
+                <input type="hidden" id="tfId">
+                <div class="form-group">
+                    <label for="tfLabel"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_name')); ?></label>
+                    <input type="text" id="tfLabel" maxlength="150" required>
+                </div>
+                <div class="form-group">
+                    <label for="tfType"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_kind')); ?></label>
+                    <select id="tfType" onchange="tfKindChanged()">
+                        <?php foreach (['text', 'number', 'date', 'boolean', 'dropdown', 'url', 'email'] as $k): ?>
+                        <option value="<?php echo $k; ?>"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.kinds.' . $k)); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small id="tfTypeLocked" style="color: var(--text-muted, #666); display: none;"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_kind_locked')); ?></small>
+                </div>
+                <div class="form-group tf-kind tf-kind-text">
+                    <label><input type="checkbox" id="tfMultiline"> <?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_multiline')); ?></label>
+                </div>
+                <div class="form-group tf-kind tf-kind-number" style="display: flex; gap: 16px;">
+                    <div style="flex: 1;">
+                        <label for="tfDecimals"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_decimals')); ?></label>
+                        <input type="number" id="tfDecimals" min="0" max="4" value="0">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="tfUnit"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_unit')); ?></label>
+                        <input type="text" id="tfUnit" maxlength="20" placeholder="<?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_unit_hint')); ?>">
+                    </div>
+                </div>
+                <div class="form-group tf-kind tf-kind-date">
+                    <label for="tfDateMode"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_date_mode')); ?></label>
+                    <select id="tfDateMode">
+                        <option value="date"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.mode_date')); ?></option>
+                        <option value="datetime"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.mode_datetime')); ?></option>
+                        <option value="time"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.mode_time')); ?></option>
+                    </select>
+                </div>
+                <div class="form-group tf-kind tf-kind-dropdown">
+                    <label for="tfOptions"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_options')); ?></label>
+                    <textarea id="tfOptions" rows="4"></textarea>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_options_hint')); ?></small>
+                </div>
+                <div class="form-group">
+                    <label for="tfHelp"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_help')); ?></label>
+                    <input type="text" id="tfHelp" maxlength="500">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_help_hint')); ?></small>
+                </div>
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_types')); ?></label>
+                    <label><input type="radio" name="tfScope" id="tfAllTypes" value="all" onchange="tfScopeChanged()"> <?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_all_types')); ?></label>
+                    <label><input type="radio" name="tfScope" id="tfSomeTypes" value="some" onchange="tfScopeChanged()"> <?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_some_types')); ?></label>
+                    <div id="tfTypeList" class="tf-type-list"></div>
+                </div>
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_required')); ?></label>
+                    <label><input type="checkbox" id="tfReqCreate"> <?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_req_create')); ?></label>
+                    <small style="color: var(--text-muted, #666); display: block; margin: 0 0 8px 24px;"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_req_create_hint')); ?></small>
+                    <label><input type="checkbox" id="tfReqClose"> <?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_req_close')); ?></label>
+                    <small style="color: var(--text-muted, #666); display: block; margin: 0 0 0 24px;"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_req_close_hint')); ?></small>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="tfAsk"> <?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_ask')); ?></label>
+                    <small style="color: var(--text-muted, #666); display: block; margin-left: 24px;"><?php echo htmlspecialchars(t('tickets.settings.custom_fields.f_ask_hint')); ?></small>
+                </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('tfModal').classList.remove('active')"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="tcCategoryModal">
+        <div class="modal-content" style="max-width: 560px;">
+            <div class="modal-header" id="tcCategoryModalTitle"><?php echo htmlspecialchars(t('tickets.settings.categories.add_category')); ?></div>
+            <form id="tcCategoryForm">
+                <input type="hidden" id="tcCatId">
+
+                <div class="form-group">
+                    <label for="tcCatName"><?php echo htmlspecialchars(t('tickets.settings.categories.f_name')); ?></label>
+                    <input type="text" id="tcCatName" maxlength="100" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tcCatDescription"><?php echo htmlspecialchars(t('tickets.settings.categories.f_description')); ?></label>
+                    <textarea id="tcCatDescription" maxlength="255"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="tcCatParent"><?php echo htmlspecialchars(t('tickets.settings.categories.f_parent')); ?></label>
+                    <select id="tcCatParent"></select>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.categories.f_parent_help')); ?></small>
+                </div>
+
+                <!-- Hidden for a sub-category: the type link lives on the root and
+                     a child inherits it. Offering the field on a child would let
+                     "Hardware → Printer" claim a different type from "Hardware". -->
+                <div class="form-group" id="tcCatTypeGroup">
+                    <label for="tcCatType"><?php echo htmlspecialchars(t('tickets.settings.categories.f_type')); ?></label>
+                    <select id="tcCatType"></select>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.categories.f_type_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="tcCatPortal" checked>
+                        <?php echo htmlspecialchars(t('tickets.settings.categories.f_portal')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666); display:block;"><?php echo htmlspecialchars(t('tickets.settings.categories.f_portal_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="tcCatActive" checked>
+                        <?php echo htmlspecialchars(t('tickets.settings.categories.f_active')); ?>
+                    </label>
+                    <small style="color: var(--text-muted, #666); display:block;"><?php echo htmlspecialchars(t('tickets.settings.categories.f_active_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="tcCatOrder"><?php echo htmlspecialchars(t('tickets.settings.categories.f_order')); ?></label>
+                    <input type="number" id="tcCatOrder" value="0">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn" id="tcCatCancel"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Resolution code add/edit (#1540). Flat: no parent, no type. -->
+    <div class="modal" id="tcCodeModal">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header" id="tcCodeModalTitle"><?php echo htmlspecialchars(t('tickets.settings.categories.add_code')); ?></div>
+            <form id="tcCodeForm">
+                <input type="hidden" id="tcCodeId">
+
+                <div class="form-group">
+                    <label for="tcCodeName"><?php echo htmlspecialchars(t('tickets.settings.categories.f_name')); ?></label>
+                    <input type="text" id="tcCodeName" maxlength="100" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tcCodeDescription"><?php echo htmlspecialchars(t('tickets.settings.categories.f_description')); ?></label>
+                    <textarea id="tcCodeDescription" maxlength="255"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="tcCodeActive" checked>
+                        <?php echo htmlspecialchars(t('tickets.settings.categories.f_active')); ?>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="tcCodeOrder"><?php echo htmlspecialchars(t('tickets.settings.categories.f_order')); ?></label>
+                    <input type="number" id="tcCodeOrder" value="0">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn" id="tcCodeCancel"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="modal" id="mailboxModal">
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header" id="mailboxModalTitle"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.add_title')); ?></div>
@@ -1127,9 +2747,10 @@ $translationNamespaces = ['common', 'tickets'];
                     <div class="form-group" style="grid-column: span 2;">
                         <label for="mailboxProvider"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.provider')); ?> *</label>
                         <select id="mailboxProvider" onchange="toggleProviderFields()">
-                            <option value="microsoft"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.provider_microsoft')); ?></option>
-                            <option value="google"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.provider_google')); ?></option>
-                            <option value="imap_smtp">Generic IMAP/SMTP</option>
+                            <?php // One option per MailboxProvider case (4.0) - the enum is the list. ?>
+                            <?php foreach (MailboxProvider::cases() as $mbp): ?>
+                            <option value="<?php echo htmlspecialchars($mbp->value); ?>"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.provider_' . $mbp->value)); ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
 
@@ -1159,23 +2780,36 @@ $translationNamespaces = ['common', 'tickets'];
                         <small style="color: var(--text-muted, #666); display: block; margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.company_help')); ?></small>
                     </div>
 
+                    <!-- #79: where tickets opened by THIS mailbox say they came from. -->
+                    <div class="form-group" id="mailboxOriginGroup" style="grid-column: span 2;">
+                        <label for="mailboxOrigin"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.origin_label')); ?></label>
+                        <select id="mailboxOrigin"></select>
+                        <small style="color: var(--text-muted, #666); display: block; margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.origin_help')); ?></small>
+                    </div>
+
+                    <!-- Discussion #62: an HR mailbox whose tickets are confidential on arrival. -->
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label><input type="checkbox" id="mailboxConfidential"> <?php echo htmlspecialchars(t('tickets.settings.mailbox_confidential.label')); ?></label>
+                        <small style="color: var(--text-muted, #666); display: block; margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.mailbox_confidential.help')); ?></small>
+                    </div>
+
                     <div class="form-group provider-microsoft">
                         <label for="mailboxTenantId"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.azure_tenant_id')); ?> *</label>
                         <input type="text" id="mailboxTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
                     </div>
 
-                    <div class="form-group" id="clientIdGroup">
+                    <div class="form-group provider-oauth" id="clientIdGroup">
                         <label for="mailboxClientId" id="clientIdLabel"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.client_id')); ?> *</label>
                         <input type="text" id="mailboxClientId" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
                     </div>
 
-                    <div class="form-group" style="grid-column: span 2;">
+                    <div class="form-group provider-oauth" style="grid-column: span 2;">
                         <label for="mailboxClientSecret" id="clientSecretLabel"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.client_secret')); ?> *</label>
                         <input type="password" id="mailboxClientSecret" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.client_secret_placeholder')); ?>">
                         <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.client_secret_help')); ?></small>
                     </div>
 
-                    <div class="form-group" style="grid-column: span 2;">
+                    <div class="form-group provider-oauth" style="grid-column: span 2;">
                         <label for="mailboxRedirectUri"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.oauth_redirect_uri')); ?> *</label>
                         <input type="url" id="mailboxRedirectUri" required placeholder="https://yoursite.com/oauth_callback.php">
                     </div>
@@ -1185,60 +2819,97 @@ $translationNamespaces = ['common', 'tickets'];
                         <input type="text" id="mailboxScopes" value="openid email offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send">
                     </div>
 
-                    <div class="form-group">
-                        <label for="mailboxImapServer"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_server')); ?></label>
-                        <input type="text" id="mailboxImapServer" value="outlook.office365.com">
+                    <!-- IMAP receive settings (basic mailboxes only) -->
+                    <div class="form-group provider-imap">
+                        <label for="mailboxImapServer"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_server')); ?> *</label>
+                        <input type="text" id="mailboxImapServer" value="outlook.office365.com" placeholder="imap.example.com">
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group provider-imap">
                         <label for="mailboxImapPort"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_port')); ?></label>
                         <input type="number" id="mailboxImapPort" value="993">
                     </div>
 
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxImapEncryption">IMAP encryption</label>
-                        <select id="mailboxImapEncryption"><option value="none">None</option><option value="ssl">SSL</option><option value="tls">TLS/STARTTLS</option></select>
+                    <div class="form-group provider-imap">
+                        <label for="mailboxImapEncryption"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_encryption')); ?></label>
+                        <select id="mailboxImapEncryption">
+                            <option value="ssl"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.encryption_ssl')); ?></option>
+                            <option value="tls"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.encryption_tls')); ?></option>
+                            <option value="none"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.encryption_none')); ?></option>
+                        </select>
                     </div>
 
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxImapUsername">IMAP username *</label>
-                        <input type="text" id="mailboxImapUsername" autocomplete="off">
+                    <div class="form-group provider-imap">
+                        <label for="mailboxImapUsername"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_username')); ?> *</label>
+                        <input type="text" id="mailboxImapUsername" autocomplete="off" placeholder="you@example.com">
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxImapPassword">IMAP password</label>
-                        <input type="password" id="mailboxImapPassword" autocomplete="new-password" placeholder="Leave blank to keep existing">
+
+                    <div class="form-group provider-imap" style="grid-column: span 2;">
+                        <label for="mailboxImapPassword"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_password')); ?> *</label>
+                        <input type="password" id="mailboxImapPassword" autocomplete="new-password" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_password_placeholder')); ?>">
+                        <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_password_help')); ?></small>
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpHost">SMTP host</label>
-                        <input type="text" id="mailboxSmtpHost">
+
+                    <!-- SMTP send settings (basic mailboxes only) -->
+                    <div class="form-group provider-imap">
+                        <label for="mailboxSmtpServer"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_server')); ?> *</label>
+                        <input type="text" id="mailboxSmtpServer" placeholder="smtp.example.com">
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpPort">SMTP port</label>
+
+                    <div class="form-group provider-imap">
+                        <label for="mailboxSmtpPort"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_port')); ?></label>
                         <input type="number" id="mailboxSmtpPort" value="587">
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpEncryption">SMTP encryption</label>
-                        <select id="mailboxSmtpEncryption"><option value="tls">TLS</option><option value="ssl">SSL</option><option value="none">None</option></select>
+
+                    <div class="form-group provider-imap">
+                        <label for="mailboxSmtpEncryption"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_encryption')); ?></label>
+                        <select id="mailboxSmtpEncryption">
+                            <option value="tls"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.encryption_starttls')); ?></option>
+                            <option value="ssl"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.encryption_ssl')); ?></option>
+                            <option value="none"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.encryption_none')); ?></option>
+                        </select>
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpUsername">SMTP username</label>
-                        <input type="text" id="mailboxSmtpUsername" autocomplete="off">
+
+                    <!-- Sending credentials, asked the way an online checkout asks about a
+                         billing address: a toggle that says "same as the IMAP login", and
+                         the two fields only when it is turned off. Stating the default
+                         beats inferring it from two empty boxes, which cannot tell
+                         "nothing is set" apart from "this failed to load". -->
+                    <div class="form-group provider-imap" style="grid-column: span 2;">
+                        <label style="display: flex; align-items: center; gap: 10px;"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_same_as_imap')); ?>
+                            <label class="toggle-switch" style="margin: 0;">
+                                <input type="checkbox" id="mailboxSmtpSameAsImap" checked onchange="toggleSmtpCredentials()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                        <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_same_as_imap_help')); ?></small>
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpPassword">SMTP password</label>
-                        <input type="password" id="mailboxSmtpPassword" autocomplete="new-password" placeholder="Leave blank to keep existing">
+
+                    <!-- ⚠️ These two carry `smtp-creds` and NOT `provider-imap`:
+                         toggleProviderFields() writes `display` on every .provider-imap
+                         element, so a row in both classes would have two functions
+                         fighting over it. toggleSmtpCredentials() owns them outright and
+                         checks the provider itself. -->
+                    <div class="form-group smtp-creds" style="display: none;">
+                        <label for="mailboxSmtpUsername"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_username')); ?></label>
+                        <input type="text" id="mailboxSmtpUsername" autocomplete="off" placeholder="you@example.com">
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpFromAddress">SMTP from address</label>
-                        <input type="email" id="mailboxSmtpFromAddress">
+
+                    <div class="form-group smtp-creds" style="display: none;">
+                        <label for="mailboxSmtpPassword"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.smtp_password')); ?></label>
+                        <input type="password" id="mailboxSmtpPassword" autocomplete="new-password" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.imap_password_placeholder')); ?>">
                     </div>
-                    <div class="form-group provider-imap-smtp">
-                        <label for="mailboxSmtpFromName">SMTP from name</label>
-                        <input type="text" id="mailboxSmtpFromName">
-                    </div>
+
                     <div class="form-group">
                         <label for="mailboxFolder"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.email_folder')); ?></label>
-                        <input type="text" id="mailboxFolder" value="INBOX">
+                        <!-- The folder mail is READ from had no Verify, while the folder
+                             mail is MOVED to did — so the screen could confirm a folder
+                             directly below the field that could not use it (GH #77). -->
+                        <div style="display: flex; gap: 8px; align-items: start;">
+                            <input type="text" id="mailboxFolder" value="INBOX" style="flex: 1;">
+                            <button type="button" class="btn btn-secondary" id="verifyIntakeFolderBtn" onclick="verifyIntakeFolder()" style="padding: 8px 12px; white-space: nowrap;"><?php echo htmlspecialchars(t('tickets.settings.buttons.verify')); ?></button>
+                        </div>
+                        <small id="verifyIntakeFolderResult" style="display: none; margin-top: 5px;"></small>
                     </div>
 
                     <div class="form-group">
@@ -1284,6 +2955,17 @@ $translationNamespaces = ['common', 'tickets'];
                 </div>
 
                 <div style="grid-column: span 2; margin-top: 10px; border-top: 1px solid #e0e0e0; padding-top: 15px;">
+                    <label for="mailboxOversizeUse" style="font-weight: 600; margin-bottom: 8px; display: block;"><?php echo htmlspecialchars(t('tickets.settings.oversize.mailbox_heading')); ?></label>
+                    <div class="form-group" style="margin-bottom:0;"><select id="mailboxOversizeUse" onchange="document.getElementById('mailboxOversizeOwn').style.display = this.value === 'own' ? '' : 'none'">
+                        <option value="defaults"><?php echo htmlspecialchars(t('tickets.settings.oversize.use_defaults')); ?></option>
+                        <option value="own"><?php echo htmlspecialchars(t('tickets.settings.oversize.use_own')); ?></option>
+                    </select></div>
+                    <div id="mailboxOversizeOwn" style="display:none;margin-top:10px;">
+                        <?php renderOversizeFields('ovm', true); ?>
+                    </div>
+                </div>
+
+                <div style="grid-column: span 2; margin-top: 10px; border-top: 1px solid #e0e0e0; padding-top: 15px;">
                     <label style="font-weight: 600; margin-bottom: 8px; display: block;"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.whitelist_label')); ?></label>
                     <small style="color: var(--text-muted, #666); display: block; margin-bottom: 10px;"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.whitelist_help')); ?></small>
 
@@ -1308,6 +2990,26 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
     </div>
 
+    <!-- Delete mailbox (GH #227): says what is still attached and where its emails go. -->
+    <div class="modal" id="mailboxDeleteModal">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header" id="mailboxDeleteTitle"></div>
+            <div class="modal-body">
+                <div id="mailboxDeleteBody"></div>
+                <div class="form-group" id="mailboxDeleteMoveGroup" style="display: none; margin-top: 12px;">
+                    <label for="mailboxDeleteMoveTo"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox_delete.move_label')); ?></label>
+                    <select id="mailboxDeleteMoveTo" onchange="renderMailboxDeleteWarnings()"></select>
+                    <small style="color: var(--text-muted, #666); display: block; margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox_delete.move_help')); ?></small>
+                </div>
+                <div id="mailboxDeleteWarnings"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeMailboxDeleteModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button type="button" class="btn btn-danger" id="mailboxDeleteConfirm" onclick="confirmMailboxDelete()" disabled style="background: var(--danger-accent, #d13438); border-color: var(--danger-accent, #d13438); color: #fff;"><?php echo htmlspecialchars(t('common.delete')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <!-- Messaging Channel Modal (WhatsApp etc.) -->
     <div class="modal" id="channelModal">
         <div class="modal-content" style="max-width: 640px;">
@@ -1328,10 +3030,13 @@ $translationNamespaces = ['common', 'tickets'];
                         <select id="channelProvider" onchange="toggleChannelProviderFields()">
                             <option value="twilio">Twilio</option>
                             <option value="meta"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.provider_meta')); ?></option>
+                            <option value="telegram"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.provider_telegram')); ?></option>
+                            <option value="teams"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.provider_teams')); ?></option>
+                            <option value="mattermost"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.provider_mattermost')); ?></option>
                         </select>
                     </div>
 
-                    <div class="form-group" style="grid-column: span 2;">
+                    <div class="form-group provider-phone" style="grid-column: span 2;">
                         <label for="channelPhone"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.phone')); ?></label>
                         <input type="text" id="channelPhone" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.channel.phone_placeholder')); ?>">
                         <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.phone_help')); ?></small>
@@ -1367,7 +3072,7 @@ $translationNamespaces = ['common', 'tickets'];
                         <label for="channelAppSecret"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.app_secret')); ?> *</label>
                         <input type="password" id="channelAppSecret" placeholder="••••••••">
                     </div>
-                    <div class="form-group provider-meta">
+                    <div class="form-group provider-meta" id="channelVerifyTokenGroup">
                         <label for="channelVerifyToken"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.verify_token')); ?></label>
                         <input type="text" id="channelVerifyToken" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.channel.verify_token_placeholder')); ?>">
                         <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.verify_token_help')); ?></small>
@@ -1376,6 +3081,102 @@ $translationNamespaces = ['common', 'tickets'];
                         <label for="channelGraphVersion"><?php echo t('tickets.settings.modals.channel.graph_version'); ?></label>
                         <input type="text" id="channelGraphVersion" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.channel.graph_version_placeholder')); ?>">
                         <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.graph_version_help')); ?></small>
+                    </div>
+
+                    <!-- Telegram credentials -->
+                    <div class="form-group provider-telegram" style="grid-column: span 2;">
+                        <label for="channelBotToken"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.bot_token')); ?> *</label>
+                        <input type="password" id="channelBotToken" placeholder="123456789:AA••••••••••••••••••••••••••••••••" oninput="updateTelegramSetupCommand(true)">
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.bot_token_help')); ?></small>
+                    </div>
+                    <div class="form-group provider-telegram" style="grid-column: span 2;">
+                        <label for="channelTelegramSecret"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.telegram_secret')); ?></label>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="channelTelegramSecret" style="flex:1;" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.channel.telegram_secret_placeholder')); ?>" oninput="updateTelegramSetupCommand(true)">
+                            <button type="button" class="btn btn-secondary" onclick="generateTelegramSecret()" style="white-space:nowrap; padding:8px 12px;"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.generate')); ?></button>
+                        </div>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.telegram_secret_help')); ?></small>
+                    </div>
+
+                    <!-- Microsoft Teams (Bot Framework) credentials -->
+                    <div class="form-group provider-teams">
+                        <label for="channelTeamsAppId"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_app_id')); ?> *</label>
+                        <input type="text" id="channelTeamsAppId" placeholder="00000000-0000-0000-0000-000000000000">
+                    </div>
+                    <div class="form-group provider-teams">
+                        <label for="channelTeamsTenantId"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_tenant_id')); ?> *</label>
+                        <input type="text" id="channelTeamsTenantId" placeholder="00000000-0000-0000-0000-000000000000">
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_tenant_help')); ?></small>
+                    </div>
+                    <div class="form-group provider-teams" style="grid-column: span 2;">
+                        <label for="channelTeamsAppSecret"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_app_secret')); ?> *</label>
+                        <input type="password" id="channelTeamsAppSecret" placeholder="••••••••">
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_secret_help')); ?></small>
+                    </div>
+
+                    <!-- Mattermost credentials -->
+                    <div class="form-group provider-mattermost" style="grid-column: span 2;">
+                        <label for="channelMmServerUrl"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_server_url')); ?> *</label>
+                        <input type="text" id="channelMmServerUrl" placeholder="https://mattermost.example.com">
+                    </div>
+                    <div class="form-group provider-mattermost">
+                        <label for="channelMmChannelId"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_channel_id')); ?> *</label>
+                        <input type="text" id="channelMmChannelId" placeholder="abcdefghijklmnopqrstuvwxyz" maxlength="26">
+                    </div>
+                    <div class="form-group provider-mattermost">
+                        <label for="channelMmBotToken"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_bot_token')); ?> *</label>
+                        <input type="password" id="channelMmBotToken" placeholder="••••••••">
+                    </div>
+                    <div class="form-group provider-mattermost" style="grid-column: span 2;">
+                        <label for="channelMmWebhookToken"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_webhook_token')); ?> *</label>
+                        <input type="password" id="channelMmWebhookToken" placeholder="••••••••">
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_webhook_help')); ?></small>
+                    </div>
+                    <div class="form-group provider-mattermost" style="grid-column: span 2; background:var(--bg-secondary, #f5f7fa); border:1px solid var(--border-color, #e0e0e0); border-radius:8px; padding:12px 14px;">
+                        <label style="font-weight:600; display:block; margin-bottom:6px;"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_setup_title')); ?></label>
+                        <ol style="margin:0 0 4px 18px; padding:0; font-size:13px; color:var(--text-muted, #555); line-height:1.6;">
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_step1')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_step2')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.mm_step3')); ?></li>
+                        </ol>
+                        <small style="color:var(--text-muted, #666);"><a href="https://github.com/edmozley/freeitsm/wiki/Mattermost" target="_blank" rel="noopener">github.com/edmozley/freeitsm/wiki/Mattermost</a></small>
+                    </div>
+
+                    <!-- Teams setup steps: the Azure side has to exist before the App ID and secret above do. -->
+                    <div class="form-group provider-teams" style="grid-column: span 2; background:var(--bg-secondary, #f5f7fa); border:1px solid var(--border-color, #e0e0e0); border-radius:8px; padding:12px 14px;">
+                        <label style="font-weight:600; display:block; margin-bottom:6px;"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_setup_title')); ?></label>
+                        <ol style="margin:0 0 4px 18px; padding:0; font-size:13px; color:var(--text-muted, #555); line-height:1.6;">
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_step1')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_step2')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_step3')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_step4')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_step5')); ?></li>
+                        </ol>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_help_more')); ?> <a href="https://github.com/edmozley/freeitsm/wiki/Microsoft-Teams" target="_blank" rel="noopener">github.com/edmozley/freeitsm/wiki/Microsoft-Teams</a></small>
+                        <div style="margin-top:10px;">
+                            <button type="button" id="teamsPackageBtn" class="btn btn-secondary" style="display:none;" onclick="downloadTeamsPackage()"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_download')); ?></button>
+                            <small id="teamsPackageHelp" style="display:none; color:var(--text-muted, #666); margin-left:8px;"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.teams_download_help')); ?></small>
+                        </div>
+                    </div>
+
+                    <!-- How to connect: only meaningful once the secret is set and (for the
+                         exact webhook URL) the channel has been saved at least once. -->
+                    <div class="form-group provider-telegram" style="grid-column: span 2; background:var(--app-bg, #f5f7fa); border:1px solid var(--border, #e0e0e0); border-radius:8px; padding:12px 14px;">
+                        <label style="font-weight:600; display:block; margin-bottom:6px;"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.setup_title')); ?></label>
+                        <ol style="margin:0 0 10px 18px; padding:0; font-size:13px; color:var(--text-muted, #555); line-height:1.6;">
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.setup_step1')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.setup_step2')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.setup_step3')); ?></li>
+                            <li><?php echo htmlspecialchars(t('tickets.settings.modals.channel.setup_step4_connect')); ?></li>
+                        </ol>
+                        <?php /* Connect registers the webhook server-side (api/messaging/
+                                 telegram_connect.php). It replaced a copy-paste curl command
+                                 that put the bot token in the browser and the clipboard. */ ?>
+                        <div id="telegramConnectWrap" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <button type="button" class="btn btn-secondary" id="telegramConnectBtn" onclick="connectTelegram()"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.connect')); ?></button>
+                            <span id="telegramConnectResult" style="font-size:13px;"></span>
+                        </div>
+                        <small id="telegramSetupHint" style="color:var(--text-muted, #666); display:block;"><?php echo htmlspecialchars(t('tickets.settings.modals.channel.setup_save_first_connect')); ?></small>
                     </div>
 
                     <div class="form-group" style="grid-column: span 2;">
@@ -1404,6 +3205,118 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeChannelModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
                 <button type="submit" form="channelForm" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Web chat Widget Modal -->
+    <div class="modal" id="widgetModal">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header" id="widgetModalTitle"><?php echo htmlspecialchars(t('tickets.settings.webchat.add_title')); ?></div>
+            <div class="modal-body">
+            <form id="widgetForm" autocomplete="off">
+                <input type="hidden" id="widgetId">
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="widgetName"><?php echo htmlspecialchars(t('tickets.settings.webchat.name')); ?> *</label>
+                        <input type="text" id="widgetName" required placeholder="<?php echo htmlspecialchars(t('tickets.settings.webchat.name_placeholder')); ?>">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="widgetAccent"><?php echo htmlspecialchars(t('tickets.settings.webchat.accent')); ?></label>
+                        <input type="text" id="widgetAccent" placeholder="#2563eb">
+                    </div>
+
+                    <!-- Multi-tenancy: only shown when more than one company exists (populated by JS). -->
+                    <div class="form-group" id="widgetCompanyGroup" style="display:none; grid-column: span 2;">
+                        <label for="widgetCompany"><?php echo htmlspecialchars(t('tickets.settings.webchat.company')); ?></label>
+                        <select id="widgetCompany"></select>
+                        <small style="color:var(--text-muted, #666); display:block; margin-top:4px;"><?php echo htmlspecialchars(t('tickets.settings.webchat.company_help')); ?></small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="widgetGreeting"><?php echo htmlspecialchars(t('tickets.settings.webchat.greeting')); ?></label>
+                        <input type="text" id="widgetGreeting" placeholder="<?php echo htmlspecialchars(t('tickets.settings.webchat.greeting_placeholder')); ?>">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="widgetLauncher"><?php echo htmlspecialchars(t('tickets.settings.webchat.launcher')); ?></label>
+                        <input type="text" id="widgetLauncher" placeholder="<?php echo htmlspecialchars(t('tickets.settings.webchat.launcher_placeholder')); ?>">
+                    </div>
+
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label for="widgetOrigins"><?php echo htmlspecialchars(t('tickets.settings.webchat.origins')); ?></label>
+                        <textarea id="widgetOrigins" rows="3" placeholder="https://example.com"></textarea>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.webchat.origins_help')); ?></small>
+                    </div>
+
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label for="widgetOffline"><?php echo htmlspecialchars(t('tickets.settings.webchat.offline')); ?></label>
+                        <textarea id="widgetOffline" rows="2" placeholder="<?php echo htmlspecialchars(t('tickets.settings.webchat.offline_placeholder')); ?>"></textarea>
+                    </div>
+
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label><input type="checkbox" id="widgetRequireEmail" checked> <?php echo htmlspecialchars(t('tickets.settings.webchat.require_email')); ?></label>
+                    </div>
+
+                    <!-- Availability -->
+                    <div class="form-group" style="grid-column: span 2; border-top:1px solid var(--border, #e5e7eb); padding-top:12px; margin-bottom:0;">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.webchat.avail_heading')); ?></strong>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label for="widgetCalendar"><?php echo htmlspecialchars(t('tickets.settings.webchat.business_hours')); ?></label>
+                        <select id="widgetCalendar"><option value=""><?php echo htmlspecialchars(t('tickets.settings.webchat.always_open')); ?></option></select>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.webchat.business_hours_help')); ?></small>
+                    </div>
+
+                    <!-- Email delivery -->
+                    <div class="form-group" style="grid-column: span 2; border-top:1px solid var(--border, #e5e7eb); padding-top:12px; margin-bottom:0;">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.webchat.email_heading')); ?></strong>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label><input type="checkbox" id="widgetEmailWhenAway"> <?php echo htmlspecialchars(t('tickets.settings.webchat.email_when_away')); ?></label>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.webchat.email_when_away_help')); ?></small>
+                    </div>
+
+                    <!-- AI answers -->
+                    <div class="form-group" style="grid-column: span 2; border-top:1px solid var(--border, #e5e7eb); padding-top:12px; margin-bottom:0;">
+                        <strong><?php echo htmlspecialchars(t('tickets.settings.webchat.ai_heading')); ?></strong>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label><input type="checkbox" id="widgetAiEnabled" onchange="toggleWidgetAiFields()"> <?php echo htmlspecialchars(t('tickets.settings.webchat.ai_enabled')); ?></label>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.webchat.ai_enabled_help')); ?></small>
+                    </div>
+                    <div class="form-group widget-ai-fields" style="grid-column: span 2;">
+                        <label for="widgetAiMode"><?php echo htmlspecialchars(t('tickets.settings.webchat.ai_mode')); ?></label>
+                        <select id="widgetAiMode">
+                            <option value="assist"><?php echo htmlspecialchars(t('tickets.settings.webchat.ai_mode_assist')); ?></option>
+                            <option value="deflect"><?php echo htmlspecialchars(t('tickets.settings.webchat.ai_mode_deflect')); ?></option>
+                        </select>
+                    </div>
+                    <div class="form-group widget-ai-fields" style="grid-column: span 2; margin-bottom:0;">
+                        <label><input type="checkbox" id="widgetAiOfferAgent"> <?php echo htmlspecialchars(t('tickets.settings.webchat.ai_offer_agent')); ?></label>
+                    </div>
+                    <div class="form-group widget-ai-fields" style="grid-column: span 2;">
+                        <label><input type="checkbox" id="widgetAiOfferEmail"> <?php echo htmlspecialchars(t('tickets.settings.webchat.ai_offer_email')); ?></label>
+                    </div>
+
+                    <div class="form-group">
+                        <label><input type="checkbox" id="widgetActive" checked> <?php echo htmlspecialchars(t('tickets.settings.webchat.active')); ?></label>
+                    </div>
+
+                    <!-- Embed snippet: populated by JS after the widget is saved (or on edit). -->
+                    <div class="form-group" id="widgetEmbedGroup" style="grid-column: span 2;">
+                        <label for="widgetEmbed"><?php echo htmlspecialchars(t('tickets.settings.webchat.embed_label')); ?></label>
+                        <textarea id="widgetEmbed" rows="7" readonly onclick="this.select()" style="font-family: monospace; font-size: 12px;"></textarea>
+                        <small style="color:var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.webchat.embed_help')); ?></small>
+                    </div>
+                </div>
+            </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeWidgetModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button type="submit" form="widgetForm" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
             </div>
         </div>
     </div>
@@ -1456,15 +3369,45 @@ $translationNamespaces = ['common', 'tickets'];
     </div>
 
     <!-- Activity Log Modal -->
+    <!-- #79: what is quietly wrong with one mailbox. Opened from the ! beside its
+         name. A mailbox can be authenticated and collecting mail and still be
+         mis-configured in ways nothing else in this screen would mention. -->
+    <div class="modal" id="mailboxProblemsModal">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header" id="mailboxProblemsTitle"><?php echo htmlspecialchars(t('tickets.settings.modals.mailbox.problems_title')); ?></div>
+            <div id="mailboxProblemsBody" style="padding: 4px 0 8px;"></div>
+            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px;">
+                <button type="button" class="btn btn-secondary" onclick="closeMailboxProblems()"><?php echo htmlspecialchars(t('common.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="activityModal">
-        <div class="modal-content" style="max-width: 850px;">
+        <!-- Deliberately the widest modal in Settings: these are log tables with a
+             subject, an address and an error message competing for the same row, and
+             at 850px the error wrapped onto four lines. Viewport units rather than a
+             fixed size so it still fits a laptop and a phone. -->
+        <div class="modal-content activity-modal-content" style="max-width: 1500px; width: 94vw;">
             <div class="modal-header" id="activityModalTitle"><?php echo htmlspecialchars(t('tickets.settings.modals.activity.title')); ?></div>
+
+            <!-- Inbound / Outbound. The inbound log existed on its own for a long time,
+                 which meant you could see everything that arrived and nothing that left. -->
+            <div class="mbx-log-tabs" style="display:flex; gap:4px; border-bottom:1px solid var(--border, #e0e0e0); margin-bottom:15px;">
+                <button type="button" id="mbxTabInbound" class="mbx-log-tab active" onclick="switchMailboxLogTab('inbound')"><?php echo htmlspecialchars(t('tickets.settings.modals.activity.tab_inbound')); ?></button>
+                <button type="button" id="mbxTabOutbound" class="mbx-log-tab" onclick="switchMailboxLogTab('outbound')"><?php echo htmlspecialchars(t('tickets.settings.modals.activity.tab_outbound')); ?> <span id="mbxOutboundBadge" class="mbx-fail-badge" style="display:none;"></span></button>
+            </div>
 
             <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <input type="text" id="activitySearch" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.activity.search_placeholder')); ?>" style="flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;" oninput="debounceActivitySearch()">
+                <select id="outboundStatus" onchange="loadMailboxLog(1)" style="display:none; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                    <option value=""><?php echo htmlspecialchars(t('tickets.settings.modals.activity.status_all')); ?></option>
+                    <option value="failed"><?php echo htmlspecialchars(t('tickets.settings.modals.activity.status_failed')); ?></option>
+                    <option value="sent"><?php echo htmlspecialchars(t('tickets.settings.modals.activity.status_sent')); ?></option>
+                    <option value="skipped"><?php echo htmlspecialchars(t('tickets.settings.modals.activity.status_skipped')); ?></option>
+                </select>
             </div>
 
-            <div style="max-height: 450px; overflow-y: auto;">
+            <div id="inboundPane" class="activity-log-pane">
                 <table>
                     <thead>
                         <tr>
@@ -1476,6 +3419,23 @@ $translationNamespaces = ['common', 'tickets'];
                         </tr>
                     </thead>
                     <tbody id="activityList">
+                        <tr><td colspan="5" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="outboundPane" class="activity-log-pane" style="display:none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.date_time')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.to')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.subject')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.sent_by')); ?></th>
+                            <th><?php echo htmlspecialchars(t('tickets.settings.columns.result')); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody id="outboundList">
                         <tr><td colspan="5" style="text-align: center;"><?php echo htmlspecialchars(t('tickets.settings.loading')); ?></td></tr>
                     </tbody>
                 </table>
@@ -1494,111 +3454,6 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeActivityModal()"><?php echo htmlspecialchars(t('common.close')); ?></button>
             </div>
-        </div>
-    </div>
-
-    <!-- Analyst Modal -->
-    <div class="modal" id="analystModal">
-        <div class="modal-content">
-            <div class="modal-header" id="analystModalTitle"><?php echo htmlspecialchars(t('tickets.settings.modals.analyst.add_title')); ?></div>
-            <form id="analystForm">
-                <input type="hidden" id="analystId">
-
-                <div class="form-group">
-                    <label for="analystUsername"><?php echo htmlspecialchars(t('tickets.settings.modals.analyst.username')); ?> *</label>
-                    <input type="text" id="analystUsername" required placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.analyst.username_placeholder')); ?>">
-                </div>
-
-                <div class="form-group">
-                    <label for="analystFullName"><?php echo htmlspecialchars(t('tickets.settings.modals.analyst.full_name')); ?> *</label>
-                    <input type="text" id="analystFullName" required placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.analyst.full_name_placeholder')); ?>">
-                </div>
-
-                <div class="form-group">
-                    <label for="analystEmail"><?php echo htmlspecialchars(t('tickets.settings.modals.analyst.email')); ?></label>
-                    <input type="email" id="analystEmail" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.analyst.email_placeholder')); ?>">
-                </div>
-
-                <div class="form-group" id="analystPasswordGroup">
-                    <label for="analystPassword"><?php echo htmlspecialchars(t('tickets.settings.modals.analyst.password')); ?> *</label>
-                    <input type="password" id="analystPassword" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.analyst.password_placeholder')); ?>">
-                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.analyst.password_help')); ?></small>
-                </div>
-
-                <div class="form-group">
-                    <label for="analystAuthProvider"><?php echo htmlspecialchars(t('tickets.settings.analyst_extra.signin_method')); ?></label>
-                    <select id="analystAuthProvider">
-                        <option value=""><?php echo t('tickets.settings.analyst_extra.signin_local'); ?></option>
-                        <?php
-                        // Single sign-on providers — assigning one makes this analyst an SSO user
-                        // (strict isolation: they can only sign in via the chosen provider).
-                        try {
-                            $apConn = connectToDatabase();
-                            foreach ($apConn->query("SELECT id, display_name FROM auth_providers ORDER BY sort_order, display_name") as $ap) {
-                                echo '<option value="' . (int)$ap['id'] . '">' . htmlspecialchars($ap['display_name']) . '</option>';
-                            }
-                        } catch (Exception $e) { /* table may not exist yet */ }
-                        ?>
-                    </select>
-                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.analyst_extra.signin_help')); ?></small>
-                </div>
-
-                <!-- Multi-tenancy: company access. Hidden on a single-company install
-                     (shown by JS only when more than one company exists). -->
-                <div class="form-group" id="analystAccessGroup" style="display: none;">
-                    <label class="toggle-label">
-                        <span class="toggle-switch">
-                            <input type="checkbox" id="analystAllAccess" checked onchange="syncAnalystAccess()">
-                            <span class="toggle-slider"></span>
-                        </span>
-                        <?php echo htmlspecialchars(t('tickets.settings.analyst_extra.access_all')); ?>
-                    </label>
-                    <small style="color: var(--text-muted, #666); display: block; margin-top: 4px;"><?php echo htmlspecialchars(t('tickets.settings.analyst_extra.access_all_help')); ?></small>
-                    <div id="analystCompanyList" style="display: none; margin-top: 8px; max-height: 180px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: 8px;"></div>
-                </div>
-
-                <div class="form-group">
-                    <label class="toggle-label">
-                        <span class="toggle-switch">
-                            <input type="checkbox" id="analystActive" checked>
-                            <span class="toggle-slider"></span>
-                        </span>
-                        <?php echo htmlspecialchars(t('tickets.settings.modals.analyst.active')); ?>
-                    </label>
-                </div>
-
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeAnalystModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Password Reset Modal -->
-    <div class="modal" id="passwordResetModal">
-        <div class="modal-content">
-            <div class="modal-header"><?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.title')); ?></div>
-            <form id="passwordResetForm">
-                <input type="hidden" id="resetAnalystId">
-
-                <p style="margin-bottom: 20px;"><?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.resetting_for')); ?> <strong id="resetAnalystName"></strong></p>
-
-                <div class="form-group">
-                    <label for="newPassword"><?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.new_password')); ?> *</label>
-                    <input type="password" id="newPassword" required minlength="6" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.new_password_placeholder')); ?>">
-                </div>
-
-                <div class="form-group">
-                    <label for="confirmPassword"><?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.confirm_password')); ?> *</label>
-                    <input type="password" id="confirmPassword" required minlength="6" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.confirm_password_placeholder')); ?>">
-                </div>
-
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closePasswordResetModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
-                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('tickets.settings.modals.password_reset.submit')); ?></button>
-                </div>
-            </form>
         </div>
     </div>
 
@@ -1644,9 +3499,29 @@ $translationNamespaces = ['common', 'tickets'];
                             <option value=""><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_select')); ?></option>
                             <option value="new_ticket_email"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_new_ticket')); ?></option>
                             <option value="ticket_assigned"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_assigned')); ?></option>
+                            <option value="analyst_assigned"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_analyst_assigned')); ?></option>
                             <option value="ticket_closed"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_closed')); ?></option>
+                            <option value="note_shared"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_note_shared')); ?></option>
                             <option value="csat_request"><?php echo htmlspecialchars(t('tickets.settings.modals.template.event_csat_request')); ?></option>
                         </select>
+                    </div>
+
+                    <!-- Which senders this template applies to (#80). Everyone is the
+                         default for a new template on purpose: narrowing has to be a
+                         deliberate act, so an install always has a catch-all unless
+                         somebody removes it. -->
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label><?php echo htmlspecialchars(t('tickets.settings.scope.field_label')); ?></label>
+                        <label class="tpl-scope-choice"><input type="radio" name="tplScope" value="everyone" onchange="switchTemplateScope()"> <?php echo htmlspecialchars(t('tickets.settings.scope.everyone')); ?></label>
+                        <label class="tpl-scope-choice"><input type="radio" name="tplScope" value="restricted" onchange="switchTemplateScope()"> <?php echo htmlspecialchars(t('tickets.settings.scope.restricted')); ?></label>
+                        <div id="tplRulesBox" style="display: none;">
+                            <div id="tplRulesList" class="tpl-rules-list"></div>
+                            <div class="tpl-rule-add">
+                                <input type="text" id="tplRuleInput" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.settings.scope.rule_placeholder')); ?>" onkeydown="if(event.key==='Enter'){event.preventDefault();addTemplateRule();}">
+                                <button type="button" class="btn btn-secondary" onclick="addTemplateRule()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+                            </div>
+                            <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.scope.rule_help')); ?></small>
+                        </div>
                     </div>
 
                     <div class="form-group" style="grid-column: span 2;">
@@ -1664,7 +3539,14 @@ $translationNamespaces = ['common', 'tickets'];
                         <div id="tplBodyEdit">
                             <textarea id="templateBody" rows="10" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.template.body_placeholder')); ?>"></textarea>
                             <small style="color: var(--text-muted, #666);">
-                                <?php echo htmlspecialchars(t('tickets.settings.modals.template.body_help')); ?>
+                                <?php /* Echoed RAW, like its sibling msg_template.body_help 185 lines
+                                         above and every tickets.settings.intros.* string. The value
+                                         is a lang-file constant, not user input, and it deliberately
+                                         contains <strong> to pick out the two trigger names. Wrapped
+                                         in htmlspecialchars() it showed the customer literal
+                                         "<strong>Note shared with requester</strong>" — which it had
+                                         been doing since the note_text line was added. */ ?>
+                                <?php echo t('tickets.settings.modals.template.body_help'); ?>
                             </small>
                         </div>
                         <div id="tplBodyPreview" style="display: none;">
@@ -1694,6 +3576,56 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeTemplateModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
                 <button type="submit" form="templateForm" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reply Template Modal -->
+    <div class="modal" id="replyTemplateModal">
+        <div class="modal-content" style="max-width: 780px;">
+            <div class="modal-header" id="replyTemplateModalTitle"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.add_title')); ?></div>
+            <div class="modal-body">
+            <form id="replyTemplateForm">
+                <input type="hidden" id="replyTemplateId">
+
+                <div class="form-group">
+                    <label for="replyTemplateName"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.name')); ?> *</label>
+                    <input type="text" id="replyTemplateName" required maxlength="100" placeholder="<?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.name_placeholder')); ?>" autocomplete="off">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.name_help')); ?></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="replyTemplateBody"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.body')); ?> *</label>
+                    <textarea id="replyTemplateBody" rows="12"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label style="margin-bottom: 6px;"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.merge_codes')); ?></label>
+                    <p style="margin: 0 0 8px; color: var(--text-muted, #666); font-size: 12px;"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.merge_help')); ?></p>
+                    <div id="replyTemplateMergeCodes" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="replyTemplateOrder"><?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.display_order')); ?></label>
+                        <input type="number" id="replyTemplateOrder" value="0" autocomplete="off">
+                    </div>
+
+                    <div class="form-group" style="display: flex; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                            <?php echo htmlspecialchars(t('tickets.settings.modals.reply_template.active')); ?>
+                            <label class="toggle-switch" style="margin: 0;">
+                                <input type="checkbox" id="replyTemplateActive" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                    </div>
+                </div>
+            </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeReplyTemplateModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button type="submit" form="replyTemplateForm" class="btn btn-primary"><?php echo htmlspecialchars(t('common.save')); ?></button>
             </div>
         </div>
     </div>
@@ -1805,6 +3737,15 @@ $translationNamespaces = ['common', 'tickets'];
     <script>
         const API_BASE = '../../api/tickets/';
         const API_SETTINGS = '../../api/settings/';
+        // value => {label, background, color, oauth}, from the MailboxProvider enum (4.0).
+        const MAILBOX_PROVIDERS = <?php echo json_encode(MailboxProvider::forJs(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+        // value => {label, background, color}, from the MessagingProviderKind enum (4.0).
+        const MESSAGING_PROVIDERS = <?php echo json_encode(MessagingProviderKind::forJs(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+        /** A messaging provider's badge; none saved is Twilio, as MessagingProviderKind::fromChannel() says. */
+        function messagingProviderBadge(provider) {
+            const p = MESSAGING_PROVIDERS[provider || 'twilio'] || { label: String(provider), background: '#eceff1', color: '#455a64' };
+            return `<span class="status-badge" style="background:${p.background};color:${p.color};">${escapeHtml(p.label)}</span>`;
+        }
         let currentTab = 'departments';
 
         let mailboxes = [];
@@ -1815,26 +3756,42 @@ $translationNamespaces = ['common', 'tickets'];
 
         // Load data on page load
         document.addEventListener('DOMContentLoaded', function() {
+            // loadTeams still runs — it populates the `teams` global the
+            // Departments tab's team-assignment picker reads. Team and analyst
+            // management moved to System → Teams / System → Analysts.
+            // A delegated settings role only gets the tabs it holds, so a
+            // loader whose tab is not on the page must not run - it would
+            // write into a missing element and throw.
+            const hasTab = id => !!document.getElementById(id + '-tab');
             loadTeams().then(() => {
-                loadDepartments();
-                loadAnalysts();
+                if (hasTab('departments')) loadDepartments();
             });
-            loadTicketTypes();
-            loadTicketOrigins();
-            loadTicketStatuses();
-            loadTicketPriorities();
-            loadRotaLocations();
-            loadMailboxes();
-            loadChannels();
-            loadMsgTemplates();
-            loadEmailTemplates();
-            loadRotaShifts();
-            loadRotaWeekendSetting();
-            loadSlaTab();
+            if (hasTab('ticket-types')) loadTicketTypes();
+            if (hasTab('ticket-origins')) loadTicketOrigins();
+            if (hasTab('custom-fields')) loadCustomFields();
+            if (hasTab('statuses')) loadTicketStatuses();
+            if (hasTab('priorities')) loadTicketPriorities();
+            if (hasTab('rota-locations')) loadRotaLocations();
+            if (hasTab('mailboxes')) loadMailboxes();
+            if (hasTab('messaging')) loadChannels();
+            if (hasTab('webchat')) loadWidgets();
+            if (hasTab('messaging')) loadMsgTemplates();
+            if (hasTab('email-templates')) loadEmailTemplates();
+            if (hasTab('reply-templates')) loadReplyTemplates();
+            if (hasTab('rota')) loadRotaShifts();
+            if (hasTab('rota')) loadRotaWeekendSetting();
+            if (hasTab('sla')) loadSlaTab();
 
             // Auto-switch to mailboxes tab if OAuth success
             <?php if ($oauthSuccess && $oauthMailboxId): ?>
             switchTab('mailboxes');
+            <?php else: ?>
+            // A link can name the tab: settings/#sla opens SLA (Feature Bingo's
+            // "Take me there" uses this). Only a tab that exists and is shown
+            // to this analyst - anything else leaves the page as it opens.
+            const wantTab = decodeURIComponent((location.hash || '').slice(1));
+            const wantBtn = wantTab && document.querySelector('.tab[data-tab="' + CSS.escape(wantTab) + '"]');
+            if (wantBtn && wantBtn.offsetParent !== null && document.getElementById(wantTab + '-tab')) switchTab(wantTab);
             <?php endif; ?>
         });
 
@@ -1869,6 +3826,278 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         // Load ticket types
+        // ===== Custom fields (#179) =========================================
+        // The list on Tickets -> Settings -> Custom fields and its dialog. The
+        // types offered are the ones this company can see (the same list the
+        // New ticket form uses), so a field can never be linked to a type that
+        // no ticket here could ever have.
+        let tfFields = [];
+        let tfTypes = [];
+        // Discussion #193: where the portal shows a requester their answers.
+        // Never saved = 'header'; must match portalFieldAnswersPlace() in
+        // api/self-service/get_ticket_detail.php.
+        // GH #218 part A: the Department field - shown or hidden, and the default for new
+        // tickets, install-wide and per company. The server refuses a hidden Department
+        // where Mandatory fields requires it, and a default that is not active; its
+        // message is shown as it comes.
+        // TRAP: the controls stay disabled until the load succeeds - a failed fetch must
+        // never be read as "Show / no default" and saved back as a decision.
+        (function () {
+            const panel = document.getElementById('deptFieldPanel');
+            if (!panel) return;
+            const $ = id => document.getElementById(id);
+            const T = k => window.t('tickets.settings.custom_fields.dept_' + k);
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            let depts = [];
+            const deptOptions = (cur, withFollow) => (withFollow ? `<option value=""${cur === null ? ' selected' : ''}>${esc(T('follow'))}</option>` : '')
+                + `<option value="0"${cur === 0 || (!withFollow && cur === null) ? ' selected' : ''}>${esc(T('no_default'))}</option>`
+                + depts.map(d => `<option value="${d.id}"${cur === d.id ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+            const shownOptions = cur => `<option value=""${cur === null ? ' selected' : ''}>${esc(T('follow'))}</option>`
+                + `<option value="1"${cur === true ? ' selected' : ''}>${esc(T('show'))}</option><option value="0"${cur === false ? ' selected' : ''}>${esc(T('hide'))}</option>`;
+            // The plain warning: hidden somewhere with no default there.
+            function warn() {
+                const instHidden = $('dfShown').value === '0', instNone = $('dfDefault').value === '0';
+                let any = instHidden && instNone;
+                document.querySelectorAll('#dfCompanies tbody tr').forEach(tr => {
+                    const s = tr.querySelector('.df-shown').value, d = tr.querySelector('.df-default').value;
+                    const hidden = s === '' ? instHidden : s === '0', none = d === '' ? instNone : d === '0';
+                    if (hidden && none) any = true;
+                });
+                $('dfWarn').hidden = !any;
+            }
+            fetch(API_BASE + 'department_field_settings.php').then(r => r.json()).then(d => {
+                if (!d.success) throw new Error(d.error);
+                depts = d.departments || [];
+                $('dfShown').value = d.default.shown ? '1' : '0';
+                $('dfDefault').innerHTML = deptOptions(d.default.department_id, false);
+                if (d.multi_tenant && d.companies.length) {
+                    $('dfCompanies').querySelector('tbody').innerHTML = d.companies.map(c => `<tr data-id="${c.id}"><td>${esc(c.name)}</td>
+                        <td><select class="settings-table-select df-shown">${shownOptions(c.shown)}</select></td>
+                        <td><select class="settings-table-select df-default">${deptOptions(c.department_id, true)}</select></td></tr>`).join('');
+                    $('dfCompanies').hidden = false;
+                }
+                if (d.stale && d.stale.length) {
+                    $('dfStale').textContent = d.stale.map(s => T('stale').replace('{name}', s.name).replace('{place}', s.place || T('install'))).join(' ');
+                    $('dfStale').hidden = false;
+                }
+                ['dfShown', 'dfDefault', 'dfSave'].forEach(id => { $(id).disabled = false; });
+                warn();
+            }).catch(() => { $('dfLoadError').hidden = false; });
+            panel.addEventListener('change', warn);
+            $('dfSave').addEventListener('click', async () => {
+                const val = (v, num) => v === '' ? null : (num ? Number(v) : v === '1');
+                const body = {
+                    default: { shown: $('dfShown').value === '1', department_id: Number($('dfDefault').value) },
+                    companies: [...document.querySelectorAll('#dfCompanies tbody tr')].map(tr => ({
+                        id: Number(tr.dataset.id), shown: val(tr.querySelector('.df-shown').value, false), department_id: val(tr.querySelector('.df-default').value, true)
+                    }))
+                };
+                try {
+                    const d = await (await fetch(API_BASE + 'department_field_settings.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                    })).json();
+                    showToast(d.success ? T('saved') : (d.error || 'Failed'), d.success ? 'success' : 'error');
+                } catch (e) { showToast('Failed', 'error'); }
+            });
+        })();
+
+        // GH #218 part C: where the portal's New ticket page asks them - the same shape.
+        // Never saved = 'side'; must match TicketFieldsService::portalAskPlace().
+        [['portalFieldAnswers', 'ticket_portal_field_answers', ['off', 'header', 'side'], 'header'],
+         ['portalFieldAsk', 'ticket_portal_field_ask', ['side', 'main'], 'side']].forEach(([id, key, allowed, fallback]) => {
+            const sel = document.getElementById(id);
+            if (!sel) return;
+            fetch(API_SETTINGS + 'get_system_settings.php').then(r => r.json()).then(d => {
+                const v = d && d.settings ? d.settings[key] : '';
+                sel.value = allowed.includes(v) ? v : fallback;
+            }).catch(() => {});
+            sel.addEventListener('change', async () => {
+                try {
+                    const d = await (await fetch(API_SETTINGS + 'save_system_settings.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ settings: { [key]: sel.value } })
+                    })).json();
+                    if (d.success) showToast(window.t('tickets.settings.custom_fields.portal_answers_saved'), 'success');
+                    else showToast('Error: ' + d.error, 'error');
+                } catch (e) { showToast('Failed to save settings', 'error'); }
+            });
+        });
+
+        async function loadCustomFields() {
+            const tbody = document.getElementById('custom-fields-list');
+            if (!tbody) return;   // tab not shown to this analyst
+            try {
+                const [fRes, tRes] = await Promise.all([
+                    fetch(API_BASE + 'get_ticket_fields_settings.php').then(r => r.json()),
+                    fetch(API_BASE + 'get_ticket_types.php').then(r => r.json())
+                ]);
+                if (!fRes.success) throw new Error(fRes.error);
+                tfFields = fRes.fields || [];
+                tfTypes = (tRes.success ? (tRes.ticket_types || []) : []);
+                if (!fRes.ready) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted,#666);">${escapeHtml(t('tickets.settings.custom_fields.not_ready'))}</td></tr>`;
+                    return;
+                }
+                tfRender();
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--danger,#c62828);">${escapeHtml(e.message || '')}</td></tr>`;
+            }
+        }
+
+        function tfRender() {
+            const tbody = document.getElementById('custom-fields-list');
+            if (!tfFields.length) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted,#666);">${escapeHtml(t('tickets.settings.custom_fields.none'))}</td></tr>`;
+                return;
+            }
+            const typeName = id => (tfTypes.find(x => +x.id === +id) || {}).name || ('#' + id);
+            tbody.innerHTML = tfFields.map((f, i) => {
+                const types = f.all_types
+                    ? `<em>${escapeHtml(t('tickets.settings.custom_fields.every_type'))}</em>`
+                    : f.type_ids.map(id => escapeHtml(typeName(id))).join(', ');
+                const req = [f.required_on_create ? t('tickets.settings.custom_fields.req_logging') : null,
+                             f.required_on_close ? t('tickets.settings.custom_fields.req_closing') : null].filter(Boolean);
+                const shared = !f.editable && f.scope === 'shared'
+                    ? ` <span class="status-badge status-inactive" title="${escapeHtml(t('tickets.settings.custom_fields.shared_hint'))}">${escapeHtml(t('tickets.settings.custom_fields.shared'))}</span>` : '';
+                const actions = f.editable ? `
+                    <button class="action-btn" onclick="tfMove(${i}, -1)" title="${escapeHtml(t('tickets.settings.custom_fields.move_up'))}" ${i === 0 ? 'disabled' : ''}>&#9650;</button>
+                    <button class="action-btn" onclick="tfMove(${i}, 1)" title="${escapeHtml(t('tickets.settings.custom_fields.move_down'))}" ${i === tfFields.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                    <button class="action-btn" onclick="tfOpen(${f.id})" title="${escapeHtml(t('common.edit'))}">${TT_EDIT_SVG}</button>
+                    <button class="action-btn delete" onclick="tfRetire(${f.id})" title="${escapeHtml(t('tickets.settings.custom_fields.retire'))}">${TT_DELETE_SVG}</button>` : '';
+                return `<tr>
+                    <td><strong>${escapeHtml(f.label)}</strong>${shared}${f.help_text ? `<br><small style="color:var(--text-muted,#666);">${escapeHtml(f.help_text)}</small>` : ''}
+                        <br><small style="color:var(--text-dim,#888);" title="${escapeHtml(t('tickets.settings.custom_fields.key_hint'))}"><code>${escapeHtml(f.key)}</code></small>
+                        ${f.answered ? `<br><small style="color:var(--text-dim,#888);">${escapeHtml(t('tickets.settings.custom_fields.answered', { n: f.answered }))}</small>` : ''}</td>
+                    <td>${escapeHtml(t('tickets.settings.custom_fields.kinds.' + f.type))}</td>
+                    <td>${types}</td>
+                    <td>${escapeHtml(req.length ? req.join(', ') : t('tickets.settings.custom_fields.req_none'))}</td>
+                    <td>${f.ask_requester ? escapeHtml(t('tickets.settings.custom_fields.asked')) : ''}</td>
+                    <td style="white-space:nowrap;">${actions}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function tfOpen(id) {
+            const f = id ? tfFields.find(x => x.id === id) : null;
+            document.getElementById('tfModalTitle').textContent = t(f ? 'tickets.settings.custom_fields.edit_title' : 'tickets.settings.custom_fields.add_title');
+            document.getElementById('tfId').value = f ? f.id : '';
+            document.getElementById('tfLabel').value = f ? f.label : '';
+            const typeSel = document.getElementById('tfType');
+            typeSel.value = f ? f.type : 'text';
+            // The kind is fixed once tickets have answered it: a number cannot
+            // become text without stranding every answer already given.
+            typeSel.disabled = !!(f && f.answered);
+            document.getElementById('tfTypeLocked').style.display = (f && f.answered) ? '' : 'none';
+            const cfg = (f && f.config) || {};
+            document.getElementById('tfMultiline').checked = !!cfg.multiline;
+            document.getElementById('tfDecimals').value = cfg.decimals != null ? cfg.decimals : 0;
+            document.getElementById('tfUnit').value = cfg.unit || '';
+            document.getElementById('tfDateMode').value = cfg.date_mode || 'date';
+            document.getElementById('tfOptions').value = f ? (f.options || []).join('\n') : '';
+            document.getElementById('tfHelp').value = f ? (f.help_text || '') : '';
+            document.getElementById(!f || f.all_types ? 'tfAllTypes' : 'tfSomeTypes').checked = true;
+            const linked = f ? f.type_ids.map(Number) : [];
+            document.getElementById('tfTypeList').innerHTML = tfTypes.map(tp =>
+                `<label class="tf-type-item"><input type="checkbox" value="${tp.id}" ${linked.includes(+tp.id) ? 'checked' : ''}> ${escapeHtml(tp.name)}</label>`
+            ).join('');
+            document.getElementById('tfReqCreate').checked = !!(f && f.required_on_create);
+            document.getElementById('tfReqClose').checked = !!(f && f.required_on_close);
+            document.getElementById('tfAsk').checked = !!(f && f.ask_requester);
+            tfKindChanged();
+            tfScopeChanged();
+            document.getElementById('tfModal').classList.add('active');
+            document.getElementById('tfLabel').focus();
+        }
+
+        function tfKindChanged() {
+            const kind = document.getElementById('tfType').value;
+            document.querySelectorAll('#tfModal .tf-kind').forEach(el => {
+                el.style.display = el.classList.contains('tf-kind-' + kind) ? '' : 'none';
+            });
+        }
+
+        function tfScopeChanged() {
+            document.getElementById('tfTypeList').style.display = document.getElementById('tfSomeTypes').checked ? '' : 'none';
+        }
+
+        async function tfSave(e) {
+            e.preventDefault();
+            const kind = document.getElementById('tfType').value;
+            const all = document.getElementById('tfAllTypes').checked;
+            const typeIds = [...document.querySelectorAll('#tfTypeList input:checked')].map(i => +i.value);
+            const options = document.getElementById('tfOptions').value.split('\n').map(s => s.trim()).filter(Boolean);
+            if (!all && !typeIds.length) { showToast(t('tickets.settings.custom_fields.need_types'), 'error'); return; }
+            if (kind === 'dropdown' && !options.length) { showToast(t('tickets.settings.custom_fields.need_options'), 'error'); return; }
+            const body = {
+                id: +document.getElementById('tfId').value || 0,
+                label: document.getElementById('tfLabel').value,
+                field_type: kind,
+                config: {
+                    multiline: document.getElementById('tfMultiline').checked,
+                    decimals: document.getElementById('tfDecimals').value,
+                    unit: document.getElementById('tfUnit').value,
+                    date_mode: document.getElementById('tfDateMode').value
+                },
+                options,
+                help_text: document.getElementById('tfHelp').value,
+                all_types: all,
+                type_ids: typeIds,
+                required_on_create: document.getElementById('tfReqCreate').checked,
+                required_on_close: document.getElementById('tfReqClose').checked,
+                ask_requester: document.getElementById('tfAsk').checked
+            };
+            try {
+                const res = await fetch(API_BASE + 'save_ticket_field.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                }).then(r => r.json());
+                if (!res.success) throw new Error(res.error);
+                document.getElementById('tfModal').classList.remove('active');
+                showToast(t('tickets.settings.custom_fields.saved'), 'success');
+                loadCustomFields();
+            } catch (err) {
+                showToast(err.message || 'Error', 'error');
+            }
+        }
+
+        async function tfRetire(id) {
+            const f = tfFields.find(x => x.id === id);
+            if (!f) return;
+            const ok = await showConfirm({
+                title: t('tickets.settings.custom_fields.retire_title'),
+                message: t('tickets.settings.custom_fields.retire_msg', { name: f.label }),
+                okLabel: t('tickets.settings.custom_fields.retire'),
+                okClass: 'danger'
+            });
+            if (!ok) return;
+            try {
+                const res = await fetch(API_BASE + 'delete_ticket_field.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
+                }).then(r => r.json());
+                if (!res.success) throw new Error(res.error);
+                showToast(t('tickets.settings.custom_fields.retired'), 'success');
+                loadCustomFields();
+            } catch (err) {
+                showToast(err.message || 'Error', 'error');
+            }
+        }
+
+        async function tfMove(index, dir) {
+            const j = index + dir;
+            if (j < 0 || j >= tfFields.length) return;
+            [tfFields[index], tfFields[j]] = [tfFields[j], tfFields[index]];
+            tfRender();
+            try {
+                const res = await fetch(API_BASE + 'reorder_ticket_fields.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: tfFields.map(f => f.id) })
+                }).then(r => r.json());
+                if (!res.success) throw new Error(res.error);
+            } catch (err) {
+                showToast(err.message || 'Error', 'error');
+                loadCustomFields();
+            }
+        }
+
         async function loadTicketTypes() {
             try {
                 const response = await fetch(API_BASE + 'get_ticket_types.php?manage=1');
@@ -1938,7 +4167,7 @@ $translationNamespaces = ['common', 'tickets'];
                     <td><strong>${escapeHtml(s.name)}</strong></td>
                     <td>${swatch}</td>
                     <td>${closed}</td>
-                    <td>${pauseCell}</td>
+                    <td class="sla-only">${pauseCell}</td>
                     <td>${def}</td>
                     <td>${s.display_order}</td>
                     <td><span class="status-badge status-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
@@ -2059,7 +4288,8 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('itemDescriptionGroup').style.display = isColouredLookup ? 'none' : '';
             document.getElementById('itemColourGroup').style.display      = isColouredLookup ? '' : 'none';
             document.getElementById('itemClosedGroup').style.display      = isStatus ? '' : 'none';
-            document.getElementById('itemPausesSlaGroup').style.display   = isStatus ? '' : 'none';
+            document.getElementById('itemPausesSlaGroup').style.display   = isStatus && !document.body.classList.contains('sla-off') ? '' : 'none';   // GH #217
+            document.getElementById('itemConfidentialGroup').style.display = type === 'department' ? '' : 'none';
             document.getElementById('itemDefaultGroup').style.display     = isColouredLookup ? '' : 'none';
         }
 
@@ -2075,14 +4305,16 @@ $translationNamespaces = ['common', 'tickets'];
                     return teams;
                 } else {
                     console.error('Error loading teams:', data.error);
-                    document.getElementById('teams-list').innerHTML =
-                        '<tr><td colspan="7" style="text-align: center; color: red;">Error: ' + data.error + '</td></tr>';
+                    // No teams table on this page anymore (moved to System → Teams);
+                    // loadTeams still runs only to feed the Departments team-picker.
+                    const el = document.getElementById('teams-list');
+                    if (el) el.innerHTML = '<tr><td colspan="7" style="text-align: center; color: red;">Error: ' + data.error + '</td></tr>';
                     return [];
                 }
             } catch (error) {
                 console.error('Error loading teams:', error);
-                document.getElementById('teams-list').innerHTML =
-                    '<tr><td colspan="7" style="text-align: center; color: red;">Failed to load teams.</td></tr>';
+                const el = document.getElementById('teams-list');
+                if (el) el.innerHTML = '<tr><td colspan="7" style="text-align: center; color: red;">Failed to load teams.</td></tr>';
                 return [];
             }
         }
@@ -2117,7 +4349,7 @@ $translationNamespaces = ['common', 'tickets'];
 
                 return `
                 <tr>
-                    <td><strong>${escapeHtml(dept.name)}</strong></td>
+                    <td><strong>${escapeHtml(dept.name)}</strong>${dept.default_sensitivity === 'confidential' ? ` <span class="status-badge" style="background:var(--danger-bg,#fdecea);color:var(--danger-text,#b71c1c);margin-left:6px;">${escapeHtml(t('tickets.settings.dept_confidential.chip'))}</span>` : ''}</td>
                     <td>${escapeHtml(dept.description || '')}</td>
                     <td>${teamsText}</td>
                     <td>${dept.display_order}</td>
@@ -2183,7 +4415,7 @@ $translationNamespaces = ['common', 'tickets'];
         // shared defaults it inherits, each with a Hide/Show toggle.
         function renderTicketTypesScoped(tbody, scoped) {
             const groupRow = (label, hint) =>
-                `<tr class="tt-group-row"><td colspan="5" style="background:#f7f9fa;border-top:1px solid #e3e8ea;font-size:12px;font-weight:600;color:#455a64;padding:10px;">${escapeHtml(label)}${hint ? ` <span style="font-weight:400;color:#90a4ae;">— ${escapeHtml(hint)}</span>` : ''}</td></tr>`;
+                `<tr class="tt-group-row"><td colspan="5" style="background:var(--surface-2, #f7f9fa);border-top:1px solid var(--border, #e3e8ea);font-size:12px;font-weight:600;color:var(--text-muted, #455a64);padding:10px;">${escapeHtml(label)}${hint ? ` <span style="font-weight:400;color:var(--text-faint, #90a4ae);">— ${escapeHtml(hint)}</span>` : ''}</td></tr>`;
 
             let html = '';
 
@@ -2272,7 +4504,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         function renderTicketOriginsScoped(tbody, scoped) {
             const groupRow = (label, hint) =>
-                `<tr class="tt-group-row"><td colspan="5" style="background:#f7f9fa;border-top:1px solid #e3e8ea;font-size:12px;font-weight:600;color:#455a64;padding:10px;">${escapeHtml(label)}${hint ? ` <span style="font-weight:400;color:#90a4ae;">— ${escapeHtml(hint)}</span>` : ''}</td></tr>`;
+                `<tr class="tt-group-row"><td colspan="5" style="background:var(--surface-2, #f7f9fa);border-top:1px solid var(--border, #e3e8ea);font-size:12px;font-weight:600;color:var(--text-muted, #455a64);padding:10px;">${escapeHtml(label)}${hint ? ` <span style="font-weight:400;color:var(--text-faint, #90a4ae);">— ${escapeHtml(hint)}</span>` : ''}</td></tr>`;
 
             let html = '';
             html += groupRow(`${scoped.company.name}’s own origins`);
@@ -2326,6 +4558,10 @@ $translationNamespaces = ['common', 'tickets'];
         // Render teams
         async function renderTeams(teamsList) {
             const tbody = document.getElementById('teams-list');
+            // The Teams tab moved to System → Teams; there's no table to paint
+            // here anymore. loadTeams() still runs to populate the `teams` global
+            // for the Departments team-assignment picker, so just bail out.
+            if (!tbody) return;
 
             if (teamsList.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No teams found. Click "Add" to create your first team.</td></tr>';
@@ -2398,6 +4634,7 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('itemColour').value = type === 'status' ? '#2563eb' : '#2563eb';
             document.getElementById('itemClosed').checked = false;
             document.getElementById('itemPausesSla').checked = false;
+            document.getElementById('itemConfidential').checked = false;
             document.getElementById('itemDefault').checked = false;
             configureModalFields(type);
             document.getElementById('editModal').classList.add('active');
@@ -2452,6 +4689,7 @@ $translationNamespaces = ['common', 'tickets'];
                         document.getElementById('itemColour').value = item.colour || '#2563eb';
                         document.getElementById('itemClosed').checked = !!item.is_closed;
                         document.getElementById('itemPausesSla').checked = !!item.pauses_sla;
+                        document.getElementById('itemConfidential').checked = item.default_sensitivity === 'confidential';
                         document.getElementById('itemDefault').checked = !!item.is_default;
                         configureModalFields(type);
                         document.getElementById('editModal').classList.add('active');
@@ -2502,7 +4740,6 @@ $translationNamespaces = ['common', 'tickets'];
                     } else if (type === 'team') {
                         loadTeams().then(() => {
                             loadDepartments();
-                            loadAnalysts();
                         });
                     } else if (type === 'status') {
                         loadTicketStatuses();
@@ -2583,7 +4820,7 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         // Team assignment form submission
-        document.getElementById('teamAssignmentForm').addEventListener('submit', async function(e) {
+        document.getElementById('teamAssignmentForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const entityType = document.getElementById('assignmentEntityType').value;
@@ -2612,15 +4849,11 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     closeTeamAssignmentModal();
                     showToast('Saved', 'success');
-                    // Clear cache and reload
-                    if (entityType === 'department') {
-                        delete departmentTeams[entityId];
-                        loadDepartments();
-                    } else {
-                        delete analystTeams[entityId];
-                        loadAnalysts();
-                    }
-                    // Also reload teams to update counts
+                    // Clear cache and reload. Only department assignment happens
+                    // here now — analyst→team assignment moved to System → Analysts.
+                    delete departmentTeams[entityId];
+                    loadDepartments();
+                    // Also reload teams to keep the picker's `teams` global fresh.
                     loadTeams();
                 } else {
                     showToast('Error saving team assignments: ' + data.error, 'error');
@@ -2632,7 +4865,7 @@ $translationNamespaces = ['common', 'tickets'];
         });
 
         // Handle form submission
-        document.getElementById('editForm').addEventListener('submit', async function(e) {
+        document.getElementById('editForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const type = document.getElementById('itemType').value;
@@ -2677,6 +4910,9 @@ $translationNamespaces = ['common', 'tickets'];
                     display_order: parseInt(document.getElementById('itemOrder').value),
                     is_active: document.getElementById('itemActive').checked ? 1 : 0
                 };
+                if (type === 'department') {
+                    formData.default_sensitivity = document.getElementById('itemConfidential').checked ? 'confidential' : 'normal';
+                }
             }
 
             try {
@@ -2690,6 +4926,9 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     closeModal();
                     showToast('Saved', 'success');
+                    if (data.raised > 0) {
+                        showToast(t('tickets.settings.dept_confidential.raised', { count: data.raised }), 'info', 6000);
+                    }
                     if (type === 'department') {
                         loadDepartments();
                     } else if (type === 'ticket-type') {
@@ -2699,7 +4938,6 @@ $translationNamespaces = ['common', 'tickets'];
                     } else if (type === 'team') {
                         loadTeams().then(() => {
                             loadDepartments();
-                            loadAnalysts();
                         });
                     } else if (type === 'status') {
                         loadTicketStatuses();
@@ -2721,7 +4959,7 @@ $translationNamespaces = ['common', 'tickets'];
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Mailbox Functions
@@ -2791,9 +5029,9 @@ $translationNamespaces = ['common', 'tickets'];
                 return;
             }
             tbody.innerHTML = list.map(c => {
-                const providerBadge = c.provider === 'meta'
-                    ? ' <span class="status-badge" style="background:#e3f2fd;color:#1565c0;">Meta</span>'
-                    : ' <span class="status-badge" style="background:#e8f5e9;color:#2e7d32;">Twilio</span>';
+                // From MessagingProviderKind (PHP), so every provider has a badge - until 4.0
+                // a Slack channel fell through this list and was badged "Twilio".
+                const providerBadge = ' ' + messagingProviderBadge(c.provider);
                 const activeBadge = c.is_active ? '' : ' <span class="status-badge status-inactive">Inactive</span>';
                 const credBadge = c.has_credentials
                     ? '<span class="status-badge status-active">Configured</span>'
@@ -2842,6 +5080,97 @@ $translationNamespaces = ['common', 'tickets'];
             const p = document.getElementById('channelProvider').value;
             document.querySelectorAll('.provider-twilio').forEach(el => el.style.display = (p === 'twilio') ? '' : 'none');
             document.querySelectorAll('.provider-meta').forEach(el => el.style.display = (p === 'meta') ? '' : 'none');
+            document.querySelectorAll('.provider-telegram').forEach(el => el.style.display = (p === 'telegram') ? '' : 'none');
+            document.querySelectorAll('.provider-teams').forEach(el => el.style.display = (p === 'teams') ? '' : 'none');
+            document.querySelectorAll('.provider-mattermost').forEach(el => el.style.display = (p === 'mattermost') ? '' : 'none');
+            // Telegram and Teams have no WhatsApp-style phone number; the field is meaningless there.
+            document.querySelectorAll('.provider-phone').forEach(el => el.style.display = (p === 'telegram' || p === 'teams' || p === 'mattermost') ? 'none' : '');
+            if (p === 'telegram') updateTelegramSetupCommand();
+            // The package needs a saved channel (its App ID is read server-side), so only offer it when one exists.
+            const pkgBtn = document.getElementById('teamsPackageBtn');
+            const pkgHelp = document.getElementById('teamsPackageHelp');
+            const saved = !!document.getElementById('channelId').value;
+            if (pkgBtn) pkgBtn.style.display = (p === 'teams' && saved) ? '' : 'none';
+            if (pkgHelp) pkgHelp.style.display = (p === 'teams' && saved) ? '' : 'none';
+        }
+
+        /** Fetch this channel's Teams app package and save it. Errors are shown as a toast, not a JSON page. */
+        async function downloadTeamsPackage() {
+            const id = document.getElementById('channelId').value;
+            if (!id) return;
+            try {
+                const res = await fetch(MSG_API + 'teams_package.php?id=' + encodeURIComponent(id), { credentials: 'same-origin' });
+                if ((res.headers.get('Content-Type') || '').indexOf('application/zip') === -1) {
+                    const data = await res.json().catch(() => ({}));
+                    showToast('Error: ' + (data.error || 'the Teams package could not be created'), 'error');
+                    return;
+                }
+                const blob = await res.blob();
+                const name = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = name ? name[1] : 'freeitsm-teams.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            } catch (e) {
+                showToast('Failed to create the Teams package', 'error');
+            }
+        }
+
+        /** A random 32-char hex string — good enough entropy for Telegram's secret_token (max 256 chars, this app's own value, never sent anywhere but Telegram). */
+        function generateTelegramSecret() {
+            const bytes = new Uint8Array(24);
+            (window.crypto || window.msCrypto).getRandomValues(bytes);
+            const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+            document.getElementById('channelTelegramSecret').value = hex;
+            updateTelegramSetupCommand(true);
+        }
+
+        /**
+         * Show Connect once the channel is saved (it then has a webhook URL);
+         * until then, the "save first" hint. Connect uses the SAVED token and
+         * secret, so typing a new one marks the form unsaved and Connect says so.
+         */
+        let telegramFormDirty = false;
+        function updateTelegramSetupCommand(fromTyping) {
+            if (fromTyping === true) telegramFormDirty = true;
+            const saved = document.getElementById('channelWebhookHint').value.trim() !== ''
+                       && document.getElementById('channelId').value !== '';
+            document.getElementById('telegramConnectWrap').style.display = saved ? 'flex' : 'none';
+            document.getElementById('telegramSetupHint').style.display = saved ? 'none' : '';
+            if (fromTyping !== true) document.getElementById('telegramConnectResult').textContent = '';
+        }
+
+        /** Register the saved channel's webhook with Telegram, server-side. */
+        async function connectTelegram() {
+            const out = document.getElementById('telegramConnectResult');
+            const btn = document.getElementById('telegramConnectBtn');
+            if (telegramFormDirty) {
+                out.style.color = 'var(--danger-text, #c62828)';
+                out.textContent = window.t('tickets.settings.modals.channel.connect_save_first');
+                return;
+            }
+            btn.disabled = true;
+            out.style.color = 'var(--text-muted, #666)';
+            out.textContent = window.t('tickets.settings.modals.channel.connecting');
+            try {
+                const res = await fetch(MSG_API + 'telegram_connect.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+                    body: JSON.stringify({ id: document.getElementById('channelId').value })
+                });
+                const data = await res.json();
+                out.style.color = data.success ? 'var(--success-text, #2e7d32)' : 'var(--danger-text, #c62828)';
+                out.textContent = data.success
+                    ? window.t('tickets.settings.modals.channel.connected')
+                    : (data.error || window.t('tickets.settings.modals.channel.connect_failed'));
+            } catch (e) {
+                out.style.color = 'var(--danger-text, #c62828)';
+                out.textContent = window.t('tickets.settings.modals.channel.connect_failed');
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         function toggleChannelIngressFields() {
@@ -2860,8 +5189,11 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('channelActive').checked = channel ? !!channel.is_active : true;
             // Secrets are write-only; show a masked placeholder on edit if configured.
             const mask = (channel && channel.has_credentials) ? '********' : '';
-            ['channelAuthToken','channelAccessToken','channelAppSecret'].forEach(idv => document.getElementById(idv).value = mask);
-            ['channelAccountSid','channelPhoneNumberId','channelVerifyToken','channelRelaySecret'].forEach(idv => document.getElementById(idv).value = '');
+            ['channelAuthToken','channelAccessToken','channelAppSecret','channelBotToken','channelTeamsAppSecret','channelMmBotToken'].forEach(idv => document.getElementById(idv).value = mask);
+            ['channelMmChannelId','channelMmWebhookToken'].forEach(idv => document.getElementById(idv).value = '');
+            document.getElementById('channelMmServerUrl').value = channel ? (channel.mm_server_url || '') : '';
+            document.getElementById('channelMmChannelId').value = channel ? (channel.channel_ref || '') : '';
+            ['channelAccountSid','channelPhoneNumberId','channelVerifyToken','channelRelaySecret','channelTelegramSecret'].forEach(idv => document.getElementById(idv).value = '');
             document.getElementById('channelGraphVersion').value = channel ? (channel.graph_version || '') : '';
 
             const hintGroup = document.getElementById('channelWebhookHintGroup');
@@ -2870,11 +5202,14 @@ $translationNamespaces = ['common', 'tickets'];
                 document.getElementById('channelWebhookHint').value = channel.webhook_url;
             } else {
                 hintGroup.style.display = 'none';
+                document.getElementById('channelWebhookHint').value = '';
             }
 
             populateChannelCompanies(channel ? channel.tenant_id : null);
             toggleChannelProviderFields();
             toggleChannelIngressFields();
+            telegramFormDirty = false;
+            updateTelegramSetupCommand();
             document.getElementById('channelModal').classList.add('active');
         }
 
@@ -2904,7 +5239,7 @@ $translationNamespaces = ['common', 'tickets'];
                 const data = await res.json();
                 if (!data.success) {
                     showToast('Test failed: ' + (data.error || 'unknown error'), 'error');
-                    if (out) out.innerHTML = `<div style="padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;">Test failed: ${escapeHtml(data.error || 'unknown error')}</div>`;
+                    if (out) out.innerHTML = `<div style="padding:10px 12px;background:var(--danger-bg, #fef2f2);border:1px solid var(--danger-border, #fecaca);border-radius:8px;color:var(--danger-text, #b91c1c);">Test failed: ${escapeHtml(data.error || 'unknown error')}</div>`;
                     return;
                 }
                 const labels = { credentials: 'Credentials', reachability: 'Webhook reachability', simulation: 'Inbound handling' };
@@ -2913,20 +5248,20 @@ $translationNamespaces = ['common', 'tickets'];
                 const rows = keys.map(k => {
                     const r = data.results[k];
                     const icon = r.ok ? '✅' : '❌';
-                    const color = r.ok ? '#166534' : '#b91c1c';
+                    const color = r.ok ? 'var(--success-text, #166534)' : 'var(--danger-text, #b91c1c)';
                     return `<div style="display:flex;gap:8px;padding:6px 0;">
                         <span>${icon}</span>
                         <span><strong>${labels[k] || k}:</strong> <span style="color:${color};">${escapeHtml(r.detail || '')}</span></span>
                     </div>`;
                 }).join('');
                 if (out) {
-                    out.innerHTML = `<div style="padding:12px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">${rows}</div>`;
+                    out.innerHTML = `<div style="padding:12px 14px;background:var(--app-bg, #f9fafb);border:1px solid var(--border, #e5e7eb);border-radius:8px;">${rows}</div>`;
                     out.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
                 showToast(failed === 0 ? 'All channel tests passed ✓' : `${failed} of ${keys.length} checks failed — see details above the table`, failed === 0 ? 'success' : 'error');
             } catch (e) {
                 showToast('Channel test request failed', 'error');
-                if (out) out.innerHTML = `<div style="padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;">Channel test request failed.</div>`;
+                if (out) out.innerHTML = `<div style="padding:10px 12px;background:var(--danger-bg, #fef2f2);border:1px solid var(--danger-border, #fecaca);border-radius:8px;color:var(--danger-text, #b91c1c);">Channel test request failed.</div>`;
             } finally {
                 if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = original; }
             }
@@ -2945,17 +5280,28 @@ $translationNamespaces = ['common', 'tickets'];
             } catch (e) { showToast('Failed to delete channel', 'error'); }
         }
 
-        document.getElementById('channelForm').addEventListener('submit', async function(e) {
+        document.getElementById('channelForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
+            const selectedProvider = document.getElementById('channelProvider').value;
             const payload = {
                 id: document.getElementById('channelId').value || null,
                 name: document.getElementById('channelName').value.trim(),
                 channel_type: document.getElementById('channelType').value,
-                provider: document.getElementById('channelProvider').value,
+                provider: selectedProvider,
                 phone_number: document.getElementById('channelPhone').value.trim(),
                 ingress_mode: document.getElementById('channelIngress').value,
                 relay_secret: document.getElementById('channelRelaySecret').value.trim(),
-                verify_token: document.getElementById('channelVerifyToken').value.trim(),
+                // Meta and Telegram each have their own visible secret-token field
+                // (different meaning, different help text) even though both are
+                // saved into the same column server-side.
+                verify_token: (selectedProvider === 'telegram'
+                    ? document.getElementById('channelTelegramSecret').value
+                    : selectedProvider === 'mattermost'
+                    ? document.getElementById('channelMmWebhookToken').value
+                    : document.getElementById('channelVerifyToken').value).trim(),
+                mm_server_url: document.getElementById('channelMmServerUrl').value.trim(),
+                mm_channel_id: document.getElementById('channelMmChannelId').value.trim(),
+                mm_bot_token: document.getElementById('channelMmBotToken').value,
                 tenant_id: document.getElementById('channelCompany').value || null,
                 is_active: document.getElementById('channelActive').checked,
                 account_sid: document.getElementById('channelAccountSid').value.trim(),
@@ -2963,7 +5309,11 @@ $translationNamespaces = ['common', 'tickets'];
                 phone_number_id: document.getElementById('channelPhoneNumberId').value.trim(),
                 access_token: document.getElementById('channelAccessToken').value,
                 app_secret: document.getElementById('channelAppSecret').value,
-                graph_version: document.getElementById('channelGraphVersion').value.trim()
+                graph_version: document.getElementById('channelGraphVersion').value.trim(),
+                bot_token: document.getElementById('channelBotToken').value,
+                teams_app_id: document.getElementById('channelTeamsAppId').value.trim(),
+                teams_tenant_id: document.getElementById('channelTeamsTenantId').value.trim(),
+                teams_app_secret: document.getElementById('channelTeamsAppSecret').value
             };
             if (!payload.name) { showToast('Name is required', 'error'); return; }
             try {
@@ -2975,11 +5325,222 @@ $translationNamespaces = ['common', 'tickets'];
                 if (data.success) {
                     showToast(data.message || 'Saved', 'success');
                     closeChannelModal();
-                    loadChannels();
+                    await loadChannels();
+                    // A Telegram bot is not finished until Connect has told Telegram
+                    // where to deliver - and Connect only exists on a SAVED channel.
+                    // Closing the dialog here meant a new bot never showed Connect at
+                    // all, and messages silently went nowhere. Reopen it on the saved
+                    // channel so the next step is right in front of the admin.
+                    if (selectedProvider === 'telegram' && data.id) {
+                        editChannel(data.id);
+                        const out = document.getElementById('telegramConnectResult');
+                        if (out) {
+                            out.style.color = 'var(--text-muted, #666)';
+                            out.textContent = window.t('tickets.settings.modals.channel.connect_next');
+                        }
+                    }
                 } else {
                     showToast('Error: ' + (data.error || ''), 'error');
                 }
             } catch (err) { showToast('Failed to save channel', 'error'); }
+        });
+
+        // ---- Web chat widgets ------------------------------------------------
+        const WEBCHAT_API = '../../api/webchat/';
+        let widgets = [];
+        let webchatCalendars = [];
+
+        async function loadWidgets() {
+            const tbody = document.getElementById('widgets-list');
+            if (!tbody) return; // tab not visible for this analyst
+            try {
+                await loadMailboxCompanies(); // reuse the company lookup
+                const res = await fetch(WEBCHAT_API + 'get_widgets.php');
+                const data = await res.json();
+                if (data.success) {
+                    widgets = data.widgets;
+                    webchatCalendars = data.calendars || [];
+                    renderWidgets(widgets);
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:red;">Error: ${escapeHtml(data.error || '')}</td></tr>`;
+                }
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:red;">Failed to load widgets.</td></tr>';
+            }
+        }
+
+        function renderWidgets(list) {
+            const tbody = document.getElementById('widgets-list');
+            if (!tbody) return;
+            if (!list.length) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">${escapeHtml(t('tickets.settings.webchat.intro'))}</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = list.map(w => {
+                const activeBadge = w.is_active ? '' : ' <span class="status-badge status-inactive">Inactive</span>';
+                let companyBadge = '';
+                if (mailboxMultiCompany) {
+                    companyBadge = (w.tenant_id && mailboxCompaniesById[w.tenant_id])
+                        ? ` <span class="status-badge" style="background:#ede7f6;color:#5e35b1;">${escapeHtml(mailboxCompaniesById[w.tenant_id])}</span>`
+                        : ` <span class="status-badge" style="background:#fff3e0;color:#ef6c00;">Shared</span>`;
+                }
+                const origins = (w.allowed_origins || '').split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+                const originsCell = origins.length
+                    ? origins.map(o => escapeHtml(o)).join('<br>')
+                    : `<span style="color:var(--text-muted, #999);">${escapeHtml(t('tickets.settings.webchat.any_origin'))}</span>`;
+                const statusBadge = w.is_active
+                    ? '<span class="status-badge status-active">Active</span>'
+                    : '<span class="status-badge status-inactive">Inactive</span>';
+                const safeName = escapeHtml(w.name).replace(/'/g, "\\'");
+                const actions = `
+                    <button class="action-btn" onclick="editWidget(${w.id})" title="${t('common.edit')}">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                    <button class="action-btn delete" onclick="deleteWidget(${w.id}, '${safeName}')" title="${t('common.delete')}">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>`;
+                return `
+                    <tr>
+                        <td><strong>${escapeHtml(w.name)}</strong>${activeBadge}${companyBadge}</td>
+                        <td>${originsCell}</td>
+                        <td><code style="font-size:11px;cursor:pointer;" title="Click to select" onclick="const r=document.createRange();r.selectNodeContents(this);const s=getSelection();s.removeAllRanges();s.addRange(r);">${escapeHtml(w.widget_key)}</code></td>
+                        <td>${statusBadge}</td>
+                        <td>${actions}</td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function populateWidgetCompanies(selectedTenantId) {
+            const group = document.getElementById('widgetCompanyGroup');
+            const sel = document.getElementById('widgetCompany');
+            if (!mailboxMultiCompany) { group.style.display = 'none'; return; }
+            group.style.display = '';
+            let opts = '<option value="">Shared (no company)</option>';
+            Object.keys(mailboxCompaniesById).forEach(id => {
+                opts += `<option value="${id}" ${String(selectedTenantId) === String(id) ? 'selected' : ''}>${escapeHtml(mailboxCompaniesById[id])}</option>`;
+            });
+            sel.innerHTML = opts;
+        }
+
+        function openWidgetModal(widget = null) {
+            document.getElementById('widgetForm').reset();
+            document.getElementById('widgetId').value = widget ? widget.id : '';
+            document.getElementById('widgetModalTitle').textContent = widget
+                ? t('tickets.settings.webchat.edit_title')
+                : t('tickets.settings.webchat.add_title');
+            document.getElementById('widgetName').value = widget ? (widget.name || '') : '';
+            document.getElementById('widgetAccent').value = widget ? (widget.accent_colour || '') : '';
+            document.getElementById('widgetGreeting').value = widget ? (widget.greeting || '') : '';
+            document.getElementById('widgetLauncher').value = widget ? (widget.launcher_text || '') : '';
+            document.getElementById('widgetOrigins').value = widget ? (widget.allowed_origins || '') : '';
+            document.getElementById('widgetOffline').value = widget ? (widget.offline_message || '') : '';
+            document.getElementById('widgetRequireEmail').checked = widget ? !!widget.require_email : true;
+            document.getElementById('widgetActive').checked = widget ? !!widget.is_active : true;
+
+            // Availability calendar dropdown.
+            const calSel = document.getElementById('widgetCalendar');
+            let calOpts = '<option value="">' + escapeHtml(t('tickets.settings.webchat.always_open')) + '</option>';
+            webchatCalendars.forEach(c => {
+                const sel = widget && String(widget.business_calendar_id) === String(c.id) ? ' selected' : '';
+                calOpts += '<option value="' + c.id + '"' + sel + '>' + escapeHtml(c.name) + '</option>';
+            });
+            calSel.innerHTML = calOpts;
+
+            // Email + AI controls.
+            document.getElementById('widgetEmailWhenAway').checked = widget ? !!widget.email_when_away : false;
+            document.getElementById('widgetAiEnabled').checked = widget ? !!widget.ai_enabled : false;
+            document.getElementById('widgetAiMode').value = (widget && widget.ai_mode) ? widget.ai_mode : 'assist';
+            document.getElementById('widgetAiOfferAgent').checked = widget ? !!widget.ai_offer_agent : true;
+            document.getElementById('widgetAiOfferEmail').checked = widget ? !!widget.ai_offer_email : true;
+            toggleWidgetAiFields();
+
+            const embedGroup = document.getElementById('widgetEmbedGroup');
+            const embedField = document.getElementById('widgetEmbed');
+            if (widget && widget.embed_snippet) {
+                embedGroup.style.display = '';
+                embedField.value = widget.embed_snippet;
+            } else {
+                embedGroup.style.display = 'none';
+                embedField.value = '';
+            }
+
+            populateWidgetCompanies(widget ? widget.tenant_id : null);
+            document.getElementById('widgetModal').classList.add('active');
+        }
+
+        function toggleWidgetAiFields() {
+            const on = document.getElementById('widgetAiEnabled').checked;
+            document.querySelectorAll('.widget-ai-fields').forEach(el => el.style.display = on ? '' : 'none');
+        }
+
+        function editWidget(id) {
+            const w = widgets.find(x => x.id === id);
+            if (w) openWidgetModal(w);
+        }
+
+        function closeWidgetModal() {
+            document.getElementById('widgetModal').classList.remove('active');
+        }
+
+        async function deleteWidget(id, name) {
+            if (!confirm(`Delete web chat widget "${name}"? Past tickets are kept; only new conversations on this widget stop.`)) return;
+            try {
+                const res = await fetch(WEBCHAT_API + 'delete_widget.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                const data = await res.json();
+                if (data.success) { showToast('Widget deleted', 'success'); loadWidgets(); }
+                else showToast('Error: ' + (data.error || ''), 'error');
+            } catch (e) { showToast('Failed to delete widget', 'error'); }
+        }
+
+        document.getElementById('widgetForm')?.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const payload = {
+                id: document.getElementById('widgetId').value || null,
+                name: document.getElementById('widgetName').value.trim(),
+                accent_colour: document.getElementById('widgetAccent').value.trim(),
+                greeting: document.getElementById('widgetGreeting').value.trim(),
+                launcher_text: document.getElementById('widgetLauncher').value.trim(),
+                allowed_origins: document.getElementById('widgetOrigins').value.trim(),
+                offline_message: document.getElementById('widgetOffline').value.trim(),
+                require_email: document.getElementById('widgetRequireEmail').checked,
+                is_active: document.getElementById('widgetActive').checked,
+                tenant_id: document.getElementById('widgetCompany').value || null,
+                business_calendar_id: document.getElementById('widgetCalendar').value || null,
+                email_when_away: document.getElementById('widgetEmailWhenAway').checked,
+                ai_enabled: document.getElementById('widgetAiEnabled').checked,
+                ai_mode: document.getElementById('widgetAiMode').value,
+                ai_offer_agent: document.getElementById('widgetAiOfferAgent').checked,
+                ai_offer_email: document.getElementById('widgetAiOfferEmail').checked
+            };
+            if (!payload.name) { showToast('Name is required', 'error'); return; }
+            try {
+                const res = await fetch(WEBCHAT_API + 'save_widget.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message || 'Saved', 'success');
+                    loadWidgets();
+                    // On first save, keep the modal open and reveal the embed snippet so
+                    // the admin can copy it straight away; flip the form into edit mode.
+                    if (data.embed_snippet) {
+                        document.getElementById('widgetId').value = data.id;
+                        document.getElementById('widgetModalTitle').textContent = t('tickets.settings.webchat.edit_title');
+                        const embedGroup = document.getElementById('widgetEmbedGroup');
+                        embedGroup.style.display = '';
+                        document.getElementById('widgetEmbed').value = data.embed_snippet;
+                        embedGroup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    } else {
+                        closeWidgetModal();
+                    }
+                } else {
+                    showToast('Error: ' + (data.error || ''), 'error');
+                }
+            } catch (err) { showToast('Failed to save widget', 'error'); }
         });
 
         // ===== Messaging templates =====
@@ -3009,9 +5570,7 @@ $translationNamespaces = ['common', 'tickets'];
                 return;
             }
             tbody.innerHTML = list.map(tpl => {
-                const prov = tpl.provider === 'meta'
-                    ? '<span class="status-badge" style="background:#e3f2fd;color:#1565c0;">Meta</span>'
-                    : '<span class="status-badge" style="background:#e8f5e9;color:#2e7d32;">Twilio</span>';
+                const prov = messagingProviderBadge(tpl.provider);
                 const active = tpl.is_active ? '' : ' <span class="status-badge status-inactive">Inactive</span>';
                 const vars = tpl.var_count ? ` <span class="status-badge" style="background:#f3e5f5;color:#6a1b9a;">${tpl.var_count} var${tpl.var_count > 1 ? 's' : ''}</span>` : '';
                 const safeName = escapeHtml(tpl.name).replace(/'/g, "\\'");
@@ -3077,7 +5636,7 @@ $translationNamespaces = ['common', 'tickets'];
             } catch (e) { showToast('Failed to delete template', 'error'); }
         }
 
-        document.getElementById('msgTemplateForm').addEventListener('submit', async function(e) {
+        document.getElementById('msgTemplateForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const payload = {
                 id: document.getElementById('msgTemplateId').value || null,
@@ -3099,6 +5658,71 @@ $translationNamespaces = ['common', 'tickets'];
                 else showToast('Error: ' + (data.error || ''), 'error');
             } catch (err) { showToast('Failed to save template', 'error'); }
         });
+
+        // ── Oversized emails (GH #170) ─────────────────────────────────────
+        let oversizeDefaults = null;
+        function setOversizeFields(px, s) {
+            const el = id => document.getElementById(px + id);
+            if (el('MaxMb')) { el('MaxMb').value = s.max_mb ?? 10; el('MaxTotalMb').value = s.max_total_mb ?? 0; }
+            document.querySelectorAll('input[name="' + px + 'Mode"]').forEach(r => { r.checked = r.value === (s.mode || 'strip'); });
+            el('Order').value = s.strip_order || 'largest';
+            el('Alert').checked = !!s.alert;
+            el('AlertTo').value = s.alert_to || '';
+            el('Reply').checked = !!s.autoreply;
+            el('ReplyText').value = s.autoreply_text || (oversizeDefaults ? oversizeDefaults.default_reply : '');
+            syncOversizeFields(px);
+        }
+        function oversizeFields(px) {
+            const el = id => document.getElementById(px + id);
+            const mode = document.querySelector('input[name="' + px + 'Mode"]:checked');
+            const out = {
+                mode: mode ? mode.value : 'strip',
+                strip_order: el('Order').value,
+                alert: el('Alert').checked,
+                alert_to: el('AlertTo').value.trim(),
+                autoreply: el('Reply').checked,
+                autoreply_text: el('ReplyText').value
+            };
+            if (el('MaxMb')) { out.max_mb = parseInt(el('MaxMb').value, 10) || 10; out.max_total_mb = parseInt(el('MaxTotalMb').value, 10) || 0; }
+            return out;
+        }
+        // The order only matters when attachments are removed; the address box
+        // and the reply text only when their box is ticked.
+        function syncOversizeFields(px) {
+            const el = id => document.getElementById(px + id);
+            const mode = document.querySelector('input[name="' + px + 'Mode"]:checked');
+            el('OrderGroup').style.visibility = (mode && mode.value === 'reject') ? 'hidden' : '';
+            el('AlertTo').style.display = el('Alert').checked ? '' : 'none';
+            el('ReplyText').style.display = el('Reply').checked ? '' : 'none';
+        }
+        ['ovd', 'ovm'].forEach(px => {
+            document.querySelectorAll('input[name="' + px + 'Mode"]').forEach(r => r.addEventListener('change', () => syncOversizeFields(px)));
+            ['Alert', 'Reply'].forEach(id => { const c = document.getElementById(px + id); if (c) c.addEventListener('change', () => syncOversizeFields(px)); });
+        });
+        async function loadOversizeDefaults() {
+            if (!document.getElementById('oversize')) return;
+            try {
+                const r = await (await fetch(API_BASE + 'oversize_settings.php')).json();
+                if (!r.success) return;
+                oversizeDefaults = r.settings;
+                setOversizeFields('ovd', r.settings);
+                document.getElementById('ovdLimitsLine').innerHTML = t('tickets.settings.oversize.limits_line', {
+                    max: r.settings.max_mb + ' MB',
+                    total: r.settings.max_total_mb > 0 ? r.settings.max_total_mb + ' MB' : t('tickets.settings.oversize.no_limit'),
+                    link: '<a href="../../system/security/">' + escapeHtml(t('tickets.settings.oversize.limits_link')) + '</a>'
+                });
+            } catch (e) { console.error('oversize defaults', e); }
+        }
+        async function saveOversizeDefaults() {
+            try {
+                const r = await (await fetch(API_BASE + 'oversize_settings.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(oversizeFields('ovd'))
+                })).json();
+                if (r.success) { showToast(t('tickets.settings.oversize.saved'), 'success'); loadOversizeDefaults(); }
+                else showToast(r.error, 'error');
+            } catch (e) { showToast(e.message, 'error'); }
+        }
+        loadOversizeDefaults();
 
         async function loadMailboxes() {
             try {
@@ -3137,6 +5761,9 @@ $translationNamespaces = ['common', 'tickets'];
                     case 'app_only':
                         statusBadge = '<span class="status-badge" style="background:#e3f2fd;color:#1565c0;">App-only</span>';
                         break;
+                    case 'imap':
+                        statusBadge = '<span class="status-badge status-active">Connected</span>';
+                        break;
                     case 'mismatch':
                         statusBadge = '<span class="status-badge" style="background:#ffebee;color:#c62828;">⚠ Wrong account</span>';
                         break;
@@ -3145,9 +5772,6 @@ $translationNamespaces = ['common', 'tickets'];
                         break;
                     case 'ok':
                         statusBadge = '<span class="status-badge status-active">Authenticated</span>';
-                        break;
-                    case 'basic':
-                        statusBadge = '<span class="status-badge status-active">Connected</span>';
                         break;
                     default:
                         statusBadge = '<span class="status-badge status-inactive">Not authenticated</span>';
@@ -3158,7 +5782,7 @@ $translationNamespaces = ['common', 'tickets'];
                     : ' <span class="status-badge status-inactive">Inactive</span>';
 
                 const lastChecked = mb.last_checked_datetime
-                    ? new Date(mb.last_checked_datetime).toLocaleString()
+                    ? fmtDateTime(mb.last_checked_datetime)
                     : 'Never';
 
                 let actions = `<button class="action-btn" onclick="editMailbox(${mb.id})" title="${t('common.edit')}">
@@ -3172,9 +5796,10 @@ $translationNamespaces = ['common', 'tickets'];
                 const checkEmailsBtn = `<button class="action-btn" onclick="checkMailboxEmails(${mb.id})" title="${t('tickets.settings.tooltips.check_emails')}">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                     </button>`;
-                // App-only mailboxes never use the interactive sign-in flow — they read the
-                // target directly via client credentials, so no Authenticate / Logout buttons.
-                if (mb.provider_type === 'imap_smtp' || mb.auth_mode === 'basic' || mb.auth_mode === 'app_only') {
+                // App-only and Basic-IMAP mailboxes never use the interactive sign-in flow —
+                // they read the target directly (client credentials / stored password), so
+                // there's no Authenticate / Logout button, just Check emails.
+                if (mb.auth_mode === 'app_only' || mb.provider === 'imap') {
                     actions += checkEmailsBtn;
                 } else if (mb.is_authenticated) {
                     actions += checkEmailsBtn;
@@ -3192,11 +5817,10 @@ $translationNamespaces = ['common', 'tickets'];
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>`;
 
-                const providerBadge = (mb.provider_type === 'imap_smtp' || mb.auth_mode === 'basic')
-                    ? ' <span class="status-badge" style="background:#fff3e0;color:#ef6c00;">IMAP/SMTP</span>'
-                    : ((mb.provider === 'google')
-                        ? ' <span class="status-badge" style="background:#e8f5e9;color:#2e7d32;">Google</span>'
-                        : ' <span class="status-badge" style="background:#e3f2fd;color:#1565c0;">Microsoft</span>');
+                // Label and colours come from MailboxProvider (PHP) - never spelled out here.
+                // Unknown or missing is Microsoft, as MailboxProvider::fromMailbox() says.
+                const pv = MAILBOX_PROVIDERS[mb.provider] || MAILBOX_PROVIDERS.microsoft;
+                const providerBadge = ` <span class="status-badge" style="background:${pv.background};color:${pv.color};">${escapeHtml(pv.label)}</span>`;
 
                 // Multi-tenancy: show the routing target — pinned company, or shared intake.
                 let companyBadge = '';
@@ -3211,10 +5835,10 @@ $translationNamespaces = ['common', 'tickets'];
                 // Plain-language "where is this reading from?" line so it's crystal clear
                 // which inbox is actually being pulled — and flags a wrong/unverified account.
                 let authLine = '';
-                if (mb.auth_status === 'basic') {
-                    authLine = `<div style="font-size:12px;color:#ef6c00;margin-top:3px;">✓ IMAP/SMTP basic authentication</div>`;
-                } else if (mb.auth_status === 'ok') {
+                if (mb.auth_status === 'ok') {
                     authLine = `<div style="font-size:12px;color:#2e7d32;margin-top:3px;">✓ ${escapeHtml(t('tickets.settings.modals.mailbox.reading_from', {addr: mb.target_mailbox}))}</div>`;
+                } else if (mb.auth_status === 'imap') {
+                    authLine = `<div style="font-size:12px;color:#5e35b1;margin-top:3px;">✓ ${escapeHtml(t('tickets.settings.modals.mailbox.status_imap', {addr: mb.target_mailbox}))}</div>`;
                 } else if (mb.auth_status === 'app_only') {
                     authLine = `<div style="font-size:12px;color:#1565c0;margin-top:3px;">✓ ${escapeHtml(t('tickets.settings.modals.mailbox.status_app_only', {addr: mb.target_mailbox}))}</div>`;
                 } else if (mb.auth_status === 'unverified') {
@@ -3223,9 +5847,26 @@ $translationNamespaces = ['common', 'tickets'];
                     authLine = `<div style="font-size:12px;color:#c62828;margin-top:3px;font-weight:600;">⚠ ${escapeHtml(t('tickets.settings.modals.mailbox.status_mismatch', {authed: mb.authenticated_as || '?', target: mb.target_mailbox}))}</div>`;
                 }
 
+                // Everything that could quietly be wrong with this mailbox, behind one
+                // mark (#79). A mailbox can be connected, green and collecting mail and
+                // still not be doing what you think — the point of this is that you
+                // find that out here rather than weeks later on the tickets.
+                // Acknowledged warnings don't count towards the mark — a deliberate
+                // choice must be able to stop nagging, or the mark becomes wallpaper.
+                const problems = (mb.problems || []).filter(p => !p.dismissed);
+                let problemMark = '';
+                if (problems.length) {
+                    const worst = problems.some(p => p.severity === 'error') ? 'error' : 'warning';
+                    const colour = worst === 'error' ? '#c62828' : '#ef6c00';
+                    problemMark = ` <button type="button" class="mailbox-problem-mark"
+                        onclick="showMailboxProblems(${mb.id})"
+                        title="${escapeHtml(t('tickets.settings.modals.mailbox.problems_tooltip'))}"
+                        style="background:none;border:none;cursor:pointer;color:${colour};font-weight:700;font-size:15px;padding:0 4px;line-height:1;">!</button>`;
+                }
+
                 return `
                     <tr>
-                        <td><strong>${escapeHtml(mb.name)}</strong>${providerBadge}${activeBadge}${companyBadge}</td>
+                        <td><strong>${escapeHtml(mb.name)}</strong>${problemMark}${providerBadge}${activeBadge}${companyBadge}</td>
                         <td>${escapeHtml(mb.target_mailbox)}${authLine}</td>
                         <td>${statusBadge}</td>
                         <td>${lastChecked}</td>
@@ -3265,10 +5906,46 @@ $translationNamespaces = ['common', 'tickets'];
             group.style.display = '';
         }
 
+        // #79: the origins this mailbox may stamp on the tickets it opens. A mailbox
+        // pinned to a company gets that company's own origins as well as the global
+        // ones; a shared-intake mailbox gets global origins ONLY, because its tickets
+        // land in whichever company the sender's domain matches and one company's
+        // private origin must not end up on another's ticket. Global origins always
+        // exist, so the list is never empty — every mailbox can always set one.
+        //
+        // Re-runs when the company picker changes, since that changes the answer.
+        async function populateMailboxOrigins(selectedOriginId, tenantId) {
+            const select = document.getElementById('mailboxOrigin');
+            let origins = [];
+            try {
+                const r = await fetch('../../api/tickets/get_ticket_origins.php');
+                const d = await r.json();
+                origins = d.success ? (d.origins || []) : [];
+            } catch (e) { origins = []; }
+
+            const pinned = (tenantId !== null && tenantId !== undefined && tenantId !== '');
+            const usable = origins.filter(o => {
+                if (!o.is_active && o.id != selectedOriginId) return false;
+                if (o.tenant_id === null || o.tenant_id === undefined) return true;   // global
+                return pinned && String(o.tenant_id) === String(tenantId);            // this company's own
+            });
+
+            let html = '<option value="">' + escapeHtml(t('tickets.settings.modals.mailbox.origin_none')) + '</option>';
+            usable.forEach(o => {
+                html += '<option value="' + o.id + '">' + escapeHtml(o.name) + '</option>';
+            });
+            select.innerHTML = html;
+            // If the stored origin isn't offered any more (the mailbox moved company,
+            // or the origin was deleted), fall back to blank rather than silently
+            // showing the first entry as though it were the saved value.
+            select.value = (selectedOriginId === null || selectedOriginId === undefined) ? '' : String(selectedOriginId);
+            if (select.value !== String(selectedOriginId ?? '')) select.value = '';
+        }
+
         async function openMailboxModal(mailbox = null) {
             document.getElementById('mailboxModalTitle').textContent = mailbox ? t('tickets.settings.modals.mailbox.edit_title') : t('tickets.settings.modals.mailbox.add_title');
             document.getElementById('mailboxId').value = mailbox ? mailbox.id : '';
-            document.getElementById('mailboxProvider').value = mailbox ? ((mailbox.provider_type === 'imap_smtp') ? 'imap_smtp' : (mailbox.provider || 'microsoft')) : 'microsoft';
+            document.getElementById('mailboxProvider').value = mailbox ? (mailbox.provider || 'microsoft') : 'microsoft';
             document.getElementById('mailboxName').value = mailbox ? mailbox.name : '';
             document.getElementById('mailboxEmail').value = mailbox ? mailbox.target_mailbox : '';
             document.getElementById('mailboxAuthMode').value = mailbox ? (mailbox.auth_mode || 'delegated') : 'delegated';
@@ -3277,29 +5954,63 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('mailboxClientSecret').value = '';
             document.getElementById('mailboxRedirectUri').value = mailbox ? mailbox.oauth_redirect_uri : getDefaultOAuthRedirectUri(document.getElementById('mailboxProvider').value);
             document.getElementById('mailboxScopes').value = mailbox ? mailbox.oauth_scopes : 'openid email offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send';
-            document.getElementById('mailboxImapServer').value = mailbox ? (mailbox.imap_host || mailbox.imap_server) : 'outlook.office365.com';
+            document.getElementById('mailboxImapServer').value = mailbox ? mailbox.imap_server : 'outlook.office365.com';
+            document.getElementById('mailboxImapPort').value = mailbox ? mailbox.imap_port : 993;
+            // Basic IMAP / SMTP fields.
+            document.getElementById('mailboxImapEncryption').value = mailbox ? (mailbox.imap_encryption || 'ssl') : 'ssl';
             document.getElementById('mailboxImapUsername').value = mailbox ? (mailbox.imap_username || '') : '';
             document.getElementById('mailboxImapPassword').value = '';
-            document.getElementById('mailboxSmtpHost').value = mailbox ? (mailbox.smtp_host || '') : '';
+            // Show a masked hint when a password is already stored (edit) so it's clear
+            // that leaving it blank keeps the existing one.
+            document.getElementById('mailboxImapPassword').placeholder = (mailbox && mailbox.imap_password_set)
+                ? '••••••••  (' + t('tickets.settings.modals.mailbox.imap_password_kept') + ')'
+                : t('tickets.settings.modals.mailbox.imap_password_placeholder');
+            document.getElementById('mailboxSmtpServer').value = mailbox ? (mailbox.smtp_server || '') : '';
             document.getElementById('mailboxSmtpPort').value = mailbox ? (mailbox.smtp_port || 587) : 587;
             document.getElementById('mailboxSmtpEncryption').value = mailbox ? (mailbox.smtp_encryption || 'tls') : 'tls';
-            document.getElementById('mailboxSmtpUsername').value = mailbox ? (mailbox.smtp_username || '') : '';
+            // 🔴 The SMTP username MUST be redisplayed. The save writes what this field
+            // holds, so a box that came up empty on an edit would quietly replace a
+            // working SMTP login with nothing — and because sending then falls back to
+            // the IMAP credentials, it would go on looking like it worked.
+            const smtpUser = mailbox ? (mailbox.smtp_username || '') : '';
+            document.getElementById('mailboxSmtpUsername').value = smtpUser;
+            document.getElementById('mailboxSmtpSameAsImap').checked = smtpUser.trim() === '';
             document.getElementById('mailboxSmtpPassword').value = '';
-            document.getElementById('mailboxSmtpFromAddress').value = mailbox ? (mailbox.smtp_from_address || mailbox.target_mailbox || '') : '';
-            document.getElementById('mailboxSmtpFromName').value = mailbox ? (mailbox.smtp_from_name || mailbox.name || '') : '';
-            document.getElementById('mailboxImapPort').value = mailbox ? mailbox.imap_port : 993;
-            document.getElementById('mailboxImapEncryption').value = mailbox ? (mailbox.imap_encryption || 'none') : 'none';
+            // Same masked hint as the IMAP password: say when one is already stored, so
+            // a blank box reads as "unchanged" rather than "none set".
+            document.getElementById('mailboxSmtpPassword').placeholder = (mailbox && mailbox.smtp_password_set)
+                ? '••••••••  (' + t('tickets.settings.modals.mailbox.imap_password_kept') + ')'
+                : t('tickets.settings.modals.mailbox.imap_password_placeholder');
             toggleProviderFields();
             toggleAuthModeFields();
             document.getElementById('mailboxFolder').value = mailbox ? mailbox.email_folder : 'INBOX';
             document.getElementById('mailboxMaxEmails').value = mailbox ? mailbox.max_emails_per_check : 10;
             document.getElementById('mailboxRejectedAction').value = mailbox ? (mailbox.rejected_action || 'delete') : 'delete';
+            // Large emails (GH #170): this mailbox's own rules, or the defaults.
+            let ownOversize = null;
+            try { ownOversize = mailbox && mailbox.oversize_policy ? JSON.parse(mailbox.oversize_policy) : null; } catch (e) { ownOversize = null; }
+            document.getElementById('mailboxOversizeUse').value = ownOversize ? 'own' : 'defaults';
+            document.getElementById('mailboxOversizeOwn').style.display = ownOversize ? '' : 'none';
+            setOversizeFields('ovm', ownOversize || Object.assign({}, oversizeDefaults || {}));
             document.getElementById('mailboxImportedAction').value = mailbox ? (mailbox.imported_action || 'delete') : 'delete';
             document.getElementById('mailboxImportedFolder').value = mailbox ? (mailbox.imported_folder || '') : '';
             toggleImportedFolder();
             document.getElementById('verifyFolderResult').style.display = 'none';
+            document.getElementById('verifyIntakeFolderResult').style.display = 'none';
             document.getElementById('mailboxActive').checked = mailbox ? mailbox.is_active : true;
+            document.getElementById('mailboxConfidential').checked = !!(mailbox && mailbox.default_sensitivity === 'confidential');
             await populateMailboxCompanies(mailbox ? (mailbox.tenant_id ?? null) : null);
+            await populateMailboxOrigins(
+                mailbox ? (mailbox.default_origin_id ?? null) : null,
+                mailbox ? (mailbox.tenant_id ?? null) : null
+            );
+            // Changing the company changes which origins are on offer, so rebuild the
+            // list — keeping the current choice if it survives the move.
+            const mbCompanySelect = document.getElementById('mailboxCompany');
+            mbCompanySelect.onchange = () => populateMailboxOrigins(
+                document.getElementById('mailboxOrigin').value || null,
+                mbCompanySelect.value || null
+            );
 
             // Load whitelist
             whitelistEntries = [];
@@ -3326,11 +6037,13 @@ $translationNamespaces = ['common', 'tickets'];
         // Delegated vs app-only: the redirect URI + delegated scopes only apply to the
         // interactive sign-in flow, so hide them for app-only and update the help text.
         function toggleAuthModeFields() {
+            // Basic IMAP has no OAuth redirect / scopes at all — toggleProviderFields
+            // already hides them; don't let this function re-show them.
+            if (document.getElementById('mailboxProvider').value === 'imap') return;
             // App-only is Microsoft-only — for Google it never applies, so the redirect
             // URI / scopes must stay visible regardless of the (hidden) selector's value.
             const isMicrosoft = document.getElementById('mailboxProvider').value === 'microsoft';
             const isAppOnly = isMicrosoft && document.getElementById('mailboxAuthMode').value === 'app_only';
-            const usesOAuth = document.getElementById('mailboxProvider').value !== 'imap_smtp' && !isAppOnly;
             const help = document.getElementById('mailboxAuthModeHelp');
             if (help) {
                 help.textContent = t(isAppOnly
@@ -3339,58 +6052,93 @@ $translationNamespaces = ['common', 'tickets'];
             }
             const redirectInput = document.getElementById('mailboxRedirectUri');
             const redirectGroup = redirectInput.closest('.form-group');
-            if (redirectGroup) redirectGroup.style.display = usesOAuth ? '' : 'none';
-            redirectInput.required = usesOAuth;
+            if (redirectGroup) redirectGroup.style.display = isAppOnly ? 'none' : '';
+            redirectInput.required = !isAppOnly;
             // A hidden field carrying a custom-validity message can still block submit —
-            // clear it so basic/app-only mailboxes can save without a redirect URI.
-            if (!usesOAuth) redirectInput.setCustomValidity('');
+            // clear it so an app-only mailbox can save without a redirect URI.
+            if (isAppOnly) redirectInput.setCustomValidity('');
             const scopesGroup = document.getElementById('mailboxScopes').closest('.form-group');
-            if (scopesGroup) scopesGroup.style.display = usesOAuth ? '' : 'none';
+            if (scopesGroup) scopesGroup.style.display = isAppOnly ? 'none' : '';
+        }
+
+        /* Show the SMTP credential fields only when the toggle above them is off —
+           and only on a basic IMAP mailbox, since it owns their `display` outright
+           (see the markup note). Called from toggleProviderFields() as well as from
+           the toggle itself, because that function rewrites the whole IMAP block
+           every time the provider changes. */
+        function toggleSmtpCredentials() {
+            const isImap = document.getElementById('mailboxProvider').value === 'imap';
+            const sameAsImap = document.getElementById('mailboxSmtpSameAsImap').checked;
+            document.querySelectorAll('.smtp-creds').forEach(el => {
+                el.style.display = (isImap && !sameAsImap) ? '' : 'none';
+            });
         }
 
         function toggleProviderFields() {
             const provider = document.getElementById('mailboxProvider').value;
             const isMicrosoft = provider === 'microsoft';
-            const isImapSmtp = provider === 'imap_smtp';
+            const isImap = provider === 'imap';
             const mailboxId = document.getElementById('mailboxId').value;
 
-            // Show/hide Microsoft-only fields
+            // Microsoft-only fields (auth mode, tenant, scopes).
             document.querySelectorAll('.provider-microsoft').forEach(el => {
                 el.style.display = isMicrosoft ? '' : 'none';
             });
+            // OAuth fields (client id/secret/redirect) — Microsoft AND Google, not IMAP.
+            document.querySelectorAll('.provider-oauth').forEach(el => {
+                el.style.display = isImap ? 'none' : '';
+            });
+            // Basic-IMAP fields (host/login/SMTP).
+            document.querySelectorAll('.provider-imap').forEach(el => {
+                el.style.display = isImap ? '' : 'none';
+            });
+            // The SMTP credential rows are deliberately NOT in that class — they
+            // answer to the "same as the IMAP login" toggle as well as to the
+            // provider, so one function owns them rather than two.
+            toggleSmtpCredentials();
 
-            document.querySelectorAll('.provider-imap-smtp').forEach(el => { el.style.display = isImapSmtp ? '' : 'none'; });
-            document.getElementById('clientIdGroup').style.display = isImapSmtp ? 'none' : '';
-            document.getElementById('mailboxClientSecret').closest('.form-group').style.display = isImapSmtp ? 'none' : '';
-            document.getElementById('mailboxRedirectUri').closest('.form-group').style.display = isImapSmtp ? 'none' : '';
-            document.getElementById('mailboxClientId').required = !isImapSmtp;
-            document.getElementById('mailboxRedirectUri').required = !isImapSmtp;
+            // A hidden `required` input still blocks form submit — toggle required to match
+            // visibility so, e.g., an IMAP mailbox can save without OAuth client id/secret.
+            const clientIdInput = document.getElementById('mailboxClientId');
+            clientIdInput.required = !isImap;
+            document.getElementById('mailboxImapServer').required = isImap;
+            document.getElementById('mailboxImapUsername').required = isImap;
+            document.getElementById('mailboxSmtpServer').required = isImap;
+            // Password required only when creating a new IMAP mailbox (blank = keep on edit).
+            document.getElementById('mailboxImapPassword').required = isImap && !mailboxId;
+
+            if (isImap) {
+                // Clear the Microsoft IMAP-server default when switching to a real IMAP box.
+                const imapServer = document.getElementById('mailboxImapServer');
+                if (imapServer.value === 'outlook.office365.com') imapServer.value = '';
+                // The redirect URI is hidden for IMAP — clear its required flag + any custom
+                // validity so a hidden field can't block submit. (Don't call
+                // toggleAuthModeFields here: it would re-show the OAuth redirect/scopes.)
+                const redirectInput = document.getElementById('mailboxRedirectUri');
+                redirectInput.required = false;
+                redirectInput.setCustomValidity('');
+                return;
+            }
 
             // Update labels
             document.getElementById('clientIdLabel').textContent = isMicrosoft ? 'Azure Client ID *' : 'Google Client ID *';
             document.getElementById('clientSecretLabel').textContent = isMicrosoft ? 'Azure Client Secret *' : 'Google Client Secret *';
 
             // Update placeholders
-            const clientIdInput = document.getElementById('mailboxClientId');
             clientIdInput.placeholder = isMicrosoft
                 ? 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
                 : 'xxxxxxxxxx-xxxxxxxxx.apps.googleusercontent.com';
 
             const redirectInput = document.getElementById('mailboxRedirectUri');
-            if (!isImapSmtp) {
-                const expectedCallback = isMicrosoft ? 'oauth_callback.php' : 'google_oauth_callback.php';
-                const otherCallback = isMicrosoft ? 'google_oauth_callback.php' : 'oauth_callback.php';
-                redirectInput.placeholder = getDefaultOAuthRedirectUri(provider);
+            const expectedCallback = isMicrosoft ? 'oauth_callback.php' : 'google_oauth_callback.php';
+            const otherCallback = isMicrosoft ? 'google_oauth_callback.php' : 'oauth_callback.php';
+            redirectInput.placeholder = getDefaultOAuthRedirectUri(provider);
 
-                if (!mailboxId || redirectInput.value.includes(otherCallback)) {
-                    redirectInput.value = getDefaultOAuthRedirectUri(provider);
-                    redirectInput.setCustomValidity('');
-                } else if (redirectInput.value && !redirectInput.value.includes(expectedCallback)) {
-                    redirectInput.setCustomValidity('OAuth redirect URI must use ' + expectedCallback + ' for this provider.');
-            } else {
+            if (!mailboxId || redirectInput.value.includes(otherCallback)) {
+                redirectInput.value = getDefaultOAuthRedirectUri(provider);
                 redirectInput.setCustomValidity('');
-            }
-
+            } else if (redirectInput.value && !redirectInput.value.includes(expectedCallback)) {
+                redirectInput.setCustomValidity('OAuth redirect URI must use ' + expectedCallback + ' for this provider.');
             } else {
                 redirectInput.setCustomValidity('');
             }
@@ -3411,27 +6159,36 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('importedFolderGroup').style.display = action === 'move_to_folder' ? '' : 'none';
         }
 
-        async function verifyFolder() {
-            const folderName = document.getElementById('mailboxImportedFolder').value.trim();
+        // Both folder fields verify through one function. Two copies is what let the
+        // move-to folder and the read-from folder disagree in the first place (GH #77).
+        function verifyFolder() {
+            return runFolderVerify('mailboxImportedFolder', 'verifyFolderResult', 'verifyFolderBtn');
+        }
+        function verifyIntakeFolder() {
+            return runFolderVerify('mailboxFolder', 'verifyIntakeFolderResult', 'verifyIntakeFolderBtn');
+        }
+
+        async function runFolderVerify(inputId, resultId, btnId) {
+            const folderName = document.getElementById(inputId).value.trim();
             const mailboxId = document.getElementById('mailboxId').value;
-            const resultEl = document.getElementById('verifyFolderResult');
-            const btn = document.getElementById('verifyFolderBtn');
+            const resultEl = document.getElementById(resultId);
+            const btn = document.getElementById(btnId);
 
             if (!folderName) {
                 resultEl.style.display = '';
                 resultEl.style.color = '#856404';
-                resultEl.textContent = 'Enter a folder name first.';
+                resultEl.textContent = window.t('tickets.settings.verify_result.enter_folder');
                 return;
             }
             if (!mailboxId) {
                 resultEl.style.display = '';
                 resultEl.style.color = '#856404';
-                resultEl.textContent = 'Save the mailbox first, then verify.';
+                resultEl.textContent = window.t('tickets.settings.verify_result.save_first');
                 return;
             }
 
             btn.disabled = true;
-            btn.textContent = 'Verifying...';
+            btn.textContent = window.t('tickets.settings.buttons.verifying');
             resultEl.style.display = 'none';
 
             try {
@@ -3444,23 +6201,36 @@ $translationNamespaces = ['common', 'tickets'];
 
                 resultEl.style.display = '';
                 if (data.success) {
-                    resultEl.style.color = '#155724';
-                    let msg = 'Folder "' + escapeHtml(data.folder.displayName) + '" found';
-                    if (data.folder.totalItemCount !== null) {
-                        msg += ' (' + data.folder.totalItemCount + ' items, ' + data.folder.unreadItemCount + ' unread)';
+                    // No escapeHtml: textContent below escapes already, so this
+                    // double-encoded any folder with an & or a quote in its name.
+                    let msg = window.t('tickets.settings.verify_result.found', { name: data.folder.displayName });
+                    if (data.folder.totalItemCount !== null && data.folder.totalItemCount !== undefined) {
+                        msg += ' ' + window.t('tickets.settings.verify_result.counts', {
+                            total: data.folder.totalItemCount, unread: data.folder.unreadItemCount
+                        });
+                    }
+                    // A Gmail label that exists but sits outside the Inbox verifies
+                    // fine and collects nothing. Green would read as "working".
+                    if (data.folder.note) {
+                        msg += ' - ' + data.folder.note;
+                        resultEl.style.color = '#856404';
+                    } else {
+                        resultEl.style.color = '#155724';
                     }
                     resultEl.textContent = msg;
                 } else {
                     resultEl.style.color = '#721c24';
-                    resultEl.textContent = data.error || 'Folder not found';
+                    resultEl.textContent = data.error || window.t('tickets.settings.verify_result.not_found');
                 }
             } catch (err) {
                 resultEl.style.display = '';
                 resultEl.style.color = '#721c24';
-                resultEl.textContent = 'Failed to verify folder';
+                resultEl.textContent = window.t('tickets.settings.verify_result.failed');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Verify';
+                // Was a literal 'Verify', so a German button read "Prüfen" until
+                // the first click and "Verify" ever after.
+                btn.textContent = window.t('tickets.settings.buttons.verify');
             }
         }
 
@@ -3473,36 +6243,114 @@ $translationNamespaces = ['common', 'tickets'];
             }
         }
 
+        // The delete dialog (GH #227). It asks the server what still uses the
+        // mailbox first, because a mailbox that ever received mail has emails
+        // pointing at it, and they must be moved or cleared before it can go.
+        let mailboxDeleteState = null;
+
         async function deleteMailbox(id, name) {
-            const ok = await showConfirm({
-                title: 'Delete mailbox',
-                message: `Are you sure you want to delete the mailbox "${name}"?`,
-                okLabel: 'Delete',
-                okClass: 'danger'
-            });
-            if (!ok) return;
+            const md = k => 'tickets.settings.modals.mailbox_delete.' + k;
+            mailboxDeleteState = null;
+            document.getElementById('mailboxDeleteTitle').textContent = t(md('title'), { name: name });
+            document.getElementById('mailboxDeleteBody').textContent = t(md('checking'));
+            document.getElementById('mailboxDeleteMoveGroup').style.display = 'none';
+            document.getElementById('mailboxDeleteWarnings').innerHTML = '';
+            document.getElementById('mailboxDeleteConfirm').disabled = true;
+            document.getElementById('mailboxDeleteModal').classList.add('active');
 
             try {
                 const response = await fetch(API_BASE + 'delete_mailbox.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: id })
+                    body: JSON.stringify({ id: id, preview: true })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    closeMailboxDeleteModal();
+                    showToast(t(md('error'), { error: data.error }), 'error');
+                    return;
+                }
+                mailboxDeleteState = { id: id, ...data };
+
+                const total = data.emails_on_tickets + data.emails_loose;
+                const body = document.getElementById('mailboxDeleteBody');
+                if (total === 0) {
+                    body.innerHTML = `<p>${escapeHtml(t(md('nothing')))}</p>`;
+                } else {
+                    const items = [];
+                    if (data.emails_on_tickets) items.push(t(md('on_tickets'), { count: data.emails_on_tickets }));
+                    if (data.emails_loose) items.push(t(md('loose'), { count: data.emails_loose }));
+                    body.innerHTML = `<p style="margin: 0;">${escapeHtml(t(md('intro')))}</p><ul style="margin: 6px 0 0 20px; padding: 0;">`
+                        + items.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ul>';
+
+                    const sel = document.getElementById('mailboxDeleteMoveTo');
+                    sel.innerHTML = data.move_targets.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('')
+                        + `<option value="">${escapeHtml(t(md('move_none')))}</option>`;
+                    document.getElementById('mailboxDeleteMoveGroup').style.display = '';
+                }
+                renderMailboxDeleteWarnings();
+                document.getElementById('mailboxDeleteConfirm').disabled = false;
+            } catch (error) {
+                console.error('Error:', error);
+                closeMailboxDeleteModal();
+                showToast(t(md('failed')), 'error');
+            }
+        }
+
+        // What the chosen option will cost, re-drawn when the dropdown changes.
+        function renderMailboxDeleteWarnings() {
+            const s = mailboxDeleteState;
+            if (!s) return;
+            const md = k => 'tickets.settings.modals.mailbox_delete.' + k;
+            const moving = (s.emails_on_tickets + s.emails_loose) > 0
+                && document.getElementById('mailboxDeleteMoveTo').value !== '';
+            const lines = [];
+            if (!moving && s.emails_on_tickets) lines.push(t(md('none_tickets')));
+            if (!moving && s.emails_loose) lines.push(t(md('none_loose'), { count: s.emails_loose }));
+            if (s.used_for_knowledge) lines.push(t(md('knowledge')));
+            const warn = lines.map(l => `<p style="color: var(--danger-text, #991b1b); background: var(--danger-bg, #fee2e2); padding: 8px 10px; border-radius: 4px; margin: 10px 0 0;">${escapeHtml(l)}</p>`).join('');
+            document.getElementById('mailboxDeleteWarnings').innerHTML = warn
+                + `<p style="color: var(--text-muted, #666); margin: 12px 0 0; font-size: 13px;">${escapeHtml(t(md('deactivate')))}</p>`;
+        }
+
+        function closeMailboxDeleteModal() {
+            document.getElementById('mailboxDeleteModal').classList.remove('active');
+            mailboxDeleteState = null;
+        }
+
+        async function confirmMailboxDelete() {
+            const s = mailboxDeleteState;
+            if (!s) return;
+            const md = k => 'tickets.settings.modals.mailbox_delete.' + k;
+            const moveTo = (s.emails_on_tickets + s.emails_loose) > 0
+                ? (parseInt(document.getElementById('mailboxDeleteMoveTo').value, 10) || null)
+                : null;
+            document.getElementById('mailboxDeleteConfirm').disabled = true;
+
+            try {
+                const response = await fetch(API_BASE + 'delete_mailbox.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: s.id, move_to: moveTo })
                 });
                 const data = await response.json();
 
                 if (data.success) {
-                    showToast('Mailbox deleted', 'success');
+                    closeMailboxDeleteModal();
+                    showToast(t(md('deleted')), 'success');
                     loadMailboxes();
                 } else {
-                    showToast('Error deleting mailbox: ' + data.error, 'error');
+                    document.getElementById('mailboxDeleteConfirm').disabled = false;
+                    showToast(t(md('error'), { error: data.error }), 'error');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                showToast('Failed to delete mailbox', 'error');
+                document.getElementById('mailboxDeleteConfirm').disabled = false;
+                showToast(t(md('failed')), 'error');
             }
         }
 
-        function authenticateMailbox(id) {
+        async function authenticateMailbox(id) {
             const mailbox = mailboxes.find(m => m.id == id);
             if (!mailbox) {
                 showToast('Mailbox not found. ID: ' + id, 'error');
@@ -3511,9 +6359,25 @@ $translationNamespaces = ['common', 'tickets'];
 
             const provider = mailbox.provider || 'microsoft';
 
+            // The state comes from the server, which remembers it for this session -
+            // the callback refuses any other (mailbox_oauth_start.php explains why).
+            let state;
+            try {
+                const res = await fetch(API_BASE + 'mailbox_oauth_start.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mailbox_id: id })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Could not start the sign-in');
+                state = data.state;
+            } catch (e) {
+                showToast(e.message, 'error');
+                return;
+            }
+
             if (provider === 'google') {
                 // Google OAuth flow
-                const state = 'google_mailbox_' + id + '_' + Math.random().toString(36).substring(2, 18);
                 const params = new URLSearchParams({
                     client_id: mailbox.azure_client_id,
                     redirect_uri: mailbox.oauth_redirect_uri,
@@ -3526,7 +6390,6 @@ $translationNamespaces = ['common', 'tickets'];
                 window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
             } else {
                 // Microsoft OAuth flow
-                const state = 'mailbox_' + id + '_' + Math.random().toString(36).substring(2, 18);
                 const params = new URLSearchParams({
                     client_id: mailbox.azure_client_id,
                     response_type: 'code',
@@ -3609,11 +6472,11 @@ $translationNamespaces = ['common', 'tickets'];
 
         async function checkAllMailboxes() {
             const result = document.getElementById('mailboxesResult');
-            const authenticatedMailboxes = mailboxes.filter(m => m.is_active && (m.is_authenticated || m.provider_type === 'imap_smtp' || m.auth_mode === 'basic' || m.auth_mode === 'app_only'));
+            const authenticatedMailboxes = mailboxes.filter(m => m.is_authenticated && m.is_active);
 
             if (authenticatedMailboxes.length === 0) {
                 result.className = 'exchange-result error';
-                result.innerHTML = 'No active mailboxes are ready to check.';
+                result.innerHTML = 'No authenticated and active mailboxes to check.';
                 return;
             }
 
@@ -3637,14 +6500,20 @@ $translationNamespaces = ['common', 'tickets'];
                     if (data.success) {
                         successCount++;
                         totalEmails += data.details?.emails_saved || 0;
-                        results.push(`&#10003; ${mb.name}: ${data.details?.emails_saved || 0} email(s)`);
+                        results.push('&#10003; ' + escapeHtml(window.t('tickets.settings.check_results.mailbox_ok', {
+                            name: mb.name, count: data.details?.emails_saved || 0
+                        })));
                     } else {
                         errorCount++;
-                        results.push(`&#10007; ${mb.name}: ${data.error || 'Unknown error'}`);
+                        results.push('&#10007; ' + escapeHtml(window.t('tickets.settings.check_results.mailbox_failed', {
+                            name: mb.name, error: data.error || window.t('tickets.settings.check_results.unknown_error')
+                        })));
                     }
                 } catch (error) {
                     errorCount++;
-                    results.push(`&#10007; ${mb.name}: Connection error`);
+                    results.push('&#10007; ' + escapeHtml(window.t('tickets.settings.check_results.mailbox_failed', {
+                        name: mb.name, error: window.t('tickets.settings.check_results.connection_error')
+                    })));
                 }
             }
 
@@ -3657,8 +6526,8 @@ $translationNamespaces = ['common', 'tickets'];
             }
 
             result.innerHTML = `
-                <strong>Check complete</strong>
-                <p>${successCount} mailbox(es) checked successfully, ${totalEmails} total email(s) processed</p>
+                <strong>${escapeHtml(window.t('tickets.settings.check_results.complete'))}</strong>
+                <p>${escapeHtml(window.t('tickets.settings.check_results.summary', { count: successCount, emails: totalEmails }))}</p>
                 <ul style="margin-top: 10px; padding-left: 20px;">
                     ${results.map(r => '<li>' + r + '</li>').join('')}
                 </ul>
@@ -3668,35 +6537,31 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         // Mailbox form submission
-        document.getElementById('mailboxForm').addEventListener('submit', async function(e) {
+        document.getElementById('mailboxForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const formData = {
                 id: document.getElementById('mailboxId').value || null,
-                provider: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'imap_smtp' : document.getElementById('mailboxProvider').value,
-                provider_type: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'imap_smtp' : (document.getElementById('mailboxProvider').value === 'google' ? 'gmail' : 'graph'),
+                provider: document.getElementById('mailboxProvider').value,
                 name: document.getElementById('mailboxName').value,
                 target_mailbox: document.getElementById('mailboxEmail').value,
-                auth_mode: document.getElementById('mailboxProvider').value === 'imap_smtp' ? 'basic' : document.getElementById('mailboxAuthMode').value,
+                auth_mode: document.getElementById('mailboxAuthMode').value,
                 azure_tenant_id: document.getElementById('mailboxTenantId').value,
                 azure_client_id: document.getElementById('mailboxClientId').value,
                 azure_client_secret: document.getElementById('mailboxClientSecret').value,
                 oauth_redirect_uri: document.getElementById('mailboxRedirectUri').value,
                 oauth_scopes: document.getElementById('mailboxScopes').value,
                 imap_server: document.getElementById('mailboxImapServer').value,
-                imap_host: document.getElementById('mailboxImapServer').value,
+                imap_port: parseInt(document.getElementById('mailboxImapPort').value),
+                imap_encryption: document.getElementById('mailboxImapEncryption').value,
                 imap_username: document.getElementById('mailboxImapUsername').value,
                 imap_password: document.getElementById('mailboxImapPassword').value,
-                imap_encryption: document.getElementById('mailboxImapEncryption').value,
-                imap_folder: document.getElementById('mailboxFolder').value,
-                smtp_host: document.getElementById('mailboxSmtpHost').value,
-                smtp_port: parseInt(document.getElementById('mailboxSmtpPort').value || '587'),
+                smtp_server: document.getElementById('mailboxSmtpServer').value,
+                smtp_port: parseInt(document.getElementById('mailboxSmtpPort').value) || 587,
                 smtp_encryption: document.getElementById('mailboxSmtpEncryption').value,
+                smtp_same_as_imap: document.getElementById('mailboxSmtpSameAsImap').checked,
                 smtp_username: document.getElementById('mailboxSmtpUsername').value,
                 smtp_password: document.getElementById('mailboxSmtpPassword').value,
-                smtp_from_address: document.getElementById('mailboxSmtpFromAddress').value,
-                smtp_from_name: document.getElementById('mailboxSmtpFromName').value,
-                imap_port: parseInt(document.getElementById('mailboxImapPort').value),
                 email_folder: document.getElementById('mailboxFolder').value,
                 max_emails_per_check: parseInt(document.getElementById('mailboxMaxEmails').value),
                 rejected_action: document.getElementById('mailboxRejectedAction').value,
@@ -3704,7 +6569,10 @@ $translationNamespaces = ['common', 'tickets'];
                 imported_folder: document.getElementById('mailboxImportedFolder').value || null,
                 is_active: document.getElementById('mailboxActive').checked,
                 // Multi-tenancy: "" (shared intake) when the picker is hidden/unset → NULL server-side.
-                tenant_id: document.getElementById('mailboxCompany').value || null
+                tenant_id: document.getElementById('mailboxCompany').value || null,
+                default_origin_id: document.getElementById('mailboxOrigin').value || null,
+                default_sensitivity: document.getElementById('mailboxConfidential').checked ? 'confidential' : 'normal',
+                oversize_policy: document.getElementById('mailboxOversizeUse').value === 'own' ? oversizeFields('ovm') : null
             };
 
             try {
@@ -3795,14 +6663,194 @@ $translationNamespaces = ['common', 'tickets'];
         let activityMailboxId = null;
         let activitySearchTimer = null;
 
+        let mailboxLogTab = 'inbound';
+
+        // #79: list what is wrong with one mailbox, in plain terms, each item saying
+        // what the consequence is rather than just naming a field. Errors first —
+        // "not collecting any mail at all" outranks "not stamping an origin".
+        function showMailboxProblems(mailboxId) {
+            const mb = mailboxes.find(m => m.id == mailboxId);
+            const problems = (mb && mb.problems) ? mb.problems.slice() : [];
+            document.getElementById('mailboxProblemsTitle').textContent =
+                t('tickets.settings.modals.mailbox.problems_title') + (mb ? ' — ' + mb.name : '');
+
+            problems.sort((a, b) => (a.severity === b.severity) ? 0 : (a.severity === 'error' ? -1 : 1));
+
+            const live      = problems.filter(p => !p.dismissed);
+            const acked     = problems.filter(p =>  p.dismissed);
+            const body      = document.getElementById('mailboxProblemsBody');
+
+            const card = (p) => {
+                const isError = p.severity === 'error';
+                const colour  = isError ? '#c62828' : '#ef6c00';
+                const bg      = isError ? '#ffebee' : '#fff3e0';
+                // Errors carry no Dismiss button: reading the wrong inbox is a fault,
+                // not a preference, and silencing it is the one thing this modal
+                // must never help anybody do.
+                const btn = p.dismissible
+                    ? `<button type="button" class="btn btn-secondary" style="margin-top:8px;padding:3px 10px;font-size:12px;"
+                         onclick="setMailboxProblemDismissed(${mailboxId}, '${escapeHtml(p.key)}', true)">${escapeHtml(t('tickets.settings.modals.mailbox.problems_dismiss'))}</button>`
+                    : '';
+                return `<div style="border-left:3px solid ${colour}; background:${bg}; padding:10px 12px; margin-bottom:10px; border-radius:0 4px 4px 0;">
+                    <div style="font-weight:600; color:${colour}; margin-bottom:3px;">${escapeHtml(p.title)}</div>
+                    <div style="font-size:13px; color:var(--text-color,#333);">${escapeHtml(p.detail)}</div>
+                    ${btn}
+                </div>`;
+            };
+
+            let html = '';
+            if (!live.length) {
+                html += '<p style="color:#2e7d32;margin:0 0 10px;">✓ '
+                     + escapeHtml(t('tickets.settings.modals.mailbox.problems_none')) + '</p>';
+            } else {
+                html += live.map(card).join('');
+            }
+
+            // Acknowledged items stay visible and reversible. Dismissing is meant to
+            // say "I know", not to delete the fact.
+            if (acked.length) {
+                html += `<div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border, #e0e0e0);">
+                    <div style="font-size:12px; font-weight:600; color:var(--text-muted,#666); margin-bottom:8px;">
+                        ${escapeHtml(t('tickets.settings.modals.mailbox.problems_dismissed_heading'))}
+                    </div>
+                    ${acked.map(p => `<div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                        <span style="flex:1; font-size:13px; color:var(--text-muted,#666);">${escapeHtml(p.title)}</span>
+                        <button type="button" class="btn btn-secondary" style="padding:3px 10px;font-size:12px;"
+                            onclick="setMailboxProblemDismissed(${mailboxId}, '${escapeHtml(p.key)}', false)">${escapeHtml(t('tickets.settings.modals.mailbox.problems_restore'))}</button>
+                    </div>`).join('')}
+                </div>`;
+            }
+
+            body.innerHTML = html;
+            document.getElementById('mailboxProblemsModal').classList.add('active');
+        }
+
+        // Acknowledge a warning, or put it back. Reloads the list so the mark on the
+        // row updates, then re-opens the modal so the change is visible where it was made.
+        async function setMailboxProblemDismissed(mailboxId, key, dismissed) {
+            try {
+                const res = await fetch(API_BASE + 'set_mailbox_health_dismissed.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mailbox_id: mailboxId, key: key, dismissed: dismissed })
+                });
+                const data = await res.json();
+                if (!data.success) { showToast('Error: ' + (data.error || ''), 'error'); return; }
+                await loadMailboxes();
+                showMailboxProblems(mailboxId);
+            } catch (e) {
+                showToast('Failed to update', 'error');
+            }
+        }
+
+        function closeMailboxProblems() {
+            document.getElementById('mailboxProblemsModal').classList.remove('active');
+        }
+
         function openActivityModal(mailboxId) {
             activityMailboxId = mailboxId;
             const mb = mailboxes.find(m => m.id == mailboxId);
             document.getElementById('activityModalTitle').textContent = 'Activity — ' + (mb ? mb.name : 'Mailbox');
             document.getElementById('activitySearch').value = '';
             closeProcessingLog();
-            loadActivity(mailboxId, '', 1);
+            switchMailboxLogTab('inbound');
+            // Fetch the outbound failure count straight away: the whole point is that a
+            // failed send is noticed without anybody going looking for it, so the badge
+            // has to be there before the tab is ever opened.
+            refreshOutboundBadge();
             document.getElementById('activityModal').classList.add('active');
+        }
+
+        function switchMailboxLogTab(tab) {
+            mailboxLogTab = tab;
+            const inbound = tab === 'inbound';
+            document.getElementById('mbxTabInbound').classList.toggle('active', inbound);
+            document.getElementById('mbxTabOutbound').classList.toggle('active', !inbound);
+            document.getElementById('inboundPane').style.display  = inbound ? '' : 'none';
+            document.getElementById('outboundPane').style.display = inbound ? 'none' : '';
+            document.getElementById('outboundStatus').style.display = inbound ? 'none' : '';
+            if (inbound) closeProcessingLog();
+            document.getElementById('activitySearch').value = '';
+            loadMailboxLog(1);
+        }
+
+        function loadMailboxLog(page) {
+            const search = document.getElementById('activitySearch').value;
+            if (mailboxLogTab === 'inbound') loadActivity(activityMailboxId, search, page);
+            else loadOutbound(activityMailboxId, search, page);
+        }
+
+        async function refreshOutboundBadge() {
+            const badge = document.getElementById('mbxOutboundBadge');
+            badge.style.display = 'none';
+            try {
+                const res = await fetch(API_BASE + 'get_mailbox_outbound.php?mailbox_id=' + activityMailboxId + '&page=1');
+                const data = await res.json();
+                if (data.success && data.failed > 0) {
+                    badge.textContent = data.failed;
+                    badge.style.display = '';
+                }
+            } catch (e) { /* a missing badge must never break the modal */ }
+        }
+
+        async function loadOutbound(mailboxId, search, page) {
+            const tbody = document.getElementById('outboundList');
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Loading...</td></tr>';
+            try {
+                let url = API_BASE + 'get_mailbox_outbound.php?mailbox_id=' + mailboxId + '&page=' + page;
+                if (search) url += '&search=' + encodeURIComponent(search);
+                const status = document.getElementById('outboundStatus').value;
+                if (status) url += '&status=' + encodeURIComponent(status);
+
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!data.success) {
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#d13438;">${escapeHtml(data.error || 'Could not load the send log')}</td></tr>`;
+                    return;
+                }
+                if (!data.entries.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted,#666);">Nothing sent from this mailbox yet.</td></tr>';
+                } else {
+                    tbody.innerHTML = data.entries.map(e => {
+                        const failed  = e.status === 'failed';
+                        // A deliberate non-send (#80): no template covered this sender.
+                        // It MUST NOT render as "Sent" — this row exists precisely
+                        // because an email did not go, and labelling it Sent would put
+                        // the wrong answer in the one place somebody comes looking.
+                        const skipped = e.status === 'skipped';
+                        // The error, or the reason nothing was sent, is why anybody
+                        // opens this tab — shown in the row rather than behind a click.
+                        const note = (failed || skipped) && e.error_message
+                            ? `<div style="margin-top:4px; font-size:11px; color:${failed ? '#a4262c' : 'var(--text-muted,#666)'}; white-space:normal;">${escapeHtml(e.error_message)}</div>` : '';
+                        const ticket = e.ticket_id
+                            ? ` <a href="../?ticket_id=${e.ticket_id}" style="font-size:11px;">#${e.ticket_id}</a>` : '';
+                        const cls   = failed ? 'failed' : (skipped ? 'skipped' : 'sent');
+                        const label = failed ? 'Failed' : (skipped ? 'Not sent' : 'Sent');
+                        return `<tr>
+                            <td style="white-space:nowrap;">${fmtDateTime(e.created_datetime)}</td>
+                            <td>${escapeHtml(e.to_address || '')}${ticket}</td>
+                            <td>${escapeHtml(e.subject || '')}${note}</td>
+                            <td style="white-space:nowrap;">${escapeHtml(e.route_label || e.route)}</td>
+                            <td><span class="mbx-result ${cls}">${label}</span></td>
+                        </tr>`;
+                    }).join('');
+                }
+                renderLogPagination(data, page, 'outbound');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#d13438;">${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+
+        function renderLogPagination(data, page, which) {
+            const pag = document.getElementById('activityPagination');
+            const totalPages = Math.max(1, Math.ceil(data.total / data.per_page));
+            const from = data.total === 0 ? 0 : ((page - 1) * data.per_page) + 1;
+            const to = Math.min(page * data.per_page, data.total);
+            pag.innerHTML = `<span>${from}-${to} of ${data.total}</span>
+                <span>
+                    <button type="button" class="btn btn-secondary" style="padding:3px 10px; font-size:12px;" ${page <= 1 ? 'disabled' : ''} onclick="loadMailboxLog(${page - 1})">Previous</button>
+                    <button type="button" class="btn btn-secondary" style="padding:3px 10px; font-size:12px;" ${page >= totalPages ? 'disabled' : ''} onclick="loadMailboxLog(${page + 1})">Next</button>
+                </span>`;
         }
 
         function closeActivityModal() {
@@ -3863,11 +6911,20 @@ $translationNamespaces = ['common', 'tickets'];
                 window._activityLogs = data.entries.map(e => e.processing_log || null);
 
                 tbody.innerHTML = data.entries.map((e, idx) => {
-                    const dt = new Date(e.created_datetime + 'Z').toLocaleString();
+                    const dt = fmtDateTime(e.created_datetime);
                     const badge = e.action === 'imported'
                         ? '<span style="display: inline-block; padding: 2px 8px; background: #d4edda; color: #155724; border-radius: 10px; font-size: 11px;">Imported</span>'
+                        : e.action === 'already_imported'
+                        ? '<span style="display: inline-block; padding: 2px 8px; background: #e2e3e5; color: #383d41; border-radius: 10px; font-size: 11px;">Already imported</span>'
                         : '<span style="display: inline-block; padding: 2px 8px; background: #f8d7da; color: #721c24; border-radius: 10px; font-size: 11px;">Rejected</span>';
-                    const from = escapeHtml(e.from_name ? e.from_name + ' <' + e.from_address + '>' : e.from_address);
+                    const fromAddr = (e.from_address || '').trim();
+                    const fromNm   = (e.from_name || '').trim();
+                    // A portal requester with no mailbox has a name and no address.
+                    // Plain + concatenation would render the literal text "null" here,
+                    // since this is not passed through escapeHtml first.
+                    const from = escapeHtml(
+                        fromNm && fromAddr ? fromNm + ' <' + fromAddr + '>' : (fromNm || fromAddr)
+                    );
                     return `<tr style="cursor: pointer;" onclick="showProcessingLog(window._activityLogs[${idx}])">
                         <td style="white-space: nowrap;">${dt}</td>
                         <td>${from}</td>
@@ -3901,308 +6958,15 @@ $translationNamespaces = ['common', 'tickets'];
             }
         }
 
-        // Analyst Functions
-        let analysts = [];
 
-        async function loadAnalysts() {
-            try {
-                const response = await fetch(API_BASE + 'get_analysts.php');
-                const data = await response.json();
-
-                if (data.success) {
-                    analysts = data.analysts;
-                    renderAnalysts(analysts);
-                } else {
-                    console.error('Error loading analysts:', data.error);
-                    document.getElementById('analysts-list').innerHTML =
-                        '<tr><td colspan="6" style="text-align: center; color: red;">Error: ' + data.error + '</td></tr>';
-                }
-            } catch (error) {
-                console.error('Error loading analysts:', error);
-                document.getElementById('analysts-list').innerHTML =
-                    '<tr><td colspan="6" style="text-align: center; color: red;">Failed to load analysts.</td></tr>';
-            }
-        }
-
-        async function renderAnalysts(analystsList) {
-            const tbody = document.getElementById('analysts-list');
-
-            if (analystsList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No analysts found.</td></tr>';
-                return;
-            }
-
-            // Load team assignments for all analysts
-            for (const analyst of analystsList) {
-                if (!analystTeams[analyst.id]) {
-                    try {
-                        const response = await fetch(`${API_BASE}get_analyst_teams.php?analyst_id=${analyst.id}`);
-                        const data = await response.json();
-                        analystTeams[analyst.id] = data.success ? data.teams : [];
-                    } catch (e) {
-                        analystTeams[analyst.id] = [];
-                    }
-                }
-            }
-
-            tbody.innerHTML = analystsList.map(a => {
-                const statusBadge = a.is_active
-                    ? '<span class="status-badge status-active">Active</span>'
-                    : '<span class="status-badge status-inactive">Inactive</span>';
-
-                const lastLogin = a.last_login_datetime
-                    ? new Date(a.last_login_datetime).toLocaleString()
-                    : 'Never';
-
-                const aTeams = analystTeams[a.id] || [];
-                const teamsText = aTeams.length > 0
-                    ? aTeams.map(t => `<span class="status-badge" style="background: #e8f5e9; color: #2e7d32; margin-right: 4px;">${escapeHtml(t.name)}</span>`).join('')
-                    : '<span style="color: var(--text-faint, #999);">None</span>';
-
-                const safeName = escapeHtml(a.full_name).replace(/'/g, "\\'");
-                const safeUsername = escapeHtml(a.username).replace(/'/g, "\\'");
-
-                // Multi-tenancy: flag analysts restricted to specific companies.
-                // All-access analysts (and every analyst on a single-company install)
-                // show nothing.
-                const grantCount = (a.tenant_ids || []).length;
-                const accessChip = a.can_access_all_tenants ? '' :
-                    `<span class="status-badge" style="background:#fff3e0; color:#e65100; margin-left:6px;" title="Access limited to ${grantCount} compan${grantCount === 1 ? 'y' : 'ies'}">${grantCount} compan${grantCount === 1 ? 'y' : 'ies'}</span>`;
-
-                return `
-                    <tr>
-                        <td><strong>${escapeHtml(a.username)}</strong></td>
-                        <td>${escapeHtml(a.full_name)}${accessChip}</td>
-                        <td>${escapeHtml(a.email || '')}</td>
-                        <td>${teamsText}</td>
-                        <td>${statusBadge}</td>
-                        <td>${lastLogin}</td>
-                        <td>
-                            <button class="action-btn" onclick="editAnalyst(${a.id})" title="${t('common.edit')}">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                            </button>
-                            <button class="action-btn" onclick="openTeamAssignment('analyst', ${a.id}, '${safeName}')" title="${t('tickets.settings.tooltips.assign_teams')}">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                            </button>
-                            <button class="action-btn" onclick="openPasswordResetModal(${a.id}, '${safeName}')" title="${t('tickets.settings.tooltips.reset_password')}">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
-                            </button>
-                            <button class="action-btn delete" onclick="deleteAnalyst(${a.id}, '${safeUsername}')" title="${t('common.delete')}">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        // Multi-tenancy: companies for the analyst access control (cached, active only).
-        let analystCompaniesCache = null;
-        async function loadAnalystCompanies() {
-            if (analystCompaniesCache !== null) return analystCompaniesCache;
-            try {
-                const r = await fetch('../../api/system/get_tenants.php');
-                const d = await r.json();
-                analystCompaniesCache = (d.success ? d.companies : []).filter(c => c.is_active);
-            } catch (e) { analystCompaniesCache = []; }
-            return analystCompaniesCache;
-        }
-        function syncAnalystAccess() {
-            const all = document.getElementById('analystAllAccess').checked;
-            document.getElementById('analystCompanyList').style.display = all ? 'none' : '';
-        }
-        function renderAnalystCompanyList(companies, grantedIds) {
-            const granted = new Set((grantedIds || []).map(Number));
-            document.getElementById('analystCompanyList').innerHTML = companies.map(c => `
-                <label style="display:flex; align-items:center; gap:8px; padding:4px 2px; font-size:13px; cursor:pointer;">
-                    <input type="checkbox" class="analyst-company-cb" value="${c.id}" ${granted.has(Number(c.id)) ? 'checked' : ''}>
-                    ${escapeHtml(c.name)}
-                </label>`).join('');
-        }
-
-        function openAnalystModal(analyst = null) {
-            document.getElementById('analystModalTitle').textContent = analyst ? t('tickets.settings.modals.analyst.edit_title') : t('tickets.settings.modals.analyst.add_title');
-            document.getElementById('analystId').value = analyst ? analyst.id : '';
-            document.getElementById('analystUsername').value = analyst ? analyst.username : '';
-            document.getElementById('analystFullName').value = analyst ? analyst.full_name : '';
-            document.getElementById('analystEmail').value = analyst ? (analyst.email || '') : '';
-            document.getElementById('analystPassword').value = '';
-            document.getElementById('analystActive').checked = analyst ? analyst.is_active : true;
-            document.getElementById('analystAuthProvider').value = (analyst && analyst.auth_provider_id) ? String(analyst.auth_provider_id) : '';
-
-            // Password is required only for new analysts
-            const passwordInput = document.getElementById('analystPassword');
-            const passwordGroup = document.getElementById('analystPasswordGroup');
-            if (analyst) {
-                passwordInput.removeAttribute('required');
-                passwordGroup.querySelector('small').textContent = 'Leave blank to keep existing password.';
-            } else {
-                passwordInput.setAttribute('required', 'required');
-                passwordGroup.querySelector('small').textContent = 'Required for new analysts.';
-            }
-
-            // Multi-tenancy company access — shown only when more than one company exists.
-            const accessGroup = document.getElementById('analystAccessGroup');
-            loadAnalystCompanies().then(companies => {
-                if (companies.length > 1) {
-                    accessGroup.style.display = '';
-                    // New analysts default to all-access (matches the install default).
-                    document.getElementById('analystAllAccess').checked = analyst ? !!analyst.can_access_all_tenants : true;
-                    renderAnalystCompanyList(companies, analyst ? (analyst.tenant_ids || []) : []);
-                    syncAnalystAccess();
-                } else {
-                    accessGroup.style.display = 'none';
-                }
-            });
-
-            document.getElementById('analystModal').classList.add('active');
-        }
-
-        function closeAnalystModal() {
-            document.getElementById('analystModal').classList.remove('active');
-        }
-
-        function editAnalyst(id) {
-            const analyst = analysts.find(a => a.id == id);
-            if (analyst) {
-                openAnalystModal(analyst);
-            } else {
-                showToast('Analyst not found.', 'error');
-            }
-        }
-
-        async function deleteAnalyst(id, username) {
-            const ok = await showConfirm({
-                title: 'Delete analyst',
-                message: `Are you sure you want to delete the analyst "${username}"?`,
-                okLabel: 'Delete',
-                okClass: 'danger'
-            });
-            if (!ok) return;
-
-            try {
-                const response = await fetch(API_BASE + 'delete_analyst.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: id })
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    showToast('Analyst deleted', 'success');
-                    loadAnalysts();
-                } else {
-                    showToast('Error deleting analyst: ' + data.error, 'error');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Failed to delete analyst', 'error');
-            }
-        }
-
-        function openPasswordResetModal(id, name) {
-            document.getElementById('resetAnalystId').value = id;
-            document.getElementById('resetAnalystName').textContent = name;
-            document.getElementById('newPassword').value = '';
-            document.getElementById('confirmPassword').value = '';
-            document.getElementById('passwordResetModal').classList.add('active');
-        }
-
-        function closePasswordResetModal() {
-            document.getElementById('passwordResetModal').classList.remove('active');
-        }
-
-        // Analyst form submission
-        document.getElementById('analystForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-
-            const formData = {
-                id: document.getElementById('analystId').value || null,
-                username: document.getElementById('analystUsername').value,
-                full_name: document.getElementById('analystFullName').value,
-                email: document.getElementById('analystEmail').value || null,
-                password: document.getElementById('analystPassword').value || null,
-                is_active: document.getElementById('analystActive').checked,
-                auth_provider_id: document.getElementById('analystAuthProvider').value || null
-            };
-
-            // Multi-tenancy: send company access only when the control is shown
-            // (more than one company). Omitting it on N=1 leaves the default intact.
-            const accessGroup = document.getElementById('analystAccessGroup');
-            if (accessGroup.style.display !== 'none') {
-                const allAccess = document.getElementById('analystAllAccess').checked;
-                formData.can_access_all_tenants = allAccess ? 1 : 0;
-                formData.tenant_ids = allAccess ? [] :
-                    Array.from(document.querySelectorAll('.analyst-company-cb:checked')).map(cb => parseInt(cb.value, 10));
-            }
-
-            try {
-                const response = await fetch(API_BASE + 'save_analyst.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    closeAnalystModal();
-                    showToast('Analyst saved', 'success');
-                    loadAnalysts();
-                } else {
-                    showToast('Error saving analyst: ' + data.error, 'error');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Failed to save analyst', 'error');
-            }
-        });
-
-        // Password reset form submission
-        document.getElementById('passwordResetForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-
-            if (newPassword !== confirmPassword) {
-                showToast('Passwords do not match.', 'error');
-                return;
-            }
-
-            if (newPassword.length < 6) {
-                showToast('Password must be at least 6 characters.', 'error');
-                return;
-            }
-
-            try {
-                const response = await fetch(API_BASE + 'reset_analyst_password.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        id: document.getElementById('resetAnalystId').value,
-                        password: newPassword
-                    })
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    closePasswordResetModal();
-                    showToast('Password reset successfully.', 'success');
-                } else {
-                    showToast('Error resetting password: ' + data.error, 'error');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showToast('Failed to reset password', 'error');
-            }
-        });
-
-        // Load analysts on page load
+        // Load remaining settings on page load (analyst management moved to
+        // System → Analysts).
         document.addEventListener('DOMContentLoaded', function() {
-            loadAnalysts();
-            loadGeneralSettings();
-            loadReplyCleanupSettings();
-            loadCsatSettings();
+            if (document.getElementById('general-tab')) loadGeneralSettings();
+            loadPrivacySettings();
+            loadMergeSettings();
+            if (document.getElementById('reply-cleanup-tab')) loadReplyCleanupSettings();
+            if (document.getElementById('csat-tab')) loadCsatSettings();
         });
 
         // ============================
@@ -4239,6 +7003,7 @@ $translationNamespaces = ['common', 'tickets'];
 
                 document.getElementById('csatDelay').value = data.delay_minutes ?? 0;
                 document.getElementById('csatOnePerTicket').checked = data.one_per_ticket !== '0';
+                document.getElementById('csatInChannel').checked = data.in_channel === '1';
 
                 const scale = document.querySelector(`input[name="csatScale"][value="${data.scale || 'stars'}"]`);
                 if (scale) scale.checked = true;
@@ -4247,12 +7012,13 @@ $translationNamespaces = ['common', 'tickets'];
             }
         }
 
-        document.getElementById('csatSettingsForm').addEventListener('submit', async function(e) {
+        document.getElementById('csatSettingsForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const payload = {
                 mode:           document.querySelector('input[name="csatMode"]:checked')?.value || 'off',
                 delay_minutes:  parseInt(document.getElementById('csatDelay').value || '0', 10),
                 one_per_ticket: document.getElementById('csatOnePerTicket').checked ? '1' : '0',
+                in_channel:     document.getElementById('csatInChannel').checked ? '1' : '0',
                 scale:          document.querySelector('input[name="csatScale"]:checked')?.value || 'stars',
             };
             try {
@@ -4281,7 +7047,7 @@ $translationNamespaces = ['common', 'tickets'];
             }
         });
 
-        document.getElementById('replyCleanupForm').addEventListener('submit', async function(e) {
+        document.getElementById('replyCleanupForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const payload = {
                 tone:                document.getElementById('rcTone').value,
@@ -4308,75 +7074,64 @@ $translationNamespaces = ['common', 'tickets'];
         // Connection testing is handled by the shared AI panel's Test button.
 
         // General Settings Functions
-        const timezones = [
-            'UTC',
-            'Europe/London',
-            'Europe/Paris',
-            'Europe/Berlin',
-            'Europe/Amsterdam',
-            'Europe/Brussels',
-            'Europe/Dublin',
-            'Europe/Madrid',
-            'Europe/Rome',
-            'Europe/Zurich',
-            'Europe/Vienna',
-            'Europe/Warsaw',
-            'Europe/Stockholm',
-            'Europe/Oslo',
-            'Europe/Copenhagen',
-            'Europe/Helsinki',
-            'Europe/Athens',
-            'Europe/Moscow',
-            'America/New_York',
-            'America/Chicago',
-            'America/Denver',
-            'America/Los_Angeles',
-            'America/Phoenix',
-            'America/Toronto',
-            'America/Vancouver',
-            'America/Mexico_City',
-            'America/Sao_Paulo',
-            'America/Buenos_Aires',
-            'Asia/Tokyo',
-            'Asia/Shanghai',
-            'Asia/Hong_Kong',
-            'Asia/Singapore',
-            'Asia/Seoul',
-            'Asia/Bangkok',
-            'Asia/Jakarta',
-            'Asia/Manila',
-            'Asia/Kolkata',
-            'Asia/Mumbai',
-            'Asia/Dubai',
-            'Asia/Jerusalem',
-            'Australia/Sydney',
-            'Australia/Melbourne',
-            'Australia/Brisbane',
-            'Australia/Perth',
-            'Pacific/Auckland',
-            'Pacific/Fiji',
-            'Africa/Cairo',
-            'Africa/Johannesburg',
-            'Africa/Lagos'
-        ];
-
-        function populateTimezoneDropdown(selectedTimezone = '') {
-            const select = document.getElementById('systemTimezone');
-            select.innerHTML = timezones.map(tz =>
-                `<option value="${tz}"${tz === selectedTimezone ? ' selected' : ''}>${tz}</option>`
-            ).join('');
-        }
-
         async function loadGeneralSettings() {
-            populateTimezoneDropdown();
-
             try {
                 const response = await fetch(API_SETTINGS + 'get_system_settings.php');
                 const data = await response.json();
 
                 if (data.success) {
-                    document.getElementById('systemName').value = data.settings.system_name || '';
-                    populateTimezoneDropdown(data.settings.timezone || 'Europe/London');
+                    // Absent (never saved) means ON — the requester email template has
+                    // always promised a reply reopens the ticket, so the stored default
+                    // matches what customers were already told. Mirrors
+                    // customerReplyReopensTickets() in includes/ticket_reply.php.
+                    const reopen = data.settings.reopen_on_customer_reply;
+                    document.getElementById('reopenOnCustomerReply').checked =
+                        (reopen === null || reopen === undefined || reopen === '') ? true : (reopen === '1');
+                    // The workspace (Off) and who may export the list (Administrators
+                    // only) when never saved - the same defaults the server falls
+                    // back to (PR #211, #213).
+                    const setSelect = (id, value, fallback) => {
+                        const sel = document.getElementById(id);
+                        sel.value = value;
+                        if (sel.value !== value) sel.value = fallback;
+                    };
+                    setSelect('ticketWorkspaceMode', data.settings.ticket_workspace_mode, 'off');
+                    setSelect('ticketListExport', data.settings.ticket_list_export, 'admins');
+                    // Snooze wake hour (#933) — 09:00 when never saved, matching
+                    // snoozeWakeHour() in includes/ticket_snooze.php.
+                    // Long-message display (#104). Defaults mirror
+                    // ticketDisplaySettings() so an install that has never saved
+                    // these sees the same thing the reading pane is doing.
+                    const cb = (id, key, dflt) => document.getElementById(id).checked =
+                        data.settings[key] === undefined ? dflt : data.settings[key] === '1';
+                    cb('collapseEnabled',      'ticket_collapse_enabled',       true);
+                    // ⚠️ default FALSE, unlike everything around it. An unloaded
+                    // checkbox looks exactly like OFF, and for these two that is
+                    // the safe direction to be wrong in.
+                    cb('aiSummaryEnabled',     'ticket_ai_summary_enabled',     false);
+                    cb('aiSummaryIncludeNotes','ticket_ai_summary_include_notes', true);
+                    cb('aiReadEnabled',        'ticket_ai_read_enabled',        false);
+                    // Never saved = block: the safe way to be wrong (#62).
+                    document.getElementById('aiConfidential').value = data.settings.ticket_ai_confidential === 'allow' ? 'allow' : 'block';
+                    cb('collapseExpandNewest', 'ticket_collapse_expand_newest', true);
+                    cb('collapseQuoted',       'ticket_collapse_quoted',        true);
+                    cb('collapseRemember',     'ticket_collapse_remember',      true);
+                    cb('groupOlder',          'ticket_group_older',            true);
+                    cb('flagDuplicates',      'ticket_flag_duplicates',        true);
+                    document.getElementById('teamFolders').value = data.settings.ticket_team_folders === 'mine' ? 'mine' : 'all';
+                    document.getElementById('groupShow').value = parseInt(data.settings.ticket_group_show, 10) || 6;
+                    // ⚠️ '|| N' would turn a saved 0 into N, and 0 is the setting that
+                    // means "never refresh by itself" — the one an administrator is most
+                    // likely to have chosen deliberately.
+                    const autoAfter = parseInt(data.settings.ticket_ai_summary_auto_after, 10);
+                    document.getElementById('aiSummaryAutoAfter').value = Number.isInteger(autoAfter) ? String(autoAfter) : '0';
+                    document.getElementById('aiSummaryMaxMessages').value = parseInt(data.settings.ticket_ai_summary_max_messages, 10) || 60;
+                    document.getElementById('collapseLines').value =
+                        parseInt(data.settings.ticket_collapse_lines, 10) || 12;
+
+                    const wakeHour = parseInt(data.settings.snooze_wake_hour, 10);
+                    document.getElementById('snoozeWakeHour').value =
+                        (Number.isInteger(wakeHour) && wakeHour >= 0 && wakeHour <= 23) ? String(wakeHour) : '9';
                 } else {
                     console.error('Error loading settings:', data.error);
                 }
@@ -4385,13 +7140,356 @@ $translationNamespaces = ['common', 'tickets'];
             }
         }
 
+        // Merge behaviour — install-wide policy for what a merge does.
+        // Defaults here MUST match mergeSettings() in includes/ticket_merge.php:
+        // survivor + thread, the pair that keeps the requester's reference alive and
+        // the conversation searchable. A screen that defaulted differently from the
+        // engine would show the wrong answer on a fresh install.
+        async function loadMergeSettings() {
+            const form = document.getElementById('mergeBehaviourForm');
+            if (!form) return;                       // tab not visible to this analyst
+            try {
+                const response = await fetch(API_SETTINGS + 'get_system_settings.php');
+                const data = await response.json();
+                if (!data.success) return;
+
+                const ref  = data.settings.merge_reference_mode || 'survivor';
+                const orig = data.settings.merge_originals_mode || 'thread';
+                const ai   = data.settings.merge_ai_summary;
+
+                const refEl = document.querySelector('input[name="mergeReferenceMode"][value="' + ref + '"]')
+                           || document.querySelector('input[name="mergeReferenceMode"][value="survivor"]');
+                if (refEl) refEl.checked = true;
+
+                const origEl = document.querySelector('input[name="mergeOriginalsMode"][value="' + orig + '"]')
+                            || document.querySelector('input[name="mergeOriginalsMode"][value="thread"]');
+                if (origEl) origEl.checked = true;
+
+                // Absent = on: the summary is the point of the feature, and it is
+                // harmless when no AI provider is configured (it simply doesn't run).
+                document.getElementById('mergeAiSummary').checked = (ai === undefined || ai === null || ai === '' || ai === '1');
+            } catch (e) {
+                console.error('Error loading merge settings:', e);
+            }
+        }
+
+        // ── Attachment indexing (discussion #53) ────────────────────────────
+        // Both switches default ON when the setting has never been written, so a
+        // fresh install reads attachments without anyone turning anything on.
+        async function loadIndexingSettings() {
+            const cronEl = document.getElementById('extractCron');
+            if (!cronEl) return;
+            try {
+                // get_system_settings.php returns the whole set; there is no key
+                // filter, so don't pass one and imply there is.
+                const d = await (await fetch(API_SETTINGS + 'get_system_settings.php')).json();
+                const s = (d && d.settings) || {};
+                cronEl.checked = s.attachment_extract_cron !== '0';
+                document.getElementById('extractOpportunistic').checked = s.attachment_extract_opportunistic !== '0';
+            } catch (e) {
+                cronEl.checked = true;
+                document.getElementById('extractOpportunistic').checked = true;
+            }
+        }
+        loadIndexingSettings();
+
+        const indexingForm = document.getElementById('indexingForm');
+        if (indexingForm) {
+            indexingForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                try {
+                    const response = await fetch(API_SETTINGS + 'save_system_settings.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ settings: {
+                            attachment_extract_cron:          document.getElementById('extractCron').checked ? '1' : '0',
+                            attachment_extract_opportunistic: document.getElementById('extractOpportunistic').checked ? '1' : '0'
+                        } })
+                    });
+                    const data = await response.json();
+                    showToast(data.success ? t('tickets.settings.indexing.saved') : ('Error: ' + data.error), data.success ? 'success' : 'error');
+                } catch (err) {
+                    showToast('Failed to save settings', 'error');
+                }
+            });
+        }
+
+        const mergeForm = document.getElementById('mergeBehaviourForm');
+        if (mergeForm) {
+            mergeForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const ref  = document.querySelector('input[name="mergeReferenceMode"]:checked');
+                const orig = document.querySelector('input[name="mergeOriginalsMode"]:checked');
+                try {
+                    const response = await fetch(API_SETTINGS + 'save_system_settings.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ settings: {
+                            merge_reference_mode: ref  ? ref.value  : 'survivor',
+                            merge_originals_mode: orig ? orig.value : 'thread',
+                            merge_ai_summary:     document.getElementById('mergeAiSummary').checked ? '1' : '0'
+                        } })
+                    });
+                    const data = await response.json();
+                    showToast(data.success ? t('tickets.settings.merge.saved') : ('Error: ' + data.error), data.success ? 'success' : 'error');
+                } catch (err) {
+                    showToast('Failed to save settings', 'error');
+                }
+            });
+        }
+
+        // Privacy settings (what a requester sees of their own ticket in the portal)
+        async function loadPrivacySettings() {
+            try {
+                const response = await fetch(API_SETTINGS + 'get_system_settings.php');
+                const data = await response.json();
+                if (!data.success) return;
+                // Absent = hide. Mirrors portalThirdPartyPolicy() in
+                // includes/portal_visibility.php — a fresh install is protected
+                // before anyone finds this screen.
+                const v = data.settings.portal_third_party_visibility || 'hide';
+                const el = document.querySelector('input[name="thirdPartyVisibility"][value="' + v + '"]')
+                        || document.querySelector('input[name="thirdPartyVisibility"][value="hide"]');
+                if (el) el.checked = true;
+            } catch (e) {
+                console.error('Error loading privacy settings:', e);
+            }
+        }
+
+        const privacyForm = document.getElementById('privacySettingsForm');
+        if (privacyForm) {
+            privacyForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const chosen = document.querySelector('input[name="thirdPartyVisibility"]:checked');
+                try {
+                    const response = await fetch(API_SETTINGS + 'save_system_settings.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ settings: { portal_third_party_visibility: chosen ? chosen.value : 'hide' } })
+                    });
+                    const data = await response.json();
+                    showToast(data.success ? 'Settings saved' : ('Error: ' + data.error), data.success ? 'success' : 'error');
+                } catch (err) {
+                    showToast('Failed to save settings', 'error');
+                }
+            });
+        }
+
         // General settings form submission
-        document.getElementById('generalSettingsForm').addEventListener('submit', async function(e) {
+        // ════════════════════════════════════════════════════════════════
+        //  Ticket numbering (GH #71)
+        //
+        //  ⚠️ Every DOM touch is guarded: this <script> runs even when the tab
+        //  is not rendered, because the TAB is capability-gated and the script
+        //  is not. One addEventListener on a null element throws and silently
+        //  kills every function defined after it.
+        // ════════════════════════════════════════════════════════════════
+
+        function numT(k, v) { return window.t('tickets.settings.numbering.' + k, v); }
+        function numEl(id)  { return document.getElementById(id); }
+        function numPresent() { return !!numEl('numbering-tab'); }
+
+        function numStyle() {
+            const r = document.querySelector('input[name="numStyle"]:checked');
+            return r ? r.value : 'random';
+        }
+
+        /** Hide the format controls when the style is random — they do nothing there. */
+        function numSync() {
+            const box = numEl('numSequentialOnly');
+            if (box) box.style.display = numStyle() === 'sequential' ? '' : 'none';
+            numPreview();
+        }
+
+        let numPreviewTimer = null;
+        function numPreview() {
+            if (!numPresent()) return;
+            // Debounced: this fires on every keystroke in the format box.
+            clearTimeout(numPreviewTimer);
+            numPreviewTimer = setTimeout(numPreviewNow, 220);
+        }
+
+        async function numPreviewNow() {
+            const out = numEl('numPreviewOut');
+            const err = numEl('numFormatError');
+            if (!out) return;
+            try {
+                const res = await fetch(API_TICKETS + 'numbering_preview.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        style:  numStyle(),
+                        format: numEl("numFormat").value,
+                        start:  parseInt(numEl("numStart").value, 10) || 1,
+                        // The scope changes what counts as a valid format, so the
+                        // preview has to know about it or it would pass a format
+                        // that Save then rejects.
+                        scope:  numEl("numScope").value
+                    })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                if (data.problems && data.problems.length) {
+                    err.textContent = data.problems.join(' ');
+                    err.style.display = '';
+                    out.textContent = '—';
+                } else {
+                    err.style.display = 'none';
+                    out.textContent = (data.examples || []).join('   ');
+                }
+            } catch (e) {
+                out.textContent = '—';
+            }
+        }
+
+        async function numLoad() {
+            if (!numPresent()) return;
+            try {
+                const res  = await fetch(API_SETTINGS + 'get_system_settings.php');
+                const data = await res.json();
+                const s    = (data && data.settings) ? data.settings : {};
+
+                const style = s.ticket_number_style || 'random';
+                const radio = document.querySelector(`input[name="numStyle"][value="${style}"]`);
+                if (radio) radio.checked = true;
+                numEl('numFormat').value = s.ticket_number_format || 'TICKET-{######}';
+                numEl('numStart').value  = s.ticket_number_start  || '1';
+                numEl('numScope').value  = s.ticket_number_scope  || 'global';
+                numEl('numReset').value  = s.ticket_number_reset  || 'never';
+                numSync();
+            } catch (e) {
+                // ⚠️ Leave the controls as they are rather than showing defaults
+                // as if they were the saved values — an unloaded setting that
+                // looks like a real one gets saved back as fact.
+            }
+        }
+
+        if (numPresent()) {
+            numEl('numberingForm').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const settings = {
+                    ticket_number_style:  numStyle(),
+                    ticket_number_format: numEl('numFormat').value.trim(),
+                    ticket_number_start:  String(parseInt(numEl('numStart').value, 10) || 1),
+                    ticket_number_scope:  numEl('numScope').value,
+                    ticket_number_reset:  numEl('numReset').value
+                };
+                // ⚠️ Refuse to save a format the preview has already said is
+                // wrong. Live ticket creation would survive it — it proves each
+                // number unique against the table — but the per-type counting
+                // that was just asked for would silently do nothing.
+                const check = await fetch(API_TICKETS + 'numbering_preview.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        style: settings.ticket_number_style,
+                        format: settings.ticket_number_format,
+                        start: parseInt(settings.ticket_number_start, 10) || 1,
+                        scope: settings.ticket_number_scope
+                    })
+                }).then(r => r.json()).catch(() => null);
+                if (check && check.problems && check.problems.length) {
+                    showToast(check.problems.join(' '), 'error');
+                    return;
+                }
+                try {
+                    const res = await fetch(API_SETTINGS + 'save_system_settings.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ settings })
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.error);
+                    showToast(numT('saved'), 'success');
+                    // The renumber tool reads the SAVED settings, so a preview
+                    // taken before this save is stale.
+                    numSetRenumbered(false);
+                } catch (err) {
+                    showToast(err.message || 'Error', 'error');
+                }
+            });
+            document.addEventListener('DOMContentLoaded', numLoad);
+        }
+
+        /** Renumbering stays disabled until a preview has been looked at. */
+        function numSetRenumbered(ready) {
+            const btn  = numEl('numRenumberGo');
+            const hint = numEl('numRenumberHint');
+            if (!btn) return;
+            btn.disabled = !ready;
+            if (hint) hint.style.display = ready ? 'none' : '';
+        }
+
+        async function numRenumber(mode) {
+            if (!numPresent()) return;
+            if (mode === 'live') {
+                const ok = await showConfirm({
+                    title:   numT('renumber_confirm_title'),
+                    message: numT('renumber_confirm'),
+                    okLabel: numT('renumber_go'),
+                    okClass: 'danger'
+                });
+                if (!ok) return;
+            }
+            const out = numEl('numRenumberOut');
+            out.innerHTML = '<small style="color: var(--text-muted, #666);">…</small>';
+            try {
+                const res = await fetch(API_TICKETS + 'numbering_renumber.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                const row = p => `<div style="font-family: ui-monospace, Consolas, monospace; font-size:12px;">
+                        ${escapeHtml(p.from)} &rarr; <strong>${escapeHtml(p.to)}</strong></div>`;
+                const gap = data.changing > 10
+                    ? `<div style="color: var(--text-dim, #888); font-size:12px; margin:6px 0;">…</div>` : '';
+
+                out.innerHTML = `
+                    <div class="info-box" style="padding:12px 14px;border-radius:6px;background: var(--surface-2, #fafafa);border:1px solid var(--border-soft, #eee);">
+                        <strong>${mode === 'preview' ? numT('renumber_preview_heading') : numT('renumber_done_heading')}</strong>
+                        <div style="margin:8px 0;">${numT('renumber_summary', {
+                            changing: data.changing, total: data.total, skipped: data.skipped })}</div>
+                        ${(data.first || []).map(row).join('')}
+                        ${gap}
+                        ${data.changing > 5 ? (data.last || []).map(row).join('') : ''}
+                        ${data.next_after ? `<div style="margin-top:10px;color: var(--text-muted, #666);font-size:12px;">${numT("renumber_next_after", { number: escapeHtml(data.next_after) })}</div>` : ""}
+                    </div>`;
+
+                if (mode === 'preview') {
+                    numSetRenumbered(data.changing > 0);
+                } else {
+                    numSetRenumbered(false);
+                    showToast(numT('renumber_done_heading'), 'success');
+                }
+            } catch (e) {
+                out.innerHTML = `<div style="color: var(--danger-text, #c0392b);">${escapeHtml(e.message || 'Error')}</div>`;
+                numSetRenumbered(false);
+            }
+        }
+
+        document.getElementById('generalSettingsForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const settings = {
-                system_name: document.getElementById('systemName').value,
-                timezone: document.getElementById('systemTimezone').value
+                ticket_workspace_mode: document.getElementById('ticketWorkspaceMode').value,
+                ticket_list_export: document.getElementById('ticketListExport').value,
+                reopen_on_customer_reply: document.getElementById('reopenOnCustomerReply').checked ? '1' : '0',
+                snooze_wake_hour: document.getElementById('snoozeWakeHour').value,
+                ticket_collapse_enabled:       document.getElementById('collapseEnabled').checked ? '1' : '0',
+                ticket_ai_summary_enabled:       document.getElementById('aiSummaryEnabled').checked ? '1' : '0',
+                ticket_ai_summary_auto_after:    document.getElementById('aiSummaryAutoAfter').value,
+                ticket_ai_summary_max_messages:  document.getElementById('aiSummaryMaxMessages').value,
+                ticket_ai_summary_include_notes: document.getElementById('aiSummaryIncludeNotes').checked ? '1' : '0',
+                ticket_ai_read_enabled:          document.getElementById('aiReadEnabled').checked ? '1' : '0',
+                ticket_ai_confidential:          document.getElementById('aiConfidential').value,
+                ticket_collapse_lines:         String(document.getElementById('collapseLines').value || 12),
+                ticket_collapse_expand_newest: document.getElementById('collapseExpandNewest').checked ? '1' : '0',
+                ticket_collapse_quoted:        document.getElementById('collapseQuoted').checked ? '1' : '0',
+                ticket_collapse_remember:      document.getElementById('collapseRemember').checked ? '1' : '0',
+                ticket_group_older:            document.getElementById('groupOlder').checked ? '1' : '0',
+                ticket_group_show:             String(document.getElementById('groupShow').value || 6),
+                ticket_flag_duplicates:        document.getElementById('flagDuplicates').checked ? '1' : '0',
+                ticket_team_folders:           document.getElementById('teamFolders').value === 'mine' ? 'mine' : 'all'
             };
 
             try {
@@ -4419,13 +7517,16 @@ $translationNamespaces = ['common', 'tickets'];
         const EVENT_LABELS = {
             'new_ticket_email': 'New ticket from email',
             'ticket_assigned': 'Ticket assigned',
+            'analyst_assigned': 'Assigned to an analyst',
             'ticket_closed': 'Ticket closed',
+            'note_shared': 'Note shared with requester',
             'csat_request': 'CSAT survey'
         };
 
         let emailTemplates = [];
 
         async function loadEmailTemplates() {
+            initTemplateBodyEditor();
             try {
                 const response = await fetch(API_BASE + 'get_email_templates.php');
                 const data = await response.json();
@@ -4436,12 +7537,115 @@ $translationNamespaces = ['common', 'tickets'];
             } catch (error) {
                 console.error('Error loading templates:', error);
             }
+            await loadPublicBaseUrl();
+            refreshBaseUrlWarning();
+            refreshScopeWarning();
         }
 
+        // ==================== Public web address (#80) ====================
+        // What [ticket_url] resolves to. Kept here because this is the tab where
+        // [ticket_url] gets typed.
+
+        // ⚠️ `loaded` is not decoration. If the fetch fails we know NOTHING about
+        // whether an address is configured, and "not configured" is exactly what an
+        // empty field and a missing flag look like. Showing the warning on a failed
+        // load would tell an administrator who has set this up correctly that they
+        // have not — so the warning stays hidden until we have actually been told.
+        let baseUrlState = { loaded: false, configured: false, dismissed: false, scopeDismissed: false, example: '' };
+
+        async function loadPublicBaseUrl() {
+            const input = document.getElementById('tplBaseUrl');
+            if (!input) return;                        // tab not visible to this analyst
+            try {
+                const resp = await fetch(API_BASE + 'get_public_base_url.php');
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'load failed');
+                input.value = data.base_url || '';
+                baseUrlState = {
+                    loaded: true,
+                    configured: !!data.is_configured,
+                    dismissed: !!data.warning_dismissed,
+                    scopeDismissed: !!data.scope_warning_dismissed,
+                    example: data.effective_url || ''
+                };
+                const ex = document.getElementById('tplBaseUrlExample');
+                if (ex && baseUrlState.example) {
+                    ex.textContent = (data.inherited ? t('tickets.settings.base_url.inherited') + ' ' : '')
+                                   + t('tickets.settings.base_url.example') + ' ' + baseUrlState.example;
+                }
+                // Preview the link on THIS install's address. The other sample values
+                // are invented and should be — nobody checks a preview to find out
+                // what the requester is called — but a made-up host in the one field
+                // whose whole purpose is "will this link work?" answers the question
+                // wrongly every time. Left as the example.com placeholder only when
+                // the address could not be read, where obviously-fake is the honest
+                // thing to show.
+                if (data.effective_root) {
+                    TPL_PREVIEW_SAMPLES.ticket_url = data.effective_root + '/self-service/tickets.php?id=409';
+                }
+            } catch (e) {
+                console.error('Error loading public base URL:', e);
+                baseUrlState = { loaded: false, configured: false, dismissed: false, scopeDismissed: false, example: '' };
+            }
+        }
+
+        // Shown only when the two facts are both true: something actually uses
+        // [ticket_url], and nothing is configured for it to resolve against. A
+        // warning about a merge code nobody has used would be noise on every
+        // install that never wanted the feature.
+        function refreshBaseUrlWarning() {
+            const box = document.getElementById('tplBaseUrlWarning');
+            if (!box) return;
+
+            const users = (emailTemplates || []).filter(tpl =>
+                ((tpl.body_template || '') + (tpl.subject_template || '')).includes('[ticket_url]'));
+
+            const show = baseUrlState.loaded && !baseUrlState.configured
+                      && !baseUrlState.dismissed && users.length > 0;
+
+            box.style.display = show ? '' : 'none';
+            if (show) {
+                document.getElementById('tplBaseUrlWarningBody').textContent =
+                    t('tickets.settings.base_url.warn_body').replace('{count}', users.length);
+            }
+        }
+
+        async function savePublicBaseUrl() {
+            const input = document.getElementById('tplBaseUrl');
+            if (!input) return;
+            try {
+                const resp = await fetch(API_BASE + 'save_public_base_url.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ base_url: input.value })
+                });
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error, 'error'); return; }
+                showToast(t('tickets.settings.base_url.saved'), 'success');
+                // Re-read rather than assume: the server normalises what was typed,
+                // and the example line has to show what will really be sent.
+                await loadPublicBaseUrl();
+                refreshBaseUrlWarning();
+            } catch (e) {
+                showToast(t('tickets.settings.base_url.save_failed'), 'error');
+            }
+        }
+
+        async function dismissBaseUrlWarning() {
+            try {
+                await fetch(API_BASE + 'set_base_url_warning_dismissed.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dismissed: true })
+                });
+            } catch (e) { /* dismissing is a convenience; a failure just leaves it showing */ }
+            baseUrlState.dismissed = true;
+            refreshBaseUrlWarning();
+        }
         function renderEmailTemplates(templates) {
             const tbody = document.getElementById('email-templates-list');
             if (templates.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-faint, #999);">No email templates configured</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-faint, #999);">No email templates configured</td></tr>';
                 return;
             }
 
@@ -4449,6 +7653,7 @@ $translationNamespaces = ['common', 'tickets'];
                 <tr>
                     <td>${escapeHtml(tpl.name)}</td>
                     <td>${EVENT_LABELS[tpl.event_trigger] || tpl.event_trigger}</td>
+                    <td>${templateAudienceBadge(tpl)} ${templateScopeBadge(tpl)}</td>
                     <td>${escapeHtml(tpl.subject_template)}</td>
                     <td>${tpl.display_order}</td>
                     <td><span class="status-badge status-${tpl.is_active == 1 ? 'active' : 'inactive'}">${tpl.is_active == 1 ? 'Active' : 'Inactive'}</span></td>
@@ -4464,12 +7669,264 @@ $translationNamespaces = ['common', 'tickets'];
             `).join('');
         }
 
+
+        // ==================== Sender rules (#80) ====================
+        // Which senders a template applies to. The editor holds them in memory while
+        // the modal is open and posts the whole list on save.
+
+        let templateRules = [];        // [{match_type, match_value}]
+
+        const TPL_EVENT_LABELS = {
+            new_ticket_email: t('tickets.settings.modals.template.event_new_ticket'),
+            ticket_assigned:  t('tickets.settings.modals.template.event_assigned'),
+            analyst_assigned: t('tickets.settings.modals.template.event_analyst_assigned'),
+            ticket_closed:    t('tickets.settings.modals.template.event_closed'),
+            note_shared:      t('tickets.settings.modals.template.event_note_shared'),
+            csat_request:     t('tickets.settings.modals.template.event_csat_request')
+        };
+
+        function switchTemplateScope() {
+            const picked = document.querySelector('input[name="tplScope"]:checked');
+            const restricted = picked && picked.value === 'restricted';
+            document.getElementById('tplRulesBox').style.display = restricted ? '' : 'none';
+        }
+
+        function renderTemplateRules() {
+            const box = document.getElementById('tplRulesList');
+            if (!box) return;
+            if (!templateRules.length) {
+                box.innerHTML = '<span style="font-size:12px;color:var(--text-muted,#666);">'
+                              + escapeHtml(t('tickets.settings.scope.rule_placeholder')) + '</span>';
+                return;
+            }
+            box.innerHTML = templateRules.map(function (r, i) {
+                const shown = r.match_type === 'address' ? r.match_value : '@' + r.match_value;
+                return '<span class="tpl-rule-chip">' + escapeHtml(shown)
+                     + '<button type="button" onclick="removeTemplateRule(' + i + ')">&times;</button></span>';
+            }).join('');
+        }
+
+        // The @ decides the type, rather than a dropdown asking the admin to classify
+        // what they just typed. "someone@a.com" is an address, "a.com" is a domain,
+        // and "@a.com" is the domain somebody naturally writes for one.
+        function addTemplateRule() {
+            const input = document.getElementById('tplRuleInput');
+            const raw = (input.value || '').trim().toLowerCase();
+            if (!raw) return;
+
+            let type, value;
+            if (raw.indexOf('@') > 0) {
+                type = 'address';
+                value = raw;
+                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
+                    showToast(t('tickets.settings.scope.rule_invalid'), 'error');
+                    return;
+                }
+            } else {
+                type = 'domain';
+                value = raw.replace(/^@/, '');
+                if (!/^[^@\s]+\.[^@\s]+$/.test(value)) {
+                    showToast(t('tickets.settings.scope.rule_invalid'), 'error');
+                    return;
+                }
+            }
+            const dupe = templateRules.some(function (r) {
+                return r.match_type === type && r.match_value === value;
+            });
+            if (dupe) {
+                showToast(t('tickets.settings.scope.rule_duplicate'), 'error');
+                return;
+            }
+            templateRules.push({ match_type: type, match_value: value });
+            input.value = '';
+            renderTemplateRules();
+        }
+
+        function removeTemplateRule(i) {
+            templateRules.splice(i, 1);
+            renderTemplateRules();
+        }
+
+        // What the list column shows for each template.
+        /**
+         * WHO gets this email - the half of "Sends to" that was missing.
+         *
+         * The column used to show only the sender scope ("Everyone", or a list
+         * of domains), which answers "which customers does this template cover"
+         * and says nothing about whether the customer or the analyst receives
+         * it. With two assignment events that distinction is the whole point.
+         *
+         * 🔑 tpl.audience comes from the SERVER, from the same function the
+         * sender uses to choose the address. There is deliberately no map here
+         * to drift out of step with it.
+         */
+        function templateAudienceBadge(tpl) {
+            const analyst = tpl.audience === 'analyst';
+            const label = analyst
+                ? t('tickets.settings.scope.audience_analyst')
+                : t('tickets.settings.scope.audience_requester');
+            return '<span class="tpl-audience-badge' + (analyst ? ' analyst' : '') + '" title="'
+                 + escapeHtml(t('tickets.settings.scope.audience_title')) + '">'
+                 + escapeHtml(label) + '</span>';
+        }
+
+        function templateScopeBadge(tpl) {
+            const rules = tpl.rules || [];
+            if (!rules.length) {
+                return '<span class="tpl-scope-badge">'
+                     + escapeHtml(t('tickets.settings.scope.badge_everyone')) + '</span>';
+            }
+            const shown = rules.slice(0, 2).map(function (r) {
+                return escapeHtml(r.match_type === 'address' ? r.match_value : '@' + r.match_value);
+            }).join(', ');
+            const more = rules.length > 2 ? ' +' + (rules.length - 2) : '';
+            const title = t('tickets.settings.scope.badge_senders').replace('{count}', rules.length);
+            return '<span class="tpl-scope-badge" title="' + escapeHtml(title) + '">' + shown + more + '</span>';
+        }
+
+        // The mistake this catches: every template for an event restricted, so a
+        // sender matching none of them gets silence. Per event, because a gap in one
+        // event says nothing about the others.
+        function refreshScopeWarning() {
+            const box = document.getElementById('tplScopeWarning');
+            if (!box) return;
+
+            const gaps = [];
+            for (const ev in TPL_EVENT_LABELS) {
+                const active = (emailTemplates || []).filter(function (tpl) {
+                    return tpl.event_trigger === ev && tpl.is_active == 1;
+                });
+                const hasCatchAll = active.some(function (tpl) { return !(tpl.rules || []).length; });
+                // No templates at all is not a gap — nobody is expecting an email.
+                if (active.length && !hasCatchAll) gaps.push(TPL_EVENT_LABELS[ev]);
+            }
+
+            // baseUrlState.loaded gates this for the same reason it gates the other
+            // warning: until the settings have actually been read we do not know
+            // whether it was dismissed, and guessing "not dismissed" nags somebody
+            // who already said they know.
+            const show = gaps.length > 0 && baseUrlState.loaded && !baseUrlState.scopeDismissed;
+            box.style.display = show ? '' : 'none';
+            if (show) {
+                document.getElementById('tplScopeWarningBody').textContent =
+                    t('tickets.settings.scope.warn_body').replace('{events}', gaps.join(', '));
+            }
+        }
+
+        async function dismissScopeWarning() {
+            try {
+                await fetch(API_BASE + 'set_base_url_warning_dismissed.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ warning: 'template_scope', dismissed: true })
+                });
+            } catch (e) { /* dismissing is a convenience; a failure leaves it showing */ }
+            baseUrlState.scopeDismissed = true;
+            refreshScopeWarning();
+        }
+
+        // Runs the REAL selection on the server rather than re-implementing the
+        // matching here, so the answer cannot drift from what actually gets sent.
+        async function runTemplateSimulator() {
+            const out = document.getElementById('tplSimResult');
+            const email = document.getElementById('tplSimEmail').value.trim();
+            const event = document.getElementById('tplSimEvent').value;
+            out.style.display = '';
+            try {
+                const resp = await fetch(API_BASE + 'simulate_email_template.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event_trigger: event, email: email })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    out.className = 'tpl-sim-result none';
+                    out.textContent = data.error;
+                    return;
+                }
+                if (!data.template_id) {
+                    out.className = 'tpl-sim-result none';
+                    out.textContent = data.reason === 'no_active_template'
+                        ? t('tickets.settings.scope.sim_no_template')
+                        : t('tickets.settings.scope.sim_none');
+                    return;
+                }
+                const value = data.matched_type === 'domain' ? '@' + data.matched_value : (data.matched_value || '');
+                const why = t('tickets.settings.scope.sim_' + data.reason).replace('{value}', value);
+                out.className = 'tpl-sim-result';
+                out.textContent = '"' + data.template_name + '" ' + why;
+            } catch (e) {
+                out.className = 'tpl-sim-result none';
+                out.textContent = t('tickets.settings.base_url.save_failed');
+            }
+        }
+
+        // ==================== Email template body editor (#80) ====================
+        // Requested alongside [ticket_url]: the body was a bare textarea, so anyone
+        // wanting bold text or a link had to hand-write HTML into it. The editor is
+        // deliberately a cut-down one — this is an email body, and the formatting
+        // that survives a mail client is a short list. Fonts, colours, images and
+        // tables are left out on purpose rather than forgotten.
+        //
+        // The merge codes are typed as literal [ticket_url] text and pass through
+        // untouched: TinyMCE has no reason to rewrite square brackets.
+        let templateBodyEditor = null;
+
+        function initTemplateBodyEditor() {
+            if (templateBodyEditor || !document.getElementById('templateBody')) return;
+            const isDark = (document.documentElement.getAttribute('data-theme-mode') || 'light') === 'dark';
+            tinymce.init({
+                // Plugins and skins load without the page's ?v=, so a browser could pair a new
+                // editor with old cached plugins after an update. TinyMCE's own version stamps them.
+                cache_suffix: '?v=' + tinymce.majorVersion + '.' + tinymce.minorVersion,
+                selector: '#templateBody',
+                license_key: 'gpl',
+                height: 300,
+                menubar: false,
+                skin: isDark ? 'oxide-dark' : 'oxide',
+                content_css: isDark ? 'dark' : 'default',
+                plugins: ['autolink', 'lists', 'link', 'code'],
+                toolbar: 'undo redo | bold italic underline | bullist numlist | link | removeformat | code',
+                // `code` stays available because these bodies legitimately contain
+                // hand-written HTML — the styled call-to-action buttons the help text
+                // already suggests — and taking that away would be a regression for
+                // anyone who has written one.
+                content_style: 'body { font-family: Arial, sans-serif; font-size: 14px; } @media (pointer: coarse) { body { font-size: 16px; } }',
+                setup: function (editor) { templateBodyEditor = editor; }
+            });
+        }
+
+        // Every read and write of the body goes through these two, so that the
+        // editor and the underlying textarea can never disagree about what the
+        // template says. Falling back to the textarea matters: if TinyMCE failed to
+        // load, editing must still work rather than silently saving an empty body.
+        function getTemplateBody() {
+            return templateBodyEditor ? templateBodyEditor.getContent()
+                                      : document.getElementById('templateBody').value;
+        }
+
+        function setTemplateBody(html) {
+            if (templateBodyEditor) {
+                templateBodyEditor.setContent(html || '');
+            } else {
+                document.getElementById('templateBody').value = html || '';
+            }
+        }
+
         function openTemplateModal(template = null) {
             document.getElementById('templateId').value = template ? template.id : '';
             document.getElementById('templateName').value = template ? template.name : '';
             document.getElementById('templateEvent').value = template ? template.event_trigger : '';
             document.getElementById('templateSubject').value = template ? template.subject_template : '';
-            document.getElementById('templateBody').value = template ? template.body_template : '';
+            setTemplateBody(template ? template.body_template : '');
+            // A NEW template starts as Everyone — narrowing has to be deliberate, which
+            // is what keeps a catch-all present unless somebody removes it on purpose.
+            templateRules = template && Array.isArray(template.rules)
+                ? template.rules.map(function (r) { return { match_type: r.match_type, match_value: r.match_value }; })
+                : [];
+            document.querySelector('input[name="tplScope"][value="' + (templateRules.length ? 'restricted' : 'everyone') + '"]').checked = true;
+            switchTemplateScope();
+            renderTemplateRules();
             document.getElementById('templateOrder').value = template ? template.display_order : 0;
             document.getElementById('templateActive').checked = template ? template.is_active == 1 : true;
             document.getElementById('templateModalTitle').textContent = template ? t('tickets.settings.modals.template.edit_title') : t('tickets.settings.modals.template.add_title');
@@ -4481,6 +7938,7 @@ $translationNamespaces = ['common', 'tickets'];
         // includes/template_email.php so "what you preview" matches "what's sent".
         const TPL_PREVIEW_SAMPLES = {
             ticket_reference: 'ABC-123-4567',
+            ticket_url: 'https://itsm.example.com/self-service/tickets.php?id=409',
             ticket_subject: "Laptop won't turn on",
             ticket_status: 'Resolved',
             ticket_priority: 'High',
@@ -4489,6 +7947,10 @@ $translationNamespaces = ['common', 'tickets'];
             requester_email: 'ed.mozley@example.com',
             analyst_name: 'Sam Carter',
             analyst_email: 'sam.carter@example.com',
+            assigned_analyst_name: 'Sam Carter',
+            assigned_analyst_first_name: 'Sam',
+            assigned_analyst_email: 'sam.carter@example.com',
+            ticket_url_analyst: 'https://itsm.example.com/tickets/index.php?ticket_id=409',
             department_name: 'IT Support',
             created_date: '14 Feb 2026 09:15',
             closed_date: '14 Feb 2026 16:40',
@@ -4516,7 +7978,7 @@ $translationNamespaces = ['common', 'tickets'];
             const isPreview = tab === 'preview';
             if (isPreview) {
                 document.getElementById('templatePreview').innerHTML =
-                    buildTemplatePreviewHtml(document.getElementById('templateBody').value);
+                    buildTemplatePreviewHtml(getTemplateBody());
             }
             document.getElementById('tplBodyEdit').style.display = isPreview ? 'none' : '';
             document.getElementById('tplBodyPreview').style.display = isPreview ? '' : 'none';
@@ -4558,7 +8020,213 @@ $translationNamespaces = ['common', 'tickets'];
             }
         }
 
-        document.getElementById('templateForm').addEventListener('submit', async function(e) {
+        // ------------------------------------------------------------------
+        // Reply templates (canned responses) — the SHARED ones only.
+        //
+        // An analyst's private templates never appear on this tab, by design: they
+        // are saved from the reply box and managed in its picker, so that having a
+        // personal template does not require this settings permission. Everything
+        // saved here posts scope 'shared', which the endpoint re-checks against
+        // Cap::TICKETS_REPLY_TEMPLATES — the client naming its own scope proves
+        // nothing.
+        // ------------------------------------------------------------------
+        let replyTemplateEditor = null;
+
+        function initReplyTemplateEditor() {
+            if (replyTemplateEditor || !document.getElementById('replyTemplateBody')) return;
+            const isDark = (document.documentElement.getAttribute('data-theme-mode') || 'light') === 'dark';
+            tinymce.init({
+                // Plugins and skins load without the page's ?v=, so a browser could pair a new
+                // editor with old cached plugins after an update. TinyMCE's own version stamps them.
+                cache_suffix: '?v=' + tinymce.majorVersion + '.' + tinymce.minorVersion,
+                selector: '#replyTemplateBody',
+                license_key: 'gpl',
+                height: 300,
+                menubar: false,
+                skin: isDark ? 'oxide-dark' : 'oxide',
+                content_css: isDark ? 'dark' : 'default',
+                plugins: ['advlist', 'autolink', 'lists', 'link', 'charmap', 'code', 'table'],
+                toolbar: 'undo redo | blocks | bold italic forecolor backcolor | ' +
+                         'bullist numlist outdent indent | link | removeformat | code',
+                content_style: 'body { font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; } @media (pointer: coarse) { body { font-size: 16px; } }',
+                setup: function(editor) { replyTemplateEditor = editor; }
+            });
+        }
+
+        async function loadReplyTemplates() {
+            // The tab is capability-gated, so on most analysts' pages this element
+            // does not exist at all. Leaving early is the whole guard.
+            const tbody = document.getElementById('reply-templates-list');
+            if (!tbody) return;
+
+            initReplyTemplateEditor();
+            try {
+                const response = await fetch(API_BASE + 'get_reply_templates.php?all=1');
+                const data = await response.json();
+                if (data.success) {
+                    renderReplyTemplateMergeCodes(data.merge_codes || {});
+                    // Only the shared ones belong on a settings tab. The endpoint also
+                    // returns this analyst's own; filtering here keeps one endpoint
+                    // serving both callers.
+                    renderReplyTemplates(data.templates.filter(tpl => tpl.scope === 'shared'));
+                } else {
+                    showToast('Error loading reply templates: ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error loading reply templates:', error);
+            }
+        }
+
+        function renderReplyTemplates(templates) {
+            const tbody = document.getElementById('reply-templates-list');
+            if (!tbody) return;
+
+            if (templates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-faint, #999);">' +
+                    escapeHtml(t('tickets.settings.reply_templates_empty')) + '</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = templates.map(tpl => {
+                // Strip the markup for the list preview: the column is a reminder of
+                // which template this is, not a rendering of it.
+                const plain = tpl.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                const snippet = plain.length > 70 ? plain.slice(0, 70) + '…' : plain;
+                return `
+                <tr>
+                    <td>${escapeHtml(tpl.name)}</td>
+                    <td style="color: var(--text-muted, #666);">${escapeHtml(snippet)}</td>
+                    <td>${tpl.display_order}</td>
+                    <td><span class="status-badge status-${tpl.is_active == 1 ? 'active' : 'inactive'}">${tpl.is_active == 1 ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                        <button class="action-btn" onclick="editReplyTemplate(${tpl.id})" title="${t('common.edit')}">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button class="action-btn delete" onclick="deleteReplyTemplate(${tpl.id}, ${JSON.stringify(tpl.name).replace(/"/g, '&quot;')})" title="${t('common.delete')}">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        // Clickable chips that insert a merge code at the cursor — nobody remembers
+        // the exact spelling of [requester_first_name], and a typo fails silently by
+        // sending the literal text to a customer.
+        function renderReplyTemplateMergeCodes(codes) {
+            const wrap = document.getElementById('replyTemplateMergeCodes');
+            if (!wrap) return;
+            wrap.innerHTML = Object.keys(codes).map(code => `
+                <button type="button" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;"
+                        onclick="insertReplyTemplateMergeCode('${escapeHtml(code)}')"
+                        title="[${escapeHtml(code)}]">${escapeHtml(codes[code])}</button>
+            `).join('');
+        }
+
+        function insertReplyTemplateMergeCode(code) {
+            if (replyTemplateEditor) replyTemplateEditor.insertContent('[' + code + ']');
+        }
+
+        let replyTemplatesCache = [];
+
+        function openReplyTemplateModal(tpl = null) {
+            initReplyTemplateEditor();
+            document.getElementById('replyTemplateId').value      = tpl ? tpl.id : '';
+            document.getElementById('replyTemplateName').value    = tpl ? tpl.name : '';
+            document.getElementById('replyTemplateOrder').value   = tpl ? tpl.display_order : 0;
+            document.getElementById('replyTemplateActive').checked = tpl ? tpl.is_active == 1 : true;
+            document.getElementById('replyTemplateModalTitle').textContent = tpl
+                ? t('tickets.settings.modals.reply_template.edit_title')
+                : t('tickets.settings.modals.reply_template.add_title');
+            if (replyTemplateEditor) replyTemplateEditor.setContent(tpl ? tpl.body : '');
+            document.getElementById('replyTemplateModal').classList.add('active');
+        }
+
+        function closeReplyTemplateModal() {
+            document.getElementById('replyTemplateModal').classList.remove('active');
+        }
+
+        async function editReplyTemplate(id) {
+            // Re-read rather than trusting a stale render: another admin may have
+            // changed it in the meantime.
+            const response = await fetch(API_BASE + 'get_reply_templates.php?all=1');
+            const data = await response.json();
+            if (!data.success) { showToast('Could not load template', 'error'); return; }
+            replyTemplatesCache = data.templates;
+            const tpl = replyTemplatesCache.find(x => x.id == id);
+            if (tpl) openReplyTemplateModal(tpl);
+        }
+
+        async function deleteReplyTemplate(id, name) {
+            const ok = await showConfirm({
+                title: t('tickets.settings.modals.reply_template.delete_title'),
+                message: t('tickets.settings.modals.reply_template.delete_message').replace('%s', name),
+                okLabel: t('common.delete'),
+                okClass: 'danger'
+            });
+            if (!ok) return;
+
+            try {
+                const response = await fetch(API_BASE + 'delete_reply_template.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(t('tickets.settings.reply_template_deleted'), 'success');
+                    loadReplyTemplates();
+                } else {
+                    showToast('Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showToast('Failed to delete template', 'error');
+            }
+        }
+
+        const replyTemplateForm = document.getElementById('replyTemplateForm');
+        if (replyTemplateForm) {
+            replyTemplateForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const body = replyTemplateEditor ? replyTemplateEditor.getContent() : '';
+                // Validated here rather than with `required`: the real input is the
+                // TinyMCE iframe, which native form validation cannot see.
+                if (!body.replace(/<[^>]*>/g, '').trim()) {
+                    showToast(t('tickets.settings.modals.reply_template.body_required'), 'error');
+                    return;
+                }
+
+                const payload = {
+                    id: document.getElementById('replyTemplateId').value || null,
+                    name: document.getElementById('replyTemplateName').value,
+                    body: body,
+                    scope: 'shared',
+                    display_order: parseInt(document.getElementById('replyTemplateOrder').value) || 0,
+                    is_active: document.getElementById('replyTemplateActive').checked ? 1 : 0
+                };
+
+                try {
+                    const response = await fetch(API_BASE + 'save_reply_template.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        showToast(t('tickets.settings.reply_template_saved'), 'success');
+                        closeReplyTemplateModal();
+                        loadReplyTemplates();
+                    } else {
+                        showToast('Error: ' + data.error, 'error');
+                    }
+                } catch (error) {
+                    showToast('Failed to save template', 'error');
+                }
+            });
+        }
+
+        document.getElementById('templateForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const templateData = {
@@ -4566,7 +8234,10 @@ $translationNamespaces = ['common', 'tickets'];
                 name: document.getElementById('templateName').value,
                 event_trigger: document.getElementById('templateEvent').value,
                 subject_template: document.getElementById('templateSubject').value,
-                body_template: document.getElementById('templateBody').value,
+                body_template: getTemplateBody(),
+                // Always sent, so "Everyone" (an empty list) is saved as a real choice
+                // rather than read as "leave the rules alone".
+                rules: (document.querySelector('input[name="tplScope"]:checked') && document.querySelector('input[name="tplScope"]:checked').value === 'restricted') ? templateRules : [],
                 display_order: parseInt(document.getElementById('templateOrder').value) || 0,
                 is_active: document.getElementById('templateActive').checked ? 1 : 0
             };
@@ -4574,9 +8245,18 @@ $translationNamespaces = ['common', 'tickets'];
             // Body is validated here (not via the `required` attribute) because the
             // textarea is hidden on the Preview tab, which would otherwise break
             // native form validation.
-            if (!templateData.body_template.trim()) {
+            //
+            // ⚠️ Emptiness has to be judged on the TEXT, not the markup. A body the
+            // author has cleared comes back from TinyMCE as `<p>&nbsp;</p>` or
+            // `<br>`, all of which are truthy strings — so a plain .trim() check
+            // would wave an empty template straight through and send blank emails.
+            const bodyText = templateData.body_template
+                .replace(/<[^>]*>/g, '')
+                .replace(/&nbsp;/gi, ' ')
+                .trim();
+            if (!bodyText) {
                 switchTemplateBodyTab('edit');
-                document.getElementById('templateBody').focus();
+                if (templateBodyEditor) { templateBodyEditor.focus(); } else { document.getElementById('templateBody').focus(); }
                 showToast(t('tickets.settings.modals.template.body_required'), 'error');
                 return;
             }
@@ -4683,7 +8363,7 @@ $translationNamespaces = ['common', 'tickets'];
             document.getElementById('rotaShiftModal').classList.remove('active');
         }
 
-        document.getElementById('rotaShiftForm').addEventListener('submit', async function(e) {
+        document.getElementById('rotaShiftForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const shiftData = {
@@ -4795,6 +8475,8 @@ $translationNamespaces = ['common', 'tickets'];
                 const data = await res.json();
                 if (!data.success) throw new Error(data.error || 'load failed');
                 slaData = { settings: data.settings || {}, priorities: data.priorities || [], calendars: data.calendars || [] };
+                // SLA switched off for the install (GH #217): only the calendars are on the tab.
+                if (document.body.classList.contains('sla-off')) { renderSlaCalendars(); return; }
                 renderSlaGlobalSettings();
                 renderSlaTargets();
                 renderSlaCalendars();
@@ -5357,6 +9039,729 @@ $translationNamespaces = ['common', 'tickets'];
             }).join('');
         }
 
+        /* ─── Row display (discussion #61) ────────────────────────────────────
+         * ⚠️ The preview below deliberately emits the REAL inbox class names
+         * (.email-item, .email-stripes, .email-chip-pill, …) against the real
+         * inbox.css, so what you see is what the inbox will do. It is a second
+         * small renderer rather than a call into inbox.js, which is a monolith
+         * with its own bootstrap — so if a class name changes in one place it
+         * must change in both. That is the cost, stated rather than hidden. */
+        function rdCurrent() {
+            const cfg = {};
+            document.querySelectorAll('#row-display-tab .rd-options').forEach(group => {
+                const field = group.dataset.field;
+                const sel = group.querySelector('input:checked');
+                cfg[field] = sel ? sel.value : 'off';
+            });
+            return cfg;
+        }
+
+        const RD_SAMPLE = {
+            ticket_number: 'SD-1042',
+            from: 'Priya Raman',
+            // Two names, because the point of the row_name choice is which of
+            // these two the row shows — a preview with one name could not show
+            // the difference, which is the only reason to look at a preview.
+            requester: 'Priya Raman',
+            last_sender: 'IT Service Desk',
+            subject: 'Laptop will not wake from sleep',
+            preview: 'Tried a hard restart twice this morning and it still…',
+            priority: 'High',       priority_colour: '#d97706',
+            status: 'In Progress',  status_colour: '#2563eb',
+            assignee: 'Ed Mozley',
+            time: '09:24'
+        };
+
+        function rdEsc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function rdInitials(name) {
+            const p = String(name || '').trim().split(/\s+/).filter(Boolean);
+            if (!p.length) return '';
+            if (p.length === 1) return p[0].substring(0, 2).toUpperCase();
+            return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+        }
+
+        function rdRenderPreview() {
+            const el = document.getElementById('rdPreview');
+            if (!el) return;
+            const cfg = rdCurrent();
+            const s = RD_SAMPLE;
+
+            const stripes = ['priority', 'status']
+                .filter(f => cfg[f] === 'stripe')
+                .map(f => `<span class="email-stripe" style="background:${f === 'priority' ? s.priority_colour : s.status_colour}"></span>`)
+                .join('');
+            const blocks = ['priority', 'status']
+                .filter(f => cfg[f] === 'block')
+                .map(f => `<span class="email-block" style="background:${f === 'priority' ? s.priority_colour : s.status_colour}"></span>`)
+                .join('');
+
+            let chips = '';
+            ['priority', 'status'].forEach(f => {
+                const style = cfg[f];
+                const label = f === 'priority' ? s.priority : s.status;
+                const col   = f === 'priority' ? s.priority_colour : s.status_colour;
+                if (style === 'dot') {
+                    chips += `<span class="email-chip-dot" style="background:${col}"></span>`;
+                } else if (style === 'pill') {
+                    chips += `<span class="email-chip-pill" style="border-color:${col}">`
+                           + `<span class="email-chip-dot" style="background:${col}"></span>`
+                           + `<span class="email-chip-label">${rdEsc(label)}</span></span>`;
+                }
+            });
+            if (cfg.agent === 'name') {
+                chips += `<span class="email-chip-agent">${rdEsc(s.assignee)}</span>`;
+            } else if (cfg.agent === 'initials') {
+                chips += `<span class="email-chip-agent is-initials">${rdEsc(rdInitials(s.assignee))}</span>`;
+            }
+
+            // Which name, per the row_name choice — and nothing at all (not a
+            // dangling " - ") when it is off, matching rowNameSuffix() in inbox.js.
+            const rdName = cfg.row_name === 'off' ? ''
+                         : cfg.row_name === 'last_sender' ? s.last_sender
+                         : s.requester;
+
+            el.innerHTML = `
+                <div class="email-item unread">
+                    ${stripes ? `<span class="email-stripes">${stripes}</span>` : ''}
+                    ${blocks ? `<span class="email-blocks">${blocks}</span>` : ''}
+                    <div class="email-from">${rdEsc(s.ticket_number)}${rdName ? ' - ' + rdEsc(rdName) : ''}</div>
+                    <div class="email-subject">${rdEsc(s.subject)}</div>
+                    <div class="email-preview">${rdEsc(s.preview)}</div>
+                    <div class="email-footer-row">
+                        <div class="email-time">${rdEsc(s.time)}</div>
+                        ${chips}
+                        <div class="email-sla-slot"></div>
+                    </div>
+                </div>`;
+        }
+
+        async function rdSave(scope) {
+            try {
+                const res = await fetch('../../api/tickets/save_inbox_display.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope: scope, config: rdCurrent() })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    showToast(data.error || 'Could not save', 'error');
+                    return;
+                }
+                // A reset changes the radios, because the answer comes back from
+                // the install default rather than from what is on screen.
+                if (scope === 'reset' && data.config) {
+                    Object.keys(data.config).forEach(f => {
+                        const input = document.querySelector(`#row-display-tab input[name="rd_${f}"][value="${data.config[f]}"]`);
+                        if (input) input.checked = true;
+                    });
+                    rdRenderPreview();
+                }
+                const note = document.getElementById('rdFollowing');
+                if (note && typeof data.personal !== 'undefined') {
+                    note.textContent = data.personal
+                        ? <?php echo json_encode(t('tickets.settings.row_display.using_personal')); ?>
+                        : <?php echo json_encode(t('tickets.settings.row_display.using_default')); ?>;
+                }
+                showToast(
+                    scope === 'install'
+                        ? <?php echo json_encode(t('tickets.settings.row_display.saved_default')); ?>
+                        : <?php echo json_encode(t('tickets.settings.row_display.saved')); ?>,
+                    'success'
+                );
+            } catch (e) {
+                showToast('Could not save: ' + e.message, 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const tab = document.getElementById('row-display-tab');
+            if (!tab) return;
+            tab.addEventListener('change', function (e) {
+                if (e.target && e.target.type === 'radio') rdRenderPreview();
+            });
+            rdRenderPreview();
+        });
+
+        /* ─── Time tracking (discussion #72) ────────────────────────────────
+           Two switches per company, plus the install default they fall back to.
+           A company row has THREE states, not two: on, off, or "follow the
+           default" — which is why each cell is a <select> rather than a
+           checkbox. A tri-state you cannot express is a company you can never
+           hand back to the default once you have given it an answer. */
+        (function () {
+            const block = document.getElementById('time-tracking-tab');
+            if (!block) return;
+
+            const $ = id => document.getElementById(id);
+            let companies = [];
+
+            function optionsFor(value) {
+                // value: true | false | null (null = follow the default)
+                const sel = v => (v === value ? ' selected' : '');
+                return '<option value=""' + sel(null) + '>' + ttT('inherit') + '</option>' +
+                       '<option value="1"' + sel(true) + '>' + ttT('on') + '</option>' +
+                       '<option value="0"' + sel(false) + '>' + ttT('off') + '</option>';
+            }
+            function ttT(k) {
+                const map = {
+                    inherit: <?php echo json_encode(t('tickets.settings.time_tracking.inherit')); ?>,
+                    on:      <?php echo json_encode(t('tickets.settings.time_tracking.on')); ?>,
+                    off:     <?php echo json_encode(t('tickets.settings.time_tracking.off')); ?>
+                };
+                return map[k] || k;
+            }
+
+            /* ⚠️ A FAILED LOAD MUST NOT LOOK LIKE "BOTH OFF".
+               Both switches are drawn unticked in the markup, so an unreachable
+               endpoint renders exactly like time tracking being disabled — and
+               pressing Save would then write that guess back as fact, turning the
+               feature off install-wide from a screen that never read anything.
+               This is not hypothetical: the first version of this tab fetched a
+               doubled path (API_BASE already ends in api/tickets/), 404'd, and
+               showed both boxes unticked while time recording worked perfectly.
+               Ed spotted it. It is the same failure the Authentication page had
+               this morning, which is why the answer here is the same one. */
+            let ttLoaded = false;
+            function ttSetFailed(failed) {
+                ttLoaded = !failed;
+                $('ttLoadError').hidden = !failed;
+                $('ttDefaultUi').disabled  = failed;
+                $('ttDefaultApi').disabled = failed;
+                $('ttSaveBtn').disabled    = failed;
+            }
+
+            async function load() {
+                try {
+                    const r = await fetch(API_BASE + 'get_time_tracking_settings.php');
+                    const d = await r.json();
+                    if (!d.success) throw new Error(d.error || 'unsuccessful response');
+                    $('ttDefaultUi').checked  = !!d.default.ui;
+                    $('ttDefaultApi').checked = !!d.default.api;
+                    ttSetFailed(false);
+                    companies = d.companies || [];
+                    if (d.multi_tenant && companies.length) {
+                        $('ttCompaniesBlock').hidden = false;
+                        $('ttCompaniesBody').innerHTML = companies.map(c =>
+                            '<tr data-id="' + c.id + '">' +
+                                '<td>' + escapeHtml(c.name) + '</td>' +
+                                '<td><select class="settings-table-select tt-ui">'  + optionsFor(c.ui)  + '</select></td>' +
+                                '<td><select class="settings-table-select tt-api">' + optionsFor(c.api) + '</select></td>' +
+                            '</tr>').join('');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    ttSetFailed(true);
+                }
+            }
+
+            $('ttSaveBtn').addEventListener('click', async function () {
+                if (!ttLoaded) return;      // never save a state we never read
+                this.disabled = true;
+                const payload = {
+                    default: { ui: $('ttDefaultUi').checked, api: $('ttDefaultApi').checked },
+                    companies: [...document.querySelectorAll('#ttCompaniesBody tr')].map(tr => {
+                        const val = s => s.value === '' ? null : (s.value === '1');
+                        return {
+                            id:  parseInt(tr.dataset.id, 10),
+                            ui:  val(tr.querySelector('.tt-ui')),
+                            api: val(tr.querySelector('.tt-api'))
+                        };
+                    })
+                };
+                try {
+                    const r = await fetch(API_BASE + 'save_time_tracking_settings.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const d = await r.json();
+                    showToast(d.success ? <?php echo json_encode(t('tickets.settings.time_tracking.saved')); ?>
+                                        : (d.error || 'Failed'), d.success ? 'success' : 'error');
+                } catch (e) {
+                    showToast('Failed', 'error');
+                }
+                this.disabled = !ttLoaded;
+            });
+
+            load();
+        })();
+
+        /* ═══════════════════════════════════════════════════════════════════
+           TICKET CATEGORIES + RESOLUTION CODES  (#1540)
+
+           Three switches, a category tree and a flat code list — one tab,
+           one fetch (get_ticket_classification.php returns all of it).
+
+           ⚠️ State lives in top-level `let`s inside this IIFE, NOT on window.
+           Reaching for window.tcState from elsewhere will find undefined.
+           ═══════════════════════════════════════════════════════════════════ */
+        (function () {
+            const block = document.getElementById('categories-tab');
+            if (!block) return;
+
+            const $ = id => document.getElementById(id);
+            const T = <?php echo json_encode([
+                'inherit'        => t('tickets.settings.categories.inherit'),
+                'on'             => t('tickets.settings.categories.on'),
+                'off'            => t('tickets.settings.categories.off'),
+                'anyType'        => t('tickets.settings.categories.any_type'),
+                'portalYes'      => t('tickets.settings.categories.portal_yes'),
+                'portalNo'       => t('tickets.settings.categories.portal_no'),
+                'inUse'          => t('tickets.settings.categories.in_use'),
+                'empty'          => t('tickets.settings.categories.empty'),
+                'emptyHint'      => t('tickets.settings.categories.empty_hint'),
+                'codesEmpty'     => t('tickets.settings.categories.codes_empty'),
+                'addCategory'    => t('tickets.settings.categories.add_category'),
+                'editCategory'   => t('tickets.settings.categories.edit_category'),
+                'addCode'        => t('tickets.settings.categories.add_code'),
+                'editCode'       => t('tickets.settings.categories.edit_code'),
+                'parentNone'     => t('tickets.settings.categories.f_parent_none'),
+                'typeAny'        => t('tickets.settings.categories.f_type_any'),
+                'saved'          => t('tickets.settings.categories.saved'),
+                'deleted'        => t('tickets.settings.categories.deleted'),
+                'settingsSaved'  => t('tickets.settings.categories.settings_saved'),
+                'confirmDelete'  => t('tickets.settings.categories.confirm_delete'),
+                'active'         => t('tickets.settings.categories.f_active'),
+                'edit'           => t('common.edit'),
+                'delete'         => t('common.delete'),
+            ], JSON_UNESCAPED_UNICODE); ?>;
+
+            let categories = [];
+            let codes      = [];
+            let types      = [];
+            let companies  = [];
+            let maxDepth   = 3;
+
+            /* ⚠️ A FAILED LOAD MUST NOT LOOK LIKE "ALL THREE OFF".
+               These three switches are drawn unticked in the markup, so an
+               unreachable endpoint renders exactly like the fields being
+               deliberately disabled — and Save would then write that guess back
+               as fact. Locked until a load actually succeeds. Same failure the
+               Time tracking tab shipped with, same answer. */
+            let loaded = false;
+            function setFailed(failed) {
+                loaded = !failed;
+                $('tcLoadError').hidden = !failed;
+                ['tcDefCategory', 'tcDefClosure', 'tcDefResolution', 'tcSaveSettingsBtn']
+                    .forEach(id => { const el = $(id); if (el) el.disabled = failed; });
+            }
+
+            function esc(s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g,
+                    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            }
+
+            function optionsFor(value) {
+                // value: true | false | null  (null = follow the install default)
+                const sel = v => (v === value ? ' selected' : '');
+                return '<option value=""'  + sel(null)  + '>' + esc(T.inherit) + '</option>' +
+                       '<option value="1"' + sel(true)  + '>' + esc(T.on)      + '</option>' +
+                       '<option value="0"' + sel(false) + '>' + esc(T.off)     + '</option>';
+            }
+
+            // ── Rendering ────────────────────────────────────────────────────
+            function renderCategories() {
+                const body = $('tcCategoryList');
+                if (!categories.length) {
+                    body.innerHTML = '<tr><td colspan="6" class="tc-empty">' +
+                        '<strong>' + esc(T.empty) + '</strong>' + esc(T.emptyHint) + '</td></tr>';
+                    return;
+                }
+                body.innerHTML = categories.map(c => {
+                    const depth = Math.min(c.depth || 1, 3);
+                    // The type shown is the EFFECTIVE one — a sub-category inherits
+                    // its root's, and showing "Any type" on a child whose root is
+                    // tied to Incident would be a straight lie.
+                    const typeName = c.effective_type_id
+                        ? (types.find(t => t.id === c.effective_type_id) || {}).name
+                        : null;
+                    const inherited = c.depth > 1 && c.effective_type_id;
+                    return '<tr data-id="' + c.id + '">' +
+                        '<td><span class="tc-depth tc-depth-' + depth + '">' +
+                            (depth > 1 ? '<span class="tc-guide">&#9492;</span>' : '') +
+                            '<span><span class="tc-catname">' + esc(c.name) + '</span>' +
+                            (c.description ? '<span class="tc-desc">' + esc(c.description) + '</span>' : '') +
+                            '</span></span></td>' +
+                        '<td>' + (typeName ? esc(typeName) + (inherited ? ' <span class="tc-guide">&#8593;</span>' : '')
+                                           : '<span class="tc-muted">' + esc(T.anyType) + '</span>') + '</td>' +
+                        '<td>' + (c.is_portal_visible ? esc(T.portalYes) : esc(T.portalNo)) + '</td>' +
+                        '<td>' + (c.display_order || 0) + '</td>' +
+                        '<td>' + (c.is_active ? esc(T.active) : '<span class="tc-muted">' + esc(T.off) + '</span>') +
+                            (c.in_use ? '<span class="tc-count">' + esc(T.inUse.replace(':count', c.in_use)) + '</span>' : '') + '</td>' +
+                        // Icon buttons, same as every other list on this page.
+                        '<td><button type="button" class="action-btn tc-edit-cat" title="' + esc(T.edit) + '">' + TT_EDIT_SVG + '</button> ' +
+                            '<button type="button" class="action-btn delete tc-del-cat" title="' + esc(T.delete) + '">' + TT_DELETE_SVG + '</button></td>' +
+                    '</tr>';
+                }).join('');
+            }
+
+            function renderCodes() {
+                const body = $('tcCodeList');
+                if (!codes.length) {
+                    body.innerHTML = '<tr><td colspan="5" class="tc-empty">' + esc(T.codesEmpty) + '</td></tr>';
+                    return;
+                }
+                body.innerHTML = codes.map(k =>
+                    '<tr data-id="' + k.id + '">' +
+                        '<td>' + esc(k.name) + '</td>' +
+                        '<td>' + esc(k.description || '') + '</td>' +
+                        '<td>' + (k.display_order || 0) + '</td>' +
+                        '<td>' + (k.is_active ? esc(T.active) : '<span class="tc-muted">' + esc(T.off) + '</span>') +
+                            (k.in_use ? '<span class="tc-count">' + esc(T.inUse.replace(':count', k.in_use)) + '</span>' : '') + '</td>' +
+                        '<td><button type="button" class="action-btn tc-edit-code" title="' + esc(T.edit) + '">' + TT_EDIT_SVG + '</button> ' +
+                            '<button type="button" class="action-btn delete tc-del-code" title="' + esc(T.delete) + '">' + TT_DELETE_SVG + '</button></td>' +
+                    '</tr>').join('');
+            }
+
+            // ── Load ─────────────────────────────────────────────────────────
+            async function load() {
+                try {
+                    const r = await fetch(API_BASE + 'get_ticket_classification.php?manage=1');
+                    const d = await r.json();
+                    if (!d.success) throw new Error(d.error || 'unsuccessful response');
+
+                    categories = d.categories || [];
+                    codes      = d.resolution_codes || [];
+                    maxDepth   = d.max_depth || 3;
+                    types      = (d.manage && d.manage.ticket_types) || [];
+                    companies  = (d.manage && d.manage.companies) || [];
+
+                    const def = (d.manage && d.manage.default) || {};
+                    $('tcDefCategory').checked   = !!def.category;
+                    $('tcDefClosure').checked    = !!def.closure_category;
+                    $('tcDefResolution').checked = !!def.resolution_code;
+                    setFailed(false);
+
+                    if (d.multi_tenant && companies.length) {
+                        $('tcCompaniesBlock').hidden = false;
+                        $('tcCompaniesBody').innerHTML = companies.map(c =>
+                            '<tr data-id="' + c.id + '">' +
+                                '<td>' + esc(c.name) + '</td>' +
+                                '<td><select class="settings-table-select tc-c-category">'   + optionsFor(c.category)         + '</select></td>' +
+                                '<td><select class="settings-table-select tc-c-closure">'    + optionsFor(c.closure_category) + '</select></td>' +
+                                '<td><select class="settings-table-select tc-c-resolution">' + optionsFor(c.resolution_code)  + '</select></td>' +
+                            '</tr>').join('');
+                    }
+
+                    renderCategories();
+                    renderCodes();
+                } catch (e) {
+                    console.error(e);
+                    setFailed(true);
+                    $('tcCategoryList').innerHTML = '<tr><td colspan="6" class="tc-empty">&mdash;</td></tr>';
+                    $('tcCodeList').innerHTML     = '<tr><td colspan="5" class="tc-empty">&mdash;</td></tr>';
+                }
+            }
+
+            // ── The switches ─────────────────────────────────────────────────
+            $('tcSaveSettingsBtn').addEventListener('click', async function () {
+                if (!loaded) return;        // never save a state that was never read
+                this.disabled = true;
+                const payload = {
+                    default: {
+                        category:         $('tcDefCategory').checked,
+                        closure_category: $('tcDefClosure').checked,
+                        resolution_code:  $('tcDefResolution').checked
+                    },
+                    companies: [...document.querySelectorAll('#tcCompaniesBody tr')].map(tr => {
+                        const val = s => (s.value === '' ? null : s.value === '1');
+                        return {
+                            id:               parseInt(tr.dataset.id, 10),
+                            category:         val(tr.querySelector('.tc-c-category')),
+                            closure_category: val(tr.querySelector('.tc-c-closure')),
+                            resolution_code:  val(tr.querySelector('.tc-c-resolution'))
+                        };
+                    })
+                };
+                try {
+                    const r = await fetch(API_BASE + 'save_ticket_classification_settings.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const d = await r.json();
+                    showToast(d.success ? T.settingsSaved : (d.error || 'Failed'), d.success ? 'success' : 'error');
+                } catch (e) {
+                    showToast('Failed', 'error');
+                }
+                this.disabled = !loaded;
+            });
+
+            // ── The category dialog ──────────────────────────────────────────
+            function parentOptions(excludeId) {
+                // A category may only be a parent if a child of it would still fit
+                // inside the depth cap, and it can never be its own descendant's
+                // parent — so the whole subtree of the row being edited is out.
+                const banned = new Set();
+                if (excludeId) {
+                    banned.add(excludeId);
+                    let grew = true;
+                    while (grew) {
+                        grew = false;
+                        categories.forEach(c => {
+                            if (c.parent_id && banned.has(c.parent_id) && !banned.has(c.id)) {
+                                banned.add(c.id); grew = true;
+                            }
+                        });
+                    }
+                }
+                return '<option value="">' + esc(T.parentNone) + '</option>' +
+                    categories.filter(c => !banned.has(c.id) && (c.depth || 1) < maxDepth)
+                        .map(c => '<option value="' + c.id + '">' + esc(c.path_label) + '</option>').join('');
+            }
+
+            function typeOptions() {
+                return '<option value="">' + esc(T.typeAny) + '</option>' +
+                    types.map(t => '<option value="' + t.id + '">' + esc(t.name) + '</option>').join('');
+            }
+
+            // The type field is only meaningful on a ROOT: a sub-category inherits
+            // its root's type, and the save endpoint refuses one on a child.
+            function syncTypeVisibility() {
+                $('tcCatTypeGroup').hidden = $('tcCatParent').value !== '';
+            }
+            $('tcCatParent').addEventListener('change', syncTypeVisibility);
+
+            function openCategory(cat) {
+                $('tcCategoryModalTitle').textContent = cat ? T.editCategory : T.addCategory;
+                $('tcCatId').value          = cat ? cat.id : '';
+                $('tcCatName').value        = cat ? cat.name : '';
+                $('tcCatDescription').value = cat ? (cat.description || '') : '';
+                $('tcCatParent').innerHTML  = parentOptions(cat ? cat.id : null);
+                $('tcCatParent').value      = cat && cat.parent_id ? String(cat.parent_id) : '';
+                $('tcCatType').innerHTML    = typeOptions();
+                $('tcCatType').value        = cat && cat.ticket_type_id ? String(cat.ticket_type_id) : '';
+                $('tcCatPortal').checked    = cat ? !!cat.is_portal_visible : true;
+                $('tcCatActive').checked    = cat ? !!cat.is_active : true;
+                $('tcCatOrder').value       = cat ? (cat.display_order || 0) : 0;
+                syncTypeVisibility();
+                $('tcCategoryModal').classList.add('active');
+                $('tcCatName').focus();
+            }
+            function closeCategory() { $('tcCategoryModal').classList.remove('active'); }
+
+            $('tcAddCategoryBtn').addEventListener('click', () => openCategory(null));
+            $('tcCatCancel').addEventListener('click', closeCategory);
+
+            $('tcCategoryForm').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const parentId = $('tcCatParent').value;
+                const payload = {
+                    id:                $('tcCatId').value || null,
+                    name:              $('tcCatName').value.trim(),
+                    description:       $('tcCatDescription').value.trim() || null,
+                    parent_id:         parentId || null,
+                    // Never sent for a child — the field is hidden and the root owns it.
+                    ticket_type_id:    parentId ? null : ($('tcCatType').value || null),
+                    is_portal_visible: $('tcCatPortal').checked,
+                    is_active:         $('tcCatActive').checked,
+                    display_order:     parseInt($('tcCatOrder').value, 10) || 0
+                };
+                try {
+                    const r = await fetch(API_BASE + 'save_ticket_category.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const d = await r.json();
+                    if (!d.success) { showToast(d.error || 'Failed', 'error'); return; }
+                    closeCategory();
+                    showToast(T.saved, 'success');
+                    await load();
+                } catch (err) { showToast('Failed', 'error'); }
+            });
+
+            // ── The resolution code dialog ───────────────────────────────────
+            function openCode(code) {
+                $('tcCodeModalTitle').textContent = code ? T.editCode : T.addCode;
+                $('tcCodeId').value          = code ? code.id : '';
+                $('tcCodeName').value        = code ? code.name : '';
+                $('tcCodeDescription').value = code ? (code.description || '') : '';
+                $('tcCodeActive').checked    = code ? !!code.is_active : true;
+                $('tcCodeOrder').value       = code ? (code.display_order || 0) : 0;
+                $('tcCodeModal').classList.add('active');
+                $('tcCodeName').focus();
+            }
+            function closeCode() { $('tcCodeModal').classList.remove('active'); }
+
+            $('tcAddCodeBtn').addEventListener('click', () => openCode(null));
+            $('tcCodeCancel').addEventListener('click', closeCode);
+
+            $('tcCodeForm').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const payload = {
+                    id:            $('tcCodeId').value || null,
+                    name:          $('tcCodeName').value.trim(),
+                    description:   $('tcCodeDescription').value.trim() || null,
+                    is_active:     $('tcCodeActive').checked,
+                    display_order: parseInt($('tcCodeOrder').value, 10) || 0
+                };
+                try {
+                    const r = await fetch(API_BASE + 'save_ticket_resolution_code.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const d = await r.json();
+                    if (!d.success) { showToast(d.error || 'Failed', 'error'); return; }
+                    closeCode();
+                    showToast(T.saved, 'success');
+                    await load();
+                } catch (err) { showToast('Failed', 'error'); }
+            });
+
+            // ── Row actions. Delegated, so a re-render never loses them. ──────
+            async function del(url, id, name) {
+                if (!confirm(T.confirmDelete.replace(':name', name))) return;
+                try {
+                    const r = await fetch(API_BASE + url, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id })
+                    });
+                    const d = await r.json();
+                    // The endpoint explains WHY when it refuses (children, or
+                    // tickets still using it), so show its words, not a generic one.
+                    showToast(d.success ? T.deleted : (d.error || 'Failed'), d.success ? 'success' : 'error');
+                    if (d.success) await load();
+                } catch (e) { showToast('Failed', 'error'); }
+            }
+
+            $('tcCategoryList').addEventListener('click', function (e) {
+                const tr = e.target.closest('tr[data-id]');
+                if (!tr) return;
+                const id  = parseInt(tr.dataset.id, 10);
+                const cat = categories.find(c => c.id === id);
+                if (!cat) return;
+                // ⚠️ closest(), NOT e.target.classList. The buttons hold an inline
+                // <svg>, so a click lands on the svg or its <path> and never on the
+                // button itself — a classList test on e.target silently does nothing.
+                if (e.target.closest('.tc-edit-cat')) openCategory(cat);
+                if (e.target.closest('.tc-del-cat'))  del('delete_ticket_category.php', id, cat.name);
+            });
+
+            $('tcCodeList').addEventListener('click', function (e) {
+                const tr = e.target.closest('tr[data-id]');
+                if (!tr) return;
+                const id   = parseInt(tr.dataset.id, 10);
+                const code = codes.find(c => c.id === id);
+                if (!code) return;
+                if (e.target.closest('.tc-edit-code')) openCode(code);
+                if (e.target.closest('.tc-del-code'))  del('delete_ticket_resolution_code.php', id, code.name);
+            });
+
+            load();
+        })();
+
+        /* Close-gate settings: the SOP checklist mode and mandatory fields.
+           Their own block, NOT inside the categories one above: that block
+           returns early when the Categories tab is absent, so a role granted
+           Checklists or Mandatory fields but not Categories got a Save button
+           that did nothing. */
+        (function () {
+            const T = <?php echo json_encode([
+                'settingsSaved'   => t('tickets.settings.categories.settings_saved'),
+                'mfChooseMode'    => t('tickets.settings.mandatory.choose_mode'),
+                'mfNeedAddress'   => t('tickets.settings.mandatory.need_address'),
+                'mfRecordBlocked' => t('tickets.settings.mandatory.record_blocked'),
+            ], JSON_UNESCAPED_UNICODE); ?>;
+
+            // ── Checklists: closing with mandatory steps outstanding (PR #141) ──
+            // The radios are rendered already checked from the stored value, so
+            // there is nothing to load — only to save.
+            const chkSaveBtn = document.getElementById('chkClosureSave');
+            if (chkSaveBtn) {
+                chkSaveBtn.addEventListener('click', async function () {
+                    const picked = document.querySelector('input[name="chkClosureMode"]:checked');
+                    if (!picked) { showToast('Choose an option first', 'error'); return; }
+                    this.disabled = true;
+                    try {
+                        const r = await fetch(API_BASE + 'save_checklist_settings.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                mode: picked.value,
+                                empty_mode: (document.querySelector('input[name="chkEmptyClosureMode"]:checked') || {}).value || 'off'
+                            })
+                        });
+                        const d = await r.json();
+                        showToast(d.success ? T.settingsSaved : (d.error || 'Failed'), d.success ? 'success' : 'error');
+                    } catch (e) {
+                        showToast('Failed', 'error');
+                    }
+                    this.disabled = false;
+                });
+            }
+
+            // ── Mandatory fields at closure ──────────────────────────────────
+            // Rendered from the stored values; only the dependent controls need
+            // wiring. The address box only means something under "warn and
+            // notify", and recording only means something while the ticket can
+            // actually close - under "block" it never does, so there is nothing
+            // to record and the switch is greyed out rather than hidden.
+            const mfSave = document.getElementById('mfSave');
+            if (mfSave) {
+                const mfNotifyWrap = document.getElementById('mfNotifyWrap');
+                const mfNotify     = document.getElementById('mfNotify');
+                const mfRecord     = document.getElementById('mfRecord');
+                const mfRecordRow  = document.getElementById('mfRecordRow');
+                const mfMode = () => (document.querySelector('input[name="mfMode"]:checked') || {}).value || '';
+                const mfSync = () => {
+                    const m = mfMode();
+                    mfNotifyWrap.hidden = m !== 'notify';
+                    mfRecord.disabled = m === 'block';
+                    mfRecordRow.style.opacity = m === 'block' ? '0.5' : '';
+                    mfRecordRow.title = m === 'block' ? T.mfRecordBlocked : '';
+                };
+                document.querySelectorAll('input[name="mfMode"]').forEach(r => r.addEventListener('change', () => {
+                    mfSync();
+                    if (mfMode() === 'notify' && !mfNotify.value.trim()) mfNotify.focus();
+                }));
+                mfSync();
+
+                mfSave.addEventListener('click', async function () {
+                    const mode = mfMode();
+                    if (!mode) { showToast(T.mfChooseMode, 'error'); return; }
+                    if (mode === 'notify' && !mfNotify.value.trim()) {
+                        showToast(T.mfNeedAddress, 'error');
+                        mfNotify.focus();
+                        return;
+                    }
+                    this.disabled = true;
+                    try {
+                        const r = await fetch(API_BASE + 'save_mandatory_fields_settings.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                mode: mode,
+                                // Kept even when another mode is chosen, so switching
+                                // back does not mean typing the list again.
+                                notify: mfNotify.value,
+                                record: mfRecord.checked,
+                                fields: Array.from(document.querySelectorAll('.mf-field:checked')).map(c => c.value)
+                            })
+                        });
+                        const d = await r.json();
+                        if (d.success && d.settings) {
+                            // Show what was stored, tidied (duplicates dropped).
+                            mfNotify.value = (d.settings.notify || []).join(', ');
+                        }
+                        showToast(d.success ? T.settingsSaved : (d.error || 'Failed'), d.success ? 'success' : 'error');
+                    } catch (e) {
+                        showToast('Failed', 'error');
+                    }
+                    this.disabled = false;
+                });
+            }
+
+        })();
+
     </script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/ticket-type-rules.js?v=1"></script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

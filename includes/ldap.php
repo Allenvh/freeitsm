@@ -21,7 +21,6 @@
  */
 
 require_once __DIR__ . '/encryption.php';
-require_once __DIR__ . '/ldap_transition.php';
 require_once __DIR__ . '/sso_identity.php';   // ssoClearDanglingLink() — shared with OIDC
 
 /** Connection/read timeout, in seconds. A dead DC must not hang the login page. */
@@ -597,11 +596,8 @@ function ldapCreateAnalyst(PDO $conn, int $providerId, string $preferredUser, st
     }
     ssoApplyJitCompanies($conn, $providerId, $analystId);   // which companies (3.5.0)
     // The "for new analysts" preference template (discussion #124).
-    // Compatibility: this fork does not yet include upstream preference templates.
-    if (is_file(__DIR__ . '/preference_templates.php')) {
-        require_once __DIR__ . '/preference_templates.php';
-        prefTemplatesApplyForNew($conn, $analystId);
-    }
+    require_once __DIR__ . '/preference_templates.php';
+    prefTemplatesApplyForNew($conn, $analystId);
     return $analystId;
 }
 
@@ -647,7 +643,6 @@ function ldapResolveAnalyst(PDO $conn, array $provider, array $ldapUser): array 
     $providerId = (int)$provider['id'];
     $subject    = (string)$ldapUser['guid'];
     $email      = strtolower(trim((string)$ldapUser['email']));
-    if ($email !== '' && legacyAdMigrationPending($conn, 'email', $email)) return ['ok'=>false,'error'=>'This account requires administrator migration review.'];
 
     // 1) Existing link.
     $stmt = $conn->prepare("SELECT analyst_id FROM analyst_sso_identities WHERE provider_id = ? AND subject = ?");
@@ -787,7 +782,6 @@ function ldapResolveUser(PDO $conn, array $provider, array $ldapUser): array {
     $providerId = (int)$provider['id'];
     $subject    = (string)$ldapUser['guid'];
     $email      = strtolower(trim((string)$ldapUser['email']));
-    if ($email !== '' && legacyAdMigrationPending($conn, 'email', $email)) return ['ok'=>false,'error'=>'This account requires administrator migration review.'];
     $username   = trim((string)$ldapUser['username']);
     $name       = trim((string)$ldapUser['name']);
 
@@ -883,7 +877,7 @@ function ldapResolveUser(PDO $conn, array $provider, array $ldapUser): array {
             require_once __DIR__ . '/tenancy.php';
             $tenantId = ($provider['tenant_id'] !== null)
                 ? (int)$provider['tenant_id']
-                : ($emailOrNull !== null ? resolveTenantIdForAddress($conn, $email) : null);
+                : ($emailOrNull !== null ? resolveTenantForNewUser($conn, $email) : null);
         } catch (Exception) { /* leave NULL → triage, never a wrong company */ }
 
         // display_name falls back through the directory name, then the sign-in

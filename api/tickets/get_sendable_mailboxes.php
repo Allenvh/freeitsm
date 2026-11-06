@@ -21,12 +21,19 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 try {
     $conn = connectToDatabase();
     $analystId = (int)$_SESSION['analyst_id'];
     $multi     = isMultiTenant($conn);
     $tenantId  = getActiveTenantId($conn, $analystId);
+    // GH #218: ?tenant_id= - the company chosen on New ticket in the all-companies
+    // view, so the list follows the ticket's company, not the board's. Only a company
+    // this analyst can reach; anything else keeps the active one.
+    if (!empty($_GET['tenant_id']) && analystCanAccessTenant($conn, $analystId, (int)$_GET['tenant_id'])) {
+        $tenantId = (int)$_GET['tenant_id'];
+    }
 
     $tenantName = null;
     if ($multi) {
@@ -35,26 +42,14 @@ try {
         $tenantName = $ts->fetchColumn() ?: null;
     }
 
-    $sendableWhere = "is_active = 1 AND (
-        (token_data IS NOT NULL AND token_data <> '')
-        OR (
-            (provider_type = 'imap_smtp' OR provider = 'imap_smtp')
-            AND auth_mode = 'basic'
-            AND outbound_enabled = 1
-            AND smtp_host IS NOT NULL AND smtp_host <> ''
-            AND smtp_port IS NOT NULL AND smtp_port > 0
-            AND smtp_from_address IS NOT NULL AND smtp_from_address <> ''
-            AND (smtp_username IS NULL OR smtp_username = '' OR (smtp_password_encrypted IS NOT NULL AND smtp_password_encrypted <> ''))
-        )
-    )";
-
-    // Only mailboxes that can actually send: OAuth mailboxes with tokens, plus
-    // Generic IMAP/SMTP mailboxes with complete outbound SMTP configuration.
+    // Only mailboxes that can actually send: active + either holding an OAuth token
+    // (Microsoft/Google) or a basic IMAP mailbox (sends via stored SMTP credentials).
+    $canSend = "(provider = 'imap' OR (token_data IS NOT NULL AND token_data <> ''))";
     if ($multi) {
         // Pinned to this company first, then shared intake.
         $sql = "SELECT id, name, tenant_id
                   FROM target_mailboxes
-                 WHERE $sendableWhere
+                 WHERE is_active = 1 AND $canSend
                    AND (tenant_id = ? OR tenant_id IS NULL)
                  ORDER BY (tenant_id IS NULL), name";
         $st = $conn->prepare($sql);
@@ -62,7 +57,7 @@ try {
     } else {
         $sql = "SELECT id, name, tenant_id
                   FROM target_mailboxes
-                 WHERE $sendableWhere
+                 WHERE is_active = 1 AND $canSend
                  ORDER BY name";
         $st = $conn->prepare($sql);
         $st->execute();

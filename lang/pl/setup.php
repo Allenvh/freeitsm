@@ -1,0 +1,120 @@
+<?php
+/**
+ * FreeITSM — setup strings (pl).
+ *
+ * Keys mirror lang/en/setup.php exactly. A key absent here falls back to
+ * English at runtime, so this file may be incomplete without breaking
+ * anything. Check coverage with: php scripts/i18n_audit.php pl
+ *
+ * ⚠️ Placeholders like {name} and %d are substituted at runtime — printf
+ * tokens substitute BY POSITION, so their order must match English.
+ */
+
+return [
+    'title' => 'Konfiguracja FreeITSM',
+    'heading' => 'Weryfikacja instalacji',
+    'storage' => [
+        'heading' => 'Stop — przesyłane pliki będą usuwane przy każdej aktualizacji',
+        'explain' => 'FreeITSM działa w Dockerze, a część folderów, w których przechowuje przesłane pliki, znajduje się wewnątrz kontenera, a nie na wolumenie Dockera. Aktualizacja FreeITSM przebudowuje kontener, a wszystko, co się w nim znajduje, jest wtedy usuwane. Twoja baza danych jest na wolumenie i przetrwa, więc później Twoje załączniki nadal będą widoczne na liście, mimo że same pliki znikną. Dwie minuty teraz zapobiegną temu na stałe.',
+        'encryption_key' => 'Dotyczy to również Twojego klucza szyfrującego. Jeśli zostanie utracony, zapisane hasła skrzynek pocztowych i dane uwierzytelniające integracji nie zostaną uszkodzone, ale nigdy nie będzie można ich ponownie odczytać, i każde z nich trzeba będzie wprowadzić ręcznie.',
+        'existing_install' => 'Ta instalacja jest już używana, więc nie wystarczy po prostu to dodać i przebudować kontenera. Najpierw skopiuj foldery z działającego kontenera — dodanie wolumenu nie odzyska plików, które już się w nim znajdują. System → Narzędzia diagnostyczne → D013 podaje polecenia we właściwej kolejności.',
+        'step1' => '1. Utwórz nowy plik o nazwie docker-compose.override.yml, w tym samym folderze co docker-compose.yml, zawierający dokładnie to. Nie edytuj samego pliku docker-compose.yml — jest on zastępowany przy aktualizacji, a Twoje zmiany zostałyby utracone lub zablokowałyby aktualizację. FreeITSM automatycznie odczytuje plik override.',
+        'step2' => '2. Zastosuj go:',
+        'foot' => 'Następnie odśwież tę stronę — ten komunikat zniknie. Nic więcej nie trzeba zmieniać, a zrobienie tego teraz nic nie kosztuje, ponieważ w tych folderach nie ma jeszcze niczego zapisanego.',
+        'foot_in_use' => 'Następnie odśwież tę stronę — ten komunikat zniknie. Nie pomijaj powyższego kroku kopiowania: w tych folderach są już pliki, a przebudowanie kontenera bez wcześniejszego ich skopiowania trwale je usunie.',
+    ],
+    'summary' => [
+        'passed' => '{n} zaliczonych',
+        'warning' => '{n} ostrzeżenie',
+        'warnings' => '{n} ostrzeżeń',
+        'failed' => '{n} nieudanych',
+    ],
+    'checks' => [
+        'config' => 'config.php',
+        'db_config' => 'db_config.php',
+        'db_connection' => 'Połączenie z bazą danych',
+        'encryption_key' => 'Klucz szyfrujący',
+        'ssl_verify' => 'Weryfikacja certyfikatu HTTPS',
+        'ca_bundle_ini' => 'Pakiet CA w php.ini',
+        'display_errors' => 'Wyświetlanie błędów',
+        'php_version' => 'Wersja PHP',
+        'php_extension' => 'Rozszerzenie PHP: {ext}',
+        'php_extension_optional' => 'Rozszerzenie PHP: {ext} (opcjonalne)',
+        'storage_persistence' => 'Trwałość przechowywania danych (Docker)',
+    ],
+    'detail' => [
+        'found' => 'Znaleziono',
+        'storage_persisted' => 'Każdy folder przechowujący przesłane pliki znajduje się na pamięci masowej, która przetrwa przebudowę kontenera',
+        'storage_at_risk' => 'NIE na wolumenie Dockera i opróżniane przy każdej przebudowie: {dirs} — dodaj wolumen dla każdego z nich już teraz, zanim cokolwiek zostanie w nich zapisane',
+        'storage_at_risk_masked' => '{n} folderów przechowujących przesłane pliki nie przetrwałoby aktualizacji',
+        'config_not_found' => 'Nie znaleziono — skopiuj config.php do katalogu głównego aplikacji',
+        'db_config_not_found' => 'Nie znaleziono w: {path}',
+        'db_config_path_unset' => 'Zmienna $db_config_path nie jest ustawiona w config.php',
+        'db_connected' => 'Połączono (sterownik: {driver})',
+        'db_constants_undefined' => 'Stałe bazy danych nie są zdefiniowane — sprawdź db_config.php',
+        'encryption_key_missing' => 'Nie znaleziono w: {path} — jest potrzebny do szyfrowania poufnych ustawień',
+        'encryption_key_undefined' => 'ENCRYPTION_KEY_PATH nie jest zdefiniowane w includes/encryption.php',
+        'ssl_enabled' => 'Włączone',
+        'ssl_verified' => 'Włączone i działa — rzeczywiste żądanie HTTPS przeszło weryfikację certyfikatu (pakiet CA: {bundle})',
+        'ssl_broken' => 'Włączone, ale serwer nie mógł zweryfikować certyfikatu — wychodzące połączenia HTTPS (e-mail, AI, webhooki, logowanie) nie będą działać. Najprostsza poprawka: umieść plik cacert.pem w folderze includes/ aplikacji (pobierz z https://curl.se/ca/cacert.pem) — nie są potrzebne żadne zmiany w php.ini. Błąd: {error}',
+        'ssl_untested' => 'Włączone, ale nie udało się wykonać rzeczywistego żądania testowego (brak połączenia wychodzącego?), więc weryfikacji nie można było potwierdzić. Błąd: {error}',
+        'ssl_bundle_system' => 'magazyn systemowy',
+        'help_link' => 'Jak to naprawić — przewodnik po certyfikatach HTTPS →',
+        'ca_ini_status' => 'curl.cainfo: {curl} · openssl.cafile: {ossl}',
+        'ca_ini_none' => 'nie ustawiono',
+        'ca_ini_missing' => '{path} (plik nie istnieje!)',
+        'ca_ini_note_fix' => ' — popraw ścieżkę lub zakomentuj to ustawienie w php.ini.',
+        'ca_ini_note_fallback' => ' — opcjonalnie: FreeITSM korzysta wtedy z dołączonej listy CA (Windows) lub magazynu zaufania systemu operacyjnego (Linux). Uwaga: dotyczy to PHP serwera WWW; proces w tle używa osobnego pliku php.ini dla CLI.',
+        'ssl_disabled' => 'Wyłączone — włącz w środowisku produkcyjnym (ustaw SSL_VERIFY_PEER na true w config.php)',
+        'ssl_undefined' => 'SSL_VERIFY_PEER nie jest zdefiniowane w config.php',
+        'display_errors_enabled' => 'Włączone — wyłącz w środowisku produkcyjnym (ustaw display_errors na 0 w config.php)',
+        'display_errors_disabled' => 'Wyłączone',
+        'php_version_ok' => '{version}',
+        'php_version_too_low' => '{version} — wymagane jest PHP 8.1 lub nowsze',
+        'php_version_eol' => '{version} — nadal obsługiwane, ale ta wersja nie otrzymuje aktualizacji zabezpieczeń od momentu zakończenia wsparcia. Zalecane PHP 8.3 lub 8.4.',
+        'extension_loaded' => 'Załadowane',
+        'extension_not_loaded' => 'Nie załadowane — włącz w php.ini',
+        'pdo_mysql_not_loaded' => 'Nie załadowane — włącz pdo_mysql w php.ini',
+        'imap_not_loaded' => 'Nie załadowane — potrzebne tylko dla podstawowych skrzynek IMAP/SMTP. PHP 8.4 nie zawiera już tego rozszerzenia; jeśli go używasz, zainstaluj je przez PECL.',
+        'db_config_not_found_masked' => 'Nie znaleziono pod ścieżką ustawioną w config.php',
+        'ssl_verified_masked' => 'Włączone i działa — rzeczywiste żądanie HTTPS przeszło weryfikację certyfikatu',
+        'ssl_broken_masked' => 'Włączone, ale serwer nie mógł zweryfikować certyfikatu — wychodzące połączenia HTTPS (e-mail, AI, webhooki, logowanie) nie będą działać. Zaloguj się jako administrator, aby zobaczyć błąd.',
+        'ssl_untested_masked' => 'Włączone, ale nie udało się wykonać rzeczywistego żądania testowego, więc weryfikacji nie można było potwierdzić.',
+        'db_error_masked' => 'Nie udało się połączyć — zaloguj się jako administrator, aby zobaczyć pełny błąd',
+        'encryption_key_missing_masked' => 'Nie znaleziono — jest potrzebny do szyfrowania poufnych ustawień',
+        'ca_ini_masked_ok' => 'Skonfigurowano',
+        'ca_ini_masked_broken' => 'Ustawione, ale wskazuje na plik, którego nie ma — popraw ścieżkę lub zakomentuj to ustawienie w php.ini.',
+        'php_version_ok_masked' => 'Spełnia wymagania',
+        'php_version_too_low_masked' => 'Zbyt stara — wymagane jest PHP 8.1 lub nowsze',
+        'php_version_eol_masked' => 'Obsługiwane, ale ta wersja zakończyła cykl wsparcia i nie otrzymuje już aktualizacji zabezpieczeń. Zaloguj się jako administrator, aby zobaczyć wersję.',
+    ],
+    'locked' => [
+        'notice' => 'Konfiguracja tej instalacji jest zakończona, więc ścieżki, błędy połączenia i dane uwierzytelniające są ukryte. Zaloguj się jako administrator, aby zobaczyć pełne szczegóły.',
+    ],
+    'db_verify' => [
+        'heading' => 'Weryfikacja bazy danych',
+        'intro' => 'Sprawdza i automatycznie tworzy brakujące tabele lub kolumny w bazie danych.',
+        'run' => 'Uruchom',
+    ],
+    'login' => [
+        'heading' => 'Domyślne dane logowania',
+        'intro' => 'Domyślne konto administratora zostaje utworzone podczas uruchomienia Weryfikacji bazy danych.',
+        'username' => 'Nazwa użytkownika:',
+        'password' => 'Hasło:',
+    ],
+    'footer' => [
+        'warning' => 'Gdy Twój system trafi do środowiska produkcyjnego, usuń folder {folder} ze względów bezpieczeństwa.',
+        'signature' => 'Weryfikacja instalacji FreeITSM',
+    ],
+    'js' => [
+        'running' => 'Uruchamianie...',
+        'run' => 'Uruchom',
+        'tables_checked' => 'Sprawdzono {n} tabel:',
+        'ok' => '{n} OK',
+        'created' => '{n} utworzonych',
+        'updated' => '{n} zaktualizowanych',
+        'errors' => '{n} błędów',
+        'unknown_error' => 'Nieznany błąd',
+        'verify_failed' => 'Nie udało się uruchomić weryfikacji bazy danych: {error}',
+    ],
+];

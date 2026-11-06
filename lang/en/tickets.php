@@ -17,6 +17,83 @@
  *  - Settings/dashboard/calendar/rota/users/help pages
  */
 return [
+    // The ticket table (PR #213): the list shown as a paginated table, and who may
+    // export it. See includes/ticket_list.php and assets/js/tickets-table.js.
+    'queue' => [
+        'layout'         => 'Ticket list',
+        'back'           => 'Back',
+        'back_title'     => 'Back to ticket list',
+        'resize'         => 'Resize ticket list and details',
+        'messages'       => 'Messages',
+        'table'          => 'Table',
+        'ticket'         => 'ticket',
+        'search'         => 'Search ticket number, subject or address…',
+        'search_content' => 'Search message bodies, notes and documents',
+        'save_failed'    => 'The list preference could not be saved.',
+        'export_title'   => 'Export all matching tickets as CSV',
+        // Tickets -> Settings -> General. The three choices are TicketListExport.
+        'export_label'        => 'Who can export the ticket list',
+        'export_help'         => 'Controls bulk CSV export of the filtered list. Existing ticket access still applies.',
+        'export_admins'       => 'Administrators only',
+        'export_ticket_users' => 'Anyone with Tickets',
+        'export_nobody'       => 'Nobody',
+        // Column headings, in the table and in the CSV's header row.
+        'columns' => [
+            'ticket_number'       => 'Ticket',
+            'subject'             => 'Subject',
+            'created_datetime'    => 'Created',
+            'priority_id'         => 'Priority',
+            'status_id'           => 'Status',
+            'assignee_id'         => 'Assigned analyst',
+            'department_id'       => 'Department',
+            'team_id'             => 'Team',
+            'ticket_type_id'      => 'Ticket type',
+            'work_start_datetime' => 'Work begins',
+            'work_end_datetime'   => 'Work ends',
+            'snoozed_until'       => 'Snoozed until',
+            'company_name'        => 'Company',
+        ],
+    ],
+    // The AI reading aids (#104, ideas 7 and 12).
+    'ai' => [
+        'badge' => 'AI summary',
+        'none_yet' => 'No summary yet.',
+        'summarise' => 'Summarise',
+        'refresh' => 'Refresh',
+        'history' => 'History',
+        'history_title' => 'Earlier summaries',
+        'show' => 'Show',
+        'hide' => 'Hide',
+        'working' => 'Reading the ticket…',
+        'working_secs' => 'Reading the ticket… {n}s',
+        'loading' => 'Loading…',
+        'read_again' => 'Read again',
+        'read_history_title' => 'Earlier briefings',
+        'try_again' => 'Try again',
+        'automatic' => 'automatic',
+        'written_at' => 'Written {time}',
+        'read_n' => 'read {n} messages',
+        'behind_one' => '1 message has arrived since this was written.',
+        'behind_n' => '{n} messages have arrived since this was written.',
+        'read_for_me' => 'Read it',
+        'read_for_me_help' => 'Have the AI read the whole ticket and brief you on it',
+        'not_configured' => 'No AI provider is configured for Tickets. Set one up under Tickets → Settings → Reply cleanup.',
+        'unreachable' => 'Could not reach the AI provider.',
+        'reasoning_overran' => 'The AI model used its whole budget thinking and returned nothing. Try a model that does not reason at length, under Tickets → Settings → Reply cleanup.',
+        'cut_off' => 'This was cut off before it finished. Write it again, or pick a model that does not think at length, under Tickets → Settings → Reply cleanup.',
+        'nothing_to_read' => 'There is nothing on this ticket to read yet.',
+        'turned_off' => 'This is switched off in Tickets → Settings → General.',
+        'failed' => 'That did not work. Nothing has been changed.',
+    ],
+    // The reading pane's own words (discussion #104).
+    'reading' => [
+        'show_more' => 'Show more',
+        'show_less' => 'Show less',
+        'older_messages' => '{n} older messages',
+        'hide_older' => 'Hide older messages',
+        'same_as_identical' => 'Identical to the message from {time}',
+        'same_as_near' => 'Nearly identical to the message from {time}',
+    ],
     'title' => 'Tickets',
 
     'nav' => [
@@ -68,7 +145,12 @@ return [
         'title'            => 'Folders',
         'group_label'      => 'Group folders by',
         'group_department' => 'Department',
+        // #1566. Only rendered when the install actually has teams.
+        'group_team'       => 'Team',
         'group_analyst'    => 'Analyst',
+        // #149. Your own analyst folder, pinned to the top of the Analyst
+        // grouping under this name instead of your own.
+        'my_tickets'       => 'My tickets',
     ],
 
     'list' => [
@@ -80,10 +162,26 @@ return [
         // Left-panel folder labels + matching list titles
         'unassigned'         => 'Unassigned',
         'unassigned_tickets' => 'Unassigned Tickets',
+        'snoozed'            => 'Snoozed',
         'trash'              => 'Trash',
+        // The consolidated view (#1554). A ticket with no company is one that
+        // arrived by email, the portal or a workflow and has not been routed yet -
+        // Default owns it by convention, but saying so would hide the fact that
+        // somebody still has to triage it.
+        'company_unrouted'   => 'Unrouted',
+        // The view filter (#149) - the funnel button beside Search. "Mine" means
+        // tickets ASSIGNED to you. The chips show beside the list title while a
+        // filter is on, so nobody wonders where half their tickets went.
+        'filter_btn'          => 'Filter tickets',
+        'filter_show'         => 'Show',
+        'filter_all'          => 'All',
+        'filter_mine'         => 'Mine',
+        'filter_hide_closed'  => 'Hide closed',
+        'filter_chip_closed'  => 'Closed hidden',
     ],
 
     'reading_pane' => [
+        'unknown_sender'      => 'Unknown sender',
         'select_ticket' => 'Select a ticket to view details',
 
         // Ticket properties panel (collapsible) + field labels
@@ -97,15 +195,34 @@ return [
         'field_company'       => 'Company',
         'field_department'    => 'Department',
         'field_type'          => 'Type',
+        // Classification (#1540). Each of these only appears when its switch is
+        // on — see the Categories tab in Tickets settings.
+        'field_category'          => 'Category',
+        'field_closure_category'  => 'Category at close',
+        'field_resolution_code'   => 'Resolution',
+        // Shown when changing the ticket type drops a category that was tied to
+        // the old one. Says it out loud: a value vanishing quietly reads as a bug.
+        'category_cleared'        => 'The category was cleared - it belonged to the previous ticket type.',
         'field_status'        => 'Status',
         'field_priority'      => 'Priority',
+        // Normal / Confidential (discussion #62)
+        'field_sensitivity'   => 'Sensitivity',
+        'sensitivity_normal'  => 'Normal',
+        'sensitivity_confidential' => 'Confidential',
+        'sensitivity_help'    => 'Confidential tickets are kept from the requester\'s managers. The service desk sees them as usual.',
+        'sensitivity_failed'  => 'Could not change the sensitivity',
         'field_origin'        => 'Origin',
         'field_first_time_fix'=> 'First Time Fix',
         'field_it_training'   => 'IT Training',
+        // #1566. Which queue owns the ticket, as distinct from who is doing it.
+        // Only rendered when the install actually has teams.
+        'field_team'          => 'Team',
         'field_owner'         => 'Owner',
         'opt_yes'             => 'Yes',
         'opt_no'              => 'No',
         'toggle_fullscreen'   => 'Toggle full-screen view',
+        'popout_back'         => 'Back',
+        'popout_back_title'   => 'Back to the ticket list (Esc)',
 
         // Email header meta + subject prefix
         'ticket_label'        => 'Ticket',
@@ -141,20 +258,43 @@ return [
         'problem_label'    => 'Problem:',
         'problem_unlinked' => 'not linked',
         'problem_link'     => 'Link to problem',
+
+        // Change strip (grey bar linking a ticket to a Change record)
+        'change_label'    => 'Change:',
+        'change_unlinked' => 'not linked',
+        'change_link'     => 'Link to change',
     ],
 
     // Right-click (context) menu on a ticket — top-level items live as static
     // markup in index.php; the submenu empty-states and clear rows are built
     // in inbox.js.
+    // Change-subject modal (#930)
+    'subject' => [
+        'title'  => 'Change subject',
+        'label'  => 'Subject',
+        'save'   => 'Save',
+        'empty'  => 'The subject cannot be empty',
+        'saved'  => 'Subject updated',
+        'failed' => 'Could not change the subject',
+    ],
+
     'context' => [
+        'change_subject'   => 'Change subject…',
         'link_cmdb'        => 'Link CMDB object…',
         'link_problem'     => 'Link to problem…',
+        'link_change'      => 'Link to change…',
+        'merge'            => 'Merge %d tickets…',
+        'link_ticket'      => 'Link to ticket…',
+        'link_task'        => 'Link to task…',
+        'schedule'         => 'Schedule work…',
         'record_time'      => 'Record time…',
         'set_status'       => 'Set status',
         'set_priority'     => 'Set priority',
         'set_department'   => 'Set department',
         'set_type'         => 'Set type',
         'assign_to'        => 'Assign to',
+        // #1566. Sits beside 'Assign to' — which queue owns it, vs who is doing it.
+        'assign_team'      => 'Assign to team',
         'move_company'     => 'Move to company',
         'move_trash'       => 'Move to trash',
         'empty_trash'      => 'Empty trash',
@@ -167,6 +307,206 @@ return [
         'clear_department' => '(no department)',
         'clear_type'       => '(no type)',
         'clear_assignee'   => '(unassigned)',
+        'clear_team'       => '(no team)',
+        'snooze'           => 'Snooze',
+        'wake'             => 'Wake now',
+    ],
+
+    // Collision detection (#934). Wording is deliberately informational, not
+    // accusatory — a colleague being here is normal, and this is a heads-up.
+    'presence' => [
+        'and'               => 'and',
+        'also_viewing'      => '%s is also viewing this ticket',
+        'also_viewing_many' => '%s are also viewing this ticket',
+        'is_replying'       => '%s is writing a reply…',
+        'are_replying'      => '%s are writing replies…',
+        'warn_one'          => '%s is writing a reply to this ticket right now — check with them before you send.',
+        'warn_many'         => '%s are writing replies to this ticket right now — check with them before you send.',
+    ],
+
+    // Escalating to an external issue tracker (#950). Wording is deliberately
+    // tracker-neutral ("issue tracker", not "Jira") except where naming the
+    // product is genuinely clearer — GitHub and others land behind the same UI.
+    // Who a note is attributed to when there is no analyst record to name.
+    // Deleting an analyst is a hard DELETE that reassigns nothing, so every note
+    // they ever wrote is orphaned the moment they leave — the note must still be
+    // readable, and saying who is gone beats saying nothing.
+    'note_author' => [
+        'former' => 'Former analyst',
+        'system' => 'System',
+    ],
+
+    // Who can see a note, said on the note itself (discussion #103). BOTH states
+    // are labelled rather than only the unusual one: if only shared notes were
+    // marked, "no label" would have to mean internal, and any note type added
+    // later would silently inherit that meaning.
+    'note_visibility' => [
+        'internal'       => 'Internal',
+        'internal_title' => 'Only colleagues can see this. It is not shown in the self-service portal.',
+        'shared'         => 'Visible to requester',
+        'shared_title'   => 'The requester can read this in the self-service portal.',
+    ],
+
+    // Tasks on a ticket (discussion #83). One picker does both verbs, so the
+    // strings distinguish creating from linking rather than the UI doing it.
+    // A one-off note added to the closing email (#142, asked for by mbsouth).
+    // 🔴 TRANSLATORS: this is OPTIONAL and per-ticket — the analyst types a
+    // sentence for this one customer, this once. It is not a saved setting and
+    // not a template. "Close" alone sends the standard email with nothing added.
+    'close_message' => [
+        'title'       => 'Add a message?',
+        'intro'       => 'Anything you write here is added to the email this customer receives. Leave it empty to send the standard closing email.',
+        'placeholder' => 'For example: the spare charger is on your desk. Have a nice day.',
+        'ok'          => 'Close',
+    ],
+
+    // Checklists on a ticket (PR #141, Santhosh Srinivasan; per-template gating
+    // contributed later by the same author).
+    //
+    // 🔴 TRANSLATORS: THIS GROUP CONTAINS BOTH WARNINGS AND REFUSALS, and they
+    // must not be worded alike. A checklist is Standard (the ticket closes, the
+    // skipped steps are recorded) or Critical (the ticket does not close at
+    // all). Rendering a warning as "you cannot close this" is the opposite of
+    // what happens, and rendering a refusal as a warning promises something the
+    // server will not do. Each block below says which it is.
+    'checklists' => [
+        'default_name'                 => 'Checklist',
+
+        // ── WARNING. The ticket DOES close. ──────────────────────────────
+        'close_with_mandatory_title'   => 'Close with steps outstanding?',
+        'close_with_mandatory'         => 'This ticket has {count} mandatory checklist step(s) still outstanding. Closing it now records which steps were skipped, and who skipped them, in the ticket notes.',
+        'close_anyway'                 => 'Close anyway',
+
+        // ── WARNING. The ticket DOES close, with no checklist on it. ─────
+        'no_checklist_warn_title'      => 'No checklist attached',
+        'no_checklist_warn_msg'        => 'This ticket has no checklist attached. Close it anyway?',
+        'close_without_checklist'      => 'Close without a checklist',
+
+        // ── REFUSAL. The ticket does NOT close. ──────────────────────────
+        'blocked_title'                => 'Mandatory steps required',
+        'blocked_message'              => 'This ticket cannot be closed until its mandatory checklist steps are complete:',
+        'view_checklist'               => 'View checklist',
+        'no_checklist_blocked_title'   => 'Checklist required',
+        'no_checklist_blocked_msg'     => 'This ticket cannot be closed until a checklist is attached to it.',
+        'attach_checklist'             => 'Attach a checklist',
+
+        // Tooltip on the padlock marking a checklist that blocks closure.
+        'mandatory_for_closure'        => 'Mandatory for closure',
+    ],
+
+    // Closing a ticket with mandatory fields empty (Tickets → Settings →
+    // Mandatory fields). 🔴 TRANSLATORS: warn_* is a WARNING - the ticket does
+    // close. block_* is the refusal. The field names follow on their own lines.
+    'mandatory_close' => [
+        'warn_title'    => 'Close with fields empty?',
+        'warn_message'  => 'These fields should be filled in before this ticket is closed:',
+        'warn_recorded' => 'Closing it now records which fields were empty, and who closed it, in the ticket notes.',
+        'warn_notified' => 'Closing it now also emails the people your administrator chose.',
+        'close_anyway'  => 'Close anyway',
+        'block_title'   => 'Fill these in first',
+        'block_message' => 'This ticket cannot be closed until these fields are filled in:',
+        'block_ok'      => 'OK',
+        // Closing several at once (bulk actions, or dragging a selection).
+        // Each ticket follows on its own line as "REF: Field, Field".
+        'multi_block_message' => 'These tickets cannot be closed until their fields are filled in:',
+        'multi_warn_message'  => 'These tickets have fields that should be filled in first:',
+        'close_rest'    => 'Close the rest',
+        'and_more'      => '…and {count} more',
+    ],
+
+    // The reading pane's one-row Links strip (fitLinksStrip in inbox.js).
+    'links' => [
+        'more_label' => 'Show {count} more links',
+        'less'       => 'Less',
+    ],
+    'tasks' => [
+        'menu_item'          => 'Task',
+        'search_placeholder' => 'Search tasks, or type a new one…',
+        'group_create'       => 'Create',
+        'group_existing'     => 'Existing tasks',
+        'type_to_search'     => 'Type to search, or type a new task title…',
+        'no_matches'         => 'No matching tasks — the row above creates one',
+        'create_named'       => 'Create task "{title}"',
+        'moves_from'         => 'currently on {ticket}',
+        // Phone-only modal behind the long-press "Link to task" (the inline
+        // strip picker lives in the hidden Links sheet there).
+        'modal_title'        => 'Link {ticket} to a task',
+        'none_yet'           => 'No tasks yet - type a title above to create one',
+        // A task belongs to ONE ticket, so linking one that is already attached
+        // takes it off the other ticket. Saying so in the row was not enough —
+        // it has to be asked. (Ed)
+        'another_ticket'     => 'another ticket',
+        'move_title'         => 'Move this task?',
+        'move_confirm'       => '“{title}” is currently linked to {ticket}. Linking it here will remove it from that ticket.',
+        'move_ok'            => 'Move',
+        'created_toast'      => 'Task "{title}" created',
+        'linked_toast'       => 'Task linked',
+        'unlinked_toast'     => 'Task unlinked',
+        'link_failed'        => 'Could not update the task link',
+        'unlink_title'       => 'Unlink task',
+        'unlink_confirm'     => 'Remove this task from the ticket? The task itself is not deleted and stays in the Tasks module.',
+        'close_with_open'    => 'This ticket still has {count} unfinished task(s). Close it anyway?',
+    ],
+    'tracker' => [
+        'menu_item'       => 'Issue tracker',
+        'attach_send_btn'     => 'Send to {issue}',
+        'attach_send_title'   => 'Send this file?',
+        'attach_send_confirm' => 'Send "{file}" to {issue}? It cannot be unsent, and anyone with access to that project will be able to read it.',
+        'attach_sending'      => 'Sending…',
+        'attach_sent'         => 'Sent',
+        'attach_sent_toast'   => '"{file}" sent to {issue}',
+        'attach_send_failed'  => 'Could not send the file.',
+        'attach_heading'  => '{count} attachment(s) will be sent with the issue',
+        'confidential_title'   => 'This ticket is confidential.',
+        'confidential_body'    => 'Escalating copies its subject, its first message and any attachments shown below into the tracker, outside FreeITSM, where confidentiality does not reach and it cannot be taken back.',
+        'confidential_confirm' => 'I understand, and mean to copy it into the tracker',
+        'attach_skipped' => 'not sent',
+        'modal_title'     => 'Raise a development issue from',
+        'tracker_label'   => 'Tracker',
+        'project_label'   => 'Project key',
+        'type_label'      => 'Issue type',
+        'summary_label'   => 'Summary',
+        'preview_label'   => 'What will be sent',
+        'preview_hint'    => 'This is exactly what the development team will see. Internal notes are never included.',
+        'escalate'        => 'Raise',
+        'loading_preview' => 'Building the preview…',
+        'preview_failed'  => 'Could not build the preview.',
+        'no_connections'  => 'No tracker is set up for this company yet',
+        'project_required'=> 'Enter a project key.',
+        'raised'          => 'Raised as {key}',
+        'raised_generic'  => 'Issue raised.',
+        'failed'          => 'Could not raise the issue.',
+        'issue'           => 'Issue',
+    ],
+
+    // Snoozing a ticket (#933). Every wake time is shown WITH its time of day —
+    // "Thursday" alone leaves an analyst guessing whether it's back first thing.
+    'snooze' => [
+        'three_hours'   => 'In 3 hours',
+        'tonight'       => 'This evening',
+        'tomorrow'      => 'Tomorrow',
+        'next_week'     => 'Next week',
+        'pick'          => 'Pick a date…',
+        'modal_title'   => 'Snooze',
+        'date'          => 'Wake on',
+        'time'          => 'At',
+        'reason'        => 'What are you waiting for?',
+        'reason_ph'     => 'e.g. supplier delivery, user on holiday',
+        'reason_help'   => 'Optional. Shown on the ticket so a colleague knows why it is asleep.',
+        'confirm'       => 'Snooze',
+        'until'         => 'Snoozed until %s',
+        'by'            => 'Snoozed by %s.',
+        'banner_hint'   => 'It comes back to the queue automatically.',
+        'today_at'      => 'Today %s',
+        'tomorrow_at'   => 'Tomorrow %s',
+        'toast_one'     => 'Snoozed until %s',
+        'toast_many'    => '%d tickets snoozed until %s',
+        'failed'        => 'Could not snooze',
+        'need_datetime' => 'Pick a date and a time',
+        'wake_one'      => 'Back in the queue',
+        'wake_many'     => '%d tickets back in the queue',
+        'wake_none'     => 'Nothing to wake',
+        'wake_failed'   => 'Could not wake',
     ],
 
     'note_modal' => [
@@ -174,6 +514,128 @@ return [
         'note_label'  => 'Note',
         'placeholder' => 'Enter your note here...',
         'save_btn'    => 'Save',
+        'share_label'           => 'Share this with the requester',
+        // Says WHERE it goes, because "share" on its own reads as "send". A shared
+        // note appears in the portal; it is not emailed. Reply is what emails.
+        'share_hint'            => 'They will see it, and any files you attach, in the self-service portal. It is not emailed — use Reply for that. Leave it off to keep it internal.',
+        'share_hint_no_mailbox' => 'This person has no email address, so a shared note is the only way to reach them. They will see it in the portal.',
+        // Attachments (discussion #69). Internal notes only — the portal cannot
+        // show a file, so a shared note carrying one would promise the requester
+        // something they never receive.
+        'files_label'           => 'Files',
+        'attach_btn'            => 'Attach',
+        'remove_file'           => 'Remove',
+        'files_failed'          => '{n} of {total} file(s) could not be attached: {names}. The note itself was saved.',
+        // Pictures in the note box (GH #224) - assets/js/note-images.js.
+        'paste_hint'            => 'Paste a screenshot (Ctrl+V) to put it in the note where the cursor is. Backspace removes it.',
+        'save_failed'           => 'The note was not saved, and your text is still here: {error}',
+    ],
+
+    // Splitting a ticket (#914). Note "newer", never "after": the thread is shown
+    // newest-first, so later-in-time messages appear ABOVE the chosen one.
+    'split' => [
+        'from_here'         => 'Split',
+        'from_here_title'   => 'Split this message into a new ticket',
+        'title'             => 'Split into a new ticket',
+        'intro'             => 'The messages below will move to a brand-new ticket. This one keeps the rest, with a note showing where they went.',
+        // The checklist dialog: tick exactly the messages that belong on the new ticket.
+        'pick_intro'        => 'Tick the messages that belong on a new ticket. They move across; this ticket keeps the rest, with a note showing where they went.',
+        'select_newer'      => 'This and newer',
+        'select_all'        => 'All',
+        'select_clear'      => 'Clear',
+        // Separate singular/plural rather than "message(s)" — the count is shown to
+        // the analyst at the moment they decide, and "1 message(s)" reads as a bug.
+        'selected_one'      => '1 message selected',
+        'selected'          => '%d messages selected',
+        'pick_none'         => 'Tick at least one message to move to the new ticket.',
+        'include_newer'     => 'Include newer messages too',
+        'include_newer_one' => 'Include the 1 newer message too',
+        'include_newer_n'   => 'Include the %d newer messages too',
+        'include_newer_none'=> 'There are no newer messages',
+        'will_move'         => 'Moving to the new ticket',
+        'loading'           => 'Working out what will move…',
+        'none'              => 'No messages selected',
+        'subject'           => 'Subject for the new ticket',
+        'subject_help'      => 'Defaults to the first moved message. Worth rewriting — it is usually a "RE:" of the old problem, not the new one.',
+        'confirm'           => 'Split',
+        'done'              => 'Moved %d messages to %s',
+        'would_empty'       => 'That would move every message and leave this ticket empty. Keep at least one message here, or merge the ticket instead.',
+        'banner_from_one'   => 'Split from 1 message on',
+        'banner_from'       => 'Split from %d messages on',
+        'undo'              => 'Undo split',
+        'undo_title'        => 'Undo this split?',
+        'undo_message'      => 'The messages come back to this ticket and the one that was created goes to the trash. Only possible while nothing has been added to it since.',
+        'undo_done_one'     => '1 message returned; %s moved to the trash',
+        'undo_done'         => '%d messages returned; %s moved to the trash',
+        'banner_out_one'    => 'Messages were split out to:',
+        'banner_out'        => 'Messages were split out to %d tickets:',
+        'done_one'          => 'Moved 1 message to %s',
+    ],
+
+    // Merging tickets (#912)
+    'merge' => [
+        'title'                 => 'Merge tickets',
+        'need_two'              => 'Select two or more tickets to merge',
+        'intro'                 => 'You are merging %d tickets. This cannot be undone from here.',
+        'pick_survivor'         => 'Which ticket should the others be merged into?',
+        'pick_model'            => 'Which ticket should the new one take its details from?',
+        'confirm'               => 'Merge',
+        'done'                  => 'Merged %d tickets into %s',
+
+        'effect_ref_survivor'   => 'The ticket you pick keeps its reference. The others close and point at it.',
+        'effect_ref_new'        => 'A brand-new ticket is created and all of these close and point at it.',
+        'effect_orig_thread'    => 'The conversations move onto the merged ticket.',
+        'effect_orig_thread_html' => 'The conversations move across, and a copy of each is also attached as an HTML file.',
+        'effect_orig_html'      => 'The conversations stay put; copies are attached to the merged ticket as HTML files.',
+        'effect_kept'           => 'Nothing is deleted — old references stay searchable, and replies to old emails still reach you.',
+
+        'summary_title'         => 'Merged — here is the briefing',
+        'ai_heading'            => 'Summary',
+        'ai_badge'              => 'AI',
+        'ai_editable'           => 'Written by AI from the merged conversations. Edit it however you like — it saves as an internal note and is never shown to the requester.',
+        'ai_thinking'           => 'Reading the merged conversations…',
+        'ai_progress'           => 'Reading the merged conversations… %ds. This can take up to a minute on a long thread.',
+        'ai_unconfigured'       => 'No AI provider is set up, so there is no automatic summary. You can type your own note here, or just close.',
+        'ai_failed'             => 'Could not write the summary — the merge itself was fine',
+        'save_summary'          => 'Save note',
+        'discard_summary'       => 'No note',
+        'summary_saved'         => 'Summary saved to the ticket',
+
+        'undo'                  => 'Undo merge',
+        'undo_title'            => 'Undo this merge?',
+        'undo_message'          => 'The messages, notes and logged time this ticket brought with it come back, and it reopens exactly as it was. Replies written on the other ticket since the merge stay there — this is not a full rewind.',
+        'undo_done'             => 'Unmerged — %s is back',
+
+        'banner_away_title'     => 'This ticket has been merged.',
+        'banner_away_body'      => 'Its conversation continues elsewhere. Replying here will not reach the requester.',
+        'banner_go'             => 'Go to %s',
+        'banner_in_one'         => 'Answers for 1 merged ticket:',
+        'banner_in'             => 'Answers for %d merged tickets:',
+    ],
+
+    // Multi-select + bulk actions in the ticket list (#910)
+    'bulk' => [
+        'n_selected'       => '%d tickets selected',
+        'clear'            => 'Clear selection',
+        'assign'           => 'Assign',
+        'status'           => 'Status',
+        'priority'         => 'Priority',
+        'department'       => 'Department',
+        'delete'           => 'Delete',
+        'right_click_hint' => 'Tip: right-click any selected ticket for the full menu, or drag them onto a folder.',
+        'keep_warning'     => '%d tickets are selected — an action will apply to all of them.',
+        'delete_title'     => 'Delete tickets',
+        'delete_message'   => 'Move %d tickets to the trash? You can restore them from there.',
+        'done'             => '%s applied to %d tickets',
+        'partial'          => 'Applied to %d tickets, %f failed',
+        // Labels used in the progress line and the result toast.
+        'label_status'     => 'Setting status',
+        'label_priority'   => 'Setting priority',
+        'label_department' => 'Setting department',
+        'label_assignee'   => 'Assigning',
+        'label_type'       => 'Setting type',
+        'label_move'       => 'Moving',
+        'label_delete'     => 'Deleting',
     ],
 
     'reply_modal' => [
@@ -189,12 +651,53 @@ return [
         'undo'           => 'Undo',
         'cleanup'        => 'Cleanup',
         'send'           => 'Send',
+
+        // Canned responses picker
+        'templates'                => 'Templates',
+        'templates_team'           => 'Team',
+        'templates_mine'           => 'Mine',
+        'templates_none_team'      => 'No shared templates yet',
+        'signature'         => 'Signature',
+        'signature_default' => '(default)',
+        'signature_none'    => 'You have no signatures yet.',
+        'signature_remove'  => 'No signature',
+        'signature_manage'  => 'Manage my signatures',
+        'signature_failed'  => 'Your signatures could not be loaded.',
+        'templates_none_mine'      => 'None yet — save a draft below',
+        'save_draft_as_template'   => 'Save draft as template',
+        'template_update'          => 'Replace with current draft',
+        'save_template_title'      => 'Save as template',
+        'save_template_update_title' => 'Update template',
+        'save_template_name'       => 'Template name',
+        'save_template_placeholder' => 'e.g., Password reset done',
+        'save_template_hint'       => 'Saved to your own list only — nobody else sees it. Use merge codes like [requester_first_name] and they will be filled in each time you insert it.',
+        'template_no_ticket'       => 'Open a ticket first',
+        'template_empty_draft'     => 'Type your reply first, then save it as a template',
+        'template_name_required'   => 'Give the template a name',
+        'template_saved'           => 'Template saved',
+        'template_deleted'         => 'Template deleted',
+        'template_delete_title'    => 'Delete template',
+        'template_delete_message'  => 'Delete your template "%s"?',
     ],
 
     'new_ticket_modal' => [
         'title'                   => 'Create New Ticket',
         'requester_name'          => 'Requester Name',
         'requester_email'         => 'Requester Email',
+
+        // Requester picker (discussion #54). "Add someone new" is always offered,
+        // so its label has to read sensibly both with and without a search term.
+        'requester'               => 'Requester',
+        'requester_placeholder'   => 'Search by name or email…',
+        'requester_none'          => 'No matching people',
+        'requester_add'           => 'Add someone new',
+        'requester_add_named'     => 'Add someone new: “%s”',
+        'requester_new_head'      => 'New requester',
+        'requester_new_cancel'    => 'Cancel and search instead',
+        'requester_clear'         => 'Choose a different requester',
+        'requester_browse'        => 'Browse all requesters',
+        'requester_browse_title'  => 'Choose a requester',
+        'requester_required'      => 'Choose a requester, or add a new one with a name and email address',
         'subject'                 => 'Subject',
         'mailbox'                 => 'Send replies from',
         'department'              => 'Department',
@@ -202,6 +705,13 @@ return [
         'priority'                => 'Priority',
         'description'             => 'Description',
         'select_placeholder'      => '-- Select --',
+        // The consolidated view (#1554). Asked ONLY when the analyst is looking
+        // at every company at once - elsewhere the answer is already known.
+        'company'                 => 'Company',
+        'select_company'          => '-- Which company? --',
+        'select_company_first'    => '-- Choose a company first --',
+        'company_hint'            => 'You are viewing all companies, so this ticket needs to be filed against one. It decides the ticket number, the mailbox replies come from, and the SLA that applies.',
+        'company_required'        => 'Please choose which company this ticket is for.',
         'name_placeholder'        => 'e.g., John Smith',
         'email_placeholder'       => 'e.g., john.smith@company.com',
         'subject_placeholder'     => 'Brief description of the issue',
@@ -223,12 +733,89 @@ return [
         'search_btn'        => 'Search',
         'clear_btn'         => 'Clear',
         'empty_state'       => 'Enter search criteria above',
+        'content'           => 'Anywhere in the ticket',
+        'content_ph'        => 'Words from a message, a note, or a subject',
+        'content_hint'      => 'Searches inside every message and note, not just subjects.',
+        'include_closed'    => 'Include closed tickets',   // #149
+        'found_in'          => 'Found in',
+        'part_ticket'       => 'subject',
+        'part_email'        => 'message',
+        'part_note'         => 'note',
+        'part_attachment'   => 'attachment',
+        'more_hits'         => '+{n} more',
+        'ignored_terms'     => 'Ignored, too short to search: {terms}',
+        'too_short'         => 'Use a word of at least {n} letters to search inside tickets.',
+        'not_indexed'       => 'Ticket content has not been indexed on this installation yet.',
+    ],
+
+    // Inline reply box on a WhatsApp/Telegram/Slack ticket (assets/js/inbox.js renderChannelComposer() and friends).
+    // The Telegram bot's OWN outbound text (not UI chrome) — sent in the
+    // CUSTOMER's language_code (includes/messaging/ingest.php), not the
+    // analyst's interface language. See I18n::tFor().
+    // Customer-facing satisfaction question on a messaging channel (includes/csat.php).
+    'csat_channel' => [
+        'prompt' => 'How would you rate the service you received? Tap a number from 1 (poor) to 5 (excellent), or reply with a single digit.',
+        'thanks' => 'Thank you for your feedback!',
+        // Replaces the Telegram buttons under the question once it is answered.
+        'rated'  => 'You rated this {rating} out of 5 - thank you.',
+    ],
+
+    'telegram_bot' => [
+        'request_contact_prompt' => 'Hi! While we look into this, could you share your phone number using the button below? It helps us recognise you if you\'ve contacted us before.',
+        'request_contact_button' => 'Share phone number',
+        'ack_new'                => 'Thanks! Please describe your issue and we\'ll take it from here.',
+    ],
+
+    'channel_composer' => [
+        'label_webchat'             => 'Web chat',
+        'reply_title'               => 'Reply to the customer over {channel}',
+        'placeholder'               => 'Type your reply…',
+        'suggest_title'             => 'Draft a reply with AI',
+        'suggest'                   => 'Suggest',
+        'summarise_title'           => 'Summarise this conversation into the ticket',
+        'summarise'                 => 'Summarise',
+        'send'                      => 'Send',
+        'attach'                    => 'Attach',
+        'attach_title'              => 'Attach a file (image, document…)',
+        'attachment_sent'           => 'Attachment sent',
+        'attachment_send_failed'    => 'Failed to send attachment',
+        'window_closed'             => '⏳ The 24-hour reply window has closed. Free-text replies are blocked by WhatsApp — send a pre-approved template to re-open the conversation.',
+        'template_label'            => 'Template',
+        'loading_templates'         => 'Loading templates…',
+        'send_template'             => 'Send template',
+        'no_templates'              => 'No templates set up — add them in Settings → Messaging',
+        'choose_template'           => '— choose a template —',
+        'templates_load_failed'     => 'Failed to load templates',
+        'template_var_placeholder'  => 'Value for {{{n}}}',
+        'choose_template_first'     => 'Choose a template first',
+        'fill_all_template_values'  => 'Fill in all template values',
+        'sending'                   => 'Sending…',
+        'template_sent'             => 'Template sent',
+        'could_not_send'            => 'Could not send: {error}',
+        'unknown_error'             => 'unknown error',
+        'template_send_failed'      => 'Failed to send template',
+        'type_message_first'        => 'Type a message first',
+        'message_sent'              => 'Message sent',
+        'message_send_failed'       => 'Failed to send message',
+        'drafting_reply'            => 'Drafting a reply…',
+        'draft_failed'              => 'Could not draft a reply',
+        'summarising'               => 'Summarising…',
+        'summary_added'             => 'Summary added to ticket notes',
+        'summarise_failed'          => 'Could not summarise',
     ],
 
     'schedule_modal' => [
         'title'                => 'Schedule Work',
         'date'                 => 'Date',
         'start_time'           => 'Start Time',
+        'all_day'              => 'All day',
+        'duration'             => 'Duration',
+        'dur_15m'              => '15 minutes',
+        'dur_30m'              => '30 minutes',
+        'dur_1h'               => '1 hour',
+        'dur_2h'               => '2 hours',
+        'dur_4h'               => '4 hours',
+        'dur_custom'           => '{n} minutes',
         'currently_scheduled'  => 'Currently scheduled:',
         'clear_schedule'       => 'Clear schedule',
     ],
@@ -247,7 +834,10 @@ return [
         'schedule'             => 'Schedule',
         'ask_ai'               => 'Ask AI',
         'audit'                => 'Audit',
-        'request_feedback'     => 'Request feedback',
+        'export'               => 'Export',
+        'export_tip'           => 'Export this ticket and its tasks as a case report',
+        'more'                 => 'More',
+        'request_feedback'     => 'Feedback',
         'delete'               => 'Delete',
         'loading_attachments'  => 'Loading attachments...',
     ],
@@ -261,6 +851,51 @@ return [
         'no_matches'         => 'No matches.',
         'unlink_title'       => 'Unlink',
         'unlink_confirm'     => 'Unlink this CMDB object from the ticket?',
+        'unlinked_toast'     => 'Unlinked',
+        'linked_toast'       => 'Linked {name}',
+        'already_linked'     => '{name} is already linked',
+        'menu_item'          => 'CMDB object',
+    ],
+    // Domains on a ticket (3.0.0) - pills in the Links strip, like CMDB objects.
+    'projects' => [
+        'menu_item'          => 'Project',
+        'search_placeholder' => 'Type to search live projects...',
+        'no_matches'         => 'No live project you can change matches.',
+        'unlink_title'       => 'Unlink',
+        'unlink_confirm'     => 'Take this ticket out of the project?',
+        'unlinked_toast'     => 'Unlinked',
+        'linked_toast'       => 'Added to {name}',
+    ],
+
+    'domains' => [
+        'menu_item'          => 'Domain',
+        'search_placeholder' => 'Type to search domains…',
+        'no_matches'         => 'No matches.',
+        'unlink_title'       => 'Unlink',
+        'unlink_confirm'     => 'Unlink this domain from the ticket?',
+        'unlinked_toast'     => 'Unlinked',
+        'linked_toast'       => 'Linked {name}',
+        'expires'            => 'Expires {date}',
+    ],
+
+    // Equipment linked to a ticket (discussion #57). Nested, like every other
+    // section here — I18n::t() splits the key on every dot, so a flat
+    // 'assets.section_title' key would never resolve.
+    'assets' => [
+        'menu_item'          => 'Equipment',
+        'section_title'      => 'Affected equipment',
+        'link_btn'           => '+ Link equipment',
+        'empty'              => 'No equipment linked yet.',
+        'search_placeholder' => 'Search by name, model, serial, tag or location…',
+        'type_to_search'     => 'Start typing to search all equipment.',
+        'no_matches'         => 'No matches.',
+        'group_requester'    => 'Assigned to the requester',
+        'group_all'          => 'All equipment',
+        'unnamed'            => 'Unnamed asset',
+        'serial'             => 'Serial {serial}',
+        'open_title'         => 'Open in Assets',
+        'unlink_title'       => 'Unlink',
+        'unlink_confirm'     => 'Unlink this equipment from the ticket?',
         'unlinked_toast'     => 'Unlinked',
         'linked_toast'       => 'Linked {name}',
         'already_linked'     => '{name} is already linked',
@@ -281,31 +916,145 @@ return [
         'delete_failed'        => 'Failed to delete time entry: {error}',
     ],
 
+    // Tickets -> Settings -> Ticket types: the type a new ticket gets (GH #230).
+    'type_rules' => [
+        'title'          => 'Type for new tickets',
+        'intro'          => 'When nobody chooses a type - an email, a portal request, a web chat, an analyst who leaves it blank - a new ticket gets one here: from the first rule below that matches, otherwise from the default. A type somebody chooses always wins, and anyone can change the type afterwards. To change a type later in a ticket\'s life, use the <strong>Set ticket type</strong> action in Workflow.',
+        'default_label'  => 'Default type',
+        'default_none'   => 'None - leave the type empty',
+        'default_inherit'=> 'Use the shared default ({type})',
+        'default_hint'   => 'Used when no rule matches.',
+        'company_hint'   => 'These are {company}\'s own rules and default. They are checked first; the shared rules below apply after them.',
+        'rules_title'    => 'Rules',
+        'rules_hint'     => 'Checked from the top; the first rule that matches decides. Move a rule up to give it priority.',
+        'rules_none'     => 'No rules yet - every new ticket without a type gets the default.',
+        'shared_title'   => 'Shared rules, checked after these',
+        'shared_hint'    => 'Managed in the shared settings. Listed here so you can see what happens when none of this company\'s rules match.',
+        'col_rule'       => 'Rule',
+        'col_type'       => 'Type',
+        'inactive'       => 'Off',
+        'move_up'        => 'Move up',
+        'move_down'      => 'Move down',
+        'and'            => 'and',
+        'add_title'      => 'Add rule',
+        'edit_title'     => 'Edit rule',
+        'rule_name'      => 'Name',
+        'rule_name_ph'   => 'e.g. Requests mailbox',
+        'then_type'      => 'Give the ticket this type',
+        'pick_type'      => 'Choose a type',
+        'when_hint'      => 'When the new ticket matches every part you fill in below. Leave a part empty to ignore it; ticking several in one part means any of them.',
+        'active'         => 'On',
+        'crit_channels'    => 'Arrived by',
+        'crit_mailboxes'   => 'Mailbox',
+        'crit_origins'     => 'Origin',
+        'crit_departments' => 'Department',
+        'crit_companies'   => 'Company',
+        'crit_subject'     => 'Subject contains',
+        'crit_domains'     => 'Requester\'s email domain',
+        'ph_subject'     => 'password reset\nnew starter',
+        'ph_domains'     => 'example.com\nsupplier.co.uk',
+        'help_subject'   => 'One word or phrase per line; any one of them found in the subject matches, in any case.',
+        'help_domains'   => 'One domain per line; its subdomains match too (example.com matches mail.example.com).',
+        'channel_email'      => 'Email',
+        'channel_portal'     => 'Self-service portal',
+        'channel_form'       => 'New ticket form (analysts)',
+        'channel_api'        => 'REST API',
+        'channel_webchat'    => 'Web chat',
+        'channel_messaging'  => 'Messaging (WhatsApp, Teams, Slack...)',
+        'channel_catalogue'  => 'Service catalogue form',
+        'channel_workflow'   => 'Workflow',
+        'channel_phone'      => 'Phone system (3CX)',
+        'channel_monitoring' => 'Monitoring alert (Zabbix, domains)',
+        'channel_internal'   => 'From a project or task',
+        'try_title'      => 'Try it',
+        'try_hint'       => 'Describe a new ticket and see which type it would get. Nothing is created.',
+        'try_pick'       => 'Choose',
+        'try_none'       => 'None',
+        'try_default_company' => 'The default company',
+        'try_subject'    => 'Subject',
+        'try_email'      => 'Requester\'s email',
+        'try_go'         => 'Test',
+        'try_result_none'    => 'No type - no rule matches and there is no default.',
+        'try_result_rule'    => 'It would be {type}, from the rule {rule}.',
+        'try_result_default' => 'It would be {type}, the default - no rule matches.',
+        'saved'          => 'Saved.',
+        'delete_title'   => 'Delete rule',
+        'delete_msg'     => 'Delete the rule "{name}"? Tickets that already have its type keep it.',
+        'name_needed'    => 'Give the rule a name, up to 100 characters.',
+        'type_needed'    => 'Choose a type this company uses.',
+        'criteria_needed'=> 'Fill in at least one part for the rule to match. For every ticket, set the default type instead.',
+        'not_found'      => 'That rule was not found.',
+        'not_ready'      => 'This needs a database update first - an administrator can run System -> Database Verification.',
+        'error'          => 'Something went wrong.',
+    ],
+
     // tickets/settings/index.php — admin settings page (tabs + section headings)
     'settings' => [
+        // Oversized inbound emails (GH #170). The LIMITS live in System -> Security.
+        'oversize' => [
+            'heading'         => 'When an email is too large',
+            'limits_line'     => 'The limits are {max} per attachment and {total} per email, set in {link} for the whole install. A mailbox can set its own limits and rules in its settings above.',
+            'limits_link'     => 'System -> Security -> Attachments',
+            'no_limit'        => 'no limit',
+            'mode'            => 'What to do with the email',
+            'mode_strip'      => 'Keep it, but leave out the attachments that are too big - a note on the ticket lists them',
+            'mode_reject'     => 'Reject the whole email - no ticket is made, and it is handled like other rejected mail for the mailbox',
+            'order'           => 'When the attachments together are over the limit for one email',
+            'order_largest'   => 'Remove the largest first, until the rest fit',
+            'order_all'       => 'Remove them all',
+            'order_order'     => 'Keep them in the order they were attached, until the next one would not fit',
+            'order_hint'      => 'An attachment over the limit for one attachment is always removed; this decides what else goes.',
+            'alert_heading'   => 'Alert',
+            'reply_heading'   => 'Reply to the sender',
+            'alert'           => 'Email an alert to',
+            'reply'           => 'Send the sender a reply',
+            'reply_hint'      => '{subject}, {limit} and {total_limit} are filled in. Never sent to automated senders (no-reply, mailer-daemon...), or more than once an hour to the same sender.',
+            'log_note'        => 'Every oversized email is recorded in the mailbox log (Logs, at the top of this tab), with what was removed or why it was rejected, and who was told.',
+            'saved'           => 'Saved.',
+            'mailbox_heading' => 'Large emails',
+            'use_defaults'    => 'Use the defaults (Tickets -> Settings -> Mailboxes)',
+            'use_own'         => 'Set limits and rules for this mailbox',
+            'max_mb'          => 'Largest attachment',
+            'max_total_mb'    => 'Largest email',
+            'max_total_hint'  => 'All the attachments together. 0 = no limit.',
+        ],
         'page_title' => 'Service Desk - Settings',
         // Tab labels along the top of the page
         'tabs' => [
+            'numbering'       => 'Ticket numbering',
             'departments'     => 'Departments',
             'teams'           => 'Teams',
             'ticket_types'    => 'Ticket types',
             'ticket_origins'  => 'Ticket origins',
+            'categories'      => 'Categories',
+            'checklists'      => 'Checklists',
+            'mandatory_fields' => 'Mandatory fields',
+            'custom_fields'   => 'Custom fields',
             'statuses'        => 'Statuses',
             'priorities'      => 'Priorities',
             'sla'             => 'SLA',
             'rota_locations'  => 'Rota locations',
             'mailboxes'       => 'Mailboxes',
             'email_templates' => 'Templates',
+            'reply_templates' => 'Reply templates',
+            'merge_behaviour' => 'Merge behaviour',
+            'indexing'        => 'Indexing',
             'rota'            => 'Rota',
             'analysts'        => 'Analysts',
             'general'         => 'General',
+            'privacy'         => 'Privacy',
             'reply_cleanup'   => 'Reply cleanup',
             'csat'            => 'CSAT',
+            'row_display'     => 'Row display',
+            'time_tracking'   => 'Time tracking',
         ],
         // Section h2 headings inside each tab. Most mirror the tab labels but
         // some are more descriptive — kept separate so translators can pick
         // different phrasings where natural.
         'headings' => [
+            'checklists'       => 'Closing a ticket with steps outstanding',
+            'mandatory_fields' => 'Closing with fields empty',
+            'custom_fields'    => 'Custom fields',
             'departments'      => 'Departments',
             'teams'            => 'Teams',
             'ticket_types'     => 'Ticket types',
@@ -315,12 +1064,159 @@ return [
             'rota_locations'   => 'Rota locations',
             'mailboxes'        => 'Mailboxes',
             'email_templates'  => 'Email templates',
+            'reply_templates'  => 'Shared reply templates',
+            'merge_behaviour'  => 'Merge behaviour',
+            'indexing'         => 'Attachment indexing',
             'rota_shifts'      => 'Rota shifts',
             'rota_settings'    => 'Rota settings',
             'analysts'         => 'Analysts',
             'general_settings' => 'General settings',
+            'privacy'          => 'Privacy',
             'reply_cleanup_ai' => 'Reply cleanup AI',
             'csat'             => 'Customer satisfaction surveys',
+            'row_display'      => 'What your ticket rows show',
+            'time_tracking'    => 'Time tracking',
+            'categories'       => 'Categories',
+        ],
+
+        // Ticket classification (#1540). Three fields, three questions:
+        // what it was REPORTED as, what it TURNED OUT to be, and HOW it ended.
+        'categories' => [
+            'intro' => 'A category says what a ticket is about — "Printing issues", "User onboarding" — and sits alongside the ticket type rather than replacing it. Each ticket has one, so the numbers in a report always add up.',
+
+            // The three switches, at the top of the tab.
+            'fields_heading'    => 'Which of these appear on a ticket',
+            'fields_intro'      => 'All three start switched off. Build your list below first, then turn on the ones you want.',
+            'field_category'          => 'Category',
+            'field_category_desc'     => 'What the ticket is reported as, chosen when it is raised.',
+            'field_closure'           => 'Category at close',
+            'field_closure_desc'      => 'What it turned out to be. The same list, asked again when the ticket closes — most of the time the analyst just confirms it. Worth having: it is what tells you that 12 of your 37 "printer problems" were actually the network.',
+            'field_resolution'        => 'Resolution code',
+            'field_resolution_desc'   => 'How the ticket ended, which is a different question from what it was about — "Training given", "No fault found".',
+            'default_heading'   => 'Default for this installation',
+            'companies_heading' => 'Per company',
+            'companies_intro'   => 'A company set to "Follow the default" changes with the setting above. Which answer applies to a ticket is decided by the company that ticket belongs to.',
+            'col_company'       => 'Company',
+            'inherit'           => 'Follow the default',
+            'on'                => 'On',
+            'off'               => 'Off',
+            'preserved_note'    => 'Turning a switch off never deletes anything. A ticket that already has a category keeps it, and it comes back untouched if you switch the field on again.',
+
+            // The category list.
+            'list_heading'      => 'Categories',
+            'list_intro'        => 'Add a category, then add sub-categories underneath it if you want them — up to three levels, and no level is compulsory. A category can be tied to one ticket type so it is only offered on that type, or left free to appear on all of them.',
+            'empty'             => 'No categories yet.',
+            'empty_hint'        => 'Add your first one to get started — something like "Hardware" or "Access requests", with sub-categories underneath if you need them.',
+            'col_name'          => 'Category',
+            'col_type'          => 'Ticket type',
+            'col_portal'        => 'Portal',
+            'col_order'         => 'Order',
+            'col_status'        => 'Status',
+            'col_actions'       => 'Actions',
+            'any_type'          => 'Any type',
+            'portal_yes'        => 'Customers see it',
+            'portal_no'         => 'Analysts only',
+            'in_use'            => ':count in use',
+
+            // The resolution code list.
+            'codes_heading'     => 'Resolution codes',
+            'codes_intro'       => 'How a ticket ended. Flat by design — this is not a second category tree. Ten to fifteen is plenty; the point is being able to see that a fifth of your tickets were "Training given".',
+            'codes_empty'       => 'No resolution codes yet.',
+
+            // The add/edit dialog.
+            'add_category'      => 'Add category',
+            'edit_category'     => 'Edit category',
+            'add_code'          => 'Add resolution code',
+            'edit_code'         => 'Edit resolution code',
+            'f_name'            => 'Name',
+            'f_description'     => 'Description',
+            'f_parent'          => 'Sits under',
+            'f_parent_none'     => 'Nothing — this is a top level category',
+            'f_parent_help'     => 'Leave this alone for a top-level category.',
+            'f_type'            => 'Only for ticket type',
+            'f_type_any'        => 'Any type',
+            'f_type_help'       => 'Tie this to one ticket type and it is only offered on that type. Only a top-level category can be tied to a type — sub-categories follow the one above them.',
+            'f_portal'          => 'Customers can pick this in the portal',
+            'f_portal_help'     => 'Off means analysts only. Requesters should see a short list in plain English, not your whole tree.',
+            'f_active'          => 'Active',
+            'f_active_help'     => 'Switch a category off to retire it. It stays on the tickets that already have it and stops being offered on new ones — which is almost always what you want instead of deleting.',
+            'f_order'           => 'Order',
+
+            // Messages.
+            'saved'             => 'Saved',
+            'deleted'           => 'Deleted',
+            'settings_saved'    => 'Category settings saved',
+            'confirm_delete'    => 'Delete ":name"? Retiring it is usually better — it keeps the label on tickets that already have it.',
+            'load_failed'       => 'These settings could not be read.',
+            'load_failed_desc'  => 'The switches below are NOT showing your real settings, so they are locked to stop a wrong value being saved over the top. Nothing has changed — reload the page to try again.',
+            'save'              => 'Save',
+        ],
+
+        // Time tracking (discussion #72). Two switches, per company, over an
+        // install default — because hiding a panel and closing an API endpoint
+        // are different decisions with different people affected.
+        'time_tracking' => [
+            'intro'             => 'Not every team records time against tickets. Turn it off and the time panel disappears from the ticket view — nothing is deleted, and anything already recorded comes back untouched if you turn it on again.',
+            'default_heading'   => 'Default for this installation',
+            'ui_label'          => 'Record time on tickets',
+            'ui_desc'           => 'Shows the time panel in the ticket view, and lets people add entries.',
+            'api_label'         => 'Serve time entries over the REST API',
+            'api_desc'          => 'Separate on purpose: hiding the panel tidies the screen, but closing the API can break an integration somebody built. Leave it on unless you mean it.',
+            'companies_heading' => 'Per company',
+            'companies_intro'   => 'A company set to "Follow the default" changes with the setting above. Which switch applies to a ticket is decided by the company that ticket belongs to.',
+            'col_company'       => 'Company',
+            'col_ui'            => 'On tickets',
+            'col_api'           => 'REST API',
+            'inherit'           => 'Follow the default',
+            'on'                => 'On',
+            'off'               => 'Off',
+            'preserved_note'    => 'Turning either switch off never deletes anything. Existing time entries stay exactly as they are.',
+            'save'              => 'Save',
+            'saved'             => 'Time tracking settings saved',
+            'load_failed'       => 'These settings could not be read.',
+            'load_failed_desc'  => 'The switches below are NOT showing your real settings, so they are locked to stop a wrong value being saved over the top. Nothing has changed — reload the page to try again.',
+        ],
+
+        // Row display (discussion #61). Per-analyst, over an install default.
+        // The style names are shown as button labels, so they say WHERE the
+        // indicator goes rather than naming a shape nobody can place.
+        'row_display' => [
+            'intro' => 'Choose what appears on each ticket row in the middle pane, and how. This is your own setting — it changes nothing for anyone else.',
+
+            'field' => [
+                'priority' => 'Priority',
+                'status'   => 'Status',
+                'agent'    => 'Assigned agent',
+                'row_name' => 'Name beside the ticket number',
+            ],
+
+            'style' => [
+                'off'         => 'Hidden',
+                'stripe'      => 'Left edge',
+                'pill'        => 'Pill with the word',
+                'block'       => 'Block, top right',
+                'dot'         => 'Dot only',
+                'name'        => 'Full name',
+                'initials'    => 'Initials',
+                'requester'   => 'Who raised it',
+                'last_sender' => 'Who replied last',
+            ],
+
+            'help' => [
+                'priority' => 'The left edge costs no space and is easiest to scan down a long queue. A dot sits beside the date — note the SLA indicator is already a coloured dot there, so two dots can be hard to tell apart.',
+                'status'   => 'Off by default: the folder you are looking in usually tells you the status already.',
+                'agent'    => 'Initials keep the row narrow. Hover to see the full name either way.',
+                'row_name' => 'Who raised it keeps the customer\'s name on the row for the life of the ticket. Who replied last names whoever sent the most recent message, so once you reply it shows your mailbox — which reads the same on every ticket you have answered.',
+            ],
+
+            'preview'          => 'Preview',
+            'reset'            => 'Use the default',
+            'set_default'      => 'Set as default for everyone',
+            'set_default_help' => 'Applies to analysts who have not chosen their own.',
+            'using_personal'   => 'You are using your own settings.',
+            'using_default'    => 'You are following the install default.',
+            'saved'            => 'Your row display has been saved.',
+            'saved_default'    => 'Saved as the default for everyone who has not chosen their own.',
         ],
 
         'csat' => [
@@ -333,12 +1229,16 @@ return [
         // tab-specific.
         'columns' => [
             'name'         => 'Name',
+            'to'           => 'To',
+            'sent_by'      => 'Sent by',
+            'result'       => 'Result',
             'description'  => 'Description',
             'teams'        => 'Teams',
             'departments'  => 'Departments',
             'analysts'     => 'Analysts',
             'order'        => 'Order',
             'status'       => 'Status',
+            'is_admin'     => 'Admin',
             'actions'      => 'Actions',
             'colour'       => 'Colour',
             'closed'       => 'Closed',
@@ -346,7 +1246,9 @@ return [
             'mailbox'      => 'Mailbox',
             'last_checked' => 'Last checked',
             'event'        => 'Event',
+            'sends_to'     => 'Sends to',
             'subject'      => 'Subject',
+            'preview'      => 'Preview',
             'start'        => 'Start',
             'end'          => 'End',
             'username'     => 'Username',
@@ -376,6 +1278,27 @@ return [
             'check_all'       => 'Check all',
             'test_connection' => 'Test connection',
             'verify'          => 'Verify',
+            'verifying'       => 'Verifying...',
+        ],
+        // Results of "Check all" and of the Verify button beside a folder field.
+        // These were built in JavaScript as English literals, so they stayed
+        // English on every non-English installation — reported on issue #45,
+        // where the German screenshots carried an English success banner.
+        'check_results' => [
+            'complete'         => 'Check complete',
+            'summary'          => '{count} mailbox(es) checked successfully, {emails} total email(s) processed',
+            'mailbox_ok'       => '{name}: {count} email(s)',
+            'mailbox_failed'   => '{name}: {error}',
+            'unknown_error'    => 'Unknown error',
+            'connection_error' => 'Connection error',
+        ],
+        'verify_result' => [
+            'enter_folder' => 'Enter a folder name first.',
+            'save_first'   => 'Save the mailbox first, then verify.',
+            'found'        => 'Folder "{name}" found',
+            'counts'       => '({total} items, {unread} unread)',
+            'not_found'    => 'Folder not found',
+            'failed'       => 'Failed to verify folder',
         ],
         // Add/Edit modal contents across the settings tabs. Each modal has its
         // own sub-namespace below. Convention for technical labels: product
@@ -423,6 +1346,7 @@ return [
                 'provider'                    => 'Provider',
                 'provider_microsoft'          => 'Microsoft 365 (Exchange / Graph API)',
                 'provider_google'             => 'Google Workspace (Gmail API)',
+                'provider_imap'               => 'Basic IMAP / SMTP (username & password)',
                 'display_name'                => 'Display name',
                 'display_name_placeholder'    => 'e.g., Service Desk',
                 'target_mailbox'              => 'Target mailbox',
@@ -441,6 +1365,23 @@ return [
                 'oauth_scopes'                => 'OAuth scopes',
                 'imap_server'                 => 'IMAP server',
                 'imap_port'                   => 'IMAP port',
+                'imap_encryption'             => 'IMAP encryption',
+                'imap_username'               => 'Username',
+                'imap_password'               => 'Password',
+                'imap_password_placeholder'   => 'Mailbox password or app password',
+                'imap_password_help'          => 'Stored encrypted. Use an app-specific password if your provider offers one.',
+                'imap_password_kept'          => 'leave blank to keep',
+                'smtp_server'                 => 'SMTP server',
+                'smtp_same_as_imap'           => 'Use the IMAP login for sending',
+                'smtp_same_as_imap_help'      => 'Turn this off if your provider gives you a different username and password for sending.',
+                'smtp_username'               => 'SMTP username',
+                'smtp_password'               => 'SMTP password',
+                'smtp_port'                   => 'SMTP port',
+                'smtp_encryption'             => 'SMTP encryption',
+                'encryption_ssl'              => 'SSL / TLS',
+                'encryption_tls'              => 'STARTTLS',
+                'encryption_starttls'         => 'STARTTLS',
+                'encryption_none'             => 'None',
                 'email_folder'                => 'Email folder',
                 'max_emails_per_check'        => 'Max emails per check',
                 'rejected_emails'             => 'Rejected emails',
@@ -457,8 +1398,19 @@ return [
                 'company_help'                => 'Pin this mailbox to a company — all its mail goes to that company and replies are sent from it. Choose "Shared intake" to route each email by the sender\'s domain instead.',
                 'company_shared'              => 'Shared intake (route by sender domain)',
                 'company_shared_badge'        => 'Shared intake',
+                // #79: the origin stamped on tickets this mailbox opens.
+                'origin_label'                => 'Default ticket origin',
+                'origin_help'                 => 'Where tickets opened by this mailbox are recorded as having come from. Set per mailbox, so a helpdesk address can be "Email" while a monitoring address is something else entirely. Leave blank to record no origin.',
+                'origin_none'                 => 'None',
+                'problems_title'              => 'Things to check',
+                'problems_tooltip'            => 'Something needs attention — click for details',
+                'problems_none'               => 'Nothing to report on this mailbox.',
+                'problems_dismiss'            => 'Dismiss',
+                'problems_restore'            => 'Restore',
+                'problems_dismissed_heading'  => 'Dismissed — these no longer show a mark',
                 'reading_from'                => 'Reading from {addr}',
                 'status_app_only'             => 'App-only — reads {addr} directly',
+                'status_imap'                 => 'IMAP — reads {addr} directly',
                 'status_unverified'           => 'Authenticated, but signed-in account not yet verified',
                 'status_mismatch'             => 'Wrong account: signed in as {authed}, but should read {target}. Re-authenticate or switch to app-only.',
                 'whitelist_label'             => 'Email whitelist',
@@ -467,12 +1419,37 @@ return [
                 'whitelist_email'             => 'Email',
                 'whitelist_value_placeholder' => 'e.g. company.com or user@example.com',
             ],
+            // The delete dialog (GH #227) - see api/tickets/delete_mailbox.php.
+            'mailbox_delete' => [
+                'title'          => 'Delete mailbox "{name}"',
+                'checking'       => 'Checking what uses this mailbox...',
+                'nothing'        => 'Nothing uses this mailbox. It can be deleted.',
+                'intro'          => 'This mailbox still has:',
+                'on_tickets'     => '{count} email(s) on tickets',
+                'loose'          => '{count} email(s) not on any ticket',
+                'move_label'     => 'Move its emails to',
+                'move_none'      => 'No mailbox',
+                'move_help'      => 'Tickets keep their emails either way. Replies on those tickets go out from the mailbox chosen here.',
+                'none_tickets'   => 'With no mailbox, replies on those tickets can no longer be sent by email.',
+                'none_loose'     => 'The {count} email(s) not on any ticket are deleted, with their attachments.',
+                'knowledge'      => 'Knowledge article sharing sends from this mailbox. Choose another in Knowledge settings afterwards.',
+                'deactivate'     => 'Only want it to stop collecting mail? Edit the mailbox and untick Active instead - nothing is lost.',
+                'deleted'        => 'Mailbox deleted',
+                'error'          => 'Error deleting mailbox: {error}',
+                'failed'         => 'Failed to delete mailbox',
+            ],
 
             // Activity log modal
             'activity' => [
                 'title'              => 'Mailbox activity',
                 'search_placeholder' => 'Search by sender, name, or subject...',
                 'processing_log'     => 'Processing log',
+                'tab_inbound'        => 'Inbound',
+                'tab_outbound'       => 'Outbound',
+                'status_all'         => 'All results',
+                'status_failed'      => 'Failures only',
+                'status_sent'        => 'Sent only',
+                'status_skipped'     => 'Not sent',
             ],
 
             // Analyst modal
@@ -489,6 +1466,10 @@ return [
                 'password_placeholder'  => 'Enter password',
                 'password_help'         => 'Required for new analysts.',
                 'active'                => 'Active',
+                'is_admin'              => 'Administrator',
+                'is_admin_help'         => 'Administrators can open the System module (managing analysts, teams, company access, SSO, security and more). Leave off for regular analysts.',
+                'all_modules'           => 'Access all modules',
+                'all_modules_help'      => 'On = this analyst can use every module. Turn off to restrict them, then grant specific modules on System → Modules.',
             ],
 
             // Password reset modal
@@ -510,6 +1491,21 @@ return [
             ],
 
             // Email template modal
+            'reply_template' => [
+                'add_title'        => 'Add reply template',
+                'edit_title'       => 'Edit reply template',
+                'name'             => 'Name',
+                'name_placeholder' => 'e.g., Password reset done',
+                'name_help'        => 'What analysts will see in the Templates menu — name it for the situation, not the wording.',
+                'body'             => 'Template text',
+                'body_required'    => 'Please enter the template text.',
+                'merge_codes'      => 'Merge codes',
+                'merge_help'       => 'Click one to drop it in at the cursor. It is replaced with the real value when an analyst inserts the template into a ticket.',
+                'display_order'    => 'Display order',
+                'active'           => 'Active',
+                'delete_title'     => 'Delete template',
+                'delete_message'   => 'Delete the shared template "%s"? It will disappear from everyone\'s Templates menu.',
+            ],
             'template' => [
                 'add_title'           => 'Add email template',
                 'edit_title'          => 'Edit email template',
@@ -518,15 +1514,20 @@ return [
                 'event_trigger'       => 'Event trigger',
                 'event_select'        => 'Select event...',
                 'event_new_ticket'    => 'New ticket from email',
+                'event_note_shared'          => 'Note shared with requester',
                 'event_csat_request'         => 'CSAT survey',
             'event_assigned'      => 'Ticket assigned',
-                'event_closed'        => 'Ticket closed',
+                'event_analyst_assigned' => 'Assigned to an analyst',            'event_closed'        => 'Ticket closed',
                 'subject'             => 'Subject',
                 'subject_placeholder' => 'e.g., Your request has been received',
                 'subject_help'        => '[SDREF:...] is added automatically for reply threading.',
                 'body'                => 'Body',
                 'body_placeholder'    => "Dear [requester_name],\n\nThank you for contacting us...",
-                'body_help'           => 'Merge codes: [ticket_reference], [ticket_subject], [ticket_status], [ticket_priority], [requester_name], [requester_first_name], [requester_email], [analyst_name], [analyst_email], [department_name], [created_date], [closed_date]. HTML is supported (e.g. styled buttons).',
+                // 🔴 TRANSLATORS: keep every [merge_code] EXACTLY as it is - they are
+                // matched literally at send time and a translated one silently
+                // never fills in. The two under "Only on some triggers" are listed
+                // separately on purpose: they were in prose and nobody could find them.
+                'body_help' => '<strong>Always available:</strong> [ticket_reference], [ticket_url], [ticket_subject], [ticket_status], [ticket_priority], [requester_name], [requester_first_name], [requester_email], [analyst_name], [analyst_email], [department_name], [created_date], [closed_date].<br><br><strong>For an email to the analyst:</strong><br>[assigned_analyst_name], [assigned_analyst_first_name], [assigned_analyst_email] &mdash; the analyst the ticket is <em>assigned</em> to.<br>[ticket_url_analyst] &mdash; a link into the ticket in the inbox. Use this instead of [ticket_url], which opens the customer&rsquo;s own view and needs a portal account.<br><br>&#9888; <strong>[analyst_name] is not always the assigned analyst.</strong> It gives the ticket&rsquo;s <em>owner</em> where one is set, and falls back to the assignee otherwise &mdash; on most desks those are different people. It is the right code for telling a customer who is looking after them. When the email is <em>to</em> an analyst about work they have just been given, use [assigned_analyst_name].<br><br><strong>Only on some triggers:</strong><br>[note_text] &mdash; on <strong>Note shared with requester</strong>, the note itself. Leave it out and the email simply says there is an update.<br>[ticket_closed_message] &mdash; on <strong>Ticket closed</strong>, a one-off note the analyst types as they close. Add it and they are asked for one; leave it out and they are not.<br><br>HTML is supported (e.g. styled buttons).',
                 'display_order'       => 'Display order',
                 'active'              => 'Active',
                 'tab_edit'            => 'Edit',
@@ -554,6 +1555,7 @@ return [
                 'name_placeholder'         => 'e.g. Support WhatsApp',
                 'provider'                 => 'Provider',
                 'provider_meta'            => 'Meta (WhatsApp Cloud)',
+                'provider_telegram'        => 'Telegram',
                 'phone'                    => 'WhatsApp number',
                 'phone_placeholder'        => '+14155238886',
                 'phone_help'               => 'The business number messages are sent from (include the country code).',
@@ -570,6 +1572,25 @@ return [
                 'graph_version'            => 'Graph API version <span style="color:#888; font-weight:normal;">(advanced, optional)</span>',
                 'graph_version_placeholder'=> 'v21.0 (default)',
                 'graph_version_help'       => 'Only change if Meta retires the default version. Leave blank to use the built-in default.',
+                'bot_token'                => 'Bot token',
+                'bot_token_help'           => 'From Telegram\'s @BotFather: send /newbot (or /mybots for an existing bot), then copy its API token here. This lets FreeITSM send messages as your bot.',
+                'telegram_secret'          => 'Secret token',
+                'telegram_secret_placeholder' => 'any string you choose',
+                'telegram_secret_help'     => 'A password YOU choose — not something Telegram gives you. It proves an inbound message really came from Telegram. Set it here, then use this exact value in step 4 below.',
+                'generate'                 => 'Generate',
+                'setup_title'              => 'How to connect this bot',
+                'setup_step1'              => 'In Telegram, message @BotFather → /newbot (or /mybots for an existing bot) → copy its API token into "Bot token" above.',
+                'setup_step2'              => 'Choose a Secret token above, or click "Generate" — either way, note it down; you\'ll need it in step 4.',
+                'setup_step3'              => 'Save this channel (button below). Its exact webhook URL will then appear here.',
+                // Connect replaced PR #159's copy-paste setWebhook command at merge time.
+                'setup_step4_connect'      => 'Click Connect. FreeITSM tells Telegram to deliver this bot\'s messages here, with your secret token - your bot token never leaves the server.',
+                'setup_save_first_connect' => 'Save the channel first - Connect appears here once it has a webhook URL.',
+                'connect'                  => 'Connect',
+                'connecting'               => 'Connecting…',
+                'connected'                => 'Connected - Telegram will now deliver this bot\'s messages here.',
+                'connect_failed'           => 'Could not connect to Telegram.',
+                'connect_save_first'       => 'You changed the token or secret - save the channel first, then Connect.',
+                'connect_next'             => 'Saved. Now click Connect so Telegram starts delivering messages.',
                 'ingress'                  => 'Inbound delivery',
                 'ingress_direct'           => 'Direct — the provider hits this install\'s webhook URL',
                 'ingress_relay'            => 'Relay — a hosted relay forwards messages here',
@@ -577,6 +1598,31 @@ return [
                 'relay_secret_placeholder' => 'shared secret between the relay and this install',
                 'active'                   => 'Active',
                 'webhook_hint_label'       => 'Webhook URL (paste into your provider)',
+                'provider_teams' => 'Microsoft Teams',
+                'provider_mattermost' => 'Mattermost',
+                'mm_server_url' => 'Server address',
+                'mm_channel_id' => 'Support channel ID',
+                'mm_bot_token' => 'Bot access token',
+                'mm_webhook_token' => 'Outgoing webhook token',
+                'mm_webhook_help' => 'Mattermost creates this token for the webhook. Copy it from the webhook\'s page.',
+                'mm_setup_title' => 'Set up Mattermost (once per server)',
+                'mm_step1' => 'System Console → Integrations: enable Bot Account Creation and Outgoing Webhooks.',
+                'mm_step2' => 'Integrations → Bot Accounts → Add Bot Account with Post All and Read. Copy its access token and add the bot to the support channel. Copy the support channel\'s ID (channel details, 26 characters) and the server address above.',
+                'mm_step3' => 'Integrations → Outgoing Webhooks → Add. Pick the support channel, paste the webhook URL from the channel list, leave trigger words empty. Then paste the webhook\'s token into the field above and save. Full guide:',
+                'teams_setup_title' => 'Create the bot in Office 365 (once per tenant)',
+                'teams_step1' => 'Azure portal → Microsoft Entra ID → App registrations → New registration. Choose "Single tenant", no redirect URI. Copy the Application (client) ID into "Bot App ID" and the Directory (tenant) ID into "Tenant ID" below.',
+                'teams_step2' => 'Certificates & secrets → New client secret. Copy the secret\'s Value (not its ID) into "App secret". Azure shows it only once.',
+                'teams_step3' => 'Create an Azure Bot resource: Single Tenant, use the existing app (same App ID). Set its Messaging endpoint to the webhook URL in the channel list and enable the Microsoft Teams channel.',
+                'teams_step4' => 'Package a Teams app manifest.json with botId = the App ID and upload it in Teams Admin Center → Manage apps. Allow it for the users who will chat with the bot.',
+                'teams_step5' => 'Permissions: none. Do not add Microsoft Graph permissions. FreeITSM uses the Bot Framework only.',
+                'teams_help_more' => 'Full guide (with the same steps):',
+                'teams_download' => 'Download Teams app package',
+                'teams_download_help' => 'Upload this .zip in Teams Admin Center → Manage apps. It is built from this channel\'s App ID.',
+                'teams_app_id' => 'Bot App ID',
+                'teams_tenant_id' => 'Tenant ID',
+                'teams_tenant_help' => 'The Azure AD tenant the bot is registered in (from the bot\'s app registration).',
+                'teams_app_secret' => 'App secret',
+                'teams_secret_help' => 'The client secret from the bot\'s app registration. Stored encrypted; leave blank to keep the current one.',
             ],
 
             // Messaging template modal
@@ -643,8 +1689,45 @@ return [
         // Shared empty/loading state for the settings tables.
         'loading' => 'Loading...',
 
+        'merge' => [
+            'reference_label'      => 'When tickets are merged, the reference should be',
+            'ref_survivor'         => 'One of the existing tickets',
+            'ref_survivor_help'    => 'The analyst picks which ticket lives on and keeps its reference. The others close, keep their own references, and point at it. Nothing a requester has already been told becomes a dead reference, and replies to their old emails still arrive.',
+            'ref_new'              => 'A brand-new ticket',
+            'ref_new_help'         => 'Every merged ticket closes and a new reference is created holding all of them. A clean slate — but every reference your requesters already have becomes a redirect, and the new ticket\'s clock starts today.',
+
+            'originals_label'      => 'The original conversations should be',
+            'orig_thread'          => 'Moved into the merged ticket',
+            'orig_thread_help'     => 'Every message becomes part of the merged ticket\'s conversation, labelled with the ticket it came from. Readable inline, quotable in a reply, and found by search.',
+            'orig_thread_html'     => 'Moved in, and also attached as HTML files',
+            'orig_thread_html_help'=> 'As above, plus a self-contained HTML copy of each original ticket attached to the merged one — handy when you need to hand a complete record to somebody outside FreeITSM.',
+            'orig_html'            => 'Attached as HTML files only',
+            'orig_html_help'       => 'The messages stay on their original tickets and the merged ticket gets only the attached copies. Tidiest merged ticket, but search no longer finds the merged conversations, because search reads messages and not attachments.',
+
+            'ai_label'             => 'Write an AI summary when tickets are merged',
+            'ai_help'              => 'Adds a note to the merged ticket summarising what each requester asked and what has already been done, so whoever picks it up does not have to read every conversation. Needs an AI provider configured on the Reply cleanup tab. Merging still works without one.',
+
+            'note'                 => 'Merged tickets are never deleted. Whichever option you choose, an old reference always remains searchable and shows where it went &mdash; and a customer replying to an email about it still reaches you.',
+            'saved'                => 'Merge behaviour saved',
+        ],
+
+        // Attachment indexing (discussion #53, tier 2)
+        'indexing' => [
+            'cron_label'          => 'Read documents on a schedule',
+            'cron_help'           => 'A scheduled task works through waiting documents in the background. This is the right answer for a busy service desk, and needs the scheduled task to be set up on your server. Without it, nothing is lost &mdash; documents are read by the option below instead, just more slowly.',
+            'opportunistic_label' => 'Read a few whenever FreeITSM is being used',
+            'opportunistic_help'  => 'Takes a small number of waiting documents while somebody is already working in FreeITSM. This means attachment searching works out of the box on an installation with no scheduled tasks. It is deliberately a handful at a time, so nobody waits.',
+            'where_service'       => 'Neither switch does anything until a document-reading service is set up under <strong>System &rarr; Integrations &rarr; Apache Tika</strong>. Word, Excel, PowerPoint and text files are read immediately either way and are unaffected by any of this.',
+            'saved'               => 'Indexing settings saved',
+        ],
+
+        'reply_templates_empty'   => 'No shared reply templates yet',
+        'reply_template_saved'    => 'Template saved',
+        'reply_template_deleted'  => 'Template deleted',
+
         // Tab label not mirrored in the headings group.
         'tab_messaging' => 'Messaging',
+        'tab_webchat'   => 'Web chat',
 
         // Extra table column headers used by individual tabs.
         'cols' => [
@@ -654,19 +1737,219 @@ return [
             'provider'     => 'Provider',
             'reference'    => 'Reference',
         ],
+        // Sender rules for email templates (discussion #80).
+        'scope' => [
+            'field_label'      => 'Send this to',
+            'everyone'         => 'Everyone',
+            'restricted'       => 'Only these senders',
+            'rule_placeholder' => 'someone@example.com, or example.com for a whole domain',
+            'rule_help'        => 'An address with an @ matches that one sender; anything else is treated as a domain. The most specific rule wins, so a template naming an exact address beats one naming its domain, and both beat a template that goes to everyone. The order templates appear in does not affect which one is sent.',
+            'rule_invalid'     => 'Enter an email address, or a domain such as example.com.',
+            'rule_duplicate'   => 'That is already in the list.',
+        // The "Sends to" column answers two separate questions and used to
+        // answer only one. WHICH ROLE gets the email (this pair) and WHICH
+        // CUSTOMERS the template covers (badge_everyone / badge_senders below).
+        'audience_requester' => 'Requester',
+        'audience_analyst'   => 'Assigned analyst',
+        'audience_title'     => 'Who receives this email',            'badge_everyone'   => 'Everyone',
+            'badge_senders'    => '{count} sender(s)',
+            'warn_title'       => 'Some senders will get no reply at all',
+            'warn_body'        => 'Every active template for {events} is limited to particular senders, so anyone who matches none of them gets nothing. Add a template set to Everyone if that is not what you intended. Where it happens, it is recorded on the ticket and in the mailbox send log as Not sent.',
+            'sim_label'        => 'Check what a sender would get',
+            'sim_placeholder'  => 'someone@example.com',
+            'sim_button'       => 'Check',
+            'sim_none'         => 'No reply would be sent. This address matches none of the templates for that event, and none of them applies to everyone.',
+            'sim_no_template'  => 'No reply would be sent, because there is no active template for that event at all.',
+            'sim_address'      => 'would be sent, because a rule names this exact address ({value}).',
+            'sim_domain'       => 'would be sent, because a rule names the domain {value}.',
+            'sim_everyone'     => 'would be sent, because it applies to everyone and no more specific template matched.',
+        ],
+
+        // The public web address, surfaced on the Email Templates tab because that is
+        // where [ticket_url] gets written (discussion #80).
+        'base_url' => [
+            'label'       => 'Public web address',
+            'placeholder' => 'https://itsm.example.com',
+            'help'        => 'Used to build [ticket_url] and other links FreeITSM sends out. Include the folder if FreeITSM is not at the root of the site, for example https://itsm.example.com/freeitsm. Leave it empty and links sent by the overnight mail collector will have no site name in them, because there is no browser request at that point to work one out from.',
+            'example'     => 'A ticket link currently comes out as:',
+            'inherited'   => 'Taken from your web chat setting until you save one here.',
+            'saved'       => 'Public web address saved',
+            'save_failed' => 'Could not save the public web address',
+            'warn_title'  => 'Links in these emails will be broken',
+            'warn_body'   => '[ticket_url] is used in {count} template(s), but no public web address is set. It works while you are clicking around, and fails in mail sent overnight — which is when these templates are usually sent.',
+        ],
 
         // Instructional paragraphs / notes / info boxes shown at the top of (or
         // within) the various tabs. Values that contain intended HTML are echoed
         // raw (no htmlspecialchars) so the markup renders.
+        // The two closure-gate choices. 🔴 TRANSLATORS: these are the names of
+        // SETTINGS, not messages shown to an analyst - the dialogues live in
+        // `checklists` near the top of this file. Only "block" options prevent a
+        // close; every option here still writes the audit note.
+        'checklists' => [
+            'per_template_title'  => 'Follow the setting on each checklist (Recommended)',
+            'per_template_desc'   => 'Each checklist carries its own gate, chosen by whoever wrote it: Standard warns the analyst and records the override, Critical refuses the close until every mandatory step is ticked.',
+            'block_all_title'     => 'Block every ticket with outstanding steps',
+            'block_all_desc'      => 'Overrides the checklists themselves: no ticket reaches a closed status until every mandatory step is ticked, whatever the checklist says. There is deliberately no setting in the other direction — to relax a Critical checklist, edit the checklist, where the people following it can see the change.',
+
+            'empty_section_title' => 'Closing a ticket with no checklist attached',
+            'empty_section_desc'  => 'Some teams want every ticket to have followed a procedure. Most do not — a password reset needs no checklist, and insisting on one adds friction to the tickets that least deserve it.',
+            'empty_off_title'     => 'Allow it (Default)',
+            'empty_off_desc'      => 'A ticket with no checklist closes like any other.',
+            'empty_warn_title'    => 'Warn, and record it',
+            'empty_warn_desc'     => 'The analyst is asked to confirm and offered the attach dialogue. Closing anyway writes an internal note saying the ticket closed with no checklist and who closed it.',
+            'empty_block_title'   => 'Refuse the close',
+            'empty_block_desc'    => 'The ticket cannot reach a closed status until at least one checklist is attached to it.',
+
+            'always_recorded'     => 'Either way, closing with steps outstanding writes an internal note naming the skipped steps, who closed it and through which interface. These settings decide whether it is allowed, never whether it is logged.',
+        ],
+
+        // Custom fields (#179): Tickets -> Settings -> Custom fields.
+        'custom_fields' => [
+            // Where the portal shows the requester their answers (discussion #193).
+            'portal_answers_label'  => 'Show requesters the answers they gave',
+            'portal_answers_off'    => 'Do not show them',
+            'portal_answers_header' => 'Under the ticket\'s title',
+            'portal_answers_side'   => 'In a panel beside the conversation',
+            'portal_answers_help'   => 'On the self-service portal, the answers to the fields marked Ask the requester, as they are now - so a correction shows. Fields analysts fill in are never shown. The panel needs a wide screen; a narrower one shows them under the title.',
+            'portal_answers_saved'  => 'Saved',
+            'portal_ask_label' => 'Where the portal asks these questions',
+            'portal_ask_side' => 'In the side panel, beside the description',
+            'portal_ask_main' => 'In the main form, between the subject and the description',
+            'portal_ask_help' => 'On the self-service portal\'s New ticket page. The main form puts the request type and its questions where the requester explains the request, and gives the description a fixed height so the page scrolls instead of squeezing the questions.',
+            'dept_heading' => 'Department field',
+            'dept_intro' => 'Hide the Department field where departments are not used, and choose the department new tickets start in. Hiding only removes the field from the screen: tickets keep their department, nobody loses access to any ticket, and workflows, SLA rules and notifications still use it.',
+            'dept_load_error' => 'Could not load these settings, so they cannot be changed right now.',
+            'dept_shown_label' => 'Department field',
+            'dept_show' => 'Show',
+            'dept_hide' => 'Hide',
+            'dept_default_label' => 'Department for new tickets',
+            'dept_no_default' => 'No default',
+            'dept_follow' => 'Follow the default',
+            'dept_company' => 'Company',
+            'dept_warn_no_default' => 'Department is hidden with no default department. New tickets will have no department, so they will not appear in the folder of any department, and department SLA and notification rules will not apply to them. Choose a department for new tickets, or let a workflow set it, to keep those working.',
+            'dept_stale' => 'The default department "{name}" for {place} is no longer active, so new tickets are not getting it. Choose another.',
+            'dept_install' => 'the install-wide setting',
+            'dept_saved' => 'Saved',
+            'col_name'        => 'Name',
+            'col_kind'        => 'Kind',
+            'col_types'       => 'Ticket types',
+            'col_required'    => 'Required',
+            'col_portal'      => 'Portal',
+            'col_actions'     => 'Actions',
+            'none'            => 'No custom fields yet - use Add to create one.',
+            'not_ready'       => 'Run System -> Database Verification to start using custom fields.',
+            'every_type'      => 'Every type',
+            'req_logging'     => 'Logging',
+            'req_closing'     => 'Closing',
+            'req_none'        => 'No',
+            'asked'           => 'Asked',
+            'answered'        => '{n} answered',
+            'shared'          => 'Shared',
+            'key_hint'        => 'The field\'s key, used by the REST API. It never changes, even if the name does.',
+            'shared_hint'     => 'Shared by every company - managed from the default company',
+            'add_title'       => 'New custom field',
+            'edit_title'      => 'Edit custom field',
+            'f_name'          => 'Name',
+            'f_kind'          => 'Kind of field',
+            'f_kind_locked'   => 'Tickets have already answered this field, so its kind can no longer change.',
+            'f_multiline'     => 'Allow several lines',
+            'f_decimals'      => 'Decimal places',
+            'f_unit'          => 'Unit shown beside it',
+            'f_unit_hint'     => 'Optional - GB, days, £',
+            'f_date_mode'     => 'Records',
+            'mode_date'       => 'A date',
+            'mode_datetime'   => 'A date and time',
+            'mode_time'       => 'A time',
+            'f_options'       => 'Options',
+            'f_options_hint'  => 'One per line, in the order they should appear.',
+            'f_help'          => 'Hint',
+            'f_help_hint'     => 'Shown under the field, e.g. "As it will appear in Active Directory".',
+            'f_types'         => 'Which ticket types is it on?',
+            'f_all_types'     => 'Every ticket type',
+            'f_some_types'    => 'Only these types',
+            'f_required'      => 'Must be filled in',
+            'f_req_create'    => 'When the ticket is logged',
+            'f_req_create_hint' => 'On the New ticket form, the REST API and - if the requester is asked - the portal. Tickets arriving by email or chat cannot be asked, so they are not refused for it.',
+            'f_req_close'     => 'Before the ticket is closed',
+            'f_req_close_hint' => 'Follows the Mandatory fields tab: warn, warn and email, or refuse the close.',
+            'f_ask'           => 'Ask the requester on the portal',
+            'f_ask_hint'      => 'Shown on the portal\'s New ticket form when the requester picks one of this field\'s types. Leave it off for anything only your team should fill in.',
+            'kinds' => [
+                'text'     => 'Text',
+                'number'   => 'Number',
+                'date'     => 'Date',
+                'boolean'  => 'Yes / no',
+                'dropdown' => 'Dropdown',
+                'url'      => 'Web address',
+                'email'    => 'Email address',
+            ],
+            'retire_title'    => 'Retire field',
+            'retire_msg'      => 'Retire "{name}"? It stops appearing on tickets. The answers already given are kept, not deleted.',
+            'retire'          => 'Retire',
+            'saved'           => 'Custom field saved',
+            'retired'         => 'Custom field retired',
+            'move_up'         => 'Move up',
+            'move_down'       => 'Move down',
+            'need_types'      => 'Choose at least one ticket type, or tick Every ticket type.',
+            'need_options'    => 'A dropdown needs at least one option.',
+        ],
+
+        // Mandatory fields at closure. 🔴 TRANSLATORS: the first two options are
+        // NOT refusals - the ticket closes under both. Only "Refuse the close"
+        // prevents it.
+        'mandatory' => [
+            'when_heading'       => 'When a ticket is closed with a ticked field empty',
+            'warn_title'         => 'Warn',
+            'warn_desc'          => 'The analyst is told which fields are empty and can close anyway.',
+            'notify_title'       => 'Warn, and email someone',
+            'notify_desc'        => 'The same, and the people below get an email naming the ticket, the empty fields and who closed it - a service delivery manager, for example.',
+            'notify_label'       => 'Send the email to',
+            'notify_placeholder' => 'name@example.com, another@example.com',
+            'block_title'        => 'Refuse the close',
+            'block_desc'         => 'The ticket cannot reach a closed status until every ticked field is filled in.',
+            'record_title'       => 'Record it on the ticket',
+            'record_desc'        => 'Writes an internal note naming the empty fields, who closed the ticket and how. Only applies to the two warning options - a refused close changes nothing, so there is nothing to record.',
+            'record_blocked'     => 'Nothing is recorded when the close is refused, because the ticket does not close.',
+            'fields_heading'     => 'Must be filled in before closing',
+            'fields_hint'        => 'A field that is switched off for a ticket\'s company, or a Team field on an install with no teams, is skipped for that ticket - nobody is asked to fill in something they cannot see. Merging tickets never triggers this.',
+            'choose_mode'        => 'Choose what happens when fields are empty.',
+            'need_address'       => 'Add at least one address to email.',
+            // One label per property. Keep them matching what the ticket screen
+            // calls each field, so an analyst told "Origin is empty" can find it.
+            'fields' => [
+                'priority'         => 'Priority',
+                'ticket_type'      => 'Type',
+                'department'       => 'Department',
+                'category'         => 'Category',
+                'closure_category' => 'Category at close',
+                'resolution_code'  => 'Resolution code',
+                'team'             => 'Team',
+                'owner'            => 'Owner',
+                'requester'        => 'Requester',
+                'origin'           => 'Origin',
+                'first_time_fix'   => 'First time fix',
+                'it_training'      => 'IT training provided',
+                'work_start'       => 'Scheduled work',
+            ],
+        ],
+
         'intros' => [
+            'custom_fields'   => 'Make up the extra details a kind of ticket needs - a start date and username on a new starter, say - and choose which ticket types each one is on. Each field decides for itself whether it must be filled in when a ticket is logged, when it is closed, or both, and whether the requester is asked for it on the portal.',
+            'checklists'      => 'A checklist can mark steps as mandatory. This decides what happens if somebody closes a ticket before those steps are ticked.',
+            'mandatory_fields' => 'Choose which ticket fields must be filled in before a ticket is closed, and what happens when somebody closes one with any of them empty. The rule applies everywhere a ticket can be closed: the ticket screen, bulk actions, the REST API and workflows.',
             'departments'     => 'Departments group and route tickets to the right area of your organisation — create the ones your service desk uses to categorise and assign work.',
             'teams'           => 'Teams determine which departments analysts can access. Assign departments to teams, then assign analysts to teams to control their access.',
             'ticket_types'    => 'Ticket types classify what a request is (e.g. Incident, Service Request) — define the types analysts can set on a ticket.',
             'ticket_origins'  => 'Ticket origins record how a ticket came in (e.g. Email, Phone, Portal) — define the origins analysts can choose from.',
             'mailboxes'       => 'Mailboxes connect FreeITSM to email accounts so incoming messages become tickets and replies go back out — add and authenticate the ones your service desk monitors.',
+            'privacy'         => 'A ticket does not only hold your conversation with the person who raised it. Forwarding to a supplier, or copying in a colleague, puts that message on the same ticket — and their reply lands there too. This decides how much of that the requester sees in the self-service portal.',
+            'indexing' => 'The text inside attachments is read so it can be searched. Word, Excel, PowerPoint and plain text files are read by FreeITSM itself, the moment they arrive. PDFs, older Office files and scanned documents need a separate document-reading service — set that up under <strong>System &rarr; Integrations &rarr; Apache Tika</strong> — and because those take much longer, they are read in the background. These two switches decide when that background work happens.',
+            'merge_behaviour' => 'When two tickets turn out to be the same thing, an analyst can merge them. These settings decide what that does to the ticket references your requesters are holding, and what happens to the conversations. They apply to everyone — a merge changes what the customer sees, so two analysts on the same mailbox must not be able to disagree about it.',
+            'reply_templates' => 'Canned responses your analysts can drop into a reply instead of retyping them. These are the shared ones the whole team sees — an analyst\'s own private templates are saved from the reply window and are not listed here.',
             'rota_shifts'     => 'Shifts are the working-pattern templates (e.g. Early, Late, On-call) that analysts are assigned on the staff rota — define them here before building the rota.',
             'analysts'        => 'Analysts are the staff who log in and work tickets — add them, reset passwords, and assign them to teams to control their access.',
-            'general'         => 'General settings control system-wide options such as the service desk name and defaults — adjust them to match your organisation.',
+            'general'         => 'General settings control how tickets behave - reopening, snoozing and how long messages and threads are shown.',
             'statuses'        => 'Workflow states a ticket can be in. Statuses flagged as <em>Closed</em> count as terminal — used by reports, watchtower counters and the closed-datetime auto-set on assign. Exactly one status is the default for new tickets.',
             'priorities'      => 'Priority bands shown on tickets. Exactly one priority is the default for new tickets.',
             'rota_locations'  => 'Where each analyst is working on a given day — used by the staff rota and shown as a coloured badge on every entry. Exactly one location is the default for new rota entries.',
@@ -682,6 +1965,53 @@ return [
             'base_url_help'         => 'The address providers use to reach this install. Set it and the webhook URLs below become copy-paste-ready. Leave blank to use whatever address you\'re browsing from. Testing locally? Run <code>ngrok http 80</code> and paste the <code>https://…ngrok-free.dev</code> address it prints.',
             'templates_heading'     => 'Message templates',
             'templates_intro'       => 'Pre-approved templates let an analyst reply <strong>after the 24-hour window has closed</strong>. WhatsApp only allows free text within 24 hours of the customer\'s last message; outside that, only a template Meta/Twilio has approved can be sent. Create &amp; approve the template at your provider, then add its definition here (with <code>{{1}}</code>, <code>{{2}}</code> placeholders) so analysts can pick and fill it.',
+        ],
+
+        // Web chat tab (embeddable website chat widgets)
+        'webchat' => [
+            'heading'              => 'Web chat widgets',
+            'intro'                => 'Put a chat window on any website — a visitor types a message, it becomes a ticket, and analysts reply from the inbox like any other channel. Add a widget below, then paste its embed snippet into the site.',
+            'col_key'              => 'Widget key',
+            'col_origins'          => 'Website(s)',
+            'any_origin'           => 'Any (not restricted)',
+            'add_title'            => 'Add web chat widget',
+            'edit_title'           => 'Edit web chat widget',
+            'name'                 => 'Name',
+            'name_placeholder'     => 'e.g. Acme website',
+            'company'              => 'Company',
+            'company_help'         => 'Pin every conversation from this widget to one company. Leave unset on a single-company install.',
+            'greeting'             => 'Greeting',
+            'greeting_placeholder' => 'Hi! How can we help?',
+            'accent'               => 'Accent colour',
+            'launcher'             => 'Launcher text',
+            'launcher_placeholder' => 'Chat with us',
+            'origins'              => 'Allowed website(s)',
+            'origins_help'         => 'One origin per line (e.g. https://acme.com). Only these sites may show the widget. Leave blank to allow any site (testing only).',
+            'offline'              => 'Offline message',
+            'offline_placeholder'  => 'We\'re not available right now — leave your message and we\'ll email you back.',
+            'require_email'        => 'Ask visitors for their name and email before chatting',
+            'active'               => 'Active',
+            'embed_label'          => 'Embed snippet',
+            'embed_help'           => 'Paste this just before the closing &lt;/body&gt; tag on every page that should show the chat window.',
+            'embed_after_save'     => 'The embed snippet appears here once you save the widget.',
+            // Availability
+            'avail_heading'        => 'Availability',
+            'business_hours'       => 'Office hours',
+            'always_open'          => 'Always open',
+            'business_hours_help'  => 'Outside these hours the widget shows your offline message and still takes the enquiry as a ticket to answer later. Calendars are managed under SLA settings.',
+            // Email delivery
+            'email_heading'        => 'Email',
+            'email_when_away'      => 'Email replies to the visitor if they\'ve left the chat',
+            'email_when_away_help' => 'If an analyst replies while the visitor is no longer watching the chat, send that reply to the email they gave.',
+            // AI answers
+            'ai_heading'           => 'AI answers',
+            'ai_enabled'           => 'Answer from the Knowledge base with AI',
+            'ai_enabled_help'      => 'When a visitor asks a question, AI drafts an answer from your published Knowledge articles before a person is involved.',
+            'ai_mode'              => 'When AI answers',
+            'ai_mode_assist'       => 'Always raise a ticket (assist)',
+            'ai_mode_deflect'      => 'Only raise a ticket if escalated (deflect)',
+            'ai_offer_agent'       => 'Let the visitor ask for a live agent',
+            'ai_offer_email'       => 'Let the visitor raise a ticket by email (summary + full chat log attached)',
         ],
 
         // Mailboxes tab — OAuth success banner.
@@ -762,6 +2092,17 @@ return [
         ],
 
         // Lookup modal — "Pauses SLA clock" group (statuses only).
+        // Discussion #62: a department or mailbox whose tickets are always confidential
+        'dept_confidential' => [
+            'label'   => 'Tickets here are confidential',
+            'help'    => 'Every ticket in this department, or moved into it, is marked Confidential, and so kept from the requester\'s managers. Turning this on also marks the tickets already here. Turning it off changes no ticket - make one Normal again on the ticket itself.',
+            'chip'    => 'Confidential',
+            'raised'  => 'Tickets now marked confidential: {count}.',
+        ],
+        'mailbox_confidential' => [
+            'label'   => 'Tickets from this mailbox are confidential',
+            'help'    => 'For a mailbox such as HR. Every ticket that arrives here is marked Confidential the moment it lands, before anyone has read it, and so kept from the requester\'s managers.',
+        ],
         'pauses_sla' => [
             'label' => 'Pauses SLA clock',
             'help'  => 'When a ticket is in this status, the SLA clock stops ticking. Used for statuses where the ticket isn\'t being actively worked (e.g. <em>On Hold</em>, <em>Awaiting Response</em>).',
@@ -771,10 +2112,117 @@ return [
         'rota_weekends' => 'Include weekends on the rota',
 
         // General tab.
+        // ── Ticket numbering (GH #71) ──────────────────────────────────────
+        // The wording leads with what a number is FOR — being said out loud and
+        // written down — because that is the whole reason the request was made.
+        'numbering' => [
+            'heading'   => 'Ticket numbering',
+            'intro'     => 'Every ticket gets a reference. It is the thing people read out on the phone, write on a form and search for six months later, so it is worth it being something a person can say. You choose the shape here.',
+
+            'style'                 => 'How numbers are made',
+            'style_sequential'      => 'Counting up',
+            'style_sequential_help' => 'TICKET-000001, TICKET-000002, and so on. Easy to say, easy to recognise, and the order tells you which came first.',
+            'style_random'          => 'Random',
+            'style_random_help'     => 'Three letters and eight digits, like CKQ-418-73926. This is what FreeITSM has always done. Nobody can guess how many tickets you have, but nobody can read one out either.',
+
+            'format'      => 'What a number looks like',
+            'format_help' => 'Put <code>{######}</code> where the digits should go &mdash; one hash per digit. Anything else is kept as you type it. You can also use <code>{YYYY}</code> or <code>{YY}</code> for the year, <code>{MM}</code> and <code>{DD}</code>, and <code>{TYPE}</code> or <code>{COMPANY}</code> for a short code taken from the ticket type or the company. For example <code>INC-{YYYY}-{#####}</code>.',
+            'preview_label' => 'The next few would look like',
+
+            'start'      => 'Start counting from',
+            'start_help' => 'Useful if you are moving from another system and want to carry on where it left off.',
+
+            'scope'            => 'Count separately for',
+            'scope_global'     => 'One sequence for everything',
+            'scope_per_type'   => 'Each ticket type',
+            'scope_per_company' => 'Each company',
+            "scope_help"       => "Counting per ticket type gives incidents and requests their own runs of numbers, which is how most large service desks do it. If you count separately, the format has to say which is which — put {TYPE} or {COMPANY} in it, or every group would produce the same numbers.",
+
+            'reset'         => 'Start again',
+            'reset_never'   => 'Never — keep counting',
+            'reset_yearly'  => 'Every year',
+            'reset_monthly' => 'Every month',
+            'reset_help'    => 'Only useful if the year or month is part of the number, otherwise you will get duplicates. Combine with something like <code>INC-{YYYY}-{#####}</code>.',
+
+            // ⚠️ The two things somebody must understand before changing this,
+            // said plainly and above the Save button rather than in a help page.
+            'existing_note' => '<strong>Nothing already numbered changes.</strong> Existing tickets keep the reference they have, and every reference FreeITSM has ever issued goes on working &mdash; including in replies to old emails. If you want existing tickets renumbered too, there is a tool for that below. <strong>You will not run out of digits:</strong> the width you choose is a minimum, so ticket 1,000,001 simply gets a digit longer rather than breaking.',
+            'saved'         => 'Ticket numbering saved.',
+
+            'renumber_heading' => 'Renumber existing tickets',
+            'renumber_intro'   => 'Rewrites the reference on every existing ticket into the scheme above, oldest first. Mainly useful just after moving from another system, when you want everything to look consistent.',
+            'renumber_safety'  => '<strong>Old references keep working.</strong> Every number a ticket has ever had is remembered, so a reply to an email quoting the old one still lands on the right ticket &mdash; exactly as it does when tickets are merged. A retired number is never given to a different ticket either. This is not something you can undo, though, so look at the preview first.',
+            'renumber_preview' => 'Preview',
+            'renumber_go'      => 'Renumber',
+            'renumber_preview_first' => 'Preview first — the button turns on once you have seen what it would do.',
+            'renumber_preview_heading' => 'Preview only &mdash; nothing has been changed.',
+            'renumber_done_heading'    => 'Tickets renumbered.',
+            'renumber_summary'  => '{changing} of {total} ticket(s) would be renumbered. {skipped} already match.',
+            'renumber_next_after' => 'The next new ticket would be {number}.',
+            'renumber_confirm_title' => 'Renumber every ticket?',
+            'renumber_confirm' => "This rewrites the reference on every existing ticket.\n\nOld references keep working, so replies to old emails still find the right ticket. But the numbers people have written down, put on forms and saved in their own spreadsheets will no longer be the ones shown in FreeITSM.\n\nThis cannot be undone. Carry on?",
+        ],
+
         'general' => [
             'system_name'         => 'System name',
+            'system_name_moved'   => 'The system name - the first part of every page title - is set in {link}, because it applies to every module.',
+            'system_name_moved_link' => 'System -> Branding',
             'system_name_placeholder' => 'e.g., Service Desk Ticketing System',
-            'system_name_help'    => 'This name appears in the header and page titles.',
+            'system_name_help'    => 'Shown at the start of every page title - the name in the browser tab and in bookmarks. Blank means "Service Desk".',
+            'reopen_label'        => 'Reopening',
+            'reopen_toggle'       => 'Reopen a closed ticket when the requester replies',
+            'snooze_hour_label'   => 'Start of the working day',
+            'snooze_hour_help'    => 'The time a ticket snoozed until "Tomorrow" or "Next week" comes back. Read in each analyst\'s own timezone, so a desk spread across zones each gets their own morning.',
+            'collapse_heading' => 'Long messages',
+            'collapse_desc' => 'Long emails bury the thing you opened the ticket to read. Messages taller than the limit below are shortened with a Show more link. Nothing is deleted — the full message is always one tap away.',
+            'collapse_enabled_label' => 'Shorten long messages',
+            'collapse_lines_label' => 'Shorten messages taller than about',
+            'collapse_lines_help' => 'lines. A message only a little over the limit is left alone, so the link never appears for the sake of two words.',
+            'collapse_newest_label' => 'Always show the newest message in full',
+            'collapse_newest_help' => 'The message you came to read is never shortened.',
+            'collapse_quoted_label' => 'Shorten quoted history',
+            'collapse_quoted_help' => 'A short reply with a long quoted chain under it is brief by any line count and still unreadable, so quoted history is shortened separately.',
+            'collapse_remember_label' => 'Remember what I opened',
+            'collapse_remember_help' => 'Messages you expand stay expanded on this device, so working through a thread does not undo itself on every refresh.',
+            'group_older_label' => 'Fold older messages away',
+            'group_older_help' => 'Beyond the number below, older messages fold into a single line you can open. A long ticket is a different problem from a long message.',
+            'group_show_label' => 'Keep this many recent messages open',
+            'flag_duplicates_label' => 'Point out messages that have arrived before',
+            'flag_duplicates_help' => 'A resend, a duplicate delivery or a bounce carrying the original back is folded away with a note saying which message it matches. Nothing is deleted.',
+            // GH #176. Which team folders analysts see in the inbox.
+            'team_folders_heading' => 'Team folders',
+            'team_folders_label' => 'Analysts see',
+            'team_folders_all' => 'Every team',
+            'team_folders_mine' => 'Only the teams they belong to',
+            'team_folders_help' => 'Only changes the folder list - nobody loses sight of a ticket. A team holding tickets an analyst can see still shows, so the folders keep adding up. Administrators always see every team.',
+            'ai_heading' => 'AI reading aids',
+            'ai_desc' => 'Optional, and off until you turn them on: unlike everything else on this page these use your own AI provider and cost money per use. The provider, model and API key are configured once on the Reply cleanup tab. Nothing an AI writes ever replaces the ticket — the conversation stays exactly where it is, in full.',
+            'ai_summary_label' => 'Keep a short AI summary at the top of each ticket',
+            'ai_summary_help' => 'A few lines saying where the ticket stands, written on request and kept up to date. It always shows when it was written, how much it read, and how far the conversation has moved on since. Every version is kept, so a worse summary never destroys a better one.',
+            'ai_auto_label' => 'Refresh it automatically after this many new messages',
+            'ai_auto_help' => '0 means never — the Refresh button is then the only way, and nothing is ever charged without somebody asking. A refresh only happens when an analyst opens the ticket, so a busy queue nobody is reading costs nothing.',
+            'ai_max_label' => 'Messages to read',
+            'ai_max_help' => 'How far back a summary reads. A longer ticket is read from its most recent end, and the summary says so rather than describing a beginning it never saw.',
+            'ai_notes_label' => 'Let it read internal notes',
+            'ai_notes_help' => 'Internal notes often hold what was actually tried. They are staff-only either way — the summary is never shown to a requester — but turn this off if notes on your desk hold things that should not leave it.',
+            'ai_read_label' => 'Offer "Read it" on a ticket',
+            'ai_confidential_label' => 'Confidential tickets and AI',
+            'ai_confidential_block' => 'Never send them to AI (recommended)',
+            'ai_confidential_allow' => 'Treat them like any other ticket',
+            'ai_confidential_help'  => 'Covers every AI feature that reads a ticket: the summary, Read it, reply clean-up, Ask AI, merge summaries, knowledge write-ups, channel summaries, problem analysis and the war room bot. A confidential ticket is either not sent, or - where many tickets are read at once - left out or shown by number only.',
+            'ai_read_help' => 'A button that reads the whole ticket and briefs you on it: what happened, what is unresolved, and what it would do next. Asked for and read once, stored nowhere.',
+            'reopen_help'         => 'Applies wherever a requester comes back — the self-service portal, a reply to your notification email, WhatsApp or web chat. The ticket returns to your first open status. Only tickets in a status marked as closed are affected (set which those are under Statuses).',
+        ],
+
+        'privacy' => [
+            'third_party_label'       => 'Messages sent to someone other than the requester',
+            'opt_hide'                => 'Hide them from the requester',
+            'opt_hide_help'           => 'The message and its attachments do not appear in the requester\'s portal at all. Recommended: most people assume forwarding a ticket to a supplier is private.',
+            'opt_no_attachments'      => 'Show the message, but not its attachments',
+            'opt_no_attachments_help' => 'The requester can see that you contacted someone else and what was written, but cannot download any attached files.',
+            'opt_show'                => 'Show everything',
+            'opt_show_help'           => 'The requester sees the entire ticket exactly as your analysts do, including forwards and third-party replies. This was the behaviour before this setting existed.',
+            'always_visible_note'     => '<strong>Always visible to the requester:</strong> their own messages, and any reply addressed to them. <strong>Never visible:</strong> internal notes — those are hidden from the portal regardless of this setting. Messages on WhatsApp and web chat are always shown, because those conversations are between the requester and your desk by definition.',
             'timezone'            => 'Timezone',
             'timezone_help'       => 'Used for displaying dates and times throughout the system.',
         ],
@@ -804,10 +2252,12 @@ return [
             'mode_auto'           => 'Auto on close',
             'mode_auto_help'      => 'A survey is sent automatically when a ticket moves into any closed status.',
             'mode_manual'         => 'Manual only',
-            'mode_manual_help'    => 'Analysts click <em>Request feedback</em> from the ticket toolbar when they want to ask.',
+            'mode_manual_help'    => 'Analysts click <em>Feedback</em> from the ticket toolbar when they want to ask.',
             'delay_help'          => 'Wait this many minutes after close before sending. <code>0</code> = immediate. Useful if you want the user to verify the fix actually held before being asked to rate it.',
             'one_per_ticket'      => 'One survey per ticket',
             'one_per_ticket_help' => 'If on, a reopened-then-closed ticket only gets another survey when an analyst manually triggers it &mdash; stops survey-spamming a flaky ticket.',
+            'in_channel'          => 'Ask chat customers in their chat',
+            'in_channel_help'     => 'A customer who wrote in on WhatsApp, Telegram, Slack, Teams or Mattermost is asked in that chat &mdash; buttons where the app has them, &ldquo;reply 1 to 5&rdquo; where it does not &mdash; instead of by email. WhatsApp only while its 24-hour window is open; otherwise, and if a chat message fails, the email survey is used.',
             'scale_stars'         => 'Stars',
             'scale_emojis'        => 'Emojis',
             'scale_help'          => 'Both options store the same 1&ndash;5 number, so dashboards and averages work the same either way &mdash; this only changes how the survey page itself looks.',
@@ -820,6 +2270,109 @@ return [
             'signin_help'      => 'Local users sign in with a password. Assign a provider to require SSO for this analyst — on their next SSO sign-in their identity is linked automatically (matched by email).',
             'access_all'       => 'Access all companies',
             'access_all_help'  => 'On = this analyst can work in every company (now and any added later). Off = only the companies you tick below.',
+        ],
+        // System -> Analysts list: grouping, layout, filters, paging (GH #208).
+        'analyst_view' => [
+            'search_placeholder' => 'Search name, username or email',
+            'group_by'           => 'Group by',
+            'then_by'            => 'Then by',
+            'layout'             => 'Layout',
+            'sort'               => 'Sort',
+            'per_page'           => 'Per page',
+            'filters'            => 'Filters',
+            'clear'              => 'Clear',
+            'default_btn'        => 'Default',
+            'make_default'       => 'Make this view the default for everyone',
+            'use_default'        => 'Go back to the default view',
+            'saved_default'      => 'This view is now the default for everyone who has not chosen their own.',
+            'reset_done'         => 'Back to the default view.',
+            'none'               => 'None',
+            'all'                => 'All',
+            'any'                => 'Any',
+            'g_company'          => 'Company',
+            'g_team'             => 'Team',
+            'g_department'       => 'Department',
+            'g_job_title'        => 'Job title',
+            'g_status'           => 'Status',
+            'g_admin'            => 'Administrator',
+            'g_signin'           => 'Sign-in method',
+            'layout_tree'        => 'Collapsible tree',
+            'layout_tabs'        => 'Tabs',
+            'layout_jump'        => 'One page with a jump list',
+            'sort_full_name'     => 'Full name',
+            'sort_username'      => 'Username',
+            'sort_last_login'    => 'Last sign-in',
+            'status_active'      => 'Active only',
+            'status_inactive'    => 'Inactive only',
+            'admin_yes'          => 'Administrators',
+            'admin_no'           => 'Not administrators',
+            'never'              => 'Never signed in',
+            'all_companies'      => 'All companies',
+            'no_companies'       => 'No companies',
+            'no_team'            => 'No team',
+            'not_set'            => 'Not set',
+            'active'             => 'Active',
+            'inactive'           => 'Inactive',
+            'local'              => 'Local',
+            'via_team'           => 'via team',
+            'via_team_tip'       => 'In this company because of a team they are in, not a grant of their own.',
+            'no_match'           => 'No analysts match these filters.',
+            'shown'              => '{shown} of {total} analysts',
+            'expand'             => 'Expand',
+            'collapse'           => 'Collapse',
+            'prev'               => 'Previous',
+            'next'               => 'Next',
+            'range'              => '{from}-{to} of {total}',
+            'of'                 => '{shown} of {total}',
+            'jump_to'            => 'Jump to',
+        ],
+        // Sign-in method set at team level (GH #41) - System -> Teams and System -> Analysts
+        // System -> Teams (GH #186): the counts, and the warning about a team with
+        // members but no departments. These lived in the page's script as English;
+        // an apostrophe in one of them ended a JavaScript string and stopped the
+        // whole page working, in every language.
+        'team_counts' => [
+            'departments' => '{count} department(s)',
+            'analysts'    => '{count} analyst(s)',
+            'check'       => 'Check',
+            'check_title' => 'Members\' ticket folders only count tickets with no department, plus their own',
+            'warn_one'    => '1 team has members but no departments:',
+            'warn_many'   => '{count} teams have members but no departments:',
+            'warn_body'   => 'Someone in a team only gets ticket folders and counts for that team\'s departments, so these members\' folders only count tickets with no department, plus their own. Link departments with the building icon on the team, or take the members out of the team.',
+            'warn_none'   => 'No departments yet? Create them in {link}.',
+            'warn_link'   => 'Tickets → Settings → Departments',
+        ],
+        'team_signin' => [
+            'follow_team'      => 'Follow team',
+            'follow_help'      => 'Follow team takes the sign-in method from this analyst\'s teams, and changes when their teams do.',
+            'not_set'          => 'Not set',
+            'local'            => 'Local password',
+            'team_help'        => 'Members set to Follow team on System → Analysts sign in this way. If a member\'s teams set different methods, nothing changes for them until you choose one on their record.',
+            'from_team'        => 'From their team: {method} ({teams}).',
+            'conflict'         => 'Their teams disagree: {detail}. Still signing in with {current} until you choose one here.',
+            'none'             => 'None of their teams sets a sign-in method. Still signing in with {current}.',
+            'new_follow'       => 'Signs in with a local password until they join a team that sets a method.',
+            'badge_conflict'   => 'Sign-in conflict',
+            'badge_tooltip'    => 'Click for explanation',
+            'badge_team_conflict_one' => '1 sign-in conflict',
+            'badge_team_conflicts'    => '{count} sign-in conflicts',
+            // The explanation modal behind the badge on System -> Analysts
+            'cx_title'         => 'Sign-in conflict',
+            'cx_lead'          => '{name} is set to Follow team, but their teams sign in in different ways - so FreeITSM cannot tell which one to use.',
+            'cx_teams'         => '{name}\'s teams',
+            'cx_until_title'   => 'Until this is resolved',
+            'cx_until_body'    => '{name} keeps signing in with {current}, exactly as before. Nothing changes until you choose.',
+            'cx_fix_title'     => 'To resolve it, do any one of these',
+            'cx_fix_own_title' => 'Choose a method for {name}',
+            'cx_fix_own_body'  => 'Set their own sign-in method. Their teams are then ignored for sign-in.',
+            'cx_fix_teams_title' => 'Make the teams agree',
+            'cx_fix_teams_body'  => 'Give these teams the same sign-in method on System → Teams.',
+            'cx_fix_member_title' => 'Change their teams',
+            'cx_fix_member_body'  => 'Take {name} out of the teams until only one sign-in method is left.',
+            'cx_btn_teams'     => 'Teams',
+            'cx_btn_change'    => 'Change',
+            'summary_changed'  => 'Analysts whose sign-in method changed: {count}.',
+            'summary_conflict' => 'Analysts whose teams disagree: {count} - choose one for each on System → Analysts.',
         ],
     ],
 
@@ -846,6 +2399,108 @@ return [
             'error'         => 'Error: {error}',
         ],
         'delete_confirm'  => 'Delete this rota entry?',
+
+        // Copy and paste (Ed). One cell at a time from the right-click menu,
+        // or a whole week from the toolbar.
+        'ctx' => [
+            'heading'       => 'Rota',
+            'copy_cell'     => 'Copy',
+            'paste_cell'    => 'Paste',
+            'clear_cell'    => 'Clear',
+            // Shown in place of Paste when nothing has been copied yet, so the
+            // menu explains itself rather than offering a dead option.
+            'nothing_copied' => 'Nothing copied yet',
+            // Right-clicking a selection, a day heading or an analyst's name.
+            // Each says HOW MANY cells, because the whole point of these is
+            // that one click fills more than one.
+            'cells_selected' => '{count} cells selected',
+            'paste_into'     => 'Paste into all {count}',
+            // Offered alongside the above whenever the target is a MIX of
+            // filled and empty cells, so the choice is made in the menu
+            // rather than in a dialogue after you have already committed.
+            'paste_empty'     => 'Paste into {count} empty cells',
+            'paste_empty_one' => 'Paste into the 1 empty cell',
+
+            // Copying a whole column or row, and clearing one.
+            'copy_line'     => 'Copy all {count} shifts',
+            'copy_line_one' => 'Copy the 1 shift',
+            'clear_many'    => 'Clear {count} shifts',
+            'clear_one'     => 'Clear 1 shift',
+            'paste_line'    => 'Paste {source}',
+
+            // 🔑 Why a paste is being refused. A day is one shift per analyst
+            // and an analyst's week is one shift per day, so there is no
+            // honest way to lay one over the other - and doing something
+            // plausible instead would be worse than saying no. Each of these
+            // says what you copied AND where it can go, because "you can't do
+            // that" without "here is where you can" is half a message.
+            'paste_col_onto_row'      => 'A day cannot go onto an analyst',
+            'paste_col_onto_row_why'  => 'You copied a whole day, which is one shift per analyst. It can only be pasted onto another day heading.',
+            'paste_row_onto_col'      => 'An analyst cannot go onto a day',
+            'paste_row_onto_col_why'  => 'You copied one analyst\'s week, which is one shift per day. It can only be pasted onto another analyst\'s name.',
+            'paste_line_nowhere'      => 'A whole line cannot go into a cell',
+            'paste_col_onto_cell_why' => 'You copied a whole day. Right-click a day heading to paste it.',
+            'paste_row_onto_cell_why' => 'You copied an analyst\'s whole week. Right-click an analyst\'s name to paste it.',
+            'paste_same_line'         => 'That is the one you copied - nothing to do',
+        ],
+        'copy' => [
+            'week_btn'        => 'Copy week',
+            'paste_week_btn'  => 'Paste week',
+            // The toolbar button says WHICH week is on the clipboard. A bare
+            // "Paste week" a few screens later is a guess about what is about
+            // to land on top of the week in front of you.
+            'clipboard_week'  => 'Week of {date} copied',
+            'cell_copied'     => 'Copied {shift}',
+            'week_copied'     => 'Copied {count} entries from this week',
+            'week_empty'      => 'There is nothing in this week to copy',
+            'nothing_to_paste' => 'Copy a cell first',
+
+            // Overwrite confirmations. Both name what is about to be lost:
+            // a confirm that only says "are you sure?" is a dialog people learn
+            // to click through without reading.
+            'cell_confirm_title'  => 'Overwrite this entry?',
+            'cell_confirm'        => '{analyst} already has {existing} on {date}. Replace it with {incoming}?',
+            'week_confirm_title'  => 'Overwrite this week?',
+            'week_confirm'        => 'This week has {existing} entries already. Pasting replaces the whole week with the {incoming} you copied, so the {existing} currently here are removed.',
+            'week_confirm_empty'  => 'Paste {incoming} entries into this week?',
+            'week_same'           => 'That is the week you copied - nothing to do',
+
+            // Pasting over shifts that are already there. Which cells was
+            // chosen in the menu; all that is left to confirm is the loss,
+            // and the numbers are what make it worth reading.
+            'overwrite_title'   => 'Overwrite shifts that are already there?',
+            'overwrite_confirm' => 'Pasting {shift} into all {total} cells replaces the {filled} shifts already in them.',
+            'overwrite_ok'      => 'Overwrite',
+
+            // A whole column or row. Like a week paste this REPLACES, so the
+            // confirm names what arrives AND what goes.
+            'col_copied'          => 'Copied {count} shifts from {date}',
+            'row_copied'          => 'Copied {count} shifts from {analyst}',
+            'line_empty'          => 'There is nothing on it to copy',
+            'line_confirm_title'  => 'Replace what is already there?',
+            // No verb after the counts: "the {existing} currently there are
+            // removed" reads as "the 1 ... are removed".
+            'line_confirm'        => 'Pasting {source} onto {target} replaces it - {incoming} shifts in, {existing} removed.',
+            'line_confirm_empty'  => 'Paste the {incoming} shifts from {source} onto {target}?',
+            'line_pasted'         => 'Pasted - {written} shifts in, {removed} replaced',
+
+            // Clearing a column, a row or a selection.
+            'clear_title'       => 'Clear these shifts?',
+            'clear_confirm'     => 'This removes the {count} shifts on {target}. It cannot be undone.',
+            'clear_confirm_one' => 'This removes the 1 shift on {target}. It cannot be undone.',
+            'cleared'           => 'Cleared {count} shifts',
+
+            'pasted'            => 'Pasted',
+            'cells_pasted'      => 'Pasted into {count} cells',
+            'cells_pasted_some' => 'Pasted into {written} cells - {skipped} left alone',
+            'cells_skipped'     => '{count} cells could not be pasted into',
+            'week_pasted'     => 'Week pasted - {written} entries in, {removed} replaced',
+            // Never silent. A shift or location deleted between the copy and
+            // the paste drops those rows, and a paste that quietly loses two
+            // people's shifts is the worst outcome here.
+            'week_skipped'    => '{count} entries could not be pasted - their shift no longer exists',
+            'paste_failed'    => 'Failed to paste',
+        ],
     ],
 
     // tickets/users.php — end-user directory with per-user ticket list
@@ -853,6 +2508,10 @@ return [
         'page_title'            => 'Service Desk - Users',
         'list_title'            => 'Users',
         'search_placeholder'    => 'Search users...',
+        // The Source filter: where a person's details come from.
+        'source_all'            => 'All sources',
+        'source_local'          => 'Added in FreeITSM',
+        'source_option'         => '{name} - {kind} ({n})',
         'count'                 => '{count} users',
         'ticket_count'          => '{count} tickets',
         'unknown_name'          => 'Unknown',
@@ -864,8 +2523,37 @@ return [
         'status_new_fallback'   => 'New',
         'info' => [
             'email'         => 'Email',
+            'username'      => 'Sign-in name',
             'first_seen'    => 'First Seen',
             'total_tickets' => 'Total Tickets',
+            'company'       => 'Company',
+            'company_none'  => 'Not set — tickets go to triage',
+            // The person, as opposed to the login. Blank ones are omitted from
+            // the pane rather than shown empty, so these labels only ever appear
+            // beside a real value.
+            'preferred_name'   => 'Prefers to be called',
+            'job_title'        => 'Job title',
+            'department'       => 'Department',
+            'office'           => 'Office',
+            'phone'            => 'Phone',
+            'mobile'           => 'Mobile',
+            'employee_id'      => 'Employee ID',
+            'manager'          => 'Manager',
+            'source'           => 'Details from',
+            'source_directory' => 'A directory, not editable here',
+            // The source by name: "Baikal (address book)".
+            'source_named'     => '{name} - {kind}',
+            'signs_in_with'    => 'Signs in with',
+            'kind_carddav'     => 'address book',
+            'kind_ldap'        => 'directory',
+            'kind_oidc'        => 'single sign-on',
+            'unlink'           => 'Unlink',
+        ],
+        'unlink' => [
+            'title'   => 'Unlink sign-in',
+            'confirm' => 'Unlink {name} from {provider}? Their tickets and details stay. The next time they sign in through a provider they are linked again, and a password works if they have one.',
+            'done'    => '{name} is no longer linked to a sign-in provider',
+            'failed'  => 'Could not unlink',
         ],
         'table' => [
             'ticket_number' => 'Ticket #',
@@ -883,20 +2571,251 @@ return [
             'display_name_placeholder'   => 'e.g. Jane Smith',
             'preferred_name'             => 'Preferred name',
             'preferred_name_placeholder' => 'e.g. Jane',
+            'company'                    => 'Company',
+            'company_none'               => 'No company (tickets go to triage)',
+            'cost_centre'                => 'Cost centre',
+            'cost_centre_none'           => 'None',
+            'cost_centre_inactive'       => 'inactive',
+            'company_auto'               => 'Work it out from their email address',
+            'company_help'               => 'Which company this person belongs to. Tickets they raise in the self-service portal are filed here; without one they land in triage.',
             'password'                   => 'Password',
             'password_placeholder'       => 'Leave blank for passwordless account',
             'password_help'              => 'Optional. If blank, the user can set their own password later via the self-service portal.',
             'confirm_delete'             => 'Delete user "{name}"? This cannot be undone.',
+            // The shared person editor (includes/person_editor.php, discussion #62)
+            'saved'                      => 'Saved',
+            'need_name_or_email'         => 'Enter a name or an email address.',
+            'load_failed'                => 'This person could not be loaded.',
+
+            // The person, as opposed to the login. Every one of these is a field a
+            // directory owns when there is one, so all of them grey out together
+            // and `managed_note` explains it once rather than seven times.
+            // ⚠️ "the greyed-out details", not "the details below" — a contact from
+            // an address book has some of them editable and some not, so naming
+            // the whole group makes the note contradict the form it sits under.
+            'managed_note'               => 'This person is kept up to date from a directory, so the greyed-out details are read-only. Change them at the source instead.',
+            // The address book is a separate outcome from the save, and always
+            // said out loud — the record here is written either way, so silence
+            // would let an analyst believe the contact card was updated when it
+            // was not. ⚠️ The failure wording leads with what DID happen, because
+            // the first thing somebody needs to know is that their work is safe.
+            'ab_written'                 => 'Saved, and the contact card was updated too.',
+            'ab_conflict'                => 'Saved here, but not written to the address book: someone changed the same detail there since the last import.',
+            'ab_failed'                  => 'Saved here, but the address book could not be updated: {error}',
+            'job_title'                  => 'Job title',
+            'job_title_placeholder'      => 'e.g. Finance Manager',
+            'department'                 => 'Department',
+            'department_placeholder'     => 'e.g. Finance',
+            'office'                     => 'Office',
+            'office_placeholder'         => 'e.g. Leeds',
+            // ⚠️ Do NOT claim this feeds the ticket asset picker. That picker
+            // searches `asset_locations.name` through the asset's own
+            // `location_id` and never reads `users.office`. The schema comment
+            // beside the column is about a DIRECTORY knowing where somebody
+            // sits, which is a different point, and reading it too quickly put
+            // a wrong claim into the help, the wiki and a release-notes draft.
+            'office_help'                => 'Which site or building they work from. A directory fills this in for you where you have one.',
+            'phone'                      => 'Phone',
+            'phone_placeholder'          => 'e.g. 0113 496 0000',
+            'mobile'                     => 'Mobile',
+            'mobile_placeholder'         => 'e.g. 07700 900000',
+            'employee_id'                => 'Employee ID',
+            'employee_id_placeholder'    => 'e.g. 04821',
+            'employee_id_help'           => 'Their payroll or HR number, for reconciling against a system that has never heard of an email address.',
+            'manager'                    => 'Manager',
+            'manager_none'               => 'No manager',
+            // ⚠️ Do NOT say approvals route along this chain. They do not:
+            // includes/catalogue_approvals.php routes to a DESIGNATED ANALYST and
+            // says in as many words that manager-based routing is "a later
+            // slice". The chain is recorded so it is there when that lands.
+            'manager_help'               => 'Who they report to. Recorded for the reporting line, and filled in from your directory where you have one.',
+            'manager_search'             => 'Type a name to search',
+            'manager_hidden'             => 'Someone you cannot see - left as it is unless you choose another',
+            'manager_clear'              => 'Clear',
+        ],
+
+        'tabs' => [
+            'people' => 'People',
+            'groups' => 'Groups',
+        ],
+
+        // Groups of people — analysts and portal users together. Knowledge grants
+        // folder access to these; see api/tickets/user_groups.php.
+        'groups' => [
+            'search_placeholder' => 'Search groups...',
+            'count'              => '{count} groups',
+            'none'               => 'No groups yet',
+            'select_group'       => 'Select a group to see who is in it',
+            'member_count'       => '{count} members',
+            // Deliberately its own line rather than folded into the total: an
+            // expired membership is a row that has stopped counting, and a single
+            // number would hide the difference.
+            'expired_count'      => '{count} expired',
+            'members_section'    => 'Members ({count})',
+            'no_members'         => 'Nobody is in this group yet',
+            'no_description'     => 'No description',
+            'load_failed'        => 'Could not load this group',
+            'kind_analyst'       => 'Analyst',
+            'kind_user'          => 'Portal user',
+            'no_expiry'          => 'No end date',
+            'expires_on'         => 'Until {date}',
+            'expired_on'         => 'Expired {date}',
+            'add_placeholder'    => 'Search for someone to add...',
+            'no_matches'         => 'Nobody found',
+            'access_until'       => 'Access until',
+            'access_until_help'  => 'Leave the date blank for access that does not end. Set one and they drop out of the group by themselves at the end of that day.',
+            'add_failed'         => 'Could not add them to the group',
+            'remove_failed'      => 'Could not remove them from the group',
+            'confirm_remove'     => 'Remove this person from the group?',
+            'confirm_delete'     => 'Delete the group "{name}"? Anything it was given access to will stop being shared with its members.',
+            'hidden_members'     => 'This group also has {count} members outside the company you are viewing.',
+            'table' => [
+                'name'   => 'Name',
+                'kind'   => 'Type',
+                'access' => 'Access',
+            ],
+            'modal' => [
+                'add_title'               => 'Add group',
+                'edit_title'              => 'Edit group',
+                'name'                    => 'Name',
+                'name_placeholder'        => 'e.g. Finance',
+                'description'             => 'Description',
+                'description_placeholder' => 'e.g. Everyone in the finance team',
+                'description_help'        => 'Optional. Worth filling in — a group can be given access to knowledge folders, so the next person should be able to tell what it is for.',
+            ],
         ],
     ],
 
     // tickets/calendar.php — scheduled-tickets calendar view
+    // Manager access - one manager's lines, full screen (discussion #62).
+    // Shared by Tickets -> Users and Assets -> Users.
+    'manager_access' => [
+        'button'            => 'Manager access',
+        'page_title'        => 'Manager access',
+        'back'              => 'Back',
+        'intro'             => 'Whose tickets {name} can see in the self-service portal, and why.',
+        'off_banner'        => 'Managers are switched off in System → Managers, so nobody sees anyone yet. This is what {name} will see once they are on.',
+        'left_banner'       => '{name} has left, so sees nothing. The lines are kept in case they come back.',
+        'needs_verify'      => 'Run System → Database Verification first.',
+        'readonly'          => 'Only administrators can change management lines. That can be changed in System → Managers.',
+        'can_see_label'     => 'Can see the tickets of',
+        'people'            => '{count} people',
+        'people_one'        => '1 person',
+        'sources_heading'   => 'What gives them access',
+        'directory_direct'  => 'The people who report to them',
+        'directory_all'     => 'Everyone below them',
+        'directory_note'    => 'From each person\'s Manager field - change it there, not here.',
+        'directory_off'     => 'Each person\'s Manager field is not used - switched off in System → Managers.',
+        'directory_label'   => 'From the Manager field',
+        'lines_search'      => 'Search their lines',
+        'tab_empty'         => 'None yet.',
+        // "Why can they see this person?" - opened from a name in the right panel.
+        'why_title'         => 'Why {manager} can see {person}',
+        'why_lead_one'      => '{person}\'s tickets are in {manager}\'s Team tickets for one reason.',
+        'why_lead'          => '{person}\'s tickets are in {manager}\'s Team tickets for {count} reasons.',
+        'why_tree_label'    => 'How the access reaches them',
+        'why_kind_directory'=> 'Manager field',
+        'why_kind_reports'  => 'Reporting line',
+        'why_kind_user'     => 'Named',
+        'why_kind_group'    => 'Group',
+        'why_kind_department'=> 'Department',
+        'why_kind_everyone' => 'Everyone',
+        'why_direct'        => 'Reports to them directly',
+        'why_via'           => 'Via {names}',
+        'why_named'         => 'Added by name',
+        'why_everyone_in'   => 'Everyone in {company}',
+        'why_everyone_all'  => 'Everyone',
+        'why_box_title'     => 'What {manager} can see and do',
+        'why_can_read'      => 'Reads {person}\'s tickets.',
+        'why_can_reply'     => 'Can reply to them.',
+        'why_cannot_reply'  => 'Cannot reply.',
+        'why_can_close'     => 'Can close them.',
+        'why_cannot_close'  => 'Cannot close them.',
+        'why_conf_none'     => 'Confidential tickets stay hidden.',
+        'why_conf_stub'     => 'A confidential ticket shows only that it exists.',
+        'why_conf_all'      => 'Confidential tickets are shown too.',
+        'why_off'           => 'Managers are switched off, so none of this happens yet.',
+        'why_person_left'   => '{person} has left. Their tickets stay visible because System → Managers keeps the tickets of people who have left.',
+        'why_fix_title'     => 'To stop {manager} seeing {person}\'s tickets',
+        'why_fix_many'      => 'Every reason has to go - or exclude them, which beats them all.',
+        'why_fix_line'      => 'Remove the line: {label}',
+        'why_fix_line_user' => 'Only {person} is affected.',
+        'why_fix_line_group'=> 'Everyone else in the group goes from the team too.',
+        'why_fix_line_dept' => 'Everyone else in {name} goes from the team too.',
+        'why_fix_line_everyone' => 'Everybody goes, except anyone another line still covers.',
+        'why_fix_line_reports' => 'Their whole reporting line goes, except anyone another line still covers.',
+        'why_fix_dir'       => 'Change {person}\'s Manager field',
+        'why_fix_dir_body'  => 'On their record. The reporting line comes from there, or from your directory.',
+        'why_fix_dir_via'   => 'On their record, or on the record of someone in between.',
+        'why_fix_excl'      => 'Exclude {person}',
+        'why_fix_excl_body' => 'Stops it whatever the reasons - an exclusion always wins.',
+        'why_readonly'      => 'Only administrators can change this; System → Managers decides.',
+        'why_gone'          => '{person} is no longer on {manager}\'s team.',
+        'open'              => 'Open',
+        'lines_heading'     => 'Management lines',
+        'lines_none'        => 'No lines yet. Add people, groups or departments below.',
+        'excl_heading'      => 'Exclusions',
+        'excl_desc'         => 'An exclusion always wins - over every line and over the Manager field.',
+        'excl_none'         => 'No exclusions.',
+        'line_everyone'     => 'Everyone',
+        'line_user'         => '{name}',
+        'line_group'        => 'Group: {name}',
+        'line_department'   => 'Department: {name}',
+        'line_reports'      => 'Their direct reports',
+        'line_reports_all'  => 'Everyone below them',
+        'line_gone_user'    => 'A person who has been deleted',
+        'line_gone_group'   => 'A group that has been deleted',
+        'line_meta'         => 'Added by {name}, {date}',
+        'line_meta_nobody'  => 'Added {date}',
+        'dept_empty'        => 'Nobody is in this department now - has it been renamed?',
+        'remove'            => 'Remove',
+        'add_heading'       => 'Add to their team',
+        'tab_people'        => 'People',
+        'tab_groups'        => 'Groups',
+        'tab_departments'   => 'Departments',
+        'tab_other'         => 'Everyone',
+        'search_people'     => 'Search by name, email, department or job title',
+        'search_groups'     => 'Search people groups',
+        'search_departments'=> 'Search departments',
+        'add'               => 'Add',
+        'exclude'           => 'Exclude',
+        'is_added'          => 'Added',
+        'is_excluded'       => 'Excluded',
+        'no_results'        => 'Nothing matches.',
+        'page_of'           => 'Page {page} of {pages} · {total} found',
+        'prev'              => 'Previous',
+        'next'              => 'Next',
+        'everyone_title'    => 'Everyone',
+        'everyone_desc'     => 'Every person in {company}. Use exclusions to leave people out.',
+        'everyone_desc_one' => 'Every person. Use exclusions to leave people out.',
+        'reports_title'     => 'Their reporting line',
+        'reports_desc'      => 'Follows the Manager field for this manager, even when System → Managers does not use it for everyone.',
+        'reports_direct'    => 'The people who report to them',
+        'reports_all'       => 'Everyone below them, all the way down',
+        'team_heading'      => 'Who they can see',
+        'team_filter'       => 'Filter this list',
+        'team_more'         => 'Showing the first {shown} of {total}.',
+        'team_none'         => 'Nobody yet.',
+        'flag_left'         => 'Left',
+        'load_failed'       => 'Could not load this manager.',
+        'save_failed'       => 'Could not save: {error}',
+    ],
     'calendar' => [
         'page_title'    => 'Service Desk - Calendar',
         'modal_title'   => 'Ticket Details',
         'open_in_inbox' => 'Open in Inbox',
         'x_more'        => '{count} more...',
         'unassigned'    => 'Unassigned',
+        'all_day'       => 'All day',
+        'scope_mine'     => 'Mine',
+        'scope_everyone' => 'Everyone',
+        'moved'          => 'Moved {ref}',
+        'move_failed'    => 'Could not move it — put back where it was.',
+        'rescheduled'        => 'Schedule updated',
+        'unscheduled'        => 'Schedule cleared',
+        'save_failed'        => 'Could not update the schedule.',
+        'need_date_time'     => 'Choose a date and a start time.',
+        'unschedule_confirm' => 'Take {ref} off the calendar? The times it has now will be lost.',
         'na'            => 'N/A',
         'date_at_time'  => '{date} at {time}',
         'modal' => [
@@ -911,7 +2830,7 @@ return [
 
     // tickets/activity.php — full-screen mailbox activity log
     'activity' => [
-        'page_title'           => 'Service Desk - Mailbox Activity',
+        'page_title'           => 'Mailbox Activity',
         'sidebar_title'        => 'Mailboxes',
         'filter_placeholder'   => 'Filter mailboxes...',
         'back_to_settings'     => 'Back to Settings',
@@ -942,6 +2861,47 @@ return [
 
     // tickets/csat/index.php — CSAT analytics page
     'csat' => [
+        // ── The survey a CUSTOMER fills in (tickets/csat/survey.php) ────
+        //
+        // 🔴 PUBLIC AND UNAUTHENTICATED. There is no session, so the locale
+        // comes from the browser Accept-Language header - see
+        // I18n::initFromSession() step 2. A customer who reads Spanish gets a
+        // Spanish survey without ever having had an account, which is the
+        // whole reason these strings are worth translating.
+        'survey' => [
+            // Punctuation is stored as real characters, not HTML entities, so
+            // every one of these can be escaped on output. A translator who
+            // types an entity is then a defect the chunk verifier can see.
+            'title'            => 'How did we do?',
+            'thanks_heading'   => 'Thanks for your feedback!',
+            'thanks_body'      => 'We’ve recorded your response. The team will use it to keep improving the service.',
+            'invalid_heading'  => 'This survey link isn’t valid',
+            'invalid_body'     => 'The link may have been mistyped, or it’s already been used. If you believe this is a mistake, please reply to the original ticket email.',
+            'already_heading'  => 'You’ve already responded',
+            'already_body'     => 'Thanks — we’ve already got your feedback for this ticket. Each survey link can only be used once.',
+            'error_heading'    => 'Something went wrong',
+            'error_body'       => 'We couldn’t save your response just now. Please try again in a minute, or reply to the original ticket email.',
+            // GH #217: CSAT switched off for the installation - neutral, says nothing about why.
+            'off_heading'      => 'We’re no longer collecting feedback',
+            'off_body'         => 'Thank you.',
+            'ticket_line'      => 'Ticket',
+            'intro'            => 'Hi {name}, thanks for letting us help. How would you rate the experience?',
+            // Used when the requester record has no name to take a first name from.
+            // The nameless case is its own sentence, not the named one with a
+            // filler in the slot: "Hi there" has no equivalent in most
+            // languages, and asking for one produced the wrong register in two.
+            'intro_noname'     => 'Hi, thanks for letting us help. How would you rate the experience?',            'need_rating'      => 'Please pick a rating before submitting.',
+            'hint'             => 'Hover and click to rate',
+            'comment_ph'       => 'Anything you\'d like to add? (optional)',
+            'submit'           => 'Submit feedback',
+            // The caption under the stars, e.g. "4 / 5 — Satisfied".
+            'caption'          => '{n} / 5 — {label}',
+            'rating_1'         => 'Very dissatisfied',
+            'rating_2'         => 'Dissatisfied',
+            'rating_3'         => 'Neutral',
+            'rating_4'         => 'Satisfied',
+            'rating_5'         => 'Very satisfied',
+        ],
         'page_title'           => 'CSAT — Service Desk',
         'heading'              => 'Customer Satisfaction',
         'range_days'           => '{days}d',
@@ -961,6 +2921,31 @@ return [
         'unassigned'           => 'Unassigned',
         'recent_responses'     => 'Recent responses',
         'no_recent_responses'  => 'No responses yet in this window.',
+        // Filters (GH #157). On a phone they sit behind a "Filters" button.
+        'filters'              => 'Filters',
+        'close'                => 'Close',
+        'filter_from'          => 'From',
+        'filter_to'            => 'To',
+        'filter_rating'        => 'Rating',
+        'rating_all'           => 'All ratings',
+        'rating_positive'      => 'Positive (4-5)',
+        'rating_neutral'       => 'Neutral (3)',
+        'rating_negative'      => 'Negative (1-2)',
+        'filter_analyst'       => 'Analyst',
+        'analyst_all'          => 'All analysts',
+        'filter_customer'      => 'Customer',
+        'customer_all'         => 'All customers',
+        'apply'                => 'Apply',
+        'clear'                => 'Clear',
+        // The KPI caption when a From/To range is chosen instead of 7/30/90/365.
+        'in_period'            => 'in this period',
+        // {rating} is one of the rating_* labels above.
+        'rating_filter_note'   => 'Showing {rating} ratings only. The figures above include every rating.',
+        // Under a response: who left it. {name} is the customer.
+        'from_customer'        => 'from {name}',
+        'showing'              => '{from}-{to} of {total}',
+        'prev'                 => 'Previous',
+        'next'                 => 'Next',
     ],
 
     // tickets/dashboard/index.php + library.php — ticket dashboard + widget library
@@ -975,8 +2960,123 @@ return [
         'failed_remove'           => 'Failed to remove widget',
         'widget_removed'          => 'Widget removed',
         'widget_updated'          => 'Widget updated',
+        // ── The widget editor, shared by index.php and library.php ──────
+        // (tickets/dashboard/includes/widget_edit_form.php)
+        'form' => [
+            'title'            => 'Title',
+            'title_ph'         => 'e.g. Tickets by status',
+            'chart_type'       => 'Chart type',
+            'chart_bar'        => 'Bar',
+            'chart_doughnut'   => 'Doughnut',
+            'chart_pie'        => 'Pie',
+            'chart_line'       => 'Line',
+            'description'      => 'Description',
+            'description_ph'   => 'Brief description of what this widget shows',
+            'property'         => 'Aggregate property',
+            'group_categorical' => 'Categorical',
+            'group_timeseries' => 'Time series',
+            'group_comparison' => 'Comparison',
+            'prop_status'      => 'Status',
+            'prop_priority'    => 'Priority',
+            'prop_department'  => 'Department',
+            'prop_ticket_type' => 'Ticket type',
+            'prop_analyst'     => 'Assigned analyst',
+            'prop_owner'       => 'Owner',
+            'prop_origin'      => 'Origin',
+            'prop_ftf'         => 'First time fix',
+            'prop_training'    => 'Training provided',
+            'prop_created'     => 'Created',
+            'prop_closed'      => 'Closed',
+            'prop_created_vs_closed' => 'Created vs closed',
+            'time_grouping'    => 'Time grouping',
+            'time_day'         => 'Day',
+            'time_month'       => 'Month',
+            'time_year'        => 'Year',
+            'series'           => 'Series breakdown',
+            'series_none'      => 'None (single series)',
+            'series_status'    => 'By status',
+            'series_priority'  => 'By priority',
+            'date_range'       => 'Date range',
+            'range_all'        => 'All time',
+            'range_7d'         => 'Last 7 days',
+            'range_30d'        => 'Last 30 days',
+            'range_this_month' => 'This month',
+            'range_3m'         => 'Last 3 months',
+            'range_6m'         => 'Last 6 months',
+            'range_12m'        => 'Last 12 months',
+            'range_this_year'  => 'This year',
+            'dept_filter'      => 'Department filter',
+            'dept_hint'        => 'Leave all unchecked to include all departments',
+            'filterable'       => 'Allow status filtering',
+        ],
+        // ── The auto-written widget description (assets/js/widget-editor.js) ──
+        //
+        // This was assembled in JavaScript by concatenating English and then
+        // calling .toLowerCase() on the result. Two things are wrong with that
+        // in any other language: word order is fixed to English, and German
+        // capitalises its nouns mid-sentence. So each shape is a whole
+        // sentence, and the mid-sentence forms are their own keys rather than
+        // a lower-cased title.
+        //
+        // 🔴 It also carried a real English bug: the unit came from lower-casing
+        // "Daily"/"Monthly"/"Yearly" and stripping a trailing "ly", which gives
+        // "month" and "year" but turns "Daily" into "dai" - the description read
+        // "Tickets created per dai". The unit is now its own word.
+        'auto_desc' => [
+            'created_vs_closed'     => 'Created vs closed',
+            'created_vs_closed_per' => 'Created vs closed per {unit}',
+            'per'                   => 'Tickets {verb} per {unit}',
+            'per_by'                => 'Tickets {verb} per {unit} by {series}',
+            'by'                    => 'Tickets by {property}',
+            'by_and'                => 'Tickets by {property} and {series}',
+            'with_range'            => '{desc} ({range})',
+            'with_depts'            => '{desc} — {names}',
+            'with_dept_count'       => '{desc} — {n} departments',
+
+            'verb_created'          => 'created',
+            'verb_closed'           => 'closed',
+            'unit_day'              => 'day',
+            'unit_month'            => 'month',
+            'unit_year'             => 'year',
+
+            // Mid-sentence forms of the aggregate property and the series.
+            'of_status'             => 'status',
+            'of_priority'           => 'priority',
+            'of_department'         => 'department',
+            'of_ticket_type'        => 'ticket type',
+            'of_analyst'            => 'assigned analyst',
+            'of_owner'              => 'owner',
+            'of_origin'             => 'origin',
+            'of_first_time_fix'     => 'first time fix',
+            'of_training_provided'  => 'training provided',
+            'of_category'           => 'category',
+            'of_closure_category'   => 'category at close',
+            'of_resolution_code'    => 'resolution code',
+
+            // Mid-sentence forms of the date range, for the "( ... )" suffix.
+            'in_7d'                 => 'last 7 days',
+            'in_30d'                => 'last 30 days',
+            'in_this_month'         => 'this month',
+            'in_3m'                 => 'last 3 months',
+            'in_6m'                 => 'last 6 months',
+            'in_12m'                => 'last 12 months',
+            'in_this_year'          => 'this year',
+
+            // Three properties the shared form partial does not offer, but the
+            // editor still has to label when an existing widget uses one.
+            'prop_category'         => 'Category',
+            'prop_closure_category' => 'Category at close',
+            'prop_resolution_code'  => 'Resolution code',
+
+            'grouping_daily'        => 'Daily',
+            'grouping_monthly'      => 'Monthly',
+            'grouping_yearly'       => 'Yearly',
+
+            'err_title'             => 'Title is required',
+            'err_time_grouping'     => 'Time grouping is required for time-based aggregates',
+        ],
         'library' => [
-            'page_title'          => 'Service Desk - Ticket Widget Library',
+            'page_title'          => 'Ticket Widget Library',
             'back_dashboard'      => 'Dashboard',
             'heading'             => 'Widget Library',
             'search_placeholder'  => 'Search widgets...',
@@ -1020,6 +3120,39 @@ return [
     // tickets/help.php — Tickets module help guide. Prose values contain inline
     // HTML markup (strong/em/code/a/&mdash; etc.) and are echoed unescaped.
     'help' => [
+        // Case reports (GH #204)
+        'case' => [
+            'nav'      => 'Case reports',
+            'heading'  => 'Case reports',
+            'intro'    => 'When a reviewer or an auditor asks how a case was handled, <strong>Export</strong> puts the ticket, its conversation and the tasks that did the work into one printable document - so nobody has to copy it out by hand.',
+            'step1'    => '<strong>Open the ticket</strong> and choose <strong>Export</strong> in its toolbar (under <strong>More</strong> when the reading pane is narrow). The report opens in a new tab. For a task with no ticket, use the document button at the top of the task window instead.',
+            'step2'    => '<strong>Tick what to include</strong> in the panel on the left. The report redraws as you tick, and nothing is recorded while you choose.',
+            'step3'    => '<strong>Choose the layout</strong>: a cover page, a contents page, each section on a new page, and a header with page numbers.',
+            'step4'    => '<strong>Print</strong>, then choose <em>Save as PDF</em> in the print dialog. Untick the browser\'s own <em>Headers and footers</em> - the report prints its own.',
+            'contents' => '<strong>What goes in:</strong> an overview of the ticket (with its custom fields, linked assets, configuration items and related tickets); every message, oldest first; the notes; the ticket\'s checklists; each linked task with its subtasks, checklist results and exception notes, form answers, the procedures followed, follow-ups and comments; the history of the ticket and of each task; and an index of the documents and email attachments, with the fingerprint FreeITSM recorded for each document.',
+            'layout'   => '<strong>Layout:</strong> the contents page lists every section and task, and each entry is a link in the saved PDF. The header and page numbers (<em>Page 3 of 12</em>) need a current Chrome or Edge; other browsers print the report without them.',
+            'who'      => '<strong>Who sees what:</strong> the report shows only what you could see on screen. Tasks, assets, configuration items, related tickets, documents and form answers are each checked with their own rule, and anything you may not see is <em>counted</em> - never named - so the reader knows something was left out. <strong>Internal notes are left out unless you tick them in</strong>, because a report usually leaves the team.',
+            'recorded' => '<strong>What is recorded:</strong> printing writes a <em>Case report</em> line on the ticket\'s audit trail with who printed it and which sections it covered. Previewing and changing the choices record nothing.',
+            'note'     => 'A case report is a copy of the record, not a write-up: nothing is reworded or summarised, pictures inside emails are not reproduced, files are listed rather than included, and only history FreeITSM actually recorded appears. A section that cannot be read says so in red instead of looking empty.',
+        ],
+        // The ticket workspace and the ticket table (PR #211, #212, #213).
+        'workspace' => [
+            'nav'       => 'Workspace and ticket table',
+            'heading'   => 'The workspace and the ticket table',
+            'intro'     => 'Two other ways to work through tickets, both optional. The <strong>workspace</strong> lays one ticket out for working rather than reading. The <strong>ticket table</strong> shows the list of tickets as a table you can filter, sort and save.',
+            'ws_title'  => 'The workspace',
+            'ws_what'   => 'In the workspace the ticket\'s properties sit in a column on the left, and its <strong>Conversation</strong>, <strong>Work</strong> (checklists and linked tasks), <strong>Links</strong>, <strong>Time and SLA</strong> and <strong>History</strong> are tabs beside them. The toolbar and every control are the same ones the reading pane has - only where they sit changes. A ticket\'s own <strong>checklist</strong> lists every step with its tickbox on the Work tab; <strong>Collapse</strong> shows just the next step (remembered in your browser), and <strong>Pop out</strong> still opens it on its own.',
+            'ws_admin'  => '<strong>An administrator switches it on</strong> in <strong>Tickets &rarr; Settings &rarr; General &rarr; Ticket workspace</strong>: <em>Off</em> (the default), <em>Only tickets turned into a workspace</em>, or <em>Every ticket</em>.',
+            'ws_make'   => '<strong>Turning a ticket into a workspace:</strong> in the middle setting, open the ticket and choose <strong>More &rarr; Make workspace</strong> (and <strong>Back to the reading pane</strong> to undo it). It belongs to the ticket, so everyone working it sees it the same way, and it is recorded on the ticket\'s history.',
+            'ws_own'    => '<strong>Your own choice:</strong> once it is on, <strong>Use the workspace</strong> in the list\'s filter menu, or in <strong>System &rarr; Preferences</strong>, turns it off for you alone. A ticket turned into a workspace then shows a small <em>Workspace</em> badge, so you know a colleague is working it that way.',
+            'ws_checklist' => '<strong>The ticket\'s checklists list every step:</strong> on the <strong>Work</strong> tab a checklist shows all its steps with their tickboxes. <strong>Collapse</strong> shrinks it to just the next step, as the reading pane shows it, and <strong>Expand</strong> brings the rest back - your browser remembers which you chose. <strong>Pop out</strong> still opens the full checklist in a window.',
+            'ws_tasks'  => '<strong>Linked tasks open in place:</strong> click a task on the <strong>Work</strong> tab and its own editor opens there - checklists, forms, procedures, subtasks, comments and documents included. <strong>Open separately</strong> opens it in its own window as before; Ctrl-click does the same. You need access to Tasks to edit it.',
+            'ws_safe'   => '<strong>Nothing half-typed is lost:</strong> moving to another ticket, or switching the workspace off, with a reply, a note or a task change unsaved asks you first, and waits for anything still saving.',
+            'tb_title'  => 'The ticket table',
+            'tb_what'   => 'Choose <strong>Table</strong> instead of <strong>Messages</strong> in the action row at the top of Tickets (or in <strong>System &rarr; Preferences</strong>). The folder you are in becomes the table\'s filter; pick columns, filter and sort them, search, and move through the list 25, 50 or 100 tickets at a time. <strong>Save view</strong> keeps a layout for yourself, your team or everyone.',
+            'tb_same'   => 'Clicking, Ctrl- and Shift-clicking, right-clicking, dragging to a folder and the bulk actions all work as they do in the message list, and the table never shows a ticket the list would not.',
+            'tb_export' => '<strong>CSV export:</strong> the CSV button exports <em>every</em> ticket that matches, not just the page, with the columns you have showing. Who may use it is set in <strong>Tickets &rarr; Settings &rarr; General &rarr; Who can export the ticket list</strong>: administrators only (the default), anyone with Tickets, or nobody. The button is not shown to anyone it is not open to.',
+        ],
         'page_title'   => 'Service Desk - Tickets Guide',
         'sidebar_title'=> 'Guide',
         'hero_title'   => 'Tickets module guide',
@@ -1028,6 +3161,7 @@ return [
             'overview'             => 'Overview',
             'inbox'                => 'The inbox',
             'working_with_tickets' => 'Working with tickets',
+            'working_faster'       => 'Working faster',
             'comments_attachments' => 'Comments &amp; attachments',
             'ai_tools'             => 'AI tools',
             'csat'                 => 'CSAT surveys',
@@ -1053,6 +3187,7 @@ return [
         'inbox' => [
             'heading' => 'The inbox',
             'intro'   => 'The inbox is the primary workspace for analysts. It uses a three-pane layout &mdash; folders on the left, a ticket list in the centre, and a reading pane on the right &mdash; so you can triage and respond without ever leaving the page.',
+            'p_live'         => '<strong>It keeps itself up to date.</strong> Every minute the inbox checks your mailboxes and looks for anything new on tickets you can see &mdash; an email collected in the background, a WhatsApp, Telegram, Slack, Teams or Mattermost message, a colleague\'s reply &mdash; and when something has arrived, the list and folder counts refresh on their own, just as the refresh button does. The ticket you are reading and any reply you are typing are left alone.',
             'p_folders'      => 'The folder panel organises tickets into logical groups. Each folder shows an unread count so you can spot new work immediately:',
             'field_my'       => '<strong>My Tickets</strong> &mdash; tickets assigned to you. This is your personal queue and the best place to start each day.',
             'field_unassigned' => '<strong>Unassigned</strong> &mdash; tickets that have arrived but have no analyst yet. Pick items from here to take ownership.',
@@ -1060,10 +3195,45 @@ return [
             'field_closed'   => '<strong>Closed</strong> &mdash; resolved tickets. Search here when you need to reference a past solution or reopen an issue.',
             'field_dept'     => '<strong>Department folders</strong> &mdash; tickets grouped by department (e.g. IT, HR, Finance). Departments are configured in Settings and appear as sub-folders automatically.',
             'switch_heading' => '<strong>Switching between Department and Analyst grouping</strong>',
-            'switch_body'    => 'A small two-button toggle at the top of the folder panel switches between two views of the same data. <strong>Department</strong> grouping (default) lists tickets under each department with status sub-folders inside; <strong>Analyst</strong> grouping flips it so each top-level folder represents an analyst\'s personal queue with status sub-folders inside. The <strong>Unassigned</strong> folder is context-aware in each view &mdash; in Department view it lists tickets with no department set; in Analyst view it lists tickets with no assignee &mdash; so you can always see what needs picking up. Your choice is saved per-analyst so each team member keeps the view they prefer across sessions.',
-            'p_actions'      => 'Above the ticket list, you have three action buttons: <strong>New</strong> to create a ticket, <strong>Search</strong> to find tickets by keyword, reference, or requester, and <strong>Refresh</strong> to reload the current folder.',
+            'switch_body'    => 'A small two-button toggle at the top of the folder panel switches between two views of the same data. <strong>Department</strong> grouping (default) lists tickets under each department with status sub-folders inside; <strong>Analyst</strong> grouping flips it so each top-level folder represents an analyst\'s personal queue with status sub-folders inside. The <strong>Unassigned</strong> folder is context-aware in each view &mdash; in Department view it lists tickets with no department set; in Analyst view it lists tickets with no assignee &mdash; so you can always see what needs picking up. Once your install has teams, a third choice, <strong>Team</strong>, lists the queue each ticket has been handed to. Your choice is saved per-analyst so each team member keeps the view they prefer across sessions. On an install with several companies, the Analyst folders list only people who can work in the company you are viewing, and the <strong>Assign</strong> lists offer only people who can work in that ticket&rsquo;s company. <strong>Tickets &rarr; Settings &rarr; General &rarr; Team folders</strong> can limit the Team folders to the teams each analyst belongs to; it only changes the folder list, never which tickets anyone can open.',
+            'p_actions'      => 'Above the ticket list, you have four action buttons: <strong>New</strong> to create a ticket, <strong>Search</strong> to find tickets by keyword, reference, or requester, <strong>Filter</strong> to narrow what you see, and <strong>Refresh</strong> to reload the current folder.',
+            // #149
+            'filter_body'    => 'The <strong>Filter</strong> button (the funnel) narrows the folders and the list together, whichever way they are grouped. <strong>Mine</strong> shows only tickets assigned to you, and <strong>Hide closed</strong> leaves out every ticket whose status is marked as closed. While a filter is on, the funnel carries a dot and a label appears beside the list title, so you always know you are not seeing everything. When folders are grouped by <strong>Analyst</strong>, your own folder sits at the top as <strong>My tickets</strong> instead. Search has its own <strong>Include closed tickets</strong> switch, on by default, because a search is usually a hunt for an old ticket. Both choices are saved for you alone.',
+            'row_name'       => 'Each row shows the ticket reference and then a name. By default that is <strong>the person who raised the ticket</strong>, and it stays the same for the life of the ticket. If you would rather see whoever sent the most recent message &mdash; which becomes your own mailbox once you have replied &mdash; change <strong>Name beside the ticket number</strong> under <strong>Settings &rarr; Row display</strong>, where you can also hide the name and leave just the reference. That tab is your own setting: it changes nothing for anyone else.',
             'tip'            => 'Click any ticket in the list to load it in the reading pane. From there you can update fields, add comments, reply by email, or attach files &mdash; all without navigating away from the inbox.',
         ],
+        // Section 4 — the analyst speed-ups added in #909–#916.
+        'faster' => [
+            'heading' => 'Working faster',
+            'intro'   => 'Four things that turn a busy morning into a manageable one: saved replies, acting on many tickets at once, and putting conversations where they belong.',
+
+            'templates_heading' => 'Canned responses',
+            'templates_body'    => 'You send the same handful of replies constantly. Write one once, then click <strong>Templates</strong> at the bottom left of the reply window to drop it in at your cursor &mdash; it adds to what you have already typed rather than replacing it. Templates are rich text and support the same <code>[merge_code]</code> placeholders as the automated emails, so <code>[requester_first_name]</code> becomes the real name as you insert it.',
+            'templates_team'    => '<strong>Team templates</strong> &mdash; shared with everyone, set up in Settings &rarr; Reply templates.',
+            'templates_mine'    => '<strong>Your own</strong> &mdash; save a draft with <em>Save draft as template</em>. Private to you, and no permission needed.',
+            'templates_tip'     => 'Name a template for the situation ("Printer offline &mdash; first steps"), not for its wording. It is what you will be scanning for at 9am.',
+
+            'select_heading' => 'Selecting several tickets',
+            'select_body'    => 'The ticket list works like Outlook or File Explorer. No checkboxes.',
+            'key_click'      => 'Click',      'key_click_d' => 'select one and open it',
+            'key_ctrl'       => 'Ctrl+click', 'key_ctrl_d'  => 'add or remove one, leaving the rest alone',
+            'key_shift'      => 'Shift+click','key_shift_d' => 'select a whole block from where you last clicked',
+            'key_kb'         => 'Keyboard',   'key_kb_d'    => 'arrows to move, Shift+arrows to extend, Ctrl+arrows and Space to pick out scattered tickets, Ctrl+A for everything, Escape to clear',
+            'select_actions' => 'With several selected, <strong>right-click any of them</strong> to set status, priority, department, type or assignee for all of them at once &mdash; or drag the whole set onto a folder. What the screen shows while several are selected is your choice, in the account menu under Preferences.',
+            'select_tip'     => 'Right-clicking a ticket that is <em>not</em> in your selection clears the selection and targets just that one. That is deliberate &mdash; you can never act on a set you thought you had moved on from.',
+
+            'merge_heading' => 'Merging duplicates',
+            'merge_body'    => 'Two people reported the same outage? Select the tickets, right-click, <strong>Merge</strong>. The conversations come together, and if you have an AI provider configured FreeITSM writes a short briefing of what everyone asked and what has already been done, so whoever picks it up does not have to read four threads.',
+            'merge_tip'     => 'Nothing is ever deleted. The merged-away ticket keeps its reference, stays searchable, shows where it went &mdash; and a customer replying to an old email about it still reaches you.',
+
+            'split_heading' => 'Splitting a ticket',
+            'split_body'    => 'The opposite job. When someone raises a second, unrelated thing halfway down a conversation, click <strong>Split</strong> on that message (or right-click the message header). It moves to a new ticket, optionally taking every newer message with it, and the original keeps a marker showing where they went.',
+            'split_tip'     => 'Give the new ticket a proper subject. It defaults to the moved message&rsquo;s, which is usually a "RE:" of the <em>old</em> problem.',
+
+            'undo_heading' => 'Changed your mind',
+            'undo_body'    => 'Both can be undone from the banner on the ticket. Undoing a <strong>split</strong> is refused once somebody has replied on the new ticket, added a note or logged time &mdash; you are told exactly what is in the way. Undoing a <strong>merge</strong> gives the ticket its messages, notes and logged time back and reopens it exactly as it was, but replies written on the other ticket since the merge stay there.',
+        ],
+
         'working' => [
             'heading' => 'Working with tickets',
             'intro'   => 'Every support request follows a lifecycle: it is created, triaged, worked on, and eventually resolved. The Tickets module gives you the tools to manage each stage efficiently, from initial logging through to closure.',
@@ -1099,8 +3269,22 @@ return [
             'fullscreen_heading' => '<strong>Full-screen view</strong>',
             'fullscreen_body'    => 'When you need to focus on a single ticket &mdash; a long conversation, a complex change, drafting a detailed reply &mdash; switch to full-screen view. The folder list and the ticket list disappear, the conversation fills the available width, and the properties (Department, Type, Status, Origin, First Time Fix, IT Training, Owner) move to a vertical sidebar on the right.',
             'fullscreen_max'     => '<strong>Maximize icon</strong> &mdash; small icon at the right end of the ticket subject line. Click to enter full-screen; click again to return to the 3-pane layout.',
-            'fullscreen_dbl'     => '<strong>Double-click a row</strong> &mdash; double-click any ticket in the list to open it directly in full-screen, Outlook-style "really open this one" gesture.',
+            'fullscreen_dbl'     => '<strong>Double-click a row, or press Enter</strong> &mdash; double-click any ticket in the list to open it straight in full-screen, Outlook-style "really open this one" gesture. <strong>Enter</strong> steps in one level at a time, as Escape steps out: on the Table list the first Enter opens the ticket beside the table and the next makes it full screen; on the Messages list, where the ticket is already showing, Enter makes it full screen. While the table is shown on its own, the arrow keys only move the highlight - a click or Enter opens the ticket, and once one is open the arrows show each ticket as you move.',
             'fullscreen_sticks'  => '<strong>Sticks across selections</strong> &mdash; once you\'re in full-screen, switching to the next ticket keeps you there. A fresh page reload (F5) with no ticket selected returns to the default 3-column layout, so you can\'t end up trapped with the folder list hidden.',
+            'fullscreen_back'    => '<strong>Back</strong> &mdash; the bar above the ticket shows its reference and a <strong>Back</strong> button, which returns you to the list exactly as you left it, with the keyboard back on the list - so the arrows move between tickets and Enter opens the next one straight away. <strong>Escape</strong> does the same, once any window or menu open over the ticket has closed.',
+            'fullscreen_keys'    => '<strong>The keys scroll the ticket</strong> &mdash; in full screen the arrow keys, Page Up / Page Down and Space scroll the conversation, not the hidden ticket list. In a picture or PDF window they scroll that window. In the normal three-pane view, click in the ticket and the keys scroll it too; click the list to go back to moving between tickets.',
+            // GH #226: pictures and PDFs open in the Files viewer, in a window over the ticket.
+            'viewer_heading'     => '<strong>Pictures and PDFs open over the ticket</strong>',
+            'viewer_body'        => 'Click a picture or a PDF attached to a note, or one in the ticket\'s <strong>Attachments</strong> list (its thumbnail or its row), and it opens in a window on top of the ticket &mdash; the same viewer as the Files module. The ticket stays exactly where it was underneath.',
+            'viewer_window'      => '<strong>Move it and size it</strong> &mdash; drag the title bar to move the window and any edge or corner to resize it; double-click the title bar, or drag it to the top of the screen, to fill the screen. The picture or PDF refits as the window changes size, until you zoom in or out yourself &mdash; <strong>Fit</strong> hands it back. Open several and they sit side by side.',
+            'viewer_close'       => '<strong>Close it</strong> &mdash; the &times; in its title bar, or <strong>Escape</strong> (which closes the window in front). <strong>Download</strong> saves the file. On a phone the file opens full screen with a Back button.',
+            'viewer_other'       => '<strong>Other files</strong> &mdash; Word documents, spreadsheets and everything else still download or open in a new tab, as before. To open a note\'s picture or PDF in a new tab instead, Ctrl-click it.',
+            // GH #224: screenshots pasted into a note, in place.
+            'paste_heading'      => '<strong>Paste a screenshot into a note</strong>',
+            'paste_body'         => 'Copy a screenshot, click into the <strong>Add note</strong> box and press <strong>Ctrl+V</strong>. The picture goes in where the cursor is, with your text before and after it, and stays in that place once the note is saved. Click it to open it in the viewer. <strong>Backspace</strong> removes it before you save.',
+            'paste_shared'       => '<strong>Shared notes share their pictures</strong> &mdash; the requester sees them in the portal, in place. On an internal note they are as private as the note.',
+            'paste_save'         => '<strong>Nothing is kept until you press Save</strong> &mdash; close the box and the pictures go with it. If a picture is refused, the note is not saved either, the reason is shown, and your text is still in the box.',
+            'paste_text'         => '<strong>Text stays text</strong> &mdash; pasting from Word, a web page or Excel puts in the words without their formatting. The <strong>Attach</strong> button still works for any other file.',
             'rightclick_heading' => '<strong>Right-click for quick actions</strong>',
             'rightclick_body'    => 'Right-click any ticket in the list to open a context menu. The menu shows the ticket reference at the top so you know what you\'re acting on, and every action operates on the right-clicked ticket <em>without</em> changing what\'s currently open in the reading pane &mdash; useful when you\'re reading ticket A and need to triage ticket B without losing your place.',
             'rightclick_status'  => '<strong>Set status &rarr;</strong> &mdash; flyout submenu listing every active status with its colour swatch. A tick appears next to the current value if you\'re right-clicking the ticket you\'ve got open. Picks immediately update the ticket, write an audit-trail entry, refresh the folder counts, and sync the reading pane\'s Status dropdown if applicable.',
@@ -1108,6 +3292,7 @@ return [
             'rightclick_assign'  => '<strong>Assign to &rarr;</strong> &mdash; submenu listing every loaded analyst with a grey initial chip, plus an <em>(unassigned)</em> row at the top to clear. Picks set both <code>assigned_analyst_id</code> AND <code>owner_id</code> so the reading pane\'s Owner field stays in sync.',
             'rightclick_cmdb'    => '<strong>Link CMDB object&hellip;</strong> &mdash; opens a search-as-you-type picker. Click a result to link it, then keep picking &mdash; the input clears and refocuses for the next one, and a "Recently linked" log inside the modal shows your running list of green-tick confirmations.',
             'rightclick_time'    => '<strong>Record time&hellip;</strong> &mdash; opens a modal with minutes + a datetime picker (defaults to "now" so you can also backdate) + an optional notes box.',
+            'rightclick_phone'   => '<strong>On a phone</strong>, press and hold a ticket for half a second to open the same menu as a full-screen panel. A choice with more options &mdash; Set status, Set priority, Assign to &mdash; slides across to them, with <strong>Back</strong> to return.',
             'rightclick_tip'     => 'If the ticket you\'re acting on via the context menu happens to be the same one open in the reading pane, the relevant section there (Status / Priority dropdowns, CMDB objects, time entries) auto-refreshes when the modal closes so the UI stays in sync.',
             'time_heading'  => '<strong>Recording time</strong>',
             'time_body'     => 'Time spent on a ticket is logged into a dedicated <strong>Time Entries</strong> section in the reading pane, sitting between the linked CMDB objects panel and the Notes panel. The header shows the running total (e.g. "Total 2h 30m"), and each entry below shows the time spent, the analyst, the date, and any notes you added.',
@@ -1127,6 +3312,8 @@ return [
             'files_heading' => '<strong>File attachments</strong>',
             'files_body'    => 'Attach screenshots, logs, documents, or any supporting file directly to a ticket. Files can be dragged into the attachment drop zone or selected using the file browser. Attachments are stored on the server and linked to the ticket\'s activity trail so nothing gets lost.',
             'audit_heading' => '<strong>Audit logging</strong>',
+            'export_heading' => '<strong>Case reports</strong>',
+            'export_body'    => 'For a review or an auditor, <strong>Export</strong> in the ticket\'s toolbar turns the ticket and its tasks into one printable report - see <a href="#case-reports">Case reports</a>.',
             'audit_body'    => 'The activity trail automatically records every action without analyst intervention. When a priority is changed from Medium to High, the old and new values are captured. When a ticket is reassigned, both the previous and new analyst are logged. This creates a complete, tamper-proof history that satisfies ITIL audit requirements and helps managers understand how tickets are being handled.',
             'tip'           => 'When replying by email, you can add Cc recipients and attach files in the same action. The entire email conversation is threaded into the ticket\'s activity trail, keeping all communication in one place.',
         ],
@@ -1151,17 +3338,21 @@ return [
             'intro'   => 'Email a 1&ndash;5 satisfaction survey to the requester when a ticket is resolved, capture the response on a no-login landing page, and track per-analyst trends on a dedicated analytics page.',
             'modes_heading' => '<strong>Two trigger modes &mdash; pick one</strong>',
             'mode_auto'   => '<strong>Auto on close</strong> &mdash; survey is queued automatically when a ticket transitions into any closed status. The analyst doesn\'t need to do anything &mdash; resolution drives the survey.',
-            'mode_manual' => '<strong>Manual only</strong> &mdash; analyst clicks the ⭐ <strong>Request feedback</strong> button in the ticket toolbar when they want to ask. Useful when you\'d rather decide ticket-by-ticket whether to invite feedback.',
-            'mode_off'    => '<strong>Off</strong> &mdash; feature disabled; no survey emails are sent.',
+            'mode_manual' => '<strong>Manual only</strong> &mdash; analyst clicks the ⭐ <strong>Feedback</strong> button in the ticket toolbar when they want to ask. Useful when you\'d rather decide ticket-by-ticket whether to invite feedback.',
+            'switch_note' => 'Don\'t use CSAT at all? Switch it off under <strong>System &rarr; Modules &rarr; Availability &rarr; Ticket features</strong> and it disappears: no surveys, no CSAT page, no Request feedback button, and old survey links say feedback is no longer being collected. Nothing is deleted.',
+            'mode_off'    => '<strong>Off</strong> &mdash; no surveys are sent. The CSAT page and the results stay; to remove CSAT altogether, switch it off under <strong>System &rarr; Modules &rarr; Availability</strong>.',
             'modes_choose'=> 'Choose under <strong>Tickets &rarr; Settings &rarr; CSAT</strong>. The manual button still works in <em>auto</em> mode &mdash; analysts can re-request feedback on a ticket that\'s already been surveyed if needed.',
             'template_heading' => '<strong>The email template</strong>',
             'template_body'    => 'The survey email content comes from the existing <strong>Email templates</strong> tab &mdash; create a template with event <strong>CSAT survey</strong> (the new event alongside <em>Ticket assigned</em> / <em>Ticket closed</em>) and embed the <code>[csat_link]</code> merge code wherever you want the rating URL to appear. Standard merge codes (<code>[requester_name]</code>, <code>[ticket_reference]</code>, <code>[analyst_name]</code>) are available as normal.',
-            'template_tip'     => 'If no active CSAT template exists, the <em>Request feedback</em> button refuses with a clear error and the auto-trigger silently skips &mdash; you can never produce dead survey links.',
+            'template_tip'     => 'If no active CSAT template exists, the <em>Feedback</em> button refuses with a clear error and the auto-trigger silently skips &mdash; you can never produce dead survey links.',
             'survey_heading'   => '<strong>The survey page</strong>',
             'survey_body'      => 'The requester clicks the link in the email and lands on a no-login page with a 1&ndash;5 picker plus an optional comment box. Two visual styles configurable under <strong>Settings &rarr; CSAT</strong>:',
             'survey_stars'     => '<strong>Stars</strong> &mdash; classic fill-on-hover trailing behaviour. Hovering star #3 fills #1+#2+#3 in gold. Click to lock.',
             'survey_emojis'    => '<strong>Emojis</strong> &mdash; 5 faces 😡 🙁 😐 🙂 😀 start greyscale at 40% opacity; the hovered or selected one returns to full colour at 1.25&times; scale. Click to lock.',
             'survey_store'     => 'Both modes store the same 1&ndash;5 number so dashboards and averages work identically regardless of which style is in use. The survey URL is one-shot &mdash; once the user submits, the same link refuses re-submission.',
+            'chat_heading'     => '<strong>Asking chat customers in their chat</strong>',
+            'chat_body'        => 'With <strong>Ask chat customers in their chat</strong> ticked, a customer who wrote in on WhatsApp, Telegram, Slack, Microsoft Teams or Mattermost is asked in that chat instead of by email &mdash; five buttons on Telegram, Teams and Mattermost, &ldquo;reply with a single digit&rdquo; elsewhere. Their answer goes into the same results as an emailed survey.',
+            'chat_rules'       => 'WhatsApp is only asked while its 24-hour reply window is open; outside it, or if the chat message cannot be sent, the email survey is used instead. A digit counts as a rating only straight after the question &mdash; in the same chat, within a week, and before the customer has written anything else &mdash; so &ldquo;3&rdquo; in answer to an analyst&rsquo;s question stays a message. Off after upgrading; on for a new install.',
             'analytics_heading'=> '<strong>The analytics page</strong>',
             'analytics_body'   => 'Click the ⭐ <strong>CSAT</strong> nav button (between Rota and Settings) to open the analytics dashboard at <code>tickets/csat/</code>. Window selectable: 7 / 30 / 90 / 365 days.',
             'card_kpi_title'   => 'KPI tiles',
@@ -1171,7 +3362,10 @@ return [
             'card_leader_title'=> 'Per-analyst leaderboard',
             'card_leader_body' => 'Average rating + response count per analyst, ordered by avg desc. Use for development conversations',
             'card_recent_title'=> 'Recent responses',
-            'card_recent_body' => 'The 25 most-recent ratings with their free-text comments, linked back to the source ticket',
+            'card_recent_body' => 'The ratings newest first, 25 a page, with their free-text comments and the customer who left them, linked back to the source ticket',
+            // GH #157
+            'analytics_filters' => 'Narrow the page with the filters under the heading: a <strong>From / To</strong> date range (instead of the day buttons), a <strong>Rating</strong> band (Positive 4-5, Neutral 3, Negative 1-2), an <strong>Analyst</strong> and a <strong>Customer</strong>. Analyst and customer narrow every figure on the page; the rating band narrows only the list of responses, so the average still means something. On a phone the filters sit behind the <strong>Filters</strong> button at the bottom of the screen. A filtered page can be bookmarked.',
+            'analytics_company' => 'Every figure follows the <strong>company switcher</strong> in the header: the company you have selected, or every company you can see under <strong>All companies</strong>.',
             'analytics_tip'    => 'Per-analyst attribution survives ticket reassignment because the analyst id is captured onto the survey row at send time, not looked up live. If a ticket gets passed around before being closed, the analyst who actually closed it owns the rating.',
             'one_heading'      => '<strong>One survey per ticket</strong>',
             'one_body'         => 'If <em>One survey per ticket</em> is on (default), a reopened-then-closed ticket only gets another survey when an analyst manually triggers it &mdash; stops survey-spamming a flaky ticket that keeps cycling. Turn it off if you want every close to fire a fresh survey.',
@@ -1181,15 +3375,40 @@ return [
             'intro'   => 'The <strong>Users</strong> nav button opens <code>tickets/users.php</code> &mdash; a directory of every end user (the people who raise tickets, not analysts) alongside each one\'s ticket history.',
             'p_intro' => 'Users land in the system four reactive ways &mdash; portal self-registration, an inbound email from a new sender, the mailbox poller, or the workflow engine creating one from a triggered ticket. That covers most cases, but the Users page also lets you <strong>pre-create</strong> a user (e.g. a new starter who\'s about to need access) and <strong>edit</strong> or <strong>delete</strong> existing rows.',
             'add_heading' => '<strong>Add user</strong>',
-            'add_body'    => 'The <strong>Add</strong> button in the users-list header opens a modal:',
-            'add_email'   => '<strong>Email</strong> (required) &mdash; must be unique, and must not collide with an analyst account.',
+            'add_body'    => 'The <strong>Add</strong> button in the users-list header opens the person editor. It is the same editor <strong>Assets &rarr; Users</strong> opens, so a person is added and changed the same way whichever screen you are on:',
+            'add_email'   => '<strong>Email</strong> &mdash; optional, because people who sign in through a directory may have no mailbox; they are found by their sign-in name instead. Give either an email address or a display name. An address must be unique, and must not belong to an analyst.',
             'add_names'   => '<strong>Display name / preferred name</strong> &mdash; optional. Preferred name is what the user sees themselves greeted with in emails (e.g. <em>"Ed"</em> instead of <em>"Ed Mozley"</em>).',
             'add_password'=> '<strong>Password</strong> &mdash; optional. Leaving it blank creates a <em>passwordless</em> account &mdash; exactly the same state inbound-ticket users start in. The user can later claim the account via the self-service portal\'s register flow by setting their own password.',
+            'add_details' => '<strong>Job title, department, office, phone, mobile, employee ID and manager</strong> &mdash; all optional, and all describing the <em>person</em> rather than the login. Worth filling in: <strong>office</strong> tells you which site somebody is at before you go looking for them, <strong>manager</strong> records the reporting line (type part of a name to find them), and <strong>employee ID</strong> is the join key when you reconcile against a payroll system that has never heard of an email address. Where you import from a directory, all of these arrive filled in. A CardDAV address book fills in everything except employee ID and manager, which a contact card has nowhere to store.',
+
+            'managed_heading' => '<strong>People maintained somewhere else</strong>',
+            // Where a person comes from, and adding them to an address book (#133).
+            'source_body'     => '<strong>Where a person comes from</strong> is named in their details (<em>Details from: Contoso AD - directory</em>), and the <strong>Source</strong> filter under the search box lists only the people from one directory or address book, or only the ones added in FreeITSM, with a count beside each. It appears once anybody is linked to a source.',
+            'add_book_body'   => '<strong>Add to address book.</strong> Somebody who emailed in exists here but in no address book. If an administrator has switched on <em>Let analysts add people to this address book</em> (System &rarr; Authentication, on the address book), that person gets an <strong>Add to address book</strong> button beside Edit. It asks first, showing what will go on the card, then creates their contact and links them &mdash; the same person, not a copy. It will not add somebody whose email address the book already has (run the import instead), and it makes sure the next import will pick the new contact up, or it takes the card back out.',
+            'managed_body'    => 'Where a person was imported &mdash; from LDAP or Active Directory, or from a CardDAV address book &mdash; the details that source owns are <strong>read-only</strong> and the modal greys them out. Whatever they came from is the source of truth, and the next import would overwrite anything typed here, so the save is refused outright rather than accepted and quietly reverted an hour later. <strong>Which</strong> details depends on the source: a directory owns all seven, while an address book owns five &mdash; it has nowhere to keep an employee number or a reporting line, so those two stay yours to fill in. And if the address book has <em>write changes back</em> switched on, none of them are locked: what you type is sent to the contact card, so there is nothing for the next import to revert. Everything else on the record, including their company and password, is always editable.',
             'edit_heading' => '<strong>Edit user</strong>',
-            'edit_body'    => 'Select a user from the list, then click <strong>Edit</strong> in the detail header. Same modal, pre-filled. Saving without a password leaves the existing hash untouched; supplying one resets it.',
+            'edit_body'    => 'Select a user from the list, then click <strong>Edit</strong> in the detail header. Same editor, pre-filled. Saving without a password leaves the existing hash untouched; supplying one resets it. If their manager is somebody in a company you cannot see, the Manager box says so and the manager is kept as they are unless you choose someone else.',
+            'signin_body'  => '<strong>Signs in with</strong> shows which single sign-on provider a person is linked to. <strong>Unlink</strong> beside it, after a confirm, removes that link so their next sign-in starts fresh &mdash; for someone who moved to another provider, or was linked to the wrong account. It is not offered for people managed by a directory sync, which would simply link them again.',
+            'company_body' => '<strong>Company</strong> appears when you have more than one. For a new person, leaving it blank works the company out from their email address; for an existing person, blank means no company, and their tickets go to triage.',
+
+            // Managers in the self-service portal (discussion #62).
+            'managers_heading' => '<strong>Managers</strong>',
+            'managers_body'    => 'A person can be made a <strong>manager</strong> in the self-service portal: they get a <strong>Team tickets</strong> tab listing the tickets of the people they manage. It is off until an administrator switches it on under <strong>System &rarr; Managers</strong>, which also decides whether managers may reply to or close those tickets, and what they see of a confidential one (nothing, by default).',
+            'managers_sources' => 'Somebody is a manager in two ways, both at once: they are the <strong>Manager</strong> on other people\'s records (by hand, or from your directory), and they have <strong>management lines</strong> set up for them. Click <strong>Manager access</strong> beside Edit to open a full-screen page for that person, where you can give them everyone, particular people, people groups, departments or their whole reporting line, and <strong>exclude</strong> people &mdash; an exclusion always wins, over the Manager field too. The page shows how many people they can see and lists them, worked out as if managers were already switched on, so you can check before you switch. Click anyone in that list to see <strong>why</strong> the manager can see them, and how to stop it.',
+            'managers_rules'   => 'A manager only ever sees people in their own company, never themselves, and nothing at all once they have left. Departments are matched on the name typed on each person, so a renamed department stops matching &mdash; the page, and System &rarr; Managers, warn about a department line that matches nobody. By default only administrators can change management lines; System &rarr; Managers can open it to anyone who can edit people.',
             'delete_heading' => '<strong>Delete user</strong>',
             'delete_body'    => 'The <strong>Delete</strong> button is <strong>FK-safe</strong>: it refuses if the user is the requester on any tickets or has any rows in <code>users_assets</code>, returning a clear <em>"Cannot delete: this user is the requester on N ticket(s). Reassign or close those tickets first."</em> message. Audit history can never silently break.',
             'tip'            => 'All modal fields have browser autofill disabled (including <code>autocomplete="new-password"</code> on the password field) so the analyst\'s own saved credentials aren\'t suggested into a form whose entire purpose is creating <em>someone else\'s</em> record.',
+
+            // Groups of people. Lives on this screen because this is where the
+            // people are, and is used by other modules — hence "shared".
+            'groups_heading' => '<strong>Groups</strong>',
+            'groups_body'    => 'The <strong>Groups</strong> tab beside <strong>People</strong> holds named groups of people &mdash; analysts and self-service portal users together in the same group. A group is made once here and then used across FreeITSM, so you can give it access to a knowledge folder or assign it a training course without building the same list twice.',
+            'groups_make'    => '<strong>Make one</strong> with <strong>Add</strong> on the Groups tab: a name, and a description worth filling in, because the next person needs to be able to tell what the group is for.',
+            'groups_add'     => '<strong>Add people</strong> by searching for them &mdash; it finds analysts and portal users together, so you do not have to know which kind somebody is.',
+            'groups_expiry'  => '<strong>Give a membership an end date</strong> where the access is temporary. Three engineers on site for a fortnight go in with a last day and drop out of the group by themselves when it passes. An expired membership stays on the list, marked as expired, so you can still see who had access and until when.',
+            'groups_uses'    => '<strong>What a group is good for:</strong> granting access to a knowledge folder, and assigning LMS training to a set of people at once. Membership changes take effect immediately &mdash; there is nothing to re-apply afterwards.',
+            'groups_admin'   => '<strong>Anyone with the Tickets module can see the groups; only an administrator can change one.</strong> Adding somebody to a group can also give them access to a restricted knowledge folder, so it is a grant of access, not a piece of filing.',
         ],
         'dash' => [
             'heading' => 'Dashboard',
@@ -1202,18 +3421,24 @@ return [
             'tip'      => 'Use date range filters on individual widgets to compare current performance against previous periods. For example, a "This Month vs Last Month" view helps you spot trends in ticket volume early.',
         ],
         'cal_rota' => [
+            'switch_note' => 'Don\'t use the duty rota? Switch it off under <strong>System &rarr; Modules &rarr; Availability &rarr; Ticket features</strong> - the page, its settings and the War Room bot\'s <em>who is on call</em> go, and nothing is deleted.',
             'heading' => 'Calendar &amp; rota',
             'intro'   => 'Two scheduling tools help your team stay organised: a ticket calendar that visualises workload over time, and a staff rota for managing shifts and on-call availability.',
             'cal_heading' => '<strong>Calendar view</strong>',
-            'cal_body'    => 'The calendar plots every ticket that has a <code>work_start_datetime</code> set (via the right-click <em>Record time</em> / <em>Schedule</em> modal) as a coloured block at its scheduled time. Red blocks are <em>High</em> priority, green are <em>Low</em>, blue is anything else. Use <em>Today</em>, the <em>&lt;</em> / <em>&gt;</em> chevrons, and the <strong>Month / Week / Day</strong> toggle on the right of the header to navigate &mdash; <em>Prev</em> / <em>Next</em> step by month, week or day depending on the active view.',
+            'cal_body'    => 'The calendar plots every ticket you have scheduled &mdash; via <strong>Schedule work</strong>, which is on the ticket itself and on the inbox right-click menu &mdash; as a coloured block at its scheduled time, drawn at its <strong>real length</strong> rather than a fixed hour. Red blocks are <em>High</em> priority, green are <em>Low</em>, blue is anything else. Use <em>Today</em>, the <em>&lt;</em> / <em>&gt;</em> chevrons, and the <strong>Month / Week / Day</strong> toggle to navigate.',
+            'cal_scope'   => '<strong>Mine or Everyone.</strong> The calendar opens on your own scheduled work, with an <strong>Everyone</strong> switch beside the view buttons; your choice is remembered. In Everyone each ticket carries a <strong>colour for whoever owns it</strong>, with a legend naming the people actually on screen, and hovering a ticket tells you whose it is without looking away. Nothing is hidden from anyone &mdash; these are the same tickets the inbox already lists.',
+            'cal_edit'    => '<strong>Rearranging work.</strong> <strong>Drag a ticket</strong> to a different day or time: in Month view it keeps its time, and in Week and Day view it takes the time you drop it at, snapped to the nearest quarter hour. Its length never changes &mdash; dragging says <em>start it then</em>, not <em>make it longer</em>. Or <strong>click a ticket</strong> to open it, where you can change the date, time, duration and all-day setting, or clear the schedule entirely. The calendar also <strong>refreshes itself every few seconds</strong>, so a colleague scheduling something appears without you reloading &mdash; and it holds off while you have a ticket open or are mid-drag.',
             'cal_month'   => '<strong>Month view</strong> &mdash; the classic 6-row grid with a weekday header strip; each day cell shows up to three ticket pills with their start time, plus a <em>+N more</em> link that drops you into Day view for that date. Today is highlighted.',
-            'cal_week'    => '<strong>Week view</strong> &mdash; Mon&ndash;Sun across the top over a 24-hour vertical timeline. Tickets render as 1-hour coloured blocks at their start time. Today\'s column is highlighted; the weekday header stays put while the hour grid scrolls.',
-            'cal_day'     => '<strong>Day view</strong> &mdash; a single tall column for the chosen day with the same 24-hour timeline. Tickets render as larger blocks showing <code>ticket_number &mdash; subject</code> and start time; click one to open its details.',
+            'cal_week'    => '<strong>Week view</strong> &mdash; Mon&ndash;Sun across the top over a 24-hour vertical timeline. Tickets render at their scheduled length, so a 15-minute job and an afternoon rebuild look different. An all-day ticket sits as a slim bar at the top of its day rather than swallowing the whole column. Today\'s column is highlighted; the weekday header stays put while the hour grid scrolls.',
+            'cal_day'     => '<strong>Day view</strong> &mdash; a single tall column for the chosen day with the same 24-hour timeline. Tickets render as larger blocks showing <code>ticket_number &mdash; subject</code> and start time; click one to open its details or change when it happens.',
             'rota_heading'=> '<strong>Staff rota</strong>',
             'rota_body'   => 'The rota page lets team leads and managers schedule analyst shifts across the week. Define standard working hours, assign on-call periods, and mark holidays or absence so the team always knows who is available.',
             'rota_step1'  => '<strong>View the rota grid</strong> &mdash; the rota displays analysts along one axis and days along the other, with shift blocks showing coverage at a glance.',
             'rota_step2'  => '<strong>Add or edit shifts</strong> &mdash; click on a cell to assign a shift type (e.g. Early, Late, Night, On-Call). Changes save immediately.',
             'rota_step3'  => '<strong>Plan ahead</strong> &mdash; navigate forward by week to build the rota in advance. This ensures adequate coverage during known busy periods, holidays, or training days.',
+            'rota_step4'  => '<strong>Fill several cells at once</strong> &mdash; <strong>right-click</strong> a cell and choose <em>Copy</em> to pick up the shift in it, then right-click another and <em>Paste</em>. For more than one cell, <strong>drag across a block</strong> of them (or ctrl-click cells one at a time) and paste into the lot. Hovering a <strong>day heading</strong> lights up that whole day, and hovering an <strong>analyst&rsquo;s name</strong> lights up their whole week &mdash; right-click either and paste into all of it. Where some of the cells already have a shift the menu offers both ways in plain words &mdash; <em>Paste into all 7</em> and <em>Paste into 6 empty cells</em> &mdash; so you choose before you commit rather than after. Overwriting asks you to confirm and says how many shifts it replaces; filling the gaps just happens, since nothing is lost. The same menus will also <strong>clear</strong> a day, a week or a selection, again after telling you how many shifts that removes.',
+            'rota_step5'  => '<strong>Copy a whole day or a whole week for one person</strong> &mdash; right-click a <strong>day heading</strong> and choose <em>Copy</em> to lift every shift on that day, or an <strong>analyst&rsquo;s name</strong> to lift their whole week. Pasting onto another day, or another analyst, makes it match: shifts the copy did not have are cleared, so you get the day you copied rather than a mixture of the two. A day can only be pasted onto another day and an analyst only onto another analyst &mdash; a day is one shift <em>per person</em> and a week is one shift <em>per day</em>, so there is no sensible way to lay one over the other. Try it and the menu says so, and says where it can go instead.',
+            'rota_step6'  => '<strong>Copy a whole week</strong> &mdash; <strong>Copy week</strong> and <strong>Paste week</strong> at the top right lift every shift in the week you are looking at and drop them onto another one, which is the fastest way to build a repeating rota. Pasting <em>replaces</em> the target week, so the confirmation tells you how many entries are about to be removed. It only ever touches the days and the people the grid is actually showing you.',
             'tip'         => 'Combine the calendar and rota together for effective capacity planning. If the calendar shows a spike in tickets every Monday morning, ensure the rota has extra coverage scheduled for that slot.',
         ],
         'settings' => [
@@ -1225,6 +3450,8 @@ return [
             'card_dept_body'       => 'Create departments like IT, HR, and Finance. Each department becomes a folder in the inbox and a filter on the dashboard',
             'card_types_title'     => 'Ticket types',
             'card_types_body'      => 'Define the types of requests your desk handles: Incident, Service Request, Problem, Change. Types help analysts classify work',
+            'card_type_rules_title'=> 'Type for new tickets',
+            'card_type_rules_body' => 'Under Ticket types, give every new ticket a type when nobody chooses one: a default, and rules before it - by how it arrived (email, portal, web chat, phone, monitoring...), mailbox, origin, department, words in the subject or the requester\'s domain. The first rule that matches wins; Try it shows which type a ticket would get',
             'card_priorities_title'=> 'Priorities',
             'card_priorities_body' => 'Set priority levels with names, colours, and sort orders. Each priority links to an SLA target for response and resolution',
             'card_statuses_title'  => 'Statuses',
@@ -1239,6 +3466,15 @@ return [
             'card_custom_body'     => 'Add your own fields to tickets for data your organisation needs to capture that is not covered by the default field set',
             'card_templates_title' => 'Email templates',
             'card_templates_body'  => 'Configure the notification templates sent to end users when tickets are created, updated, resolved, or for the CSAT survey. Embed merge codes like [requester_name] and [csat_link]',
+            // The Checklists module (2.0.0) puts its close-gate here rather
+            // than in its own settings, because it is a rule about closing
+            // tickets and that is where somebody looks for it.
+            'card_checklists_title' => 'Checklists',
+            'card_checklists_body'  => 'Decide what happens when somebody closes a ticket that still has mandatory checklist steps outstanding: <strong>warn</strong> and record an internal note naming the steps and who closed it, or <strong>block</strong> the close until they are done. Enforced everywhere a ticket can be closed - bulk actions, the REST API and workflow automation included',
+            'card_custom_fields_title' => 'Custom fields',
+            'card_custom_fields_body'  => 'Make up the extra details a kind of ticket needs - text, a number, a date, yes / no, a dropdown of your own options, a web or email address - and link each one to some ticket types or to all of them. Each field chooses whether it must be filled in <strong>when the ticket is logged</strong> (the New ticket form, the REST API and, if asked, the portal), <strong>before it is closed</strong> (following the Mandatory fields rule), or both, and whether the <strong>requester is asked</strong> for it on the portal - where a ticket type picker appears once it changes what is asked. Answers show in the ticket\'s properties panel and its history. Changing a ticket\'s type hides the answers its new type does not have, and never deletes them. The same tab has the <strong>Department field</strong>: hide it where departments are not used, and choose the department new tickets start in, per company. Hiding never removes a department from a ticket or anyone\'s access to it.',
+            'card_mandatory_title' => 'Mandatory fields',
+            'card_mandatory_body'  => 'Tick the fields that must be filled in before a ticket can close - category, resolution code, owner and so on. Then choose what happens when somebody closes one with a field empty: <strong>warn</strong>, <strong>warn and email</strong> someone such as a service delivery manager, or <strong>refuse</strong> the close. A separate switch records it on the ticket as an internal note. A field switched off for a company is never required, and merging tickets never triggers it. Enforced everywhere a ticket can be closed - bulk actions, the REST API and workflow automation included',
             'card_cleanup_title'   => 'Reply Cleanup AI',
             'card_cleanup_body'    => 'Anthropic key + model + tone for the ✨ Cleanup button on the reply editor. Separate key from other AI features for granular billing',
             'card_csat_title'      => 'CSAT',
@@ -1249,6 +3485,28 @@ return [
             'email_step2'   => '<strong>Set polling interval</strong> &mdash; choose how frequently FreeITSM checks the mailbox for new messages. Shorter intervals mean faster ticket creation.',
             'email_step3'   => '<strong>Map defaults</strong> &mdash; set the default department, type, and priority for tickets created from email. Analysts can adjust these after import.',
             'tip'           => 'Use email templates to maintain a professional, consistent tone in all end-user communications. Templates support dynamic placeholders for ticket reference, requester name, analyst name, and status.',
+
+            // Categories, category at close, resolution codes (#1540-#1548).
+            // #1694 - the one-off closing message.
+            'closemsg_heading' => '<strong>A one-off message when you close a ticket</strong>',
+            'closemsg_body'    => 'Put <code>[ticket_closed_message]</code> anywhere in an active <strong>Ticket closed</strong> template and, from then on, setting a ticket to a closed status asks the analyst for a sentence - <em>&ldquo;the spare charger is on your desk&rdquo;</em>, <em>&ldquo;closing as agreed on the phone&rdquo;</em>. Whatever they type lands exactly where you put the placeholder, so you keep control of the wording around it. It is not a setting and nothing stores it: one note, one ticket, one email. Type nothing and the line simply is not there - no gap, no stray punctuation.',
+            'closemsg_note'    => '<strong>The prompt only appears when the placeholder is actually in the template.</strong> Without it, anything an analyst typed would be silently thrown away, and every desk that does not want this would gain a click on every single close. So it switches itself on when you configure it and stays out of the way when you have not.',
+            'cat_heading' => '<strong>Categories, and the two fields beside them</strong>',
+            'cat_body'    => 'A ticket <em>type</em> says what kind of thing this is; a <em>category</em> says what it is about. Build the list under <strong>Settings &rarr; Categories</strong>, along with the switches that decide whether any of it appears on a ticket at all.',
+            'cat_card_one_title' => 'Category',
+            'cat_card_one_body'  => 'What the ticket was reported as, chosen when it is raised. A ticket carries exactly one, so a report of your categories always adds up to the number of tickets you actually had.',
+            'cat_card_close_title' => 'Category at close',
+            'cat_card_close_body'  => 'The same list asked again when the ticket finishes. Usually the analyst just confirms it &mdash; it earns its place on the ones where the first guess was wrong, which is how you find out that twelve of your thirty-seven "printer problems" were really the network.',
+            'cat_card_res_title' => 'Resolution code',
+            'cat_card_res_body'  => 'How the ticket ended rather than what it was about &mdash; "Fixed remotely", "Training given", "No fault found". Ten sensible ones are there from the start and you can change them all.',
+            'cat_rule_off'        => '<strong>All three start switched off.</strong> Build your list first, then turn on the ones you want. Each can be set differently for each company.',
+            'cat_rule_levels'     => 'Categories can have sub-categories up to three levels deep, and no level is compulsory.',
+            'cat_rule_type'       => 'A category can be tied to one ticket type, so "User onboarding" is only offered on a service request. The tie belongs to the top-level category and its sub-categories follow it.',
+            'cat_rule_typechange' => '<strong>Changing a ticket\'s type clears a category that belonged to the old one</strong>, and says so on screen. A category not tied to any type survives the change.',
+            'cat_rule_portal'     => 'Tick <em>Customers can pick this</em> to offer a category in the self-service portal. Requesters see a short list in plain English while analysts see the whole tree.',
+            'cat_rule_retire'     => 'Switch a category off to retire it &mdash; it stays on the tickets that already have it and stops being offered on new ones. That is almost always better than deleting, which is refused while anything still uses it.',
+            'cat_rule_report'     => 'All three can be charted on the ticket dashboard. The two category charts roll up to the top level, and tickets with nothing set are counted as <em>Not categorised</em> rather than hidden.',
+            'cat_tip'             => 'If you are not sure where to start, leave the categories empty and turn on <strong>Resolution code</strong> on its own. It is the field that most quickly changes what you do &mdash; a fifth of your tickets coming back as "Training given" is a documentation problem, not an IT one.',
         ],
         'tips' => [
             'heading' => 'Quick tips',
@@ -1329,8 +3587,23 @@ return [
             'settings_global_title' => 'Shared across every company',
             'settings_global_body'  => 'Statuses and priorities stay the same everywhere, so cross-company reporting and SLAs stay consistent; so do your teams, rota and mailboxes &mdash; your own operation, not a client\'s.',
 
+            // One board across every company (#1554).
+            'allview_heading' => '<strong>One board across every company</strong>',
+            'allview_body'    => 'The company switcher in the header has an <strong>All companies</strong> option. Every ticket you are allowed to see appears in one list, each row wearing the company it belongs to &mdash; useful when you support several entities and want a single view of the day without losing track of whose is whose.',
+            'allview_card_scope_title' => 'It grants nothing new',
+            'allview_card_scope_body'  => '"All" means every company you could already reach one at a time. An analyst who supports two of your three entities sees exactly those two, and an analyst with one company sees a view of that one company.',
+            'allview_card_props_title' => 'Each entity stays separate',
+            'allview_card_props_body'  => 'Open a ticket and its type, origin, category and resolution list are the ones belonging to <em>that</em> company &mdash; so a category one entity has and another does not can never be applied to the wrong ticket.',
+            'allview_card_new_title'   => 'New tickets ask which company',
+            'allview_card_new_body'    => 'There is no single active company to assume, and the choice decides the ticket number, the mailbox replies come from and the SLA that applies. The type list fills in once you have chosen.',
+            'allview_rule_chip'      => 'A ticket that arrived by email or the portal without being routed yet is marked <strong>Unrouted</strong> rather than shown under Default, so it stands out for triage.',
+            'allview_rule_reply'     => 'Replies still go out from the mailbox the ticket arrived at &mdash; that follows the ticket, not the view, so a combined board cannot send from the wrong address.',
+            'allview_rule_knowledge' => '<strong>Ask AI</strong> searches every company you can see while the combined view is on, instead of just one. Articles shared with all companies are included either way.',
+            'allview_rule_trash'     => '<strong>Emptying the trash never spans companies.</strong> It always applies to the single company you last chose, because "delete everything in the bin" across several entities at once is not what anyone means by it.',
+            'allview_rule_other'     => 'Only the ticket list widens. Assets, changes, tasks and the CMDB still show one company at a time &mdash; switch to that company to work in them.',
+
             'privacy_heading' => 'Each company\'s tickets stay private',
-            'privacy_body'    => 'When you\'re working in a company\'s context you only ever see <strong>that</strong> company\'s tickets &mdash; in the list, in search, on dashboards, and on every ticket you open (including its emails, attachments, notes and history). A staff member can only reach a ticket if they\'ve been given access to its company (you choose each analyst\'s companies under Settings &rarr; Analysts), so there\'s no way to stray into another client\'s data. This separation is enforced everywhere behind the scenes, not just hidden from view. On a single-company install it\'s automatic and invisible &mdash; there\'s only one company, so everything simply belongs to it.',
+            'privacy_body'    => 'When you\'re working in a company\'s context you only ever see <strong>that</strong> company\'s tickets &mdash; in the list, in search, on dashboards, and on every ticket you open (including its emails, attachments, notes and history). A staff member can only reach a ticket if they\'ve been given access to its company (you choose each analyst\'s companies under System &rarr; Analysts, or grant a whole team on System &rarr; Teams), so there\'s no way to stray into another client\'s data. This separation is enforced everywhere behind the scenes, not just hidden from view. On a single-company install it\'s automatic and invisible &mdash; there\'s only one company, so everything simply belongs to it.',
 
             'tip' => 'On a single-company install none of this appears &mdash; there\'s one company, every ticket belongs to it, and there\'s no switcher or triage. These features only switch on once a second company exists.',
         ],
@@ -1339,7 +3612,7 @@ return [
     // tickets/help-sla.php — SLA management deep-dive help page. Prose values
     // contain inline HTML markup and are echoed unescaped.
     'help_sla' => [
-        'page_title'    => 'Service Desk - SLA Management',
+        'page_title'    => 'SLA Management',
         'back_link'     => '&larr; Back to Tickets guide',
         'sidebar_title' => 'SLA Guide',
         'hero_title'    => 'SLA Management',
@@ -1357,6 +3630,7 @@ return [
             'heading' => 'Overview',
             'sub'     => 'What SLAs are, why they matter, and how the FreeITSM engine works at a high level.',
             'p1'      => 'A Service Level Agreement (SLA) is a promise about how quickly your team will respond to and resolve a ticket. FreeITSM tracks two clocks per ticket: <strong>response</strong> (time from ticket creation to first analyst action) and <strong>resolution</strong> (time from ticket creation to ticket closure). Both targets are set per priority &mdash; so a P1 might have 30 minutes for response and 4 hours for resolution, while a P4 might have 8 working hours and 5 working days.',
+            'switch_note' => 'Don\'t use SLAs? Switch SLA off under <strong>System &rarr; Modules &rarr; Availability &rarr; Ticket features</strong>: clocks, breach warnings and SLA workflow triggers stop, while the business calendars stay for web chat\'s opening hours. Switching it back on asks whether to send the warnings missed while it was off, or skip them.',
             'p2'      => 'FreeITSM\'s SLA engine has four design choices worth understanding:',
             'choice_business' => '<strong>Business hours, not wall clock.</strong> A P2 raised at 4:30pm with a 1-hour response target doesn\'t breach at 5:30pm if the office closes at 5pm. The clock resumes at 9am the next working day. This is the industry standard and the only fair model when analysts go home at night.',
             'choice_pause'    => '<strong>Pause-able.</strong> When a ticket is in a status flagged "Pause SLA" (such as <em>Awaiting Response</em> or <em>On Hold</em>), the clock stops. It resumes when the ticket moves back to a working status.',
@@ -1369,7 +3643,7 @@ return [
             'sub'     => 'Configure these four things and SLA tracking is operational. Everything else is opt-in refinement.',
             'cal_heading' => '1. Business Calendars',
             'cal_intro'   => 'A calendar defines when your service desk is open. Each calendar has:',
-            'cal_tz'      => '<strong>Timezone</strong> &mdash; an IANA timezone identifier (e.g. <span class="tk-help-code">Europe/London</span>, <span class="tk-help-code">America/New_York</span>, <span class="tk-help-code">Asia/Singapore</span>). DST transitions are handled automatically.',
+            'cal_tz'      => '<strong>Timezone</strong> &mdash; an IANA timezone identifier (e.g. <code>Europe/London</code>, <code>America/New_York</code>, <code>Asia/Singapore</code>). DST transitions are handled automatically.',
             'cal_hours'   => '<strong>Weekly working hours</strong> &mdash; one row per weekday with an Open checkbox and start / end times. New calendars default to Mon-Fri 09:00-17:00, Sat/Sun closed. A row not flagged Open means the desk is closed that day.',
             'cal_holidays'=> '<strong>Holidays</strong> &mdash; date + optional name. Holidays override the weekly pattern (the desk is closed even if it falls on a Monday).',
             'cal_default' => '<strong>Default flag</strong> &mdash; exactly one calendar is the default. New priorities inherit it unless you specify otherwise.',
@@ -1387,7 +3661,7 @@ return [
             'pause_change'=> '<strong>On Hold (Change Window)</strong> &mdash; scheduled for a future maintenance window.',
             'pause_parts' => '<strong>On Hold (Parts)</strong> &mdash; waiting on hardware delivery.',
             'pause_warn'  => 'A generic "On Hold" status can be abused as an SLA escape valve when a ticket is hard or the analyst is busy. If your team has discipline, this is fine. If not, consider replacing it with the more specific variants above, or rely on the <strong>Watchtower</strong> dashboard which flags tickets paused over 24 hours as an amber alert.',
-            'cutoff_heading'=> '4. Enforcement Cutoff (<span class="tk-help-code">Enforce SLAs from</span>)',
+            'cutoff_heading'=> '4. Enforcement Cutoff (<code>Enforce SLAs from</code>)',
             'cutoff_p1'   => 'The single most important global setting. Until you set a datetime here, SLA tracking is disabled entirely &mdash; no clocks run, no pills show on the inbox, no breach emails fire. Setting it to a past datetime turns SLAs on retroactively from that point. Setting it to a future datetime schedules a switch-on.',
             'cutoff_p2'   => 'Most teams set this to "now" when they first enable SLAs &mdash; existing tickets keep their pre-SLA state, new tickets from that moment onward are tracked.',
         ],
@@ -1426,21 +3700,21 @@ return [
             'recip_assignee'=> '<strong>The ticket\'s assignee</strong> &mdash; the analyst currently owning the ticket. Skipped if unassigned.',
             'recip_teams'   => '<strong>Members of the ticket\'s department teams</strong> &mdash; every analyst in any team linked to the ticket\'s department. Covers the whole queue without maintaining a distribution list.',
             'recip_specific'=> '<strong>A specific analyst</strong> &mdash; the "SLA champion" / "service manager" pattern where it\'s a named person, not a role.',
-            'recip_custom'  => '<strong>Custom email addresses</strong> &mdash; comma-separated free-text. Useful for shared inboxes (<span class="tk-help-code">sla-alerts@company.com</span>), Slack/Teams email bridges, or distribution lists.',
-            'tip'           => 'Each ticket fires at most one email per (target, trigger) &mdash; the cron worker tracks what\'s been sent in the <span class="tk-help-code">sla_notifications_sent</span> table. So a warning fires once, a breach fires once, and that\'s it &mdash; no spam loops.',
+            'recip_custom'  => '<strong>Custom email addresses</strong> &mdash; comma-separated free-text. Useful for shared inboxes (<code>sla-alerts@company.com</code>), Slack/Teams email bridges, or distribution lists.',
+            'tip'           => 'Each ticket fires at most one email per (target, trigger) &mdash; the cron worker tracks what\'s been sent in the <code>sla_notifications_sent</code> table. So a warning fires once, a breach fires once, and that\'s it &mdash; no spam loops.',
             'warn'          => '<strong>No rules = no emails.</strong> Even if every ticket in the system breaches, nothing fires until you add at least one rule. Start with a Default-scope Warning + Breach pair to get coverage for everything.',
         ],
         'cron' => [
             'heading' => 'Setting up the cron job',
             'sub'     => 'The breach-check script needs to run on a schedule. Once every 5 minutes is the sweet spot.',
             'p1'      => 'The visible-in-the-UI SLA indicators (pills on the inbox, panels in the reading pane) are computed on the fly when a page loads. But breach emails can only fire if <em>something</em> proactively checks tickets even when nobody is looking at them. That something is a scheduled task &mdash; on Windows, Task Scheduler; on Linux, cron.',
-            'p2'      => 'The script is <span class="tk-help-code">cron/sla_breach_check.php</span> in the FreeITSM install directory. It can be invoked two ways:',
+            'p2'      => 'The script is <code>cron/sla_breach_check.php</code> in the FreeITSM install directory. It can be invoked two ways:',
             'cli_heading' => 'A. CLI (recommended on a server you control)',
             'cli_note'    => 'No authentication required &mdash; filesystem permissions already gate who can run it.',
             'http_heading'=> 'B. HTTP (for shared hosting or remote schedulers)',
-            'http_note'   => 'The token is auto-generated on first install and stored in <span class="tk-help-code">system_settings</span> under the key <span class="tk-help-code">sla_cron_token</span> (32 hex characters, ~128 bits of entropy). Find yours with:',
+            'http_note'   => 'The token is auto-generated on first install and stored in <code>system_settings</code> under the key <code>sla_cron_token</code> (32 hex characters, ~128 bits of entropy). It is encrypted at rest, so reading the row directly gives you <code>ENC:…</code> rather than the token. Find yours with:',
             'win_heading' => 'Windows Task Scheduler',
-            'win_intro'   => 'Open Task Scheduler (<span class="tk-help-code">taskschd.msc</span>) and create a new task with these settings:',
+            'win_intro'   => 'Open Task Scheduler (<code>taskschd.msc</code>) and create a new task with these settings:',
             'tbl_field'   => 'Field',
             'tbl_value'   => 'Value',
             'win_r1_k'    => 'Name',
@@ -1452,20 +3726,20 @@ return [
             'win_r4_k'    => 'Action',
             'win_r4_v'    => 'Start a program',
             'win_r5_k'    => 'Program/script',
-            'win_r5_v'    => '<span class="tk-help-code">C:\\wamp64\\bin\\php\\php8.2.x\\php.exe</span>',
+            'win_r5_v'    => '<code>C:\\wamp64\\bin\\php\\php8.2.x\\php.exe</code>',
             'win_r6_k'    => 'Add arguments',
-            'win_r6_v'    => '<span class="tk-help-code">C:\\wamp64\\www\\freeitsm-app\\cron\\sla_breach_check.php</span>',
+            'win_r6_v'    => '<code>C:\\wamp64\\www\\freeitsm-app\\cron\\sla_breach_check.php</code>',
             'win_r7_k'    => 'Start in',
-            'win_r7_v'    => '<span class="tk-help-code">C:\\wamp64\\www\\freeitsm-app</span>',
+            'win_r7_v'    => '<code>C:\\wamp64\\www\\freeitsm-app</code>',
             'linux_heading'=> 'Linux cron',
-            'linux_intro' => 'Add one line to your crontab (<span class="tk-help-code">crontab -e</span>):',
+            'linux_intro' => 'Add one line to your crontab (<code>crontab -e</code>):',
             'sec_heading' => 'Security &mdash; what protects the HTTP endpoint',
             'sec_intro'   => 'Three layers, all enforced automatically:',
             'sec_token'   => '<strong>1. Shared-secret token</strong> &mdash; 128-bit random per install, compared with constant-time matching to prevent timing attacks.',
             'sec_lockout' => '<strong>2. Per-IP failed-auth lockout</strong> &mdash; more than 10 wrong-token attempts from the same IP in the past hour triggers a 1-hour 429 lockout. Defeats brute-force probing without needing fail2ban.',
-            'sec_interval'=> '<strong>3. Minimum interval between successful runs</strong> &mdash; <span class="tk-help-code">sla_cron_min_interval_seconds</span> (default 30s). Even a valid-token request gets a 429 if it arrives sooner than this after the last successful run. Defeats accidental double-scheduling and runaway loops.',
+            'sec_interval'=> '<strong>3. Minimum interval between successful runs</strong> &mdash; <code>sla_cron_min_interval_seconds</code> (default 30s). Even a valid-token request gets a 429 if it arrives sooner than this after the last successful run. Defeats accidental double-scheduling and runaway loops.',
             'log_heading' => 'Activity log',
-            'log_body'    => 'Every invocation (accepted or rejected) is logged to the <span class="tk-help-code">sla_cron_runs</span> table with timing, outcome, counts, and client IP. View the last 20 runs in the <strong>Cron Activity</strong> panel at the bottom of the SLA settings tab &mdash; useful for verifying the schedule is firing and for auditing any failed-auth attempts. Rows are auto-pruned after <span class="tk-help-code">sla_cron_log_retention_days</span> (default 30) so the table stays small.',
+            'log_body'    => 'Every invocation (accepted or rejected) is logged to the <code>sla_cron_runs</code> table with timing, outcome, counts, and client IP. View the last 20 runs in the <strong>Cron Activity</strong> panel at the bottom of the SLA settings tab &mdash; useful for verifying the schedule is firing and for auditing any failed-auth attempts. Rows are auto-pruned after <code>sla_cron_log_retention_days</code> (default 30) so the table stays small.',
         ],
         'examples' => [
             'heading' => 'Worked examples',
@@ -1473,14 +3747,14 @@ return [
             'ex1_heading' => 'Example 1: Ticket raised in the UK, service desk in the UK',
             'ex1_title'   => 'The simple case',
             'ex1_tag'     => 'single timezone',
-            'ex1_setup'   => '<strong>Setup:</strong> One business calendar called <em>UK Office</em> with timezone <span class="tk-help-code">Europe/London</span>, Mon-Fri 09:00-17:00, no holidays. P2 priority has a 1-hour response target and a 4-hour resolution target, both running against the <em>UK Office</em> calendar.',
+            'ex1_setup'   => '<strong>Setup:</strong> One business calendar called <em>UK Office</em> with timezone <code>Europe/London</code>, Mon-Fri 09:00-17:00, no holidays. P2 priority has a 1-hour response target and a 4-hour resolution target, both running against the <em>UK Office</em> calendar.',
             'ex1_scenario'=> '<strong>Scenario:</strong> User raises a P2 ticket at <strong>16:30 UK on Wednesday</strong>.',
             'ex1_timeline'=> "Wed 16:30 UK &mdash; <strong>ticket created</strong>, response clock starts.\nWed 17:00 UK &mdash; office closes, clock pauses (30 min consumed of 60 min target).\nThu 09:00 UK &mdash; office opens, clock resumes.\nThu 09:30 UK &mdash; analyst replies. Response SLA met right at the wire (60 min consumed, 60 min target).",
             'ex1_outro'   => 'If the analyst hadn\'t replied until <strong>Thursday 10:00 UK</strong>, the response would have <strong>breached by 30 minutes</strong> (90 min consumed against the 60 min target &mdash; 30 from Wednesday evening, 60 from Thursday morning). The 1-hour clock only ticks during business hours, but an end-of-day ticket still eats most of its budget overnight when the office reopens &mdash; it\'s easy for an analyst arriving at 09:00 to assume they\'ve got the full hour, when in fact only 30 minutes are left.',
             'ex2_heading' => 'Example 2: Ticket raised in the UK, service desk in Estonia',
             'ex2_title'   => 'The cross-timezone case',
             'ex2_tag'     => '3 ways to define "fair"',
-            'ex2_setup'   => '<strong>Setup:</strong> UK customers (<span class="tk-help-code">Europe/London</span>, GMT/BST), Estonia service desk (<span class="tk-help-code">Europe/Tallinn</span>, EET/EEST &mdash; <strong>2 hours ahead of UK</strong>). Both desks nominally work 09:00-17:00 local time.',
+            'ex2_setup'   => '<strong>Setup:</strong> UK customers (<code>Europe/London</code>, GMT/BST), Estonia service desk (<code>Europe/Tallinn</code>, EET/EEST &mdash; <strong>2 hours ahead of UK</strong>). Both desks nominally work 09:00-17:00 local time.',
             'ex2_scenario'=> '<strong>Scenario:</strong> UK customer raises a P2 ticket at <strong>16:30 UK on Friday</strong> (= 18:30 Estonia, after Estonia close). The next opportunity for an Estonia analyst to work it is Monday 09:00 Estonia (= 07:00 UK). The response target is 1 hour.',
             'ex2_question'=> 'What should the SLA say? There are three defensible answers, each fair in a different sense. You pick which calendar to assign to the priority based on what your service contract promises.',
             'optA_label'  => 'Option A &mdash; Customer-centric',
@@ -1510,7 +3784,7 @@ return [
             'col_symptom' => 'Symptom',
             'col_cause'   => 'Likely cause',
             'r1_s' => 'No SLA pills appear on the inbox',
-            'r1_c' => '<span class="tk-help-code">Enforce SLAs from</span> is blank, the priority has no targets set, or the ticket pre-dates the cutoff.',
+            'r1_c' => '<code>Enforce SLAs from</code> is blank, the priority has no targets set, or the ticket pre-dates the cutoff.',
             'r2_s' => 'SLA shows breached but the analyst replied within target',
             'r2_c' => 'Check the priority change history &mdash; if the priority was upgraded mid-flight and the behaviour is set to "Forward" (default), accrued time carries over.',
             'r3_s' => 'Breach notifications not sending',
@@ -1520,12 +3794,51 @@ return [
             'r5_s' => 'Watchtower shows "N tickets paused over 24h"',
             'r5_c' => 'Tickets are sitting in a pause-SLA status. Either someone\'s parked them deliberately and forgot, or someone\'s using On Hold as an SLA escape valve. Click into each and either progress or get rid of the pause status.',
             'r6_s' => 'HTTP cron returns 403',
-            'r6_c' => 'Token in URL doesn\'t match. Look up via <span class="tk-help-code">SELECT setting_value FROM system_settings WHERE setting_key = \'sla_cron_token\'</span>.',
+            'r6_c' => 'Token in URL doesn\'t match. Look up via <code>SELECT setting_value FROM system_settings WHERE setting_key = \'sla_cron_token\'</code>.',
             'r7_s' => 'HTTP cron returns 429 "Rate limited"',
-            'r7_c' => 'Successful run completed less than <span class="tk-help-code">sla_cron_min_interval_seconds</span> ago (default 30s). Wait or lower the setting.',
+            'r7_c' => 'Successful run completed less than <code>sla_cron_min_interval_seconds</code> ago (default 30s). Wait or lower the setting.',
             'r8_s' => 'HTTP cron returns 429 "Too many failed attempts"',
-            'r8_c' => 'This IP has hit more than 10 wrong-token attempts in the past hour. Wait 1 hour or clear the failures: <span class="tk-help-code">DELETE FROM sla_cron_runs WHERE client_ip = \'...\' AND outcome = \'auth_failed\'</span>.',
-            'tip'  => 'For an in-depth technical walkthrough of cron setup including Linux examples and remote-scheduler integration, see <span class="tk-help-code">docs/sla-cron-setup.md</span> in the FreeITSM install directory.',
+            'r8_c' => 'This IP has hit more than 10 wrong-token attempts in the past hour. Wait 1 hour or clear the failures: <code>DELETE FROM sla_cron_runs WHERE client_ip = \'...\' AND outcome = \'auth_failed\'</code>.',
+            'tip'  => 'For an in-depth technical walkthrough of cron setup including Linux examples and remote-scheduler integration, see <code>docs/sla-cron-setup.md</code> in the FreeITSM install directory.',
         ],
+    ],
+    // The ticket workspace (PR #211, #212): a ticket laid out for working. See
+    // includes/ticket_workspace.php and assets/js/ticket-workspace.js.
+    'workspace' => [
+        // Tickets -> Settings -> General. The three choices are TicketWorkspaceMode.
+        'layout'          => 'Ticket workspace',
+        'off'             => 'Off',
+        'selected'        => 'Only tickets turned into a workspace',
+        'all'             => 'Every ticket',
+        'mode_help'       => 'Off by default. Choose which tickets can use the workspace; each analyst can still choose the reading pane in their preferences.',
+        // The analyst's own switch, in the list's view menu.
+        'preference'      => 'Use the workspace',
+        'save_failed'     => 'Could not save the workspace preference.',
+        // More -> Make workspace, and the badge on a ticket that is one.
+        'badge'           => 'Workspace',
+        'make_workspace'  => 'Make workspace',
+        'back_to_pane'    => 'Back to the reading pane',
+        // The layout: the properties column, its three groups, and the tabs.
+        'properties'      => 'Properties',
+        'classification'  => 'Classification',
+        'responsibility'  => 'Responsibility',
+        'other'           => 'Other details',
+        'sections'        => 'Ticket sections',
+        'conversation'    => 'Conversation',
+        'work'            => 'Work',
+        'links'           => 'Links',
+        'time'            => 'Time and SLA',
+        'history'         => 'History',
+        'work_empty'      => 'No checklists or tasks yet. Use Checklist, or Link to… → Task, to add one.',
+        'loading'         => 'Loading…',
+        'unavailable'     => 'This section could not be loaded. Refresh to try again.',
+        'sla_unavailable' => 'SLA information is unavailable',
+        // Leaving a ticket, or the layout, with something unsaved.
+        'discard'         => 'You have unsaved work. Discard it and continue?',
+        'discard_button'  => 'Discard',
+        // A linked task opened in the Work tab (PR #212).
+        'task'            => 'Task',
+        'open_task'       => 'Open separately',
+        'close_task'      => 'Close',
     ],
 ];

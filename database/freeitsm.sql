@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS `analysts` (
     `full_name`                 VARCHAR(100) NOT NULL,
     `email`                     VARCHAR(100) NOT NULL,
     `is_active`                 TINYINT(1) NULL DEFAULT 1,
+    `job_title`                 VARCHAR(100) NULL,
+    `department`                VARCHAR(100) NULL,
+    `phone`                     VARCHAR(50) NULL,
+    `mobile`                    VARCHAR(50) NULL,
     `created_datetime`          DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `last_login_datetime`       DATETIME NULL,
     `last_modified_datetime`    DATETIME NULL,
@@ -32,14 +36,44 @@ CREATE TABLE IF NOT EXISTS `analysts` (
     `failed_login_count`        INT NOT NULL DEFAULT 0,
     `locked_until`              DATETIME NULL,
     `auth_provider_id`          INT NULL,
-    `can_access_all_modules` TINYINT(1) NULL DEFAULT NULL,
+    -- 1 = take the sign-in method from their teams (GH #41); auth_provider_id then
+    -- holds the result, copied in by includes/analyst_signin.php.
+    `auth_follow_team`          TINYINT(1) NOT NULL DEFAULT 0,
     `can_access_all_tenants`    TINYINT(1) NOT NULL DEFAULT 1,
+    -- Only administrators may enter the System module (analyst/team/company mgmt,
+    -- SSO, security, DB verify, etc.). New analysts default to non-admin.
+    `is_admin`                  TINYINT(1) NOT NULL DEFAULT 0,
+    -- Module access (issue #30). 1 = all modules; 0 = restricted to analyst_modules
+    -- (+ team grants). New analysts default unrestricted.
+    `can_access_all_modules`    TINYINT(1) NOT NULL DEFAULT 1,
+    -- Force a password change before this analyst can do anything else. Set on the
+    -- seeded `admin` account, whose admin/freeitsm credentials were otherwise
+    -- permanent — nothing forced, warned about or nagged on the change.
+    `must_change_password`      TINYINT(1) NOT NULL DEFAULT 0,
+    -- MFA code-step throttling. Kept SEPARATE from failed_login_count/locked_until
+    -- above on purpose: a successful password step clears those two, so an attacker
+    -- who already holds a valid password never trips them. Only a correct MFA code
+    -- clears these. See includes/mfa_throttle.php.
+    `mfa_failed_count`          INT NOT NULL DEFAULT 0,
+    `mfa_locked_until`          DATETIME NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_analysts_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
--- SSO / OIDC identity providers (one row per configured IdP)
+-- Authentication providers (one row per configured sign-in method)
+-- `protocol` selects the flavour:
+--   'oidc' — OpenID Connect SSO (browser redirect to an IdP). Uses the
+--            issuer_url / client_id / client_secret / scopes columns.
+--   'ldap' — LDAP / Active Directory bind (user types their directory
+--            password into our own login form; NOT single sign-on).
+--            Uses the ldap_* columns below.
+-- The two column groups are mutually exclusive; the unused group is left
+-- empty. issuer_url/client_id stay NOT NULL by convention — LDAP rows store
+-- '' in them rather than NULL, which reads unambiguously as "not applicable
+-- to this protocol". (Not a limitation: db_verify can relax a column with a
+-- probe-then-MODIFY block, as it does for users.email and emails.from_address.)
 -- ----------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS `auth_providers` (
@@ -50,12 +84,183 @@ CREATE TABLE IF NOT EXISTS `auth_providers` (
     `client_id`              VARCHAR(255) NOT NULL,
     `client_secret`          VARCHAR(500) NULL,
     `scopes`                 VARCHAR(255) NOT NULL DEFAULT 'openid email profile',
+    -- --- LDAP / Active Directory (protocol = 'ldap') ---
+    `ldap_host`              VARCHAR(255) NULL,
+    `ldap_port`              INT NULL,
+    `ldap_encryption`        VARCHAR(10) NULL,
+    `ldap_bind_dn`           VARCHAR(255) NULL,
+    `ldap_bind_password`     VARCHAR(500) NULL,
+    `ldap_base_dn`           VARCHAR(255) NULL,
+    `ldap_user_filter`       VARCHAR(500) NULL,
+    `ldap_attr_username`     VARCHAR(64) NULL,
+    `ldap_attr_email`        VARCHAR(64) NULL,
+    `ldap_attr_name`         VARCHAR(64) NULL,
+    `ldap_attr_guid`         VARCHAR(64) NULL,
+    `ldap_group_base_dn`     VARCHAR(255) NULL,
+    `ldap_group_filter`      VARCHAR(500) NULL,
+    `ldap_analyst_group`     VARCHAR(255) NULL,
+    `ldap_user_group`        VARCHAR(255) NULL,
+
+    -- ---------------------------------------------------------------------
+    -- Directory SYNC (slice 2). Distinct from sign-in above: sign-in asks the
+    -- directory about ONE person who is standing there; sync enumerates
+    -- everybody so they exist before anyone signs in — which is the entire
+    -- point, since the people who hold equipment are largely the people who
+    -- never log in.
+    -- ---------------------------------------------------------------------
+    `sync_enabled`           TINYINT(1) NOT NULL DEFAULT 0,
+    -- Where to enumerate from. NULL falls back to ldap_base_dn: the sign-in
+    -- subtree is usually the right one, but not always — you may authenticate
+    -- against the whole directory and only want to IMPORT one OU.
+    `sync_base_dn`           VARCHAR(255) NULL,
+    -- The OU browser writes these: the branches ticked, and the branches
+    -- carved back out of them. One DN per line. A ticked branch means the
+    -- whole branch INCLUDING anything created under it later, which is the
+    -- behaviour that makes a new department import on its own.
+    -- ⚠️ Both NULL means "use sync_base_dn", which is the only state an
+    -- upgraded install can be in — the fallback is not a nicety, it is what
+    -- stops an upgrade silently importing nobody.
+    `sync_ou_includes`       TEXT NULL,
+    `sync_ou_excludes`       TEXT NULL,
+    `sync_filter`            VARCHAR(500) NULL,
+    -- What to do when somebody already exists here. 'adopt' attaches the
+    -- directory identity to the existing record; 'flag' leaves them alone and
+    -- records a conflict. ⚠️ Adopting sets auth_provider_id, which means their
+    -- local portal password STOPS WORKING — that is why this is a choice.
+    `sync_on_conflict`       VARCHAR(20) NOT NULL DEFAULT 'adopt',
+    -- Consecutive misses before somebody is marked as left. 0 disables
+    -- deactivation entirely, for installs that would rather do it by hand.
+    `sync_deactivate_after`  INT NOT NULL DEFAULT 3,
+    -- THE SANITY BRAKE. If a run finds this many percent fewer people than the
+    -- last good run, it stops and changes nothing. A typo in a base DN, a
+    -- service account quietly losing read rights, or a directory being slow
+    -- would otherwise deactivate an entire company in one pass. 0 disables it,
+    -- which is a decision somebody should have to make deliberately.
+    `sync_brake_percent`     INT NOT NULL DEFAULT 20,
+    -- Attribute names for the person fields. Defaults are Active Directory's;
+    -- OpenLDAP and others differ, which is why these are configurable at all.
+    `ldap_attr_job_title`    VARCHAR(64) NULL,
+    `ldap_attr_department`   VARCHAR(64) NULL,
+    `ldap_attr_office`       VARCHAR(64) NULL,
+    `ldap_attr_phone`        VARCHAR(64) NULL,
+    `ldap_attr_mobile`       VARCHAR(64) NULL,
+    `ldap_attr_employee_id`  VARCHAR(64) NULL,
+    -- The manager attribute holds a DN, not a name, so it is resolved to a
+    -- person in a second pass once everybody exists.
+    `ldap_attr_manager`      VARCHAR(64) NULL,
+
+    -- ---------------------------------------------------------------------
+    -- CardDAV address book (protocol = 'carddav').
+    --
+    -- A contact SOURCE, not a sign-in method. An address book cannot
+    -- authenticate anybody, so a carddav provider has no "Signing in" tab and
+    -- never appears on the login page. Asked for in GitHub issue #133.
+    --
+    -- The `sync_*` columns above are reused unchanged: on_conflict,
+    -- deactivate_after and brake_percent are policy rather than transport, and
+    -- that policy is the part that was expensive to get right. Only the
+    -- LDAP-shaped ones do not carry over.
+    -- ---------------------------------------------------------------------
+    `carddav_url`            VARCHAR(500) NULL,
+    `carddav_username`       VARCHAR(255) NULL,
+    -- Encrypted with encryptValue(), like `ldap_bind_password`, and never
+    -- returned by a GET endpoint.
+    `carddav_password`       VARCHAR(500) NULL,
+    -- Which address book to read. NULL = every book the account can see, which
+    -- is rarely wanted: the whole request was to scope it to one group.
+    `carddav_addressbook`    VARCHAR(500) NULL,
+    -- 'auto' | 'digest' | 'basic'. ⚠️ Leave it on auto. A stock Baikal ships
+    -- Digest, and Basic against it is a flat 401 that reads as a wrong
+    -- password; the override is for a server that mis-advertises.
+    `carddav_auth`           VARCHAR(10) NOT NULL DEFAULT 'auto',
+    -- WHICH records to bring in, within the chosen address book. 'all' |
+    -- 'group' | 'category'. "A specific contact group" means three different
+    -- things in CardDAV and only the operator knows which their server uses:
+    --   all       every ordinary card in the book
+    --   group     the MEMBERs of a KIND:group card (how Apple Contacts does it)
+    --   category  cards carrying a CATEGORIES value (Thunderbird, Android)
+    `carddav_scope`          VARCHAR(10) NOT NULL DEFAULT 'all',
+    -- The chosen groups' UIDs, or the chosen tag names — newline-separated, so
+    -- AS MANY as the operator ticks rather than one. Same convention as
+    -- `sync_ou_includes` above. NULL when scope = 'all'.
+    `carddav_scope_value`    TEXT NULL,
+    -- Whether edits made in FreeITSM are written back to the address book.
+    -- DEFAULT 0 and it must stay 0: this is the switch between a provably
+    -- read-only integration and one that can modify the operator's own contacts,
+    -- and an upgrade that turned it on by itself would be the worst kind of
+    -- surprise. Only set after the server has confirmed the account holds the
+    -- write privilege.
+    `carddav_write_back`     TINYINT(1) NOT NULL DEFAULT 0,
+    -- May an analyst ADD a person to this address book (a new card)? Off by
+    -- default and separate from write-back; only honoured while write-back is on.
+    `carddav_allow_create`   TINYINT(1) NOT NULL DEFAULT 0,
+
+    -- ---------------------------------------------------------------------
+    -- Microsoft Entra ID directory sync (protocol = 'oidc', Entra issuer).
+    --
+    -- Not a protocol of its own: an OIDC provider pointing at Entra, with
+    -- `sync_enabled` on, reads people and groups through Microsoft Graph. The
+    -- `sync_*` policy columns above apply unchanged. See includes/entra_sync.php.
+    -- ---------------------------------------------------------------------
+    -- NULL = the tenant in issuer_url. Needed only for a multi-tenant issuer.
+    `graph_tenant_id`        VARCHAR(64) NULL,
+    -- NULL = the sign-in app registration (client_id / client_secret). Set for a
+    -- separate registration that holds the Graph application permissions.
+    `graph_client_id`        VARCHAR(255) NULL,
+    -- Encrypted with encryptValue(); never returned by a GET endpoint.
+    `graph_client_secret`    VARCHAR(500) NULL,
+    -- WHO is imported: 'all' users, or the members of `graph_user_groups`.
+    `graph_user_scope`       VARCHAR(10) NOT NULL DEFAULT 'all',
+    -- Group object ids, one per line. Membership is transitive.
+    `graph_user_groups`      TEXT NULL,
+    -- Guests (userType = Guest) are left out unless this is on.
+    `graph_include_guests`   TINYINT(1) NOT NULL DEFAULT 0,
+    -- WHICH groups are imported into directory_groups: 'none' | 'selected' | 'all'.
+    `graph_group_scope`      VARCHAR(10) NOT NULL DEFAULT 'none',
+    -- Group object ids for 'selected', one per line.
+    `graph_groups`           TEXT NULL,
+    -- Which Entra attribute fills each person field (the ldap_attr_* idea for
+    -- Graph). NULL = the default in ESYNC_ATTR_DEFAULTS, includes/entra_sync.php.
+    `graph_attr_name`        VARCHAR(128) NULL,
+    `graph_attr_username`    VARCHAR(128) NULL,
+    `graph_attr_email`       VARCHAR(128) NULL,
+    `graph_attr_job_title`   VARCHAR(128) NULL,
+    `graph_attr_department`  VARCHAR(128) NULL,
+    `graph_attr_office`      VARCHAR(128) NULL,
+    `graph_attr_phone`       VARCHAR(128) NULL,
+    `graph_attr_mobile`      VARCHAR(128) NULL,
+    `graph_attr_employee_id` VARCHAR(128) NULL,
+
+    `sync_last_run_datetime` DATETIME NULL,
+    -- People found by the last SUCCESSFUL run. The number the brake compares
+    -- against; NULL means "no baseline yet", so a first run is never braked.
+    `sync_last_count`        INT NULL,
+
     `enabled`                TINYINT(1) NOT NULL DEFAULT 1,
     `auto_create_users`      TINYINT(1) NOT NULL DEFAULT 0,
+    `auto_create_analysts`   TINYINT(1) NOT NULL DEFAULT 0,
+    `analyst_fallback_mode`  ENUM('confirm','redirect','block') NOT NULL DEFAULT 'confirm',
     `require_verified_email` TINYINT(1) NOT NULL DEFAULT 0,
+    `profile_sync_mode`      ENUM('always','initial','never') NOT NULL DEFAULT 'never',
     `default_modules`        VARCHAR(500) NULL,
+    -- 3.5.0: which companies an analyst this provider auto-creates can see:
+    -- all (as before) | provider (the provider's company; Default for a global one) | none.
+    `jit_company_access`     VARCHAR(10) NOT NULL DEFAULT 'all',
+    -- SSO claim mapping (3.5.0, OIDC only) - see includes/sso_claims.php.
+    `oidc_group_claim`       VARCHAR(100) NULL,   -- the claim holding groups/roles, e.g. groups, realm_access.roles
+    `oidc_analyst_group`     VARCHAR(255) NULL,   -- only members may sign in as analysts (as ldap_analyst_group)
+    `oidc_admin_group`       VARCHAR(255) NULL,   -- members are administrators, non-members are not (3.5.0)
+    `oidc_groups_last_seen`  TEXT NULL,           -- JSON: what the last sign-in sent, shown in System -> SSO
     `sort_order`             INT NOT NULL DEFAULT 0,
     `tenant_id`              INT NULL,
+    -- Portal email-first routing (GH #147). Email domains, one per line,
+    -- lowercase: an address on one of them goes straight to this provider from
+    -- the portal's email box, even on a first visit. NULL = no domain routing.
+    -- OIDC only, and a domain may belong to one provider.
+    `portal_email_domains`   TEXT NULL,
+    -- Whether the "Sign in with ..." button shows on the portal login. Off
+    -- gives the email-box-only page; the analyst login is unaffected.
+    `portal_show_button`     TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`       DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `last_modified_datetime` DATETIME NULL,
     PRIMARY KEY (`id`)
@@ -91,7 +296,10 @@ CREATE TABLE IF NOT EXISTS `departments` (
     `description`       VARCHAR(255) NULL,
     `is_active`         TINYINT(1) NULL DEFAULT 1,
     `display_order`     INT NULL DEFAULT 0,
+    -- 'confidential' = tickets in, or moved into, this department become confidential (#62).
+    `default_sensitivity` VARCHAR(20) NOT NULL DEFAULT 'normal',
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_departments_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -107,14 +315,155 @@ CREATE TABLE IF NOT EXISTS `user_preferences` (
     CONSTRAINT `fk_user_pref_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- The same idea for SELF-SERVICE PORTAL users.
+--
+-- They have no analyst row, so `user_preferences` above cannot hold anything for
+-- them. That gap was first patched by giving the portal's colour palette its own
+-- column on `users`; this is the generic twin, so the next portal preference does
+-- not become a third one-off column.
+--
+-- 🔒 COMPANY SCOPE: deliberately NONE, and that is the answer to the question
+-- the Multi-Tenancy Developer Guide §1 says to ask before adding any table.
+--
+-- This is not a fourth meaning of NULL; there is no tenant_id to give one.
+-- A row here is keyed to a PERSON, and `users.tenant_id` already records
+-- which company that person belongs to - so the company is reachable through
+-- the foreign key and duplicating it here would create a second copy that
+-- could disagree with the first.
+--
+-- It is also the right shape on its own terms: how somebody likes their
+-- knowledge base laid out is a fact about them, not about the company whose
+-- tickets they are reading. `user_preferences` above, keyed by analyst_id,
+-- is unscoped for the same reason.
+--
+-- ⚠️ Nothing here is readable across people: api/self-service/preference.php
+-- only ever acts on the signed-in portal user's own id, so there is no list
+-- read to scope in the first place.
+--
+-- ⚠️ A fresh install gets the unique key and the foreign key below. An EXISTING
+-- install gains this table from Database Verification, which creates columns but
+-- not indexes - so includes/portal_preferences.php deliberately does a
+-- SELECT-then-UPDATE rather than ON DUPLICATE KEY, which would silently insert a
+-- second row where no unique key exists.
+CREATE TABLE IF NOT EXISTS `portal_user_preferences` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `user_id`           INT NOT NULL,
+    `preference_key`    VARCHAR(100) NOT NULL,
+    `preference_value`  TEXT NULL,
+    `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_portal_user_pref` (`user_id`, `preference_key`),
+    CONSTRAINT `fk_portal_user_pref_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Handover document templates (discussion #56).
+--
+-- `blocks` is a JSON array describing which sections appear, in what order, and
+-- what their editable text says. It is deliberately a document rather than a set
+-- of columns: the shape is a LIST OF BLOCKS, and modelling that relationally
+-- would mean a second table and a join to render one page.
+--
+-- ⚠️ The JSON is validated against a fixed block catalogue on save — see
+-- HandoverTemplates::sanitiseBlocks(). Nothing arbitrary is ever stored, so
+-- rendering never has to trust it.
+CREATE TABLE IF NOT EXISTS `asset_handover_templates` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(120) NOT NULL,
+    `blocks`           LONGTEXT NULL,          -- JSON, see above
+    `is_default`       TINYINT(1) NOT NULL DEFAULT 0,
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- The render path looks up the default template on every document produced.
+    KEY `ix_aht_default` (`is_default`, `is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- In-app notifications (discussion #55). One row per thing an analyst is told
+-- about. Rows COALESCE while unread: three changes to the same ticket bump
+-- event_count on one row rather than making three, which is what stops the bell
+-- becoming unusable for anyone carrying a real ticket load.
+CREATE TABLE IF NOT EXISTS `notifications` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`        INT NOT NULL,
+    `event_type`        VARCHAR(64) NOT NULL,     -- 'ticket.assigned', 'ticket.reply_received', …
+    `entity_type`       VARCHAR(32) NOT NULL,     -- 'ticket'
+    `entity_id`         INT NOT NULL,
+    `entity_ref`        VARCHAR(64) NULL,         -- ticket number, for display and the deep link
+    `title`             VARCHAR(255) NULL,        -- the ticket subject at the time
+    `body`              VARCHAR(500) NULL,        -- 'Sam Cover replied'
+    `actor_name`        VARCHAR(100) NULL,        -- who caused it, NULL for system events
+    `event_count`       INT NOT NULL DEFAULT 1,   -- >1 once coalesced
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `read_datetime`     DATETIME NULL,            -- NULL = unread; the badge counts these
+    PRIMARY KEY (`id`),
+    -- The unread index serves the badge, which is polled by every open tab; the
+    -- coalesce index is hit on every event written.
+    KEY `ix_notif_unread` (`analyst_id`, `read_datetime`, `updated_datetime`),
+    KEY `ix_notif_coalesce` (`analyst_id`, `entity_type`, `entity_id`, `read_datetime`),
+    CONSTRAINT `fk_notif_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The bell in the SELF-SERVICE PORTAL (discussion #62): the same shape as
+-- `notifications`, for portal users rather than analysts. A sibling table, not a
+-- column on that one: its analyst_id is NOT NULL with a foreign key to analysts,
+-- and one table keyed two ways would let an analyst and a portal user with the
+-- same id read each other's bell. NotificationsService serves both.
+-- Feature Bingo (System -> Feature Bingo): the cards an administrator has marked
+-- "Not for us". The cards themselves are code (includes/feature_bingo/cards/);
+-- only this choice is data.
+CREATE TABLE IF NOT EXISTS `feature_bingo_dismissed` (
+    `card_id`                 VARCHAR(100) NOT NULL,
+    `dismissed_by_analyst_id` INT NULL,
+    `dismissed_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`card_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `portal_notifications` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `user_id`           INT NOT NULL,
+    `event_type`        VARCHAR(64) NOT NULL,     -- 'ticket.created' (a team ticket, for a manager)
+    `entity_type`       VARCHAR(32) NOT NULL,
+    `entity_id`         INT NOT NULL,
+    `entity_ref`        VARCHAR(64) NULL,
+    `title`             VARCHAR(255) NULL,
+    `body`              VARCHAR(500) NULL,
+    `actor_name`        VARCHAR(100) NULL,
+    `event_count`       INT NOT NULL DEFAULT 1,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `read_datetime`     DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_pnotif_unread` (`user_id`, `read_datetime`, `updated_datetime`),
+    KEY `ix_pnotif_coalesce` (`user_id`, `entity_type`, `entity_id`, `read_datetime`),
+    CONSTRAINT `fk_pnotif_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `teams` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(100) NOT NULL,
     `description`       VARCHAR(500) NULL,
     `display_order`     INT NULL DEFAULT 0,
     `is_active`         TINYINT(1) NULL DEFAULT 1,
+    -- Team company access (multi-tenant). Team grants are ADDITIVE to an
+    -- analyst's own access: an analyst can reach a company if their own grants
+    -- OR any team they're in grants it. Unlike analysts (which default to
+    -- all-access so N=1 installs stay invisible), a team defaults to granting
+    -- NOTHING (0) — else every existing team would silently hand all-company
+    -- access to its members on upgrade. When 0, team_tenant_access lists the
+    -- specific companies the team grants; when 1, the team grants every company.
+    `can_access_all_tenants` TINYINT(1) NOT NULL DEFAULT 0,
+    -- Team module access (issue #30). Defaults to 0 (grants no modules) for the same
+    -- reason — a team must be explicitly granted modules; team_modules lists them.
+    `can_access_all_modules` TINYINT(1) NOT NULL DEFAULT 0,
+    -- Default sign-in method for members set to "Follow team" (GH #41).
+    -- NULL = not set, 'local' = password, 'provider' = auth_provider_id.
+    `auth_method`       VARCHAR(10) NULL,
+    `auth_provider_id`  INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -123,10 +472,44 @@ CREATE TABLE IF NOT EXISTS `analyst_teams` (
     `analyst_id`        INT NOT NULL,
     `team_id`           INT NOT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_analyst_team` (`analyst_id`, `team_id`),
     CONSTRAINT `fk_analyst_teams_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_analyst_teams_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- SSO groups -> FreeITSM teams (3.5.0). At every analyst sign-in through the
+-- provider, membership of each MAPPED team follows the groups the identity
+-- provider sends; teams with no mapping are never touched. The team decides
+-- modules, companies and roles as it always has. See includes/sso_claims.php.
+CREATE TABLE IF NOT EXISTS `sso_group_teams` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `provider_id`      INT NOT NULL,
+    `group_name`       VARCHAR(255) NOT NULL,
+    `team_id`          INT NOT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_sso_group_teams` (`provider_id`, `group_name`, `team_id`),
+    KEY `ix_sso_group_teams_team` (`team_id`),
+    CONSTRAINT `fk_sso_group_teams_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_sso_group_teams_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every group a provider has sent at sign-in (3.5.0), so the screens can offer
+-- them in a dropdown instead of asking anyone to type a group name.
+CREATE TABLE IF NOT EXISTS `sso_groups_seen` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `provider_id`         INT NOT NULL,
+    `group_name`          VARCHAR(255) NOT NULL,
+    `first_seen_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_seen_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    -- The name an admin gives the group, shown in the dropdowns instead of the
+    -- provider's code (Microsoft Entra sends object IDs). NULL = not named yet.
+    `label`               VARCHAR(100) NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_sso_groups_seen` (`provider_id`, `group_name`),
+    CONSTRAINT `fk_sso_groups_seen_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `department_teams` (
@@ -134,6 +517,7 @@ CREATE TABLE IF NOT EXISTS `department_teams` (
     `department_id`     INT NOT NULL,
     `team_id`           INT NOT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_department_team` (`department_id`, `team_id`),
     CONSTRAINT `fk_department_teams_department` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`) ON DELETE CASCADE,
@@ -144,9 +528,87 @@ CREATE TABLE IF NOT EXISTS `analyst_modules` (
     `id`            INT NOT NULL AUTO_INCREMENT,
     `analyst_id`    INT NOT NULL,
     `module_key`    VARCHAR(50) NOT NULL,
+    `access_level`  VARCHAR(10) NOT NULL DEFAULT 'full',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_analyst_module` (`analyst_id`, `module_key`),
     CONSTRAINT `fk_analyst_modules_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Per-team module grants (issue #30) — the team twin of analyst_modules.
+CREATE TABLE IF NOT EXISTS `team_modules` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    `team_id`       INT NOT NULL,
+    `module_key`    VARCHAR(50) NOT NULL,
+    `access_level`  VARCHAR(10) NOT NULL DEFAULT 'full',
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_team_module` (`team_id`, `module_key`),
+    CONSTRAINT `fk_team_modules_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- RBAC (Layer 2): per-module SETTINGS permissions.
+-- Module access (above) decides which modules you can ENTER. These tables decide
+-- whether you can also ADMINISTER a module's settings once in. Deny by default;
+-- System administrators (analysts.is_admin) bypass the whole layer. Capability
+-- keys are '<module>.<action>' and validated against the code registry in
+-- includes/rbac.php — the DB never holds a capability the code doesn't know.
+-- See docs/design/rbac.md.
+-- ----------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `rbac_roles` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(100) NOT NULL,
+    `description`       VARCHAR(500) NULL,
+    `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    -- 3.5.0 (PR #174): set on the ONE role per analyst that the REST API owns
+    -- (PATCH /api/v1/analysts/{id}/access). NULL = an ordinary role managed in
+    -- System -> Roles. A managed role is read-only on that screen and goes with
+    -- its analyst. See includes/services/analysts.php.
+    `managed_for_analyst_id` INT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_rbac_roles_managed_analyst` (`managed_for_analyst_id`),
+    CONSTRAINT `fk_rbac_roles_managed_analyst` FOREIGN KEY (`managed_for_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The capabilities a role grants. capability_key is '<module>.<action>'.
+CREATE TABLE IF NOT EXISTS `rbac_role_capabilities` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `role_id`           INT NOT NULL,
+    `capability_key`    VARCHAR(100) NOT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_rrc_role_capability` (`role_id`, `capability_key`),
+    CONSTRAINT `fk_rrc_role` FOREIGN KEY (`role_id`) REFERENCES `rbac_roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Roles assigned to an analyst.
+CREATE TABLE IF NOT EXISTS `rbac_analyst_roles` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`        INT NOT NULL,
+    `role_id`           INT NOT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_rar_analyst_role` (`analyst_id`, `role_id`),
+    CONSTRAINT `fk_rar_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_rar_role` FOREIGN KEY (`role_id`) REFERENCES `rbac_roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Roles assigned to a team — every member inherits (mirrors team_modules).
+CREATE TABLE IF NOT EXISTS `rbac_team_roles` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `team_id`           INT NOT NULL,
+    `role_id`           INT NOT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_rtr_team_role` (`team_id`, `role_id`),
+    CONSTRAINT `fk_rtr_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_rtr_role` FOREIGN KEY (`role_id`) REFERENCES `rbac_roles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -165,11 +627,32 @@ CREATE TABLE IF NOT EXISTS `ticket_types` (
     -- global default — unlike scoped data tables where NULL means "unrouted".)
     `tenant_id`         INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     -- Per-scope name uniqueness (a company may hold a type whose name matches a
     -- global default). Global-name dedup is enforced in the API, since NULL
     -- tenant_id rows aren't de-duped by a unique key.
     UNIQUE KEY `uq_ticket_types_tenant_name` (`tenant_id`, `name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The type a new ticket gets when nobody chose one (GH #230) - see
+-- includes/ticket_type_rules.php. Checked in order, first match wins; a company's
+-- own rules (tenant_id set) before the shared ones (NULL). conditions_json holds
+-- the criteria: channels, mailboxes, origins, departments, companies, subject
+-- words and requester domains; every one given must match.
+CREATE TABLE IF NOT EXISTS `ticket_type_rules` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`         INT NULL,
+    `name`              VARCHAR(100) NOT NULL,
+    `ticket_type_id`    INT NOT NULL,
+    `conditions_json`   TEXT NOT NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by`        INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_ttr_tenant_order` (`tenant_id`, `display_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `ticket_origins` (
@@ -181,7 +664,154 @@ CREATE TABLE IF NOT EXISTS `ticket_origins` (
     -- Multi-tenancy: NULL = global default origin; set = a company's own.
     `tenant_id`         INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Ticket classification (#1540): categories + resolution codes
+-- ----------------------------------------------------------
+-- THREE fields, and they answer three different questions:
+--
+--   category            what the ticket was REPORTED as, set when it is raised
+--   closure category    what it TURNED OUT to be, set when it closes
+--   resolution code     HOW it ended, which is not the same as what it was
+--
+-- The first two share this one table and the same tree. Most of the time they
+-- match and the analyst just confirms; they earn their keep on the ones where
+-- the first guess was wrong ("37 raised as printer problems, 12 were actually
+-- the network"). The resolution code is a separate flat list because "Training
+-- given" is not a kind of thing, it is a kind of ending.
+--
+-- 🔑 ONE category per ticket, never many. Every ticket dashboard widget is a
+-- COUNT(*) over a single LEFT JOIN, so a many-to-many would count one ticket
+-- once per category: the pie would total more than 100% and every "X% of
+-- tickets were printing" on the page would be wrong. Cross-cutting labels are
+-- what tags are for, and tags must never feed a count-by chart.
+
+CREATE TABLE IF NOT EXISTS `ticket_categories` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(100) NOT NULL,
+    `description`       VARCHAR(255) NULL,
+    -- Sub-categories. NULL = a root. Depth is capped at 3 in the API, not here:
+    -- an unbounded tree is unreportable, and nobody has ever wanted a fourth level.
+    -- ⚠️ The ticket stores the LEAF id ONLY — there is deliberately no
+    -- `parent_category_id` on `tickets`. Storing both would let them disagree,
+    -- which is exactly how `tickets` ended up holding the assignee twice.
+    -- Ancestors are DERIVED for roll-up reporting.
+    `parent_id`         INT NULL,
+    -- Optional link to a ticket type: NULL = offered whatever the type is; set =
+    -- only offered when that type is chosen.
+    -- 🔑 ONLY MEANINGFUL ON A ROOT (parent_id IS NULL). A child inherits its
+    -- root's type, and the API refuses to set this on a child — otherwise a
+    -- sub-category could claim a different type from its parent and neither
+    -- answer would be wrong.
+    `ticket_type_id`    INT NULL,
+    -- Whether a requester sees this one in the self-service portal. Analysts see
+    -- every active category; customers should see a short list in plain English.
+    `is_portal_visible` TINYINT(1) NOT NULL DEFAULT 1,
+    -- Retire rather than delete: a category is switched off so five years of
+    -- closed tickets keep their label. Deleting is only allowed while unused.
+    `is_active`         TINYINT(1) NULL DEFAULT 1,
+    `display_order`     INT NULL DEFAULT 0,
+    -- Multi-tenancy: NULL = a global default category (shared by every company);
+    -- set = one a company added for itself. (Config meaning of tenant_id — see
+    -- ticket_types.) Existing installs have none of either, so nothing changes.
+    `tenant_id`         INT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    -- Sibling names are unique within a scope. ⚠️ NOT a complete guarantee:
+    -- MySQL allows unlimited NULLs in a unique key, so two GLOBAL roots
+    -- (tenant_id NULL, parent_id NULL) would both slip through. The API enforces
+    -- the real rule — the same split ticket_types already lives with.
+    UNIQUE KEY `uq_ticket_categories_scope` (`tenant_id`, `parent_id`, `name`),
+    KEY `ix_ticket_categories_parent` (`parent_id`),
+    KEY `ix_ticket_categories_type` (`ticket_type_id`),
+    -- A parent cannot be deleted while it has children (the API blocks it first
+    -- and says so); RESTRICT is what makes that a guarantee rather than a habit.
+    CONSTRAINT `fk_ticket_categories_parent` FOREIGN KEY (`parent_id`) REFERENCES `ticket_categories` (`id`),
+    -- SET NULL, not CASCADE: deleting a ticket type must not silently destroy
+    -- the categories underneath it. They become "offered for every type", which
+    -- is visible and fixable; vanishing is neither.
+    CONSTRAINT `fk_ticket_categories_type` FOREIGN KEY (`ticket_type_id`) REFERENCES `ticket_types` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_ticket_categories_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- How a ticket ENDED, not what it was about. Flat on purpose: the moment this
+-- grows a hierarchy it has become a second category tree and the two will drift.
+CREATE TABLE IF NOT EXISTS `ticket_resolution_codes` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(100) NOT NULL,
+    `description`       VARCHAR(255) NULL,
+    `is_active`         TINYINT(1) NULL DEFAULT 1,
+    `display_order`     INT NULL DEFAULT 0,
+    -- Multi-tenancy: NULL = global default; set = a company's own. See ticket_types.
+    `tenant_id`         INT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    -- Same NULL-tenant caveat as ticket_categories: the API enforces global-name dedup.
+    UNIQUE KEY `uq_ticket_resolution_codes_scope` (`tenant_id`, `name`),
+    CONSTRAINT `fk_ticket_resolution_codes_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Seeded, unlike categories. A resolution code list is near enough universal
+-- across service desks, whereas a category tree is the one thing every
+-- organisation has to own — a pre-seeded taxonomy is just someone else's
+-- wrong answer that has to be deleted first.
+INSERT IGNORE INTO `ticket_resolution_codes` (`name`, `description`, `display_order`) VALUES
+    ('Fixed remotely',      'Resolved without visiting the user',                    10),
+    ('Fixed on site',       'Resolved in person',                                    20),
+    ('Hardware replaced',   'The faulty item was swapped out',                       30),
+    ('Configuration change','Settings changed on a system, device or account',        40),
+    ('Training given',      'Nothing was broken — the user was shown how',           50),
+    ('Access granted',      'A permission, licence or account was provided',          60),
+    ('No fault found',      'Investigated and working as expected',                  70),
+    ('Duplicate',           'Already covered by another ticket',                     80),
+    ('Withdrawn',           'The requester no longer needs it',                      90),
+    ('Referred to supplier','Passed to a third party to resolve',                   100);
+
+-- Watchtower settings. Two tables rather than flags on the status rows, because
+-- "show this on my dashboard" is a fact about the DASHBOARD, not about the
+-- status — the status's own facts (is_closed, is_default) are used by the SLA
+-- engine and everything else, and must not be mixed up with one view's taste.
+--
+-- analyst_id 0 = the installation's setting. Real analyst ids are reserved for
+-- per-person overrides later; storing it now means adding those needs no
+-- migration. (0 rather than NULL so the unique key actually de-duplicates.)
+CREATE TABLE IF NOT EXISTS `watchtower_items` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`    INT NOT NULL DEFAULT 0,
+    -- 'card.tickets', 'tickets.by_status', 'tickets.high_priority', …
+    `item_key`      VARCHAR(60) NOT NULL,
+    `is_visible`    TINYINT(1) NOT NULL DEFAULT 1,
+    -- 0 = follow the built-in default. Distinguishes "not configured" from
+    -- "configured to nothing", which a bare list of members cannot express —
+    -- and getting that wrong would make an empty selection silently mean "all".
+    `is_customised` TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_watchtower_items` (`analyst_id`, `item_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Which statuses / priorities feed one Watchtower item. Rows, not a flag on the
+-- status, so an item can hold a SET (the "high priority tickets" line is one
+-- number over several priorities) and so each member can carry its own severity
+-- later without a schema change.
+CREATE TABLE IF NOT EXISTS `watchtower_item_members` (
+    `id`          INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`  INT NOT NULL DEFAULT 0,
+    `item_key`    VARCHAR(60) NOT NULL,
+    -- 'ticket_status' | 'ticket_priority' | 'task_status' | 'mc_status'.
+    -- Deliberately no foreign key: the target table varies by row, so no FK
+    -- could cover it. Reads join the real table, which drops members whose
+    -- status has since been deleted rather than counting a ghost.
+    `entity_type` VARCHAR(30) NOT NULL,
+    `entity_id`   INT NOT NULL,
+    -- Reserved: 'red' / 'amber' per member, for when one line becomes several.
+    `severity`    VARCHAR(10) NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_watchtower_members` (`analyst_id`, `item_key`, `entity_type`, `entity_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `ticket_prefixes` (
@@ -190,6 +820,7 @@ CREATE TABLE IF NOT EXISTS `ticket_prefixes` (
     `description`   VARCHAR(100) NULL,
     `department_id` INT NULL,
     `is_default`    TINYINT(1) NULL DEFAULT 0,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_ticket_prefixes_prefix` (`prefix`),
     CONSTRAINT `fk_prefixes_departments` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
@@ -197,19 +828,117 @@ CREATE TABLE IF NOT EXISTS `ticket_prefixes` (
 
 CREATE TABLE IF NOT EXISTS `users` (
     `id`              INT NOT NULL AUTO_INCREMENT,
+    -- NULL because a directory (LDAP) user may genuinely have no mailbox —
+    -- warehouse and shop-floor staff are never given one (GitHub #47). The
+    -- UNIQUE index below still applies: MySQL permits many NULLs in a unique
+    -- index, so any number of mailbox-less people coexist while real addresses
+    -- stay unique.
+    --
+    -- ⚠️ An absent address MUST be stored as NULL, never ''. The analyst table
+    -- gets away with '' because analysts.email is not unique; here the second
+    -- empty string would collide.
     `email`           VARCHAR(255) NULL,
-    `username` VARCHAR(255) NULL,
-    `tenant_id` INT NULL,
+    -- What a directory user types to sign in when they have no email address.
+    -- NULL for every local/registered account.
+    `username`        VARCHAR(50) NULL,
     `display_name`    VARCHAR(255) NULL,
     `preferred_name`  VARCHAR(100) NULL,
     `password_hash`   VARCHAR(255) NULL,
     `totp_secret`     VARCHAR(500) NULL,
     `totp_enabled`    TINYINT(1) NOT NULL DEFAULT 0,
+    -- The portal twin of the analyst MFA throttle: the portal offers the same
+    -- second factor, so it had the same session-scoped counter and the same hole.
+    -- See includes/mfa_throttle.php.
+    `mfa_failed_count` INT NOT NULL DEFAULT 0,
+    `mfa_locked_until` DATETIME NULL,
     `auth_provider_id` INT NULL,
+    -- The portal user's chosen colour palette ('default' | 'dark'), matching the
+    -- ids in Theme::THEMES. NULL = follow the install default. Analysts keep
+    -- theirs in `user_preferences` (keyed by analyst_id), which portal users
+    -- can't use — hence a column here rather than a row there.
+    `theme_preference` VARCHAR(32) NULL,
+    -- The company this requester belongs to. NULL = unknown, and a ticket they
+    -- raise lands in triage for an analyst to route — the same meaning NULL has
+    -- on `tickets`. Set explicitly (admin, or pre-filled from the email domain
+    -- at registration); deliberately NOT re-derived at ticket time, so editing
+    -- a company's domains never silently re-files an existing person.
+    `tenant_id`       INT NULL,
+    `cost_centre_id`  INT NULL,   -- GH #160: the cost centre this person is charged to (fk added by db_verify)
     `created_at`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- ---------------------------------------------------------------------
+    -- The person, as opposed to the login (directory sync slice 1).
+    --
+    -- Everything above this line describes how somebody authenticates. These
+    -- describe who they are, which is what an asset register, an approval chain
+    -- and a service desk actually need. They are filled in by hand today and by
+    -- a directory sync later, so none of them is required.
+    -- ---------------------------------------------------------------------
+
+    -- Has this person left? NEVER delete somebody who has: assets, tickets and
+    -- handover documents all hang off users.id, and deleting the row takes the
+    -- history of who had what with it. Defaults to 1 so every existing row —
+    -- and every future self-registration — is active without a migration step.
+    `is_active`       TINYINT(1) NOT NULL DEFAULT 1,
+    -- When they were deactivated, so "who left this month, and what are they
+    -- still holding" is answerable. NULL while active.
+    `deactivated_datetime` DATETIME NULL,
+
+    `job_title`       VARCHAR(150) NULL,
+    `department`      VARCHAR(150) NULL,
+    -- Where they sit. Worth more than it looks: the ticket asset-picker searches
+    -- on an asset's location, and almost nobody fills that in by hand. A
+    -- directory usually knows (physicalDeliveryOfficeName) and never forgets.
+    `office`          VARCHAR(150) NULL,
+    `phone`           VARCHAR(50) NULL,
+    `mobile`          VARCHAR(50) NULL,
+    -- Payroll/HR number. The join key when somebody reconciles against a system
+    -- that has never heard of an email address.
+    `employee_id`     VARCHAR(64) NULL,
+    -- Self-referencing: this person's manager, as another row in this table.
+    -- Wanted before sync existed — catalogue-request approvals need a chain to
+    -- route along, and a directory hands you the org chart for free.
+    `manager_id`      INT NULL,
+
+    -- What the DIRECTORY calls them, which is not the same fact as what they
+    -- type into the portal. sAMAccountName is unique only within one directory,
+    -- while `username` above is unique across the whole install — so two
+    -- companies can each legitimately have a `smithj`. Keeping them apart means
+    -- sync stores the real directory name faithfully and never has to mangle it;
+    -- `username` is only populated for people who actually sign in, which most
+    -- mailbox-less asset holders never do.
+    `directory_username` VARCHAR(255) NULL,
+    -- Is this record maintained by a directory? Deliberately explicit rather
+    -- than inferred from auth_provider_id: an account can be pinned to a
+    -- provider for SIGN-IN without being owned by a sync, and the difference
+    -- decides whether a field is editable in the UI.
+    `is_managed`      TINYINT(1) NOT NULL DEFAULT 0,
+    -- Last time a sync actually saw this person in the source. The basis for
+    -- "missing for N runs" — a single absence is noise, three is a fact.
+    `last_seen_in_source` DATETIME NULL,
+    -- How many CONSECUTIVE sync runs have failed to find this person. Missing
+    -- once is noise -- a slow directory, a filter being edited, a replica that
+    -- had not caught up. Missing repeatedly is a fact. Nobody is deactivated
+    -- until this passes the provider's threshold, and any sighting resets it.
+    `sync_missed_count` INT NOT NULL DEFAULT 0,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_users_email` (`email`),
+    -- Same rationale as the email index: UNIQUE so two directory users can't
+    -- share a sign-in name, nullable so the many local accounts that have no
+    -- username don't fight over a single NULL.
     UNIQUE KEY `uq_users_username` (`username`),
-    UNIQUE KEY `uq_users_email` (`email`)
+    -- Per PROVIDER, not global — that is the whole point of the column. Two
+    -- directories may each contain a `smithj`; the same directory may not.
+    UNIQUE KEY `uq_users_dir_username` (`auth_provider_id`, `directory_username`),
+    KEY `idx_users_tenant` (`tenant_id`),
+    KEY `idx_users_cost_centre` (`cost_centre_id`),
+    KEY `idx_users_manager` (`manager_id`),
+    KEY `idx_users_active` (`is_active`),
+    KEY `idx_users_department` (`department`),
+    -- SET NULL, not CASCADE: deleting a manager must never delete their reports.
+    CONSTRAINT `fk_users_manager` FOREIGN KEY (`manager_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Links a self-service requester to their identity at a given provider (the IdP
@@ -222,11 +951,65 @@ CREATE TABLE IF NOT EXISTS `user_sso_identities` (
     `email`               VARCHAR(255) NULL,
     `linked_datetime`     DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `last_login_datetime` DATETIME NULL,
+    -- WHERE the record lives in the source, as opposed to what the source calls
+    -- them (`subject`): an LDAP distinguished name, or the URL of a CardDAV
+    -- .vcf. Required for CardDAV write-back, which would otherwise have to
+    -- re-fetch a whole address book to locate one contact's card.
+    `source_ref`          VARCHAR(1000) NULL,
+    -- The source's version marker for that record (a CardDAV ETag). Sent back as
+    -- If-Match on a write so the server refuses rather than overwrites when the
+    -- card has changed since we read it. NULL for LDAP and OIDC.
+    `source_etag`         VARCHAR(255) NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_user_sso_provider_subject` (`provider_id`, `subject`),
     UNIQUE KEY `uq_user_sso_provider_user` (`provider_id`, `user_id`),
+    KEY `idx_user_sso_source_ref` (`provider_id`, `source_ref`(64)),
     CONSTRAINT `fk_user_sso_identity_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_user_sso_identity_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Pending self-service registrations awaiting email confirmation. A row holds
+-- the *pending* password hash; the users row's password is only set once the
+-- emailed token is confirmed, so registering an email you don't control can
+-- never take over an existing passwordless account. Token stored as a SHA-256
+-- hash (the raw token only ever lives in the email link).
+CREATE TABLE IF NOT EXISTS `user_verification_tokens` (
+    `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `email`         VARCHAR(255) NOT NULL,
+    `password_hash` VARCHAR(255) NOT NULL,
+    `display_name`  VARCHAR(255) NULL,
+    `token_hash`    CHAR(64) NOT NULL,
+    `expires_at`    DATETIME NOT NULL,
+    `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_uvt_token` (`token_hash`),
+    KEY `ix_uvt_email` (`email`),
+    KEY `ix_uvt_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Password reset for SELF-SERVICE PORTAL users (GH #134).
+--
+-- Deliberately a SEPARATE table from `password_reset_tokens`, which is the
+-- analyst one and is hard-wired to `analyst_id`. Widening that table would have
+-- meant a nullable `analyst_id` and an "exactly one of two columns" rule that
+-- nothing enforces - in the one part of the product where a mistake hands out
+-- somebody else's account. Two tables cannot confuse a portal user with an
+-- analyst, so they do not.
+CREATE TABLE IF NOT EXISTS `user_password_reset_tokens` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id`    INT NOT NULL,
+    `token_hash` CHAR(64) NOT NULL,
+    `expires_at` DATETIME NOT NULL,
+    `used`       TINYINT(1) NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- NOT a performance index: it is what stops the same token existing twice.
+    -- (This note used to sit in includes/db_verify_indexes.php, which is
+    -- GENERATED from this file — so it was deleted the first time anybody
+    -- regenerated it. Index rationale belongs here, where it survives.)
+    UNIQUE KEY `uq_uprt_token` (`token_hash`),
+    KEY `ix_uprt_user` (`user_id`),
+    KEY `ix_uprt_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- users.auth_provider_id => the IdP a requester is assigned to (NULL = local
@@ -387,6 +1170,123 @@ CREATE TABLE IF NOT EXISTS `sla_cron_runs` (
     KEY `idx_sla_cron_ip_started` (`client_ip`, `started_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Background job health (#182). One row per run of ANY background job, written by
+-- includes/job_runs.php and read by includes/job_health.php. trigger_kind says who
+-- started it: cron (command line), web (its token address), page (run in passing by
+-- a page load) or manual (Run now) - only cron and web prove the SCHEDULE is alive.
+-- outcome: running | ok | partial | failed | skipped. Skipped runs did no work and
+-- are never read when deciding whether a job is failing. Kept 13 months by default
+-- (job_runs_retention_months) so #181's evidence report can read them; skipped, 30 days.
+CREATE TABLE IF NOT EXISTS `job_runs` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `job_key`           VARCHAR(40) NOT NULL,
+    `trigger_kind`      VARCHAR(10) NOT NULL,
+    `outcome`           VARCHAR(10) NOT NULL DEFAULT 'running',
+    `started_datetime`  DATETIME NOT NULL,
+    `finished_datetime` DATETIME NULL,
+    `duration_ms`       INT NULL,
+    `counts_json`       TEXT NULL,
+    `summary`           VARCHAR(500) NULL,
+    `analyst_id`        INT NULL,                -- who pressed Run now, or whose page load ran it
+    PRIMARY KEY (`id`),
+    KEY `idx_job_runs_job` (`job_key`, `outcome`, `started_datetime`),
+    KEY `idx_job_runs_started` (`started_datetime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One row per source a run worked through (a tracker connection, a directory, a
+-- server, a part of a job), so one failing source makes the run PARTIAL and is
+-- named. A source is failing until a later run processes THAT source successfully.
+CREATE TABLE IF NOT EXISTS `job_run_sources` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `run_id`           INT NOT NULL,
+    `job_key`          VARCHAR(40) NOT NULL,
+    `source_key`       VARCHAR(80) NOT NULL,
+    `source_label`     VARCHAR(190) NULL,
+    `ok`               TINYINT(1) NOT NULL DEFAULT 1,
+    `message`          VARCHAR(500) NULL,
+    `created_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_job_run_sources_run` (`run_id`),
+    KEY `idx_job_run_sources_src` (`job_key`, `source_key`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The built-in scheduler (#233): when cron/run.php should next start each job.
+-- One row per key of jobRegistry(), added by run.php itself the first time it sees
+-- a job, so a job new in a release runs with no change on the server.
+-- mode: interval (every interval_minutes) | daily (at at_time, HH:MM in the install's
+-- timezone) | off. next_due_at is UTC. A job is claimed by ONE atomic UPDATE that
+-- moves next_due_at on - never a SELECT then an UPDATE - so two dispatchers started
+-- in the same minute cannot both start it.
+CREATE TABLE IF NOT EXISTS `job_schedules` (
+    `job_key`          VARCHAR(40) NOT NULL,
+    `mode`             VARCHAR(10) NOT NULL DEFAULT 'interval',
+    `interval_minutes` INT NULL,
+    `at_time`          CHAR(5) NULL,
+    `next_due_at`      DATETIME NULL,
+    `last_claimed_at`  DATETIME NULL,
+    `updated_by`       INT NULL,                -- the analyst who last changed the schedule
+    `updated_datetime` DATETIME NULL,
+    PRIMARY KEY (`job_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- Ticket numbering (GH discussion #71).
+--
+-- The format an install issues is configurable, so two things have to be true
+-- forever: a number must never be issued twice, and a number that has EVER been
+-- issued must keep resolving to its ticket.
+-- ============================================================================
+
+-- One row per sequence. Which sequences exist depends on the settings: one
+-- globally, or one per ticket type, or per company, and optionally a fresh one
+-- each year or month.
+--
+-- 🔑 The reset period is part of the KEY rather than a stored date. A yearly
+-- reset is simply a different counter each year, so nothing has to notice
+-- midnight on 31 December and no job has to zero anything.
+--
+-- ⚠️ No AUTO_INCREMENT id, deliberately: `counter_key` is the primary key so
+-- the INSERT … ON DUPLICATE KEY UPDATE … LAST_INSERT_ID(next_value + 1) trick
+-- reads and increments in ONE statement. A SELECT followed by an UPDATE would
+-- race, and the collision would only show up under load.
+CREATE TABLE IF NOT EXISTS `ticket_number_counters` (
+    `counter_key`       VARCHAR(64) NOT NULL,
+    `next_value`        BIGINT NOT NULL DEFAULT 1,
+    `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`counter_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every number a ticket has ever had, other than its current one.
+--
+-- 🔴 THIS IS WHAT MAKES RENUMBERING SAFE, and it is not optional. Every
+-- notification FreeITSM has ever sent carries [SDREF:<number>] in its subject,
+-- and those emails sit in customers' inboxes forever. Renumber a ticket without
+-- this and a reply to any older email matches nothing: it silently becomes a
+-- new ticket. No error, no warning, across the whole estate at once.
+--
+-- Exactly the same principle the ticket MERGE code already relies on — an old
+-- identifier keeps working because the emails quoting it do.
+--
+-- ⚠️ A retired number is also never handed to a DIFFERENT ticket: the uniqueness
+-- check reads this table as well as `tickets`. Reusing one would route somebody's
+-- reply onto a stranger's ticket, which is worse than not matching at all.
+CREATE TABLE IF NOT EXISTS `ticket_number_history` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`         INT NOT NULL,
+    `ticket_number`     VARCHAR(50) NOT NULL,
+    -- Why it changed: 'renumber' today; a future migration tool can say its own.
+    `reason`            VARCHAR(30) NOT NULL DEFAULT 'renumber',
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- The lookup that runs on every inbound email, and the guarantee that one
+    -- retired number cannot be recorded twice.
+    UNIQUE KEY `uq_tnh_number` (`ticket_number`),
+    KEY `ix_tnh_ticket` (`ticket_id`)
+    -- fk_tnh_ticket (ticket_id -> tickets.id, CASCADE) is added in db_verify.php:
+    -- the `tickets` table is defined LATER in this file, so the FK cannot be
+    -- inline here. Same reason as fk_assets_supplier.
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `tickets` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `tenant_id`             INT NULL,
@@ -396,6 +1296,46 @@ CREATE TABLE IF NOT EXISTS `tickets` (
     `priority_id`           INT NULL,
     `department_id`         INT NULL,
     `ticket_type_id`        INT NULL,
+    -- Ticket classification (#1540). Three different questions, three columns:
+    --   category_id            what it was REPORTED as, set when the ticket is raised
+    --   closure_category_id    what it TURNED OUT to be, set when it closes
+    --   resolution_code_id     HOW it ended ("Training given" is not a kind of thing)
+    -- Report on the first to see what users think is wrong, the second to see what
+    -- actually is. All three are NULL on every existing ticket and NOTHING is
+    -- backfilled — NULL means "never categorised", which readers show as
+    -- "Not categorised" rather than guessing.
+    -- ⚠️ closure_category_id points at the SAME tree as category_id, and is
+    -- pre-filled from it at close so the analyst confirms rather than re-picks.
+    -- 🔑 Each is the LEAF category id ONLY. The parent is DERIVED, never stored.
+    `category_id`           INT NULL,
+    `closure_category_id`   INT NULL,
+    `resolution_code_id`    INT NULL,
+    -- Which TEAM owns this ticket (#1566). NULL = none, which is every existing
+    -- ticket and every install that does not use teams.
+    --
+    -- 🔑 A DIFFERENT FACT FROM `assigned_analyst_id`, and that is the only thing
+    -- that makes a third assignment-ish column safe here:
+    --
+    --     assigned_team_id     WHICH QUEUE owns it   (Infrastructure)
+    --     assigned_analyst_id  WHO is doing it       (Dave)
+    --     owner_id             whose CALENDAR the scheduled work appears in
+    --
+    -- ⚠️ `tickets` already stores the assignee twice — assigned_analyst_id and
+    -- owner_id — and on a real installation 93 of 110 rows disagree with
+    -- themselves. That happened because those two mean the SAME thing, so
+    -- nothing kept them honest. This one survives only while it keeps meaning
+    -- something the others do not.
+    --
+    -- The rules, enforced in includes/services/tickets.php:
+    --   * setting an analyst NEVER sets or clears the team, and vice versa —
+    --     no side-effect writes, which is exactly how owner_id drifted;
+    --   * clearing the analyst LEAVES the team, so a ticket falls back into the
+    --     queue rather than into the void when somebody goes on holiday.
+    --
+    -- 🔴 ROUTING, NOT PERMISSION. This must never affect who can SEE a ticket —
+    -- that stays with department_teams. Escalating a ticket must not hide it
+    -- from somebody who could read it a moment earlier.
+    `assigned_team_id`      INT NULL,
     `assigned_analyst_id`   INT NULL,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
@@ -406,41 +1346,351 @@ CREATE TABLE IF NOT EXISTS `tickets` (
     `user_id`               INT NULL,
     `owner_id`              INT NULL,
     `work_start_datetime`   DATETIME NULL,
+    -- When the scheduled work is expected to finish. NULL on rows scheduled before
+    -- this existed, and on those a reader applies the one-hour default rather than
+    -- treating the row as broken — nothing is backfilled.
+    -- ⚠️ The UI asks for a DURATION, never an end time: an end that precedes its
+    -- start is then not expressible, so there is no such error to validate or
+    -- report. This column is the computed result, stored so consumers (the
+    -- calendar, and Outlook via Graph) read two datetimes and do not care how it
+    -- was entered. Mirrors `changes`, which has carried both since it shipped.
+    `work_end_datetime`     DATETIME NULL,
+    -- "Sometime on Tuesday" rather than a slot. Same convention as
+    -- calendar_events.all_day: the DATE part is what matters, and a consumer that
+    -- ignores this flag still sees a sane 00:00–23:59 block.
+    `work_all_day`          TINYINT(1) NOT NULL DEFAULT 0,
     `deleted_datetime`      DATETIME NULL,
     `deleted_by`            INT NULL,
     -- Messaging channels (WhatsApp etc.): when the customer last messaged in. Drives
     -- the provider 24h service window — outside it, only template replies are allowed.
     `last_inbound_at`       DATETIME NULL,
+    -- Set when this ticket has been merged AWAY into another. NULL = live.
+    -- The banner, search redirect and inbound-email redirect key off this column,
+    -- never off a status name (statuses are user-configurable).
+    `merged_into_id`        INT NULL,
+    -- Snooze (#933). "Asleep" is `snoozed_until > UTC_TIMESTAMP()` and nothing else,
+    -- so a ticket returns to the queue on time with no cron involved; a past value
+    -- just means it has already woken.
+    `snoozed_until`         DATETIME NULL,
+    `snoozed_at`            DATETIME NULL,
+    `snoozed_by`            INT NULL,
+    `snooze_reason`         VARCHAR(255) NULL,
+    -- 'normal' or 'confidential' (discussion #62); see includes/ticket_sensitivity.php.
+    `sensitivity`           VARCHAR(20) NOT NULL DEFAULT 'normal',
+    `is_workspace`          TINYINT NOT NULL DEFAULT 0,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_tickets_number` (`ticket_number`),
+    KEY `ix_tickets_merged_into_id` (`merged_into_id`),
+    KEY `ix_tickets_snoozed_until` (`snoozed_until`),
     KEY `ix_tickets_status_id` (`status_id`),
     KEY `ix_tickets_priority_id` (`priority_id`),
     KEY `ix_tickets_assigned_analyst_id` (`assigned_analyst_id`),
+    KEY `ix_tickets_assigned_team_id` (`assigned_team_id`),
     KEY `ix_tickets_department_id` (`department_id`),
+    KEY `ix_tickets_category_id` (`category_id`),
+    KEY `ix_tickets_closure_category_id` (`closure_category_id`),
+    KEY `ix_tickets_resolution_code_id` (`resolution_code_id`),
     KEY `ix_tickets_created_datetime` (`created_datetime`),
     KEY `ix_tickets_tenant_id` (`tenant_id`),
     KEY `ix_tickets_deleted_datetime` (`deleted_datetime`),
     CONSTRAINT `fk_tickets_analysts` FOREIGN KEY (`assigned_analyst_id`) REFERENCES `analysts` (`id`),
+    -- SET NULL, never CASCADE: deleting a team must not take its tickets with it.
+    -- The ticket returns to "no team", which is visible and fixable.
+    CONSTRAINT `fk_tickets_team` FOREIGN KEY (`assigned_team_id`) REFERENCES `teams` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tickets_departments` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`),
     CONSTRAINT `fk_tickets_origin` FOREIGN KEY (`origin_id`) REFERENCES `ticket_origins` (`id`),
     CONSTRAINT `fk_tickets_ticket_types` FOREIGN KEY (`ticket_type_id`) REFERENCES `ticket_types` (`id`),
+    -- Ticket classification (#1540). No ON DELETE action, so MySQL RESTRICTs:
+    -- a category or resolution code that any ticket still references cannot be
+    -- deleted at all. That is the point — a closed ticket must keep the label it
+    -- was closed with, so lists are RETIRED (is_active = 0), not removed. The
+    -- settings screen checks first and explains; this constraint is the backstop.
+    CONSTRAINT `fk_tickets_category` FOREIGN KEY (`category_id`) REFERENCES `ticket_categories` (`id`),
+    CONSTRAINT `fk_tickets_closure_category` FOREIGN KEY (`closure_category_id`) REFERENCES `ticket_categories` (`id`),
+    CONSTRAINT `fk_tickets_resolution_code` FOREIGN KEY (`resolution_code_id`) REFERENCES `ticket_resolution_codes` (`id`),
     CONSTRAINT `fk_tickets_users` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
     CONSTRAINT `fk_tickets_status` FOREIGN KEY (`status_id`) REFERENCES `ticket_statuses` (`id`),
     CONSTRAINT `fk_tickets_priority` FOREIGN KEY (`priority_id`) REFERENCES `ticket_priorities` (`id`),
-    CONSTRAINT `fk_tickets_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`)
+    CONSTRAINT `fk_tickets_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`),
+    -- Self-reference. ON DELETE SET NULL, not CASCADE: hard-deleting the surviving
+    -- ticket must never take the merged-away ones with it — they would be the only
+    -- remaining record of the conversation.
+    CONSTRAINT `fk_tickets_merged_into` FOREIGN KEY (`merged_into_id`) REFERENCES `tickets` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Custom ticket fields (discussion #179): Tickets -> Settings -> Custom fields.
+-- 🔑 A field is defined ONCE and linked to the ticket types that use it (or to
+-- every type), so "Start date" on a New Starter and on a Contractor is one field
+-- one report can span. Values run on the same engine as custom asset fields
+-- (includes/typed_fields.php).
+CREATE TABLE IF NOT EXISTS `ticket_fields` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    -- Stable machine key, used by the REST API. NEVER changes; the label may.
+    `field_key`          VARCHAR(100) NOT NULL,
+    `label`              VARCHAR(150) NOT NULL,
+    -- One of TypedFields::TYPES, except 'ref'. ⚠️ Cannot change once values
+    -- exist; text/long text and date/time are MODES in `config` for that reason.
+    `field_type`         VARCHAR(20) NOT NULL,
+    `config`             LONGTEXT NULL,
+    `help_text`          VARCHAR(500) NULL,
+    -- 1 = on every ticket type; 0 = only the types in ticket_field_types.
+    `all_types`          TINYINT(1) NOT NULL DEFAULT 1,
+    -- When the field must hold a value. Logging = the New ticket form, the portal
+    -- (fields the requester is asked) and the REST API - the channels that can
+    -- ask. Closing = the Mandatory fields rule, whatever channel raised it.
+    `required_on_create` TINYINT(1) NOT NULL DEFAULT 0,
+    `required_on_close`  TINYINT(1) NOT NULL DEFAULT 0,
+    -- Shown to the requester on the self-service portal's New ticket form.
+    `ask_requester`      TINYINT(1) NOT NULL DEFAULT 0,
+    `display_order`      INT NOT NULL DEFAULT 0,
+    -- NULL = shared by every company; set = a company's own field.
+    `tenant_id`          INT NULL,
+    -- ⚠️ SOFT delete, never hard: ticket_field_values.field_id points here.
+    `is_deleted`         TINYINT(1) NOT NULL DEFAULT 0,
+    `created_datetime`   DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- ⚠️ Does NOT dedupe shared (NULL tenant) keys; that is enforced in code.
+    UNIQUE KEY `uq_ticket_fields_tenant_key` (`tenant_id`, `field_key`),
+    CONSTRAINT `fk_ticket_fields_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The choices of a dropdown field. The answer stores the option's TEXT.
+CREATE TABLE IF NOT EXISTS `ticket_field_options` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `field_id`          INT NOT NULL,
+    `option_value`      VARCHAR(255) NOT NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_ticket_field_options_field` (`field_id`),
+    CONSTRAINT `fk_ticket_field_options_field` FOREIGN KEY (`field_id`) REFERENCES `ticket_fields` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Which ticket types a field is on, when it is not on all of them.
+CREATE TABLE IF NOT EXISTS `ticket_field_types` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `field_id`          INT NOT NULL,
+    `ticket_type_id`    INT NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ticket_field_type` (`field_id`, `ticket_type_id`),
+    KEY `ix_tft_type` (`ticket_type_id`),
+    CONSTRAINT `fk_tft_field` FOREIGN KEY (`field_id`) REFERENCES `ticket_fields` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_tft_type` FOREIGN KEY (`ticket_type_id`) REFERENCES `ticket_types` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The answers. 🔑 No row = not answered. Changing a ticket's type HIDES the
+-- answers of fields the new type does not have, and never deletes them, so
+-- changing it back brings them back.
+CREATE TABLE IF NOT EXISTS `ticket_field_values` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`     INT NOT NULL,
+    `field_id`      INT NOT NULL,
+    -- Always 0; reserved so multi-value fields need no index change later.
+    `seq`           INT NOT NULL DEFAULT 0,
+    `value_text`    TEXT NULL,
+    `value_number`  DECIMAL(20,4) NULL,
+    `value_date`    DATETIME NULL,
+    `value_boolean` TINYINT(1) NULL,
+    `value_ref_id`  INT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ticket_field_value` (`ticket_id`, `field_id`, `seq`),
+    KEY `ix_tfv_field_text` (`field_id`, `value_text`(64)),
+    KEY `ix_tfv_field_number` (`field_id`, `value_number`),
+    KEY `ix_tfv_field_date` (`field_id`, `value_date`),
+    CONSTRAINT `fk_tfv_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    -- RESTRICT: a field with answers can only ever be retired, never deleted.
+    CONSTRAINT `fk_tfv_field` FOREIGN KEY (`field_id`) REFERENCES `ticket_fields` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Collision detection (#934). Who has which ticket open right now, so two
+-- analysts don't answer the same customer twice. Ephemeral: one row per
+-- (ticket, analyst), refreshed by a heartbeat, ignored once `last_seen` goes
+-- stale, and purged opportunistically. Nothing here is an audit trail — rows
+-- are overwritten and deleted freely, so CASCADE on both parents is right.
+-- Must follow `tickets` and `analysts`: it points at both.
+CREATE TABLE IF NOT EXISTS `ticket_presence` (
+    `id`           INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`    INT NOT NULL,
+    `analyst_id`   INT NOT NULL,
+    `last_seen`    DATETIME NULL,
+    `is_composing` TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    -- One row per person per ticket: the heartbeat is an upsert onto this key,
+    -- so a long-open ticket can never accumulate rows.
+    UNIQUE KEY `uq_ticket_presence` (`ticket_id`, `analyst_id`),
+    KEY `ix_ticket_presence_last_seen` (`last_seen`),
+    CONSTRAINT `fk_ticket_presence_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_presence_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One split: messages moved OUT of a ticket into a new one. The mirror of
+-- ticket_merges. Note the asymmetry: a split creates a reference nobody has ever
+-- seen, so unlike a merge there is nothing to redirect and both tickets stay live.
+-- message_count is denormalised because it cannot be recomputed once those messages
+-- move again.
+CREATE TABLE IF NOT EXISTS `ticket_splits` (
+    `id`                   INT NOT NULL AUTO_INCREMENT,
+    `source_ticket_id`     INT NOT NULL,
+    `source_ticket_number` VARCHAR(50) NULL,
+    `new_ticket_id`        INT NOT NULL,
+    `new_ticket_number`    VARCHAR(50) NULL,
+    `message_count`        INT NOT NULL DEFAULT 0,
+    -- EXACTLY which messages moved (JSON array of email ids). A count alone cannot be
+    -- undone — you would have to guess which rows to send back. Text rather than a
+    -- child table: read whole, never joined, and an FK would CASCADE the record away
+    -- exactly when you most want to know what happened.
+    `moved_email_ids`      TEXT NULL,
+    -- The marker left in the original thread, so an undo can remove it.
+    `marker_email_id`      INT NULL,
+    `undone_datetime`      DATETIME NULL,
+    `undone_by_id`         INT NULL,
+    `split_by_id`          INT NULL,
+    `split_datetime`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_ticket_splits_source` (`source_ticket_id`),
+    KEY `ix_ticket_splits_new` (`new_ticket_id`),
+    CONSTRAINT `fk_ticket_splits_source` FOREIGN KEY (`source_ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_splits_new` FOREIGN KEY (`new_ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_splits_analyst` FOREIGN KEY (`split_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One merge: which ticket was folded away, and into what. Never deleted — this is
+-- what answers "whatever happened to ABC?" and what redirects inbound email still
+-- quoting the old [SDREF:ABC-...] from notifications sent before the merge.
+-- source_ticket_number is a deliberate snapshot so the log reads without a join.
+-- reference_mode/originals_mode record the policy AS IT WAS at the time.
+CREATE TABLE IF NOT EXISTS `ticket_merges` (
+    `id`                   INT NOT NULL AUTO_INCREMENT,
+    `source_ticket_id`     INT NOT NULL,
+    `source_ticket_number` VARCHAR(50) NULL,
+    `target_ticket_id`     INT NOT NULL,
+    `reference_mode`       VARCHAR(20) NOT NULL DEFAULT 'survivor',
+    `originals_mode`       VARCHAR(20) NOT NULL DEFAULT 'thread',
+    -- Which messages moved (JSON array of email ids), so unmerge becomes possible.
+    -- Merges done before this column existed cannot be reconstructed — which is
+    -- exactly why it is being added before there are many of them.
+    `moved_email_ids`      TEXT NULL,
+    -- Everything else the merge moved, {table: [row ids]}. Messages alone are not a
+    -- merge: without this an unmerge strands notes and logged time on the survivor.
+    `moved_related`        TEXT NULL,
+    -- The system message carrying the HTML snapshot (created, not moved), so an
+    -- unmerge can delete it and its file.
+    `snapshot_email_id`    INT NULL,
+    -- What the source looked like before the merge closed it. Restoring to "Open"
+    -- would be a guess, and wrong for anything already resolved when it was merged.
+    `source_prev_status_id`       INT NULL,
+    `source_prev_closed_datetime` DATETIME NULL,
+    `undone_datetime`      DATETIME NULL,
+    `undone_by_id`         INT NULL,
+    `merged_by_id`         INT NULL,
+    `merged_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_ticket_merges_source` (`source_ticket_id`),
+    KEY `ix_ticket_merges_target` (`target_ticket_id`),
+    CONSTRAINT `fk_ticket_merges_source` FOREIGN KEY (`source_ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_merges_target` FOREIGN KEY (`target_ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_merges_analyst` FOREIGN KEY (`merged_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ticket_ai_summaries: the AI-written summary of a ticket, kept as a HISTORY
+-- rather than one row that gets overwritten (discussion #104, idea 7).
+--
+-- Versioned deliberately. A summary is a machine's reading of somebody's
+-- conversation, and a later reading can be worse than an earlier one — a model
+-- changes, a prompt changes, a long thread pushes something out of scope. If
+-- the newest version were the only one, that loss would be silent and
+-- unrecoverable. So nothing is ever overwritten: a refresh writes version n+1
+-- and every earlier version stays readable.
+--
+-- last_email_id is the newest message the summary actually read. It is what
+-- makes "this summary is out of date" a FACT rather than a guess about
+-- timestamps, and it is how the optional auto-refresh knows how far behind it
+-- has fallen.
+--
+-- generated_by NULL means FreeITSM refreshed it by itself; an analyst id means
+-- somebody pressed the button.
+CREATE TABLE IF NOT EXISTS `ticket_ai_summaries` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`     INT NOT NULL,
+    -- 'summary' = the standing panel at the top of the ticket; 'read' = a
+    -- "read it for me" briefing. One table because they want the same three
+    -- things — a version history, a record of how much was read, and a way to
+    -- know the conversation has moved on since. Two tables would be two sets
+    -- of those rules, and they would drift.
+    `kind`          VARCHAR(16) NOT NULL DEFAULT 'summary',
+    -- Numbered per (ticket, kind), so a briefing and a summary count separately.
+    `version`       INT NOT NULL DEFAULT 1,
+    `summary`       MEDIUMTEXT NOT NULL,
+    `provider`      VARCHAR(32) NULL,
+    `model`         VARCHAR(120) NULL,
+    -- What it was written from, so the panel can say "read 14 messages" and mean it.
+    `message_count` INT NOT NULL DEFAULT 0,
+    `note_count`    INT NOT NULL DEFAULT 0,
+    `last_email_id` INT NULL,
+    `generated_by`  INT NULL,
+    -- Whether the model ran out of room before it finished. A summary cut off
+    -- mid-sentence is the worst failure this feature has: it reads almost like
+    -- a complete one. Recorded so the panel can say so out loud rather than
+    -- presenting half an answer as the whole of one.
+    `truncated`     TINYINT(1) NOT NULL DEFAULT 0,
+    `tokens_in`     INT NOT NULL DEFAULT 0,
+    `tokens_out`    INT NOT NULL DEFAULT 0,
+    `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_ticket_ai_summaries_ticket` (`ticket_id`, `kind`, `version`),
+    CONSTRAINT `fk_ticket_ai_summaries_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_ai_summaries_analyst` FOREIGN KEY (`generated_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `ticket_audit` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `ticket_id`         INT NOT NULL,
-    `analyst_id`        INT NOT NULL,
+    -- NULL = nobody did this; the workflow engine did (GH #120). The
+    -- `add_ticket_note` action has always written NULL here on purpose, to mark
+    -- an entry as automation rather than a person, but the column was NOT NULL
+    -- — so the action could never once have succeeded on any installation.
+    -- Both readers already LEFT JOIN analysts, and a NULL never violates the
+    -- foreign key below, so relaxing this is safe in the way tightening is not.
+    `analyst_id`        INT NULL,
     `field_name`        VARCHAR(100) NOT NULL,
     `old_value`         VARCHAR(500) NULL,
     `new_value`         VARCHAR(500) NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_ticket_audit_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`),
     CONSTRAINT `fk_ticket_audit_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Management lines (discussion #62, step 3): whose tickets a portal user may see
+-- as a manager. Exclusions always win. See includes/managers.php.
+CREATE TABLE IF NOT EXISTS `manager_grants` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `manager_user_id`       INT NOT NULL,
+    `grant_type`            VARCHAR(20) NOT NULL,          -- everyone | user | group | department | reports
+    `target_id`             INT NOT NULL DEFAULT 0,        -- users.id or knowledge_user_groups.id
+    `target_value`          VARCHAR(150) NOT NULL DEFAULT '', -- department name, or 'all' for reports
+    `is_exclusion`          TINYINT(1) NOT NULL DEFAULT 0,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_manager_grant` (`manager_user_id`, `grant_type`, `target_id`, `target_value`, `is_exclusion`),
+    KEY `ix_manager_grants_manager` (`manager_user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who has looked at a ticket (discussion #62, step 2): one row per viewer per UTC
+-- day. Separate from ticket_audit, whose actor can only be an analyst.
+CREATE TABLE IF NOT EXISTS `ticket_views` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`             INT NOT NULL,
+    `viewer_type`           VARCHAR(10) NOT NULL,   -- 'analyst' or 'user' (portal)
+    `viewer_id`             INT NOT NULL,
+    `view_date`             DATE NOT NULL,
+    `first_viewed_datetime` DATETIME NOT NULL,
+    `last_viewed_datetime`  DATETIME NOT NULL,
+    `view_count`            INT NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ticket_views_day` (`ticket_id`, `viewer_type`, `viewer_id`, `view_date`),
+    KEY `ix_ticket_views_ticket` (`ticket_id`, `last_viewed_datetime`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `ticket_notes` (
@@ -450,6 +1700,7 @@ CREATE TABLE IF NOT EXISTS `ticket_notes` (
     `note_text`         LONGTEXT NOT NULL,
     `is_internal`       TINYINT(1) NULL DEFAULT 1,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_notes_tickets` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`),
     CONSTRAINT `fk_notes_analysts` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
@@ -483,6 +1734,12 @@ CREATE TABLE IF NOT EXISTS `tenants` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(150) NOT NULL,
     `slug`              VARCHAR(100) NULL,
+    -- Short code standing in for this company in a ticket number ({COMPANY}).
+    -- NULL means one is derived from the name.
+    `ticket_code`       VARCHAR(12) NULL,
+    -- The company's own logo (System -> Companies). Shown on the Files desktop for
+    -- people working in this company; NULL falls back to the organisation logo.
+    `logo_path`         VARCHAR(255) NULL,
     `is_default`        TINYINT(1) NOT NULL DEFAULT 0,
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -565,6 +1822,20 @@ CREATE TABLE IF NOT EXISTS `analyst_tenant_access` (
     CONSTRAINT `fk_ata_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Which companies a TEAM grants its members (only consulted when the team is
+-- NOT flagged can_access_all_tenants). Team grants are unioned with each
+-- member's own analyst_tenant_access — see getAccessibleTenantIds().
+CREATE TABLE IF NOT EXISTS `team_tenant_access` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `team_id`           INT NOT NULL,
+    `tenant_id`         INT NOT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_team_tenant` (`team_id`, `tenant_id`),
+    CONSTRAINT `fk_tta_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_tta_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ----------------------------------------------------------
 -- Email / Mailbox
 -- ----------------------------------------------------------
@@ -573,7 +1844,6 @@ CREATE TABLE IF NOT EXISTS `target_mailboxes` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `name`                  VARCHAR(100) NOT NULL,
     `provider`              VARCHAR(20) NOT NULL DEFAULT 'microsoft',
-    `provider_type`         VARCHAR(20) NOT NULL DEFAULT 'graph',
     `azure_tenant_id`       TEXT NOT NULL,
     `azure_client_id`       TEXT NOT NULL,
     `azure_client_secret`   TEXT NOT NULL,
@@ -582,19 +1852,20 @@ CREATE TABLE IF NOT EXISTS `target_mailboxes` (
     `imap_server`           TEXT NOT NULL,
     `imap_port`             INT NOT NULL DEFAULT 993,
     `imap_encryption`       VARCHAR(10) NOT NULL DEFAULT 'ssl',
-    `imap_host`             TEXT NULL,
+    -- Basic IMAP / SMTP mailboxes: username + password auth (no OAuth). Encrypted
+    -- columns are NULL on Microsoft/Google mailboxes.
     `imap_username`         TEXT NULL,
-    `imap_password_encrypted` TEXT NULL,
-    `imap_folder`           VARCHAR(100) NOT NULL DEFAULT 'INBOX',
-    `smtp_host`             TEXT NULL,
-    `smtp_port`             INT NOT NULL DEFAULT 587,
-    `smtp_encryption`       VARCHAR(10) NOT NULL DEFAULT 'tls',
+    `imap_password`         TEXT NULL,
+    `smtp_server`           TEXT NULL,
+    `smtp_port`             INT NULL DEFAULT 587,
+    `smtp_encryption`       VARCHAR(10) NULL DEFAULT 'tls',
+    -- Sending credentials, when they differ from the reading ones. Plenty of
+    -- providers issue a separate SMTP login, and a submission relay in front of
+    -- an internal mail server often wants its own. BOTH BLANK = use the IMAP
+    -- credentials, which is what every mailbox saved before these columns
+    -- existed does, so nothing had to be migrated.
     `smtp_username`         TEXT NULL,
-    `smtp_password_encrypted` TEXT NULL,
-    `smtp_from_address`     TEXT NULL,
-    `smtp_from_name`        VARCHAR(255) NULL,
-    `intake_enabled`        TINYINT(1) NOT NULL DEFAULT 1,
-    `outbound_enabled`      TINYINT(1) NOT NULL DEFAULT 1,
+    `smtp_password`         TEXT NULL,
     `target_mailbox`        TEXT NOT NULL,
     -- 'delegated' = OAuth sign-in (acts as the signed-in user, Graph /me);
     -- 'app_only'  = client-credentials (the app reads the specific /users/<target_mailbox>).
@@ -614,19 +1885,48 @@ CREATE TABLE IF NOT EXISTS `target_mailboxes` (
     `imported_folder`       VARCHAR(100) NULL,
     `is_active`             TINYINT(1) NOT NULL DEFAULT 1,
     `tenant_id`             INT NULL,
+    -- The origin stamped on tickets this mailbox opens (#79). An ID, not a name,
+    -- so renaming the origin can't break it. NULL = don't set one. Per mailbox
+    -- rather than a single global "Email", because a helpdesk address and a
+    -- monitoring alert address are genuinely different sources.
+    `default_origin_id`     INT NULL,
+    -- JSON array of mailbox-health warning keys the admin has acknowledged, so a
+    -- deliberate choice (no origin wanted, receive-only IMAP) stops nagging. Only
+    -- warnings can appear here; errors are never dismissible.
+    `health_dismissed`      TEXT NULL,
+    -- What the last check said when it did NOT work: the provider's own words,
+    -- so a mailbox that has stopped collecting can say why rather than just
+    -- going quiet. Cleared on the next clean check.
+    `last_error`            TEXT NULL,
+    `last_error_datetime`   DATETIME NULL,
     `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `last_checked_datetime` DATETIME NULL,
-    `last_checked_at`       DATETIME NULL,
+    -- 'confidential' = every ticket arriving here is confidential (#62).
+    `default_sensitivity`   VARCHAR(20) NOT NULL DEFAULT 'normal',
+    -- This mailbox's own rules for emails over the attachment size limits (#170):
+    -- JSON (includes/attachment_limits.php). NULL = the defaults in Tickets -> Settings.
+    `oversize_policy`       TEXT NULL,
     PRIMARY KEY (`id`),
     KEY `ix_target_mailboxes_tenant_id` (`tenant_id`),
-    CONSTRAINT `fk_target_mailboxes_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_target_mailboxes_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_target_mailboxes_origin` FOREIGN KEY (`default_origin_id`) REFERENCES `ticket_origins` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `emails` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `exchange_message_id`   VARCHAR(255) NULL,
     `subject`               VARCHAR(500) NULL,
-    `from_address`          VARCHAR(255) NOT NULL,
+    -- NULL = the sender genuinely has no email address. That happens when a
+    -- self-service requester signs in through a directory and was never given a
+    -- mailbox (GitHub #47 — warehouse and shop-floor staff). Every message that
+    -- ARRIVED by email necessarily has one; this is only ever NULL for messages
+    -- raised inside the portal.
+    --
+    -- Deliberately not a synthesised placeholder like `someone@company.local`:
+    -- a fake address is indistinguishable from a real one, so an analyst would
+    -- reply to it and the reply would bounce into nowhere. NULL is the truth and
+    -- the UI can say so. `from_name` is what identifies these people.
+    `from_address`          VARCHAR(255) NULL,
     `from_name`             VARCHAR(255) NULL,
     `to_recipients`         LONGTEXT NULL,
     `cc_recipients`         LONGTEXT NULL,
@@ -655,6 +1955,7 @@ CREATE TABLE IF NOT EXISTS `emails` (
     -- For channel messages: the messaging_channels row it belongs to (so an
     -- outbound reply knows which provider/number to send from). NULL for email.
     `channel_id`            INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_emails_analysts` FOREIGN KEY (`assigned_analyst_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_emails_departments` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`),
@@ -677,6 +1978,42 @@ CREATE TABLE IF NOT EXISTS `email_attachments` (
     CONSTRAINT `fk_email_attachments_email` FOREIGN KEY (`email_id`) REFERENCES `emails` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Text pulled out of an attachment, so it can be searched (discussion #53).
+--
+-- ⚠️ THIS TABLE IS THE DURABLE RECORD, NOT THE INDEX. `search_documents` holds a
+-- derived copy that can be rebuilt from here at any time; this holds the result
+-- of actually opening the file. The distinction is what stops a future change of
+-- search engine — or a corpus rebuild — from turning into a re-extraction of
+-- every document ever received, which for PDFs and OCR would be hours of work
+-- and, with an external extractor, a bill.
+--
+-- One row per attachment, keyed on the attachment itself, so re-indexing a busy
+-- ticket does not re-open its files. `status` is carried as a FACT and shown in
+-- the UI: a search that silently finds nothing because a file was never readable
+-- is worse than one that admits the file could not be read.
+--
+--   extracted    text was read in full
+--   truncated    read, but longer than the cap
+--   too_large    the file itself is over the size limit; never opened
+--   unsupported  no extractor handles this format (a PDF, until tier 2 exists)
+--   failed       an extractor tried and could not
+--   pending      queued for an extractor that runs off the request thread
+CREATE TABLE IF NOT EXISTS `attachment_text` (
+    `attachment_id`      INT NOT NULL,
+    `status`             VARCHAR(16) NOT NULL,
+    -- Which extractor produced it: 'builtin' for the dependency-free formats,
+    -- later the name of an external service. Kept so a tier-2 install can find
+    -- and redo everything the built-in tier could only mark unsupported.
+    `extractor`          VARCHAR(20) NULL,
+    `extracted_text`     LONGTEXT NULL,
+    `chars`              INT NOT NULL DEFAULT 0,
+    `extracted_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`attachment_id`),
+    KEY `ix_attachment_text_status` (`status`),
+    CONSTRAINT `fk_attachment_text_attachment` FOREIGN KEY (`attachment_id`)
+        REFERENCES `email_attachments` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ----------------------------------------------------------
 -- Messaging channels (WhatsApp etc.)
 -- ----------------------------------------------------------
@@ -693,6 +2030,9 @@ CREATE TABLE IF NOT EXISTS `messaging_channels` (
     `channel_type`          VARCHAR(20) NOT NULL DEFAULT 'whatsapp',
     `provider`              VARCHAR(20) NOT NULL DEFAULT 'twilio',
     `phone_number`          VARCHAR(40) NULL,
+    -- What this channel points at in the provider's own terms when that isn't a
+    -- phone number: for Slack the workspace (team) id. NULL on phone channels.
+    `channel_ref`           VARCHAR(190) NULL,
     `credentials`           LONGTEXT NULL,
     `verify_token`          VARCHAR(255) NULL,
     `ingress_mode`          VARCHAR(10) NOT NULL DEFAULT 'direct',
@@ -740,9 +2080,750 @@ CREATE TABLE IF NOT EXISTS `messaging_templates` (
     CONSTRAINT `fk_messaging_templates_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Which requester a chat belongs to, on ONE channel. Telegram identifies a chat
+-- by an opaque number rather than a phone number, so the first message from a
+-- chat gets a placeholder requester (the ticket is never held up), the bot asks
+-- once for the person's phone number, and if exactly one person in the
+-- channel's company has that number the chat is linked to them. Every later
+-- message from the chat then resolves straight to the same person.
+--
+-- Contributed in PR #159 and reworked at merge time (wiki:
+-- Telegram-Channel-Developer-Guide). 🔑 Keyed per CHANNEL, not per chat id: a
+-- Telegram chat id is the same on every bot, and company A's bot linking someone
+-- must not decide who they are on company B's bot. Deleting the channel or the
+-- person removes the link (CASCADE).
+CREATE TABLE IF NOT EXISTS `messaging_identity_links` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `channel_id`       INT NOT NULL,
+    `channel_type`     VARCHAR(20) NOT NULL,
+    `external_id`      VARCHAR(190) NOT NULL,
+    `user_id`          INT NOT NULL,
+    -- The number the person shared (Telegram-verified), whatever it matched.
+    `phone`            VARCHAR(40) NULL,
+    -- The chat's own reported language (Telegram's language_code, normalised
+    -- to one of I18n::SUPPORTED_LOCALES) — the bot's prompts and replies to
+    -- this chat are sent in it. NULL on channels that don't report one.
+    `locale`           VARCHAR(10) NULL,
+    `linked_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_messaging_identity_link` (`channel_id`,`external_id`),
+    KEY `ix_messaging_identity_links_user` (`user_id`),
+    CONSTRAINT `fk_messaging_identity_links_channel` FOREIGN KEY (`channel_id`) REFERENCES `messaging_channels` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_messaging_identity_links_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Proxmox VE servers (asset management). Several per install; one row each.
+CREATE TABLE IF NOT EXISTS `proxmox_connections` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `name`                  VARCHAR(100) NOT NULL,
+    `host`                  VARCHAR(255) NOT NULL,
+    `username`              VARCHAR(100) NOT NULL,
+    `password_enc`          LONGTEXT NULL,
+    `verify_ssl`            TINYINT(1) NOT NULL DEFAULT 1,
+    `is_active`             TINYINT(1) NOT NULL DEFAULT 1,
+    `sync_interval_minutes` INT NOT NULL DEFAULT 60,
+    `last_sync_datetime`    DATETIME NULL,
+    `last_sync_status`      VARCHAR(20) NULL,
+    `last_sync_message`     TEXT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `proxmox_nodes` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `connection_id`      INT NOT NULL,
+    `node_name`          VARCHAR(100) NOT NULL,
+    `cluster_name`       VARCHAR(100) NULL,
+    `status`             VARCHAR(20) NULL,
+    `cpu_cores`          INT NULL,
+    `memory_mb`          INT NULL,
+    `last_seen_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_proxmox_node` (`connection_id`, `node_name`),
+    CONSTRAINT `fk_proxmox_nodes_connection` FOREIGN KEY (`connection_id`) REFERENCES `proxmox_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `proxmox_vms` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `connection_id`      INT NOT NULL,
+    `vmid`               INT NOT NULL,
+    `vm_type`            VARCHAR(10) NOT NULL,
+    `node_name`          VARCHAR(100) NULL,
+    `cluster_name`       VARCHAR(100) NULL,
+    `name`               VARCHAR(255) NULL,
+    `status`             VARCHAR(20) NULL,
+    `vcpus`              INT NULL,
+    `memory_mb`          INT NULL,
+    `disk_gb`            DECIMAL(10,2) NULL,
+    `os_type`            VARCHAR(50) NULL,
+    `ip_addresses`       TEXT NULL,
+    `mac_addresses`      TEXT NULL,
+    `details_json`       LONGTEXT NULL,
+    `last_seen_datetime` DATETIME NULL,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_proxmox_vm` (`connection_id`, `vmid`),
+    CONSTRAINT `fk_proxmox_vms_connection` FOREIGN KEY (`connection_id`) REFERENCES `proxmox_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- VMware Cloud Director servers (asset management). Several per install.
+CREATE TABLE IF NOT EXISTS `vcloud_connections` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `name`                  VARCHAR(100) NOT NULL,
+    `host`                  VARCHAR(255) NOT NULL,
+    `org`                   VARCHAR(100) NOT NULL,
+    `username`              VARCHAR(100) NOT NULL,
+    `password_enc`          LONGTEXT NULL,
+    `api_version`           VARCHAR(10) NOT NULL DEFAULT '38.0',
+    `verify_ssl`            TINYINT(1) NOT NULL DEFAULT 1,
+    `is_active`             TINYINT(1) NOT NULL DEFAULT 1,
+    `sync_interval_minutes` INT NOT NULL DEFAULT 60,
+    `last_sync_datetime`    DATETIME NULL,
+    `last_sync_status`      VARCHAR(20) NULL,
+    `last_sync_message`     TEXT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `vcloud_vms` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `connection_id`      INT NOT NULL,
+    `vm_uuid`            VARCHAR(64) NOT NULL,
+    `name`               VARCHAR(255) NULL,
+    `org_vdc`            VARCHAR(255) NULL,
+    `vapp_name`          VARCHAR(255) NULL,
+    `status`             VARCHAR(20) NULL,
+    `vcpus`              INT NULL,
+    `memory_mb`          INT NULL,
+    `disk_gb`            DECIMAL(10,2) NULL,
+    `ip_addresses`       TEXT NULL,
+    `mac_addresses`      TEXT NULL,
+    `details_json`       LONGTEXT NULL,
+    `last_seen_datetime` DATETIME NULL,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_vcloud_vm` (`connection_id`, `vm_uuid`),
+    CONSTRAINT `fk_vcloud_vms_connection` FOREIGN KEY (`connection_id`) REFERENCES `vcloud_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `vcloud_edge_gateways` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `connection_id`      INT NOT NULL,
+    `gateway_id`         VARCHAR(64) NOT NULL,
+    `name`               VARCHAR(255) NULL,
+    `org_vdc`            VARCHAR(255) NULL,
+    `status`             VARCHAR(20) NULL,
+    `uplink_ips`         TEXT NULL,
+    `details_json`       LONGTEXT NULL,
+    `last_seen_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_vcloud_edge` (`connection_id`, `gateway_id`),
+    CONSTRAINT `fk_vcloud_edge_gateways_connection` FOREIGN KEY (`connection_id`) REFERENCES `vcloud_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- The virtual estate (GH #199 Part A): hosts, clusters, roles and VMs reported by a
+-- source. Hyper-V pushes. Removal is never deletion: an object missing from a complete
+-- report is marked not_seen_since; one on an unreadable host, not_confirmed_since.
+-- ----------------------------------------------------------
+
+-- A source that reports a virtual estate. Hyper-V (pushed by scripts/Invoke-HyperVInventory.ps1) first;
+-- vCenter, Proxmox and Cloud Director may move here later. One company per connection: every
+-- object it reports belongs to that company. api_key_id is the ONE key allowed to post its reports.
+CREATE TABLE IF NOT EXISTS `virt_connections` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `name`                      VARCHAR(150) NOT NULL,
+    `source_kind`               VARCHAR(20) NOT NULL DEFAULT 'hyperv',
+    `tenant_id`                 INT NULL,
+    `expected_interval_minutes` INT NOT NULL DEFAULT 15,
+    `grace_minutes`             INT NOT NULL DEFAULT 15,
+    `retention_days`            INT NULL,
+    `api_key_id`                INT NULL,
+    `is_active`                 TINYINT(1) NOT NULL DEFAULT 1,
+    `last_report_at`            DATETIME NULL,
+    `last_observed_at`          DATETIME NULL,
+    `last_outcome`              VARCHAR(20) NULL,
+    `last_summary`              VARCHAR(1000) NULL,
+    `collector_json`            TEXT NULL,
+    `created_by_id`             INT NULL,
+    `created_datetime`          DATETIME NULL,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_connections_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A Failover Cluster. external_id is Get-Cluster Id (a GUID).
+CREATE TABLE IF NOT EXISTS `virt_clusters` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `connection_id`             INT NOT NULL,
+    `tenant_id`                 INT NULL,
+    `external_id`               VARCHAR(100) NOT NULL,
+    `name`                      VARCHAR(255) NULL,
+    `quorum_type`               VARCHAR(100) NULL,
+    `witness`                   VARCHAR(255) NULL,
+    `first_seen_at`             DATETIME NULL,
+    `last_seen_observed_at`     DATETIME NULL,
+    `not_seen_since`            DATETIME NULL,
+    `not_confirmed_since`       DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_clusters_ext` (`connection_id`, `external_id`),
+    CONSTRAINT `fk_virt_clusters_conn` FOREIGN KEY (`connection_id`) REFERENCES `virt_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A Hyper-V host, standalone or a cluster node. external_id is the hardware UUID
+-- (Win32_ComputerSystemProduct); when that is missing or invalid it is name:<host> and
+-- identity_kind says so, because then a rename cannot be told from a new machine.
+CREATE TABLE IF NOT EXISTS `virt_hosts` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `connection_id`             INT NOT NULL,
+    `tenant_id`                 INT NULL,
+    `external_id`               VARCHAR(100) NOT NULL,
+    `identity_kind`             VARCHAR(10) NOT NULL DEFAULT 'source',
+    `name`                      VARCHAR(255) NULL,
+    `cluster_id`                INT NULL,
+    `node_state`                VARCHAR(30) NULL,
+    `os_version`                VARCHAR(100) NULL,
+    `cpu_count`                 INT NULL,
+    `memory_bytes`              BIGINT NULL,
+    `first_seen_at`             DATETIME NULL,
+    `last_seen_observed_at`     DATETIME NULL,
+    `not_seen_since`            DATETIME NULL,
+    `not_confirmed_since`       DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_hosts_ext` (`connection_id`, `external_id`),
+    KEY `idx_virt_hosts_cluster` (`cluster_id`),
+    CONSTRAINT `fk_virt_hosts_conn` FOREIGN KEY (`connection_id`) REFERENCES `virt_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A cluster role (Get-ClusterGroup). external_id is its Id (a GUID).
+CREATE TABLE IF NOT EXISTS `virt_cluster_roles` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `connection_id`             INT NOT NULL,
+    `tenant_id`                 INT NULL,
+    `external_id`               VARCHAR(100) NOT NULL,
+    `name`                      VARCHAR(255) NULL,
+    `cluster_id`                INT NULL,
+    `role_type`                 VARCHAR(60) NULL,
+    `owner_host_id`             INT NULL,
+    `state`                     VARCHAR(30) NULL,
+    `preferred_owners_json`     TEXT NULL,
+    `first_seen_at`             DATETIME NULL,
+    `last_seen_observed_at`     DATETIME NULL,
+    `not_seen_since`            DATETIME NULL,
+    `not_confirmed_since`       DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_roles_ext` (`connection_id`, `external_id`),
+    CONSTRAINT `fk_virt_roles_conn` FOREIGN KEY (`connection_id`) REFERENCES `virt_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A virtual machine. external_id is Get-VM Id (a GUID): kept by register and restore
+-- imports, NEW after a copy import - which is what virt_identity_reviews is for.
+-- is_clustered NULL = not known. possible_owners_json: the nodes the cluster may run it on.
+CREATE TABLE IF NOT EXISTS `virt_vms` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `connection_id`             INT NOT NULL,
+    `tenant_id`                 INT NULL,
+    `external_id`               VARCHAR(100) NOT NULL,
+    `name`                      VARCHAR(255) NULL,
+    `host_id`                   INT NULL,
+    `cluster_id`                INT NULL,
+    `state`                     VARCHAR(30) NULL,
+    `is_clustered`              TINYINT(1) NULL,
+    `cluster_role_id`           INT NULL,
+    `possible_owners_json`      TEXT NULL,
+    `generation`                INT NULL,
+    `cpu_count`                 INT NULL,
+    `memory_bytes`              BIGINT NULL,
+    `guest_addresses`           VARCHAR(1000) NULL,
+    `os_name`                   VARCHAR(255) NULL,
+    `first_seen_at`             DATETIME NULL,
+    `last_seen_observed_at`     DATETIME NULL,
+    `not_seen_since`            DATETIME NULL,
+    `not_confirmed_since`       DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_vms_ext` (`connection_id`, `external_id`),
+    KEY `idx_virt_vms_host` (`host_id`),
+    KEY `idx_virt_vms_name` (`connection_id`, `name`),
+    CONSTRAINT `fk_virt_vms_conn` FOREIGN KEY (`connection_id`) REFERENCES `virt_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A VM's virtual disks, replaced as a set when its report section is complete.
+CREATE TABLE IF NOT EXISTS `virt_vm_disks` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `vm_id`                     INT NOT NULL,
+    `external_id`               VARCHAR(191) NOT NULL,
+    `path`                      VARCHAR(500) NULL,
+    `size_bytes`                BIGINT NULL,
+    `used_bytes`                BIGINT NULL,
+    `controller`                VARCHAR(60) NULL,
+    `observed_at`               DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_vm_disks` (`vm_id`, `external_id`),
+    CONSTRAINT `fk_virt_vm_disks_vm` FOREIGN KEY (`vm_id`) REFERENCES `virt_vms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A VM's network adapters.
+CREATE TABLE IF NOT EXISTS `virt_vm_networks` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `vm_id`                     INT NOT NULL,
+    `external_id`               VARCHAR(191) NOT NULL,
+    `name`                      VARCHAR(255) NULL,
+    `switch_name`               VARCHAR(255) NULL,
+    `mac_address`               VARCHAR(20) NULL,
+    `ip_addresses`              VARCHAR(1000) NULL,
+    `vlan_id`                   INT NULL,
+    `observed_at`               DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_virt_vm_networks` (`vm_id`, `external_id`),
+    CONSTRAINT `fk_virt_vm_networks_vm` FOREIGN KEY (`vm_id`) REFERENCES `virt_vms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Where a VM ran, and from when to when (by the reports' observed times): live migration
+-- and failover history. One open row (to_observed_at NULL) per VM.
+CREATE TABLE IF NOT EXISTS `virt_placements` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `vm_id`                     INT NOT NULL,
+    `host_id`                   INT NULL,
+    `cluster_id`                INT NULL,
+    `from_observed_at`          DATETIME NOT NULL,
+    `to_observed_at`            DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_virt_placements_vm` (`vm_id`, `to_observed_at`),
+    CONSTRAINT `fk_virt_placements_vm` FOREIGN KEY (`vm_id`) REFERENCES `virt_vms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every report received, applied or not, and what each section came to.
+-- scope_key identifies what the report covered (a cluster, the standalone hosts, everything):
+-- the same scope, observed time and content again is a replay.
+CREATE TABLE IF NOT EXISTS `virt_reports` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `connection_id`             INT NOT NULL,
+    `scope_key`                 VARCHAR(191) NOT NULL,
+    `observed_at`               DATETIME NOT NULL,
+    `received_at`               DATETIME NOT NULL,
+    `fingerprint`               CHAR(64) NOT NULL,
+    `outcome`                   VARCHAR(20) NOT NULL,
+    `sections_json`             TEXT NULL,
+    `unreadable_json`           TEXT NULL,
+    `collector_json`            TEXT NULL,
+    `api_key_id`                INT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_virt_reports_scope` (`connection_id`, `scope_key`, `observed_at`),
+    CONSTRAINT `fk_virt_reports_conn` FOREIGN KEY (`connection_id`) REFERENCES `virt_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- An object that came back with a new identity while one with the same name stopped being
+-- seen (a copy-imported VM, a host with a new motherboard). A person decides: same machine
+-- (the old record takes the new identity and keeps its history) or different machines.
+-- Never decided by FreeITSM, never merged by name.
+CREATE TABLE IF NOT EXISTS `virt_identity_reviews` (
+    `id`                        INT NOT NULL AUTO_INCREMENT,
+    `connection_id`             INT NOT NULL,
+    `tenant_id`                 INT NULL,
+    `object_kind`               VARCHAR(10) NOT NULL,
+    `old_object_id`             INT NOT NULL,
+    `new_object_id`             INT NOT NULL,
+    `name`                      VARCHAR(255) NULL,
+    `old_external_id`           VARCHAR(100) NULL,
+    `new_external_id`           VARCHAR(100) NULL,
+    `status`                    VARCHAR(16) NOT NULL DEFAULT 'open',
+    `raised_at`                 DATETIME NOT NULL,
+    `decided_by_id`             INT NULL,
+    `decided_at`                DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_virt_reviews_conn` (`connection_id`, `status`),
+    CONSTRAINT `fk_virt_reviews_conn` FOREIGN KEY (`connection_id`) REFERENCES `virt_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- GH #199 Part B: how one connection's estate becomes CIs - which of YOUR classes and relationship
+-- types each kind maps to (NULL = that kind is not mapped), whether CI names follow the source,
+-- and whether the sync is on. Off until an administrator previews and turns it on.
+CREATE TABLE IF NOT EXISTS `virt_cmdb_mappings` (
+    `connection_id`        INT NOT NULL,
+    `enabled`              TINYINT(1) NOT NULL DEFAULT 0,
+    `cluster_class_id`     INT NULL,
+    `host_class_id`        INT NULL,
+    `vm_class_id`          INT NULL,
+    `role_class_id`        INT NULL,
+    `member_type_id`       INT NULL,
+    `runs_on_ha_type_id`   INT NULL,
+    `runs_on_type_id`      INT NULL,
+    `role_in_type_id`      INT NULL,
+    `sync_names`           TINYINT(1) NOT NULL DEFAULT 1,
+    `last_sync_at`         DATETIME NULL,
+    `last_sync_summary`    VARCHAR(500) NULL,
+    `updated_by_id`        INT NULL,
+    `updated_at`           DATETIME NULL,
+    PRIMARY KEY (`connection_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- GH #199 Part B: a CI bound to ONE discovered object - "this CI is that VM". One row per PERIOD,
+-- closed never deleted (the same shape as asset_ci_links, GH #201): one live binding per CI and per
+-- object. virt_object_id is the virt_* row id, which a reviewed rebinding keeps.
+CREATE TABLE IF NOT EXISTS `cmdb_object_sources` (
+    `id`                   INT NOT NULL AUTO_INCREMENT,
+    `cmdb_object_id`       INT NOT NULL,
+    `connection_id`        INT NOT NULL,
+    `object_kind`          VARCHAR(10) NOT NULL,
+    `virt_object_id`       INT NOT NULL,
+    `started_at`           DATETIME NOT NULL,
+    `started_by_id`        INT NULL,
+    `start_source`         VARCHAR(80) NOT NULL,
+    `ended_at`             DATETIME NULL,
+    `ended_by_id`          INT NULL,
+    `end_source`           VARCHAR(80) NULL,
+    `end_reason`           VARCHAR(20) NULL,
+    `ci_name`              VARCHAR(255) NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_cmdb_object_sources_ci` (`cmdb_object_id`, `ended_at`),
+    KEY `idx_cmdb_object_sources_obj` (`object_kind`, `virt_object_id`, `ended_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- GH #199 Part B: the relationships a discovery sync created, and so may change or remove. Every
+-- other relationship - everything a person drew - is never touched.
+CREATE TABLE IF NOT EXISTS `cmdb_relationship_sources` (
+    `relationship_id`      INT NOT NULL,
+    `connection_id`        INT NOT NULL,
+    `created_at`           DATETIME NOT NULL,
+    PRIMARY KEY (`relationship_id`),
+    KEY `idx_cmdb_relationship_sources_conn` (`connection_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- GH #199 Part B: a person's decision about a discovered object that the sync must not decide
+-- alone: create_new (despite a same-name CI), leave_unbound, or ci_deleted (its CI was deleted by
+-- a person - never recreated until someone says so).
+CREATE TABLE IF NOT EXISTS `virt_cmdb_decisions` (
+    `object_kind`          VARCHAR(10) NOT NULL,
+    `virt_object_id`       INT NOT NULL,
+    `connection_id`        INT NOT NULL,
+    `decision`             VARCHAR(20) NOT NULL,
+    `decided_by_id`        INT NULL,
+    `decided_at`           DATETIME NOT NULL,
+    PRIMARY KEY (`object_kind`, `virt_object_id`),
+    KEY `idx_virt_cmdb_decisions_conn` (`connection_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Web chat widgets (embeddable website chat → tickets)
+-- ----------------------------------------------------------
+
+-- The public/embed config for one website chat widget. A widget is the self-hosted
+-- twin of a WhatsApp number: it drives exactly one `messaging_channels` row
+-- (channel_type='webchat', provider='freeitsm'), so once a visitor's message is
+-- ingested it flows through the same ticket membrane, inbox and reply pipeline as
+-- every other channel. Company routing and the active flag live on that channel row;
+-- this table holds only what the browser widget needs.
+--
+--   widget_key       the public id embedded in the customer's <script> snippet. NOT a
+--                    secret (it ships in page source) — abuse is contained by the
+--                    origin allowlist + rate limiting, not by keeping this hidden.
+--   allowed_origins  newline-separated list of site origins permitted to embed this
+--                    widget (e.g. https://acme.com). Empty = allow any (dev only).
+--   require_email    pre-chat gate: when 1, the visitor must give a name + email before
+--                    the conversation opens, so every ticket has a real requester.
+CREATE TABLE IF NOT EXISTS `webchat_widgets` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `channel_id`       INT NOT NULL,
+    `widget_key`       VARCHAR(64) NOT NULL,
+    `allowed_origins`  LONGTEXT NULL,
+    `greeting`         VARCHAR(500) NULL,
+    `accent_colour`    VARCHAR(20) NULL,
+    `launcher_text`    VARCHAR(60) NULL,
+    `offline_message`  VARCHAR(500) NULL,
+    `require_email`    TINYINT(1) NOT NULL DEFAULT 1,
+    -- Availability: an SLA business-hours calendar defines "open" vs "closed". NULL =
+    -- always open. When closed the widget shows offline_message and still takes a ticket.
+    `business_calendar_id` INT NULL,
+    -- If a reply arrives while the visitor isn't watching the chat, email it to them.
+    `email_when_away`  TINYINT(1) NOT NULL DEFAULT 0,
+    -- AI answers from the Knowledge base. ai_mode: 'assist' always raises a ticket;
+    -- 'deflect' only raises one if the visitor escalates. The two ai_offer_* flags
+    -- control which escalation routes the AI presents.
+    `ai_enabled`       TINYINT(1) NOT NULL DEFAULT 0,
+    `ai_mode`          VARCHAR(10) NOT NULL DEFAULT 'assist',
+    `ai_offer_agent`   TINYINT(1) NOT NULL DEFAULT 1,
+    `ai_offer_email`   TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_webchat_widget_key` (`widget_key`),
+    UNIQUE KEY `uq_webchat_widget_channel` (`channel_id`),
+    CONSTRAINT `fk_webchat_widget_channel` FOREIGN KEY (`channel_id`) REFERENCES `messaging_channels` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- External issue trackers (Jira first; GitHub/GitLab/DevOps behind the same contract)
+-- ----------------------------------------------------------
+
+-- One configured tracker instance: a Jira site, a GitHub org, an Azure DevOps
+-- organisation.
+--
+-- ⚠️ TENANCY: this is a CONNECTION-shaped table, the same shape as
+-- messaging_channels and mailboxes — NOT scoped data and NOT a config list.
+--   tenant_id NULL = SHARED: serves every company (an MSP's own Jira).
+--   tenant_id set  = PINNED to that one company (a client with their own Jira).
+-- So the admin list is deliberately UNFILTERED; what is gated is WRITING (you may
+-- only pin to a company you can reach). Do NOT scope reads with
+-- activeTenantFilter() — it treats NULL as Default-owned and would hide every
+-- shared connection from every client company. See the wiki,
+-- Multi-Tenancy-Developer-Guide §1, for all three meanings of NULL.
+--
+-- ⚠️ A read that returns credentials is the exception to "capabilities guard
+-- writes, not reads": the list endpoint must return a has_credentials boolean and
+-- never the token itself, exactly as api/messaging/get_channels.php does.
+CREATE TABLE IF NOT EXISTS `integration_connections` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `name`                  VARCHAR(100) NOT NULL,
+    `provider`              VARCHAR(20) NOT NULL DEFAULT 'jira',   -- jira | github | gitlab | devops
+    `base_url`              VARCHAR(500) NOT NULL,
+    `auth_type`             VARCHAR(20) NOT NULL DEFAULT 'api_token', -- api_token | pat | oauth
+    -- Encrypted at rest (AES-256-GCM, ENC: prefix) like messaging_channels.credentials.
+    `credentials`           LONGTEXT NULL,
+    -- Inbound signature secret, also encrypted. NULL while ingress_mode='poll'.
+    -- Note this is the OPPOSITE of webhook_deliveries, which deliberately does not
+    -- persist its signing secret: outbound signs at enqueue and forgets, inbound
+    -- must keep the secret in order to verify.
+    `webhook_secret`        VARCHAR(2000) NULL,
+    -- 'webhook' needs the provider to reach this install; 'poll' is the
+    -- firewalled fallback. Both produce the same canonical events downstream.
+    `ingress_mode`          VARCHAR(10) NOT NULL DEFAULT 'poll',
+    `inbound_enabled`       TINYINT(1) NOT NULL DEFAULT 0,   -- master "accept updates" switch
+    -- Push the ticket's attachments up with the issue. ON by default: on a bug
+    -- report the screenshot usually IS the report. Inline images (signatures,
+    -- tracking pixels) are never sent — see integrationsTicketAttachments().
+    `send_attachments`      TINYINT(1) NOT NULL DEFAULT 1,
+    `poll_interval_minutes` INT NOT NULL DEFAULT 5,
+    -- The account our token authenticates as, captured at connection test.
+    -- Half of echo suppression: an inbound event authored by this identity is our
+    -- own write coming back. Populated from V1 even though nothing reads it until
+    -- comment sync, because back-filling it later is miserable.
+    `account_identity`      VARCHAR(255) NULL,
+    `tenant_id`             INT NULL,
+    `is_active`             TINYINT(1) NOT NULL DEFAULT 1,
+    `last_poll_datetime`    DATETIME NULL,
+    `last_poll_watermark`   VARCHAR(100) NULL,   -- provider-native "changed since" cursor
+    `created_by`            INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_integration_connections_tenant` (`tenant_id`),
+    KEY `ix_integration_connections_active` (`is_active`),
+    CONSTRAINT `fk_integration_connections_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The spine: one row per "our work item ↔ their issue".
+--
+-- `entity_type` is polymorphic from day one although V1 only ever writes 'ticket'
+-- — Problems and Changes cost nothing now and a migration later.
+--
+-- `external_id` is the provider's STABLE id, not the key: PROJ-412 becomes
+-- OPS-412 when a Jira project is renamed, so the key is display only.
+--
+-- `status_category` is one of todo|in_progress|done|cancelled and is what every
+-- decision keys off; `status_name` is raw and for display only. Jira statuses are
+-- per-project and freely renamed — branching on the name is the mistake
+-- tickets.merged_into_id exists to avoid.
+CREATE TABLE IF NOT EXISTS `integration_links` (
+    `id`                   INT NOT NULL AUTO_INCREMENT,
+    `connection_id`        INT NOT NULL,
+    `entity_type`          VARCHAR(20) NOT NULL DEFAULT 'ticket',  -- ticket | problem | change
+    `entity_id`            INT NOT NULL,
+    `external_id`          VARCHAR(100) NOT NULL,
+    `external_key`         VARCHAR(100) NULL,
+    `external_url`         VARCHAR(1000) NULL,
+    `status_name`          VARCHAR(100) NULL,
+    `status_category`      VARCHAR(20) NULL,
+    `assignee_name`        VARCHAR(255) NULL,
+    `last_synced_datetime` DATETIME NULL,
+    `last_error`           VARCHAR(500) NULL,
+    `created_by`           INT NULL,
+    `created_datetime`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- One issue may legitimately link to two tickets; never twice to the same one.
+    UNIQUE KEY `uq_integration_link` (`connection_id`, `external_id`, `entity_type`, `entity_id`),
+    KEY `ix_integration_links_entity` (`entity_type`, `entity_id`),
+    KEY `ix_integration_links_connection` (`connection_id`),
+    CONSTRAINT `fk_integration_links_connection` FOREIGN KEY (`connection_id`) REFERENCES `integration_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What our values mean in the tracker's vocabulary. One row per mapping.
+--
+-- map_type is 'project' | 'issue_type' | 'priority' (and 'custom' later).
+--
+-- ⚠️ local_key is DELIBERATELY a string, not a foreign key, because what it points
+-- at differs per map_type: a tenant or department for routing, a ticket type id,
+-- a priority id. It is namespaced for project routing ('tenant:5', 'dept:3', '*')
+-- so one map_type covers both routing dimensions plus the fallback, rather than
+-- inventing a second column that is NULL most of the time.
+--
+-- ⚠️ Deliberately NOT keyed to a project for priorities. Jira priorities are
+-- defined per project, but a per-project map would be unmaintainable across
+-- dozens of projects, so the map is global and a rejected value falls back to
+-- creating the issue WITHOUT that field. Losing a priority is cosmetic; losing
+-- the escalation because somebody renamed a priority on one project is not.
+CREATE TABLE IF NOT EXISTS `integration_field_maps` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `connection_id`    INT NOT NULL,
+    `map_type`         VARCHAR(20) NOT NULL,               -- project | issue_type | priority | custom
+    `local_key`        VARCHAR(100) NOT NULL,              -- 'tenant:5' | 'dept:3' | '*' | a local id
+    `external_key`     VARCHAR(255) NOT NULL,              -- the tracker's value (project key, issue type name, priority name)
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_integration_field_map` (`connection_id`, `map_type`, `local_key`),
+    CONSTRAINT `fk_integration_field_map_connection` FOREIGN KEY (`connection_id`) REFERENCES `integration_connections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every comment that has crossed between a ticket and its linked issue, in either
+-- direction. This is echo suppression: without it, a comment we push to Jira comes
+-- back on the next poll, becomes a note, and pushes again — forever.
+--
+-- ⚠️ uq_integration_comment is not an optimisation, it is THE guarantee that a
+-- comment is imported exactly once. The service reads the map first, but that read
+-- is check-then-act and two overlapping cron runs would both pass it; the unique
+-- key is what makes the second writer lose. Never drop it "because we check first".
+--
+-- local_note_id is nullable: an outbound comment posted by a workflow has no note
+-- behind it, only text.
+CREATE TABLE IF NOT EXISTS `integration_comment_map` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `link_id`             INT NOT NULL,
+    `direction`           VARCHAR(3) NOT NULL DEFAULT 'in',       -- in | out
+    `external_comment_id` VARCHAR(100) NOT NULL,
+    `local_note_id`       INT NULL,
+    `author_identity`     VARCHAR(255) NULL,                      -- as the tracker names them; compared with connection.account_identity
+    `author_name`         VARCHAR(255) NULL,                      -- display only
+    `created_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_integration_comment` (`link_id`, `external_comment_id`),
+    KEY `ix_integration_comment_note` (`local_note_id`),
+    CONSTRAINT `fk_integration_comment_link` FOREIGN KEY (`link_id`) REFERENCES `integration_links` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every event Zabbix sent to api/external/zabbix/alert.php, and what was done with it
+-- (includes/integrations/zabbix.php). problem_id is Zabbix's {EVENT.ID}: a recovery
+-- carries its problem's, which is how it finds the ticket the problem opened.
+-- action: created | updated | resolved | recovery_unmatched | error.
+CREATE TABLE IF NOT EXISTS `zabbix_events` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `problem_id`        VARCHAR(64) NOT NULL,
+    `event_value`       TINYINT NOT NULL DEFAULT 1,                  -- 1 problem, 0 recovery
+    `host`              VARCHAR(255) NOT NULL,
+    `trigger_name`      VARCHAR(500) NULL,
+    `severity`          TINYINT NOT NULL DEFAULT 3,                  -- 0 Not classified .. 5 Disaster
+    `ticket_id`         INT NULL,
+    `action`            VARCHAR(30) NOT NULL,
+    `detail`            VARCHAR(255) NULL,
+    `received_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_zabbix_events_problem` (`problem_id`),
+    KEY `ix_zabbix_events_received` (`received_datetime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every call 3CX reported to api/external/3cx/crm.php, and what was done with it
+-- (includes/integrations/threecx.php). 3CX gives a template no call id, so call_key
+-- is a hash of number, start, agent, length and type - the same report twice is
+-- recorded once. analyst_id is who the note was written as; user_id the caller.
+-- action: noted | created | logged | error.
+CREATE TABLE IF NOT EXISTS `threecx_calls` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `call_key`          VARCHAR(80) NOT NULL,
+    `call_type`         VARCHAR(20) NOT NULL,                        -- Inbound | Outbound | Missed | Notanswered
+    `number`            VARCHAR(50) NOT NULL,
+    `agent`             VARCHAR(50) NULL,                            -- the 3CX extension
+    `agent_email`       VARCHAR(255) NULL,
+    `analyst_id`        INT NULL,
+    `user_id`           INT NULL,
+    `ticket_id`         INT NULL,
+    `duration_seconds`  INT NULL,
+    `started_datetime`  DATETIME NULL,                               -- UTC, from 3CX
+    `action`            VARCHAR(30) NOT NULL,
+    `detail`            VARCHAR(255) NULL,
+    `received_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_threecx_calls_key` (`call_key`),
+    KEY `ix_threecx_calls_received` (`received_datetime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Microsoft Teams channel alerts (System → Integrations → Microsoft Teams;
+-- includes/integrations/msteams.php). One row per Teams channel: its Workflows
+-- webhook address (ENCRYPTED, so 2000 wide - see webhook_deliveries.url), which
+-- alerts it gets (a JSON list of fixed keys, ticked on the page), the priority
+-- an "urgent ticket" alert starts at, and the teams whose tickets it is sent.
+-- Every ticked alert IS an ordinary workflow (send_webhook, Teams card format);
+-- msteams_channel_workflows says which one, so the page can update or remove
+-- exactly its own and never a workflow somebody wrote by hand.
+CREATE TABLE IF NOT EXISTS `msteams_channels` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `name`                  VARCHAR(100) NOT NULL,
+    `webhook_url`           VARCHAR(2000) NULL,
+    `alerts`                TEXT NULL,                     -- JSON list, e.g. ["every_new","sla_breached"]
+    `priority_threshold_id` INT NULL,                      -- "at or above" this priority
+    `team_ids`              TEXT NULL,                     -- JSON list of teams.id
+    `display_order`         INT NOT NULL DEFAULT 0,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `msteams_channel_workflows` (
+    `channel_id`   INT NOT NULL,
+    `alert_key`    VARCHAR(40) NOT NULL,
+    `workflow_id`  INT NOT NULL,
+    PRIMARY KEY (`channel_id`, `alert_key`),
+    KEY `ix_msteams_channel_workflows_workflow` (`workflow_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One website chat conversation. Created when a visitor opens the widget and (if the
+-- widget asks for it) gives their name + email. `token` is the browser's capability
+-- for THIS conversation — it is stored in the visitor's browser and presented on every
+-- send/poll, so knowing it is the only thing that lets you read or post to the chat
+-- (the widget key alone can't: it can only START a conversation). `ticket_id` is set
+-- lazily on the first message, so one conversation maps to exactly one ticket. visitor_ip
+-- is kept only for rate limiting. Rows are disposable once their ticket is closed.
+CREATE TABLE IF NOT EXISTS `webchat_conversations` (
+    `id`                     INT NOT NULL AUTO_INCREMENT,
+    `channel_id`             INT NOT NULL,
+    `token`                  VARCHAR(64) NOT NULL,
+    `ticket_id`              INT NULL,
+    `visitor_name`           VARCHAR(150) NULL,
+    `visitor_email`          VARCHAR(255) NULL,
+    `visitor_ip`             VARCHAR(45) NULL,
+    `created_datetime`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_activity_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_webchat_conversation_token` (`token`),
+    KEY `ix_webchat_conversation_channel` (`channel_id`),
+    KEY `ix_webchat_conversation_ticket` (`ticket_id`),
+    CONSTRAINT `fk_webchat_conversation_channel` FOREIGN KEY (`channel_id`) REFERENCES `messaging_channels` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The chat transcript held BEFORE (and if) a conversation becomes a ticket — used in AI
+-- 'deflect' mode, where the AI can answer without ever raising a ticket. `sender` is
+-- 'visitor', 'ai', 'agent' or 'system'. When the visitor escalates, these rows are the
+-- source for the ticket's opening message + the full-chat-log .txt attachment. Once a
+-- ticket exists the ticket's own `emails` thread takes over (this table is not written
+-- to for plain, AI-off widgets — those go straight to the ticket).
+CREATE TABLE IF NOT EXISTS `webchat_messages` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `conversation_id`  INT NOT NULL,
+    `sender`           VARCHAR(10) NOT NULL DEFAULT 'visitor',
+    `body`             LONGTEXT NULL,
+    -- When an agent reply (stored in `emails`) is mirrored into this transcript so the
+    -- visitor's widget can show it, this holds the source emails.id (dedup key). NULL for
+    -- native visitor/ai/system rows.
+    `source_email_id`  INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_webchat_messages_conversation` (`conversation_id`),
+    CONSTRAINT `fk_webchat_messages_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `webchat_conversations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `ticket_recordings` (
     `id`                  INT NOT NULL AUTO_INCREMENT,
     `ticket_id`           INT NULL,
+    -- Which message the recording came with. NULL = the ticket's opening
+    -- message (how every recording behaved before replies could carry one).
+    `email_id`            INT NULL,
     `recorded_by_user_id` INT NULL,
     `filename`            VARCHAR(255) NOT NULL,
     `original_filename`   VARCHAR(255) NULL,
@@ -756,6 +2837,9 @@ CREATE TABLE IF NOT EXISTS `ticket_recordings` (
     KEY `ix_ticket_recordings_ticket_id` (`ticket_id`),
     KEY `ix_ticket_recordings_pending` (`ticket_id`, `created_at`),
     CONSTRAINT `fk_ticket_recordings_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    -- SET NULL, not CASCADE: if a message is ever removed the video should fall
+    -- back to the ticket, not be destroyed with it.
+    CONSTRAINT `fk_ticket_recordings_email` FOREIGN KEY (`email_id`) REFERENCES `emails` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_ticket_recordings_user` FOREIGN KEY (`recorded_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -784,6 +2868,251 @@ CREATE TABLE IF NOT EXISTS `mailbox_activity_log` (
     CONSTRAINT `fk_mal_mailbox` FOREIGN KEY (`mailbox_id`) REFERENCES `target_mailboxes` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- One row per directory sync RUN. Follows email_send_log's principle: record the
+-- attempt, not just the success, because a sync that did nothing and a sync that
+-- never ran look identical afterwards otherwise.
+--
+-- `mode` distinguishes a preview from a real run. Previews are logged too — what
+-- somebody was shown before they pressed the button is worth being able to check
+-- when the result surprises them.
+CREATE TABLE IF NOT EXISTS `directory_sync_runs` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `provider_id`        INT NOT NULL,
+    `mode`               VARCHAR(10) NOT NULL DEFAULT 'live',      -- live | preview
+    -- running | ok | stopped | failed.  'stopped' is the sanity brake: not an
+    -- error, a refusal. Kept distinct so "we protected you" never reads as
+    -- "something broke".
+    `status`             VARCHAR(12) NOT NULL DEFAULT 'running',
+    `started_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `finished_datetime`  DATETIME NULL,
+    `seen_count`         INT NOT NULL DEFAULT 0,
+    `created_count`      INT NOT NULL DEFAULT 0,
+    `updated_count`      INT NOT NULL DEFAULT 0,
+    `adopted_count`      INT NOT NULL DEFAULT 0,
+    `deactivated_count`  INT NOT NULL DEFAULT 0,
+    `conflict_count`     INT NOT NULL DEFAULT 0,
+    `error_count`        INT NOT NULL DEFAULT 0,
+    `message`            TEXT NULL,
+    `triggered_by_analyst_id` INT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dsr_provider` (`provider_id`, `started_datetime`),
+    KEY `idx_dsr_status` (`status`),
+    CONSTRAINT `fk_dsr_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What a run did to each PERSON. "47 updated" is a number; this is the answer to
+-- "updated how, and who?", which is the only version anybody can act on.
+CREATE TABLE IF NOT EXISTS `directory_sync_entries` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `run_id`             INT NOT NULL,
+    -- create | update | adopt | deactivate | conflict | skip | error | unchanged
+    `action`             VARCHAR(16) NOT NULL,
+    -- NULL on a preview (nobody was created yet) and on a skip.
+    `user_id`            INT NULL,
+    `directory_username` VARCHAR(255) NULL,
+    `display_name`       VARCHAR(255) NULL,
+    -- Human-readable: which fields changed, or why nothing happened.
+    `detail`             VARCHAR(1000) NULL,
+    `created_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_dse_run` (`run_id`, `action`),
+    KEY `idx_dse_user` (`user_id`),
+    -- The run owns its entries; deleting the provider takes both with it.
+    CONSTRAINT `fk_dse_run` FOREIGN KEY (`run_id`) REFERENCES `directory_sync_runs` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Groups imported from a directory (Microsoft Entra ID today; see
+-- includes/entra_sync.php). Never deleted: a group that leaves the import scope
+-- is marked inactive and keeps its last known members, the same rule people get.
+CREATE TABLE IF NOT EXISTS `directory_groups` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `provider_id`         INT NOT NULL,
+    -- The source's own id for the group (an Entra object id). Survives renames.
+    `external_id`         VARCHAR(255) NOT NULL,
+    `display_name`        VARCHAR(255) NOT NULL,
+    `description`         VARCHAR(1000) NULL,
+    `mail`                VARCHAR(255) NULL,
+    -- security | mail-security | microsoft365 | distribution
+    `group_kind`          VARCHAR(20) NULL,
+    `member_count`        INT NOT NULL DEFAULT 0,
+    `is_active`           TINYINT(1) NOT NULL DEFAULT 1,
+    `last_seen_in_source` DATETIME NULL,
+    `created_datetime`    DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`    DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_directory_groups_ext` (`provider_id`, `external_id`),
+    KEY `idx_directory_groups_name` (`display_name`),
+    CONSTRAINT `fk_directory_groups_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who is in each imported group. Transitive: members of nested groups count.
+-- Only people FreeITSM holds are linked; the group's own member_count may be higher.
+CREATE TABLE IF NOT EXISTS `directory_group_members` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `group_id`         INT NOT NULL,
+    `user_id`          INT NOT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_directory_group_member` (`group_id`, `user_id`),
+    KEY `idx_directory_group_members_user` (`user_id`),
+    CONSTRAINT `fk_dgm_group` FOREIGN KEY (`group_id`) REFERENCES `directory_groups` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dgm_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every attempt to write a contact BACK to a CardDAV address book — succeeded,
+-- refused, or failed.
+--
+-- The attempt, not the success. When an operator says "it isn't writing", the
+-- difference between "we never tried", "the server said no" and "we refused on
+-- purpose because their copy had changed" is the whole diagnosis, and none of it
+-- is recoverable afterwards without this.
+--
+-- Not folded into directory_sync_runs: a write-back is one contact triggered by
+-- one person saving one form, and a synthetic run per save would make the import
+-- history unreadable.
+CREATE TABLE IF NOT EXISTS `carddav_write_log` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `provider_id`       INT NOT NULL,
+    -- NULL once the person is deleted; display_name is kept so the row still
+    -- says who it was about.
+    `user_id`           INT NULL,
+    `display_name`      VARCHAR(255) NULL,
+    -- ok | conflict | failed | skipped. `conflict` is distinct from `failed`
+    -- for the same reason the import keeps 'stopped' apart: refusing to
+    -- overwrite somebody is the feature working, not breaking.
+    `outcome`           VARCHAR(12) NOT NULL,
+    `fields`            VARCHAR(255) NULL,
+    `http_status`       INT NULL,
+    -- The server's own words, verbatim and truncated rather than summarised.
+    `server_response`   TEXT NULL,
+    `message`           VARCHAR(1000) NULL,
+    `triggered_by_analyst_id` INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_cdwl_provider` (`provider_id`, `created_datetime`),
+    KEY `idx_cdwl_user` (`user_id`),
+    CONSTRAINT `fk_cdwl_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Documents that can be attached to anything (GH discussion #76).
+--
+-- A document is EITHER a file FreeITSM holds OR a link to an external DMS, so the
+-- two live in one table with a `kind` — a user sees one list either way, and
+-- splitting a table later is mechanical where merging two is not.
+--
+-- ⚠️ There are deliberately NO permission columns. A document is visible if you
+-- can see at least one thing it is attached to, resolved at query time from the
+-- parent. Storing visibility here would go stale the moment a permission changed.
+-- See includes/documents.php.
+CREATE TABLE IF NOT EXISTS `documents` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `kind`              VARCHAR(8) NOT NULL DEFAULT 'file',
+    `title`             VARCHAR(255) NOT NULL,
+    `description`       TEXT NULL,
+    `storage_key`       VARCHAR(255) NULL,
+    `original_name`     VARCHAR(255) NULL,
+    `mime_type`         VARCHAR(100) NULL,
+    `size_bytes`        BIGINT NULL,
+    `content_hash`      CHAR(64) NULL,
+    `external_url`      VARCHAR(2048) NULL,
+    `tenant_id`         INT NULL,
+    `uploaded_by_id`    INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NULL,
+    `deleted_datetime`  DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_documents_hash` (`content_hash`),
+    KEY `idx_documents_tenant` (`tenant_id`),
+    FULLTEXT KEY `ft_documents` (`title`,`description`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What each document is attached to. A ROW rather than a column on `documents`,
+-- so one document can belong to several things without a migration — and so that
+-- deleting a parent removes the LINK, never the file somebody else is still using.
+CREATE TABLE IF NOT EXISTS `document_links` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `document_id`       INT NOT NULL,
+    `parent_type`       VARCHAR(32) NOT NULL,
+    `parent_id`         INT NOT NULL,
+    `linked_by_id`      INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Knowledge articles only: downloadable from the portal's Help Centre (GH #177).
+    `show_in_help_centre` TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_document_links` (`document_id`,`parent_type`,`parent_id`),
+    KEY `idx_document_links_parent` (`parent_type`,`parent_id`),
+    KEY `idx_document_links_doc` (`document_id`),
+    CONSTRAINT `fk_document_links_document` FOREIGN KEY (`document_id`) REFERENCES `documents` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Per-company answers to settings that otherwise live install-wide in
+-- system_settings (discussion #72). A company with NO ROW here is not "off" — it
+-- follows the install default, which is what keeps this invisible on a
+-- single-company install. See includes/tenant_settings.php.
+CREATE TABLE IF NOT EXISTS `tenant_settings` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`         INT NOT NULL,
+    `setting_key`       VARCHAR(100) NOT NULL,
+    `setting_value`     TEXT NULL,
+    `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_tenant_setting` (`tenant_id`,`setting_key`),
+    CONSTRAINT `fk_tenant_settings_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Extracted text for an attached document, so its CONTENTS are searchable and
+-- not merely its title. Separate from attachment_text because that table's key
+-- is an email-attachment id; the shared part is the extractor, not the queue.
+CREATE TABLE IF NOT EXISTS `document_text` (
+    `document_id`        INT NOT NULL,
+    `status`             VARCHAR(16) NOT NULL,
+    `extractor`          VARCHAR(20) NULL,
+    `extracted_text`     LONGTEXT NULL,
+    `chars`              INT NOT NULL DEFAULT 0,
+    `extracted_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`document_id`),
+    KEY `ix_document_text_status` (`status`),
+    CONSTRAINT `fk_document_text_document` FOREIGN KEY (`document_id`) REFERENCES `documents` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who fetched which document, and when. Written at the download endpoint, which
+-- is the only way to obtain a document and therefore the only place that can
+-- honestly claim to have seen every access.
+CREATE TABLE IF NOT EXISTS `document_access_log` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `document_id`       INT NOT NULL,
+    `analyst_id`        INT NULL,
+    `action`            VARCHAR(12) NOT NULL DEFAULT 'download',
+    `ip_address`        VARCHAR(45) NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_document_access_doc` (`document_id`),
+    CONSTRAINT `fk_document_access_document` FOREIGN KEY (`document_id`) REFERENCES `documents` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Outbound counterpart to mailbox_activity_log: one row per send ATTEMPT, so a
+-- failure is visible in the UI instead of only in the PHP error log. `route` says
+-- which part of FreeITSM asked for the send; provider/auth_mode are recorded on the
+-- row because they are what most sending faults turn out to hinge on.
+CREATE TABLE IF NOT EXISTS `email_send_log` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `mailbox_id`        INT NULL,
+    `ticket_id`         INT NULL,
+    `route`             VARCHAR(30) NOT NULL,
+    `provider`          VARCHAR(20) NULL,
+    `auth_mode`         VARCHAR(20) NULL,
+    `to_address`        VARCHAR(255) NOT NULL,
+    `subject`           VARCHAR(500) NULL,
+    `status`            VARCHAR(10) NOT NULL,
+    `error_message`     TEXT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_esl_mailbox` (`mailbox_id`, `created_datetime`),
+    KEY `idx_esl_status` (`status`, `created_datetime`),
+    KEY `idx_esl_ticket` (`ticket_id`),
+    CONSTRAINT `fk_esl_mailbox` FOREIGN KEY (`mailbox_id`) REFERENCES `target_mailboxes` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `ticket_email_templates` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(100) NOT NULL,
@@ -797,6 +3126,59 @@ CREATE TABLE IF NOT EXISTS `ticket_email_templates` (
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- An analyst's email signatures (discussion #80). Per analyst always — there is no
+-- shared signature, because a signature is a person signing their own name. Several
+-- are allowed and exactly one is the default: the default is inserted without being
+-- asked for, so an analyst who wants only one never has to choose.
+CREATE TABLE IF NOT EXISTS `analyst_signatures` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`       INT NOT NULL,
+    `name`             VARCHAR(100) NOT NULL,
+    `body`             LONGTEXT NOT NULL,
+    `is_default`       TINYINT(1) NOT NULL DEFAULT 0,
+    `display_order`    INT NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_sig_analyst` (`analyst_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Which senders an email template applies to (discussion #80). A template with no
+-- rows here applies to everyone, which is the state a new template starts in — so
+-- there is always a catch-all unless one is deliberately removed. match_type is
+-- 'address' or 'domain'; selection is by specificity, never by display_order.
+CREATE TABLE IF NOT EXISTS `ticket_email_template_rules` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `template_id`       INT NOT NULL,
+    `match_type`        VARCHAR(10) NOT NULL,
+    `match_value`       VARCHAR(255) NOT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_tmpl` (`template_id`),
+    KEY `idx_match` (`match_type`, `match_value`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Canned responses an analyst inserts into a reply by hand. Distinct from
+-- ticket_email_templates above (automated mail the system sends on an event).
+-- analyst_id NULL = a shared team template; set = that analyst's private one.
+-- tenant_id  NULL = a global default (the config meaning, as ticket_types).
+CREATE TABLE IF NOT EXISTS `ticket_reply_templates` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(100) NOT NULL,
+    `body`              LONGTEXT NOT NULL,
+    `analyst_id`        INT NULL,
+    `tenant_id`         INT NULL,
+    `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_reply_tpl_analyst` (`analyst_id`),
+    KEY `idx_reply_tpl_tenant` (`tenant_id`),
+    CONSTRAINT `fk_reply_tpl_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_reply_tpl_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `ticket_csat_responses` (
     `id`                 INT NOT NULL AUTO_INCREMENT,
     `ticket_id`          INT NOT NULL,
@@ -807,10 +3189,16 @@ CREATE TABLE IF NOT EXISTS `ticket_csat_responses` (
     `comment`            TEXT NULL,
     `analyst_id`         INT NULL,
     `created_at`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- PR #166: a request asked IN A CHAT records which chat (channel + the
+    -- customer's from_address), so a reply there can only ever answer a request
+    -- sent to that customer on that channel. NULL = an emailed survey.
+    `channel_id`         INT NULL,
+    `channel_from`       VARCHAR(255) NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_ticket_csat_token` (`token`),
     KEY `ix_ticket_csat_ticket_id` (`ticket_id`),
     KEY `ix_ticket_csat_responded` (`responded_datetime`),
+    KEY `ix_ticket_csat_channel` (`channel_id`, `channel_from`),
     CONSTRAINT `fk_ticket_csat_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_ticket_csat_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -869,9 +3257,28 @@ CREATE TABLE IF NOT EXISTS `asset_types` (
     `description`       VARCHAR(255) NULL,
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
+    -- The glyph shown beside every asset of this type (#1146). Points at the
+    -- SAME library the CMDB's classes use (`cmdb_icons`) rather than a second
+    -- one: a printer must not look different depending on which module you are
+    -- in, and the 66 glyphs already there were paid for and half-unused.
+    -- NULL = no icon, which is every type until somebody picks one.
+    `icon_id`           INT NULL,
+    -- GH #201: the CMDB class an asset of this type becomes through "Create linked CI".
+    -- NULL = not mapped (no button). It never creates a CI by itself. No foreign key:
+    -- a class deleted or deactivated later simply reads as no mapping.
+    `cmdb_class_id`     INT NULL,
+    -- Multi-tenancy: NULL = global default type (shared by every company); set =
+    -- a type a company added for itself. Existing rows stay NULL, so a
+    -- single-company install is unaffected. (Config meaning of tenant_id: NULL =
+    -- global default — unlike scoped data tables where NULL means "unrouted".)
+    `tenant_id`         INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_asset_types_name` (`name`)
+    -- Per-scope name uniqueness (a company may hold a type whose name matches a
+    -- global default). Global-name dedup is enforced in the API, since NULL
+    -- tenant_id rows aren't de-duped by a unique key.
+    UNIQUE KEY `uq_asset_types_tenant_name` (`tenant_id`, `name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `asset_status_types` (
@@ -879,10 +3286,19 @@ CREATE TABLE IF NOT EXISTS `asset_status_types` (
     `name`              VARCHAR(100) NOT NULL,
     `description`       VARCHAR(255) NULL,
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    -- 1 = an asset in this status has left the estate (retired, disposed,
+    -- transferred): it leaves the default lists, counts and alerts, and the
+    -- asset is stamped with retired_datetime. Off by default - nothing changes
+    -- until somebody ticks it (includes/asset_retirement.php).
+    `is_retired`        TINYINT(1) NOT NULL DEFAULT 0,
     `display_order`     INT NOT NULL DEFAULT 0,
+    -- Multi-tenancy: NULL = global default status; set = a company's own. See
+    -- asset_types above for the tenant_id config convention.
+    `tenant_id`         INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_asset_status_types_name` (`name`)
+    UNIQUE KEY `uq_asset_status_types_tenant_name` (`tenant_id`, `name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Arbitrary-depth physical location tree (adjacency list). A NULL parent_id is
@@ -894,10 +3310,25 @@ CREATE TABLE IF NOT EXISTS `asset_locations` (
     `name`              VARCHAR(100) NOT NULL,
     `parent_id`         INT NULL,
     `display_order`     INT NOT NULL DEFAULT 0,
+    -- Multi-tenancy: SCOPED DATA, not a config list. A company's physical sites
+    -- are entirely its own — there is no such thing as a shared office — so this
+    -- scopes like `assets` (activeTenantFilter): the Default company owns the
+    -- pre-existing NULL rows, and a client company sees only its own. Deleting a
+    -- company CASCADEs its locations away rather than promoting them to NULL,
+    -- which would hand them to Default. Assets pointing at a deleted location
+    -- fall back to none via fk_assets_location (ON DELETE SET NULL).
+    `tenant_id`         INT NULL,
+    -- 2.6.0: SHARED across companies, the one exception to the rule above (a
+    -- data centre or head office several clients' kit sits in). A shared row
+    -- has tenant_id NULL, so it belongs to no single company and survives any
+    -- company being deleted. Its parent must be shared too. Only an analyst who
+    -- can reach every company may change one. See includes/asset_locations.php.
+    `is_shared`         TINYINT(1) NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_asset_locations_parent` (`parent_id`),
-    CONSTRAINT `fk_asset_locations_parent` FOREIGN KEY (`parent_id`) REFERENCES `asset_locations` (`id`)
+    CONSTRAINT `fk_asset_locations_parent` FOREIGN KEY (`parent_id`) REFERENCES `asset_locations` (`id`),
+    CONSTRAINT `fk_asset_locations_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `assets` (
@@ -928,27 +3359,146 @@ CREATE TABLE IF NOT EXISTS `assets` (
     `purchase_date`     DATE NULL,
     `purchase_cost`     DECIMAL(12,2) NULL,
     `supplier_id`       INT NULL,
+    `cost_centre_id`    INT NULL,   -- GH #160: the cost centre it is charged to (fk added by db_verify)
     `order_number`      VARCHAR(100) NULL,
     `warranty_expiry`   DATE NULL,
+    -- Leased kit. Ed's original lifecycle brief said "warranty/lease expiries"
+    -- and only warranty was built; this is the other half. Kept as a plain
+    -- date beside the warranty one rather than a lease RECORD (lessor, cost,
+    -- schedule) because the question actually being asked is "what do I have
+    -- to give back, and when" - and the warranty machinery already answers
+    -- that shape of question on the dashboard and in the calendar.
+    `lease_start`       DATE NULL,   -- when a leased asset's lease began (3.5.0)
+    `lease_expiry`      DATE NULL,
+    -- When the asset moved into a retired status (asset_status_types.is_retired)
+    -- and why - "Transferred to the Ministry of Education". Set and cleared by
+    -- AssetsService with the status, never typed on its own.
+    `retired_datetime`  DATETIME NULL,
+    `retired_reason`    VARCHAR(255) NULL,
+    -- Multi-tenancy (SCOPED DATA, not config): the company this asset belongs to.
+    -- NULL = the Default company (existing installs stay NULL, so a single-company
+    -- install is unaffected). Agent ingest derives it from the API key's tenant_id;
+    -- hostname uniqueness is enforced PER COMPANY in application code (two clients
+    -- may each legitimately have a "LAPTOP-01").
+    `tenant_id`         INT NULL,
+    -- QR labels (#935). `asset_tag` is the human-readable number printed on the
+    -- label ("LT0001") and is unique PER COMPANY — enforced in application code,
+    -- exactly as hostname is, and for the same reason plus one more: a UNIQUE
+    -- (tenant_id, asset_tag) index would NOT hold for the Default company,
+    -- because MySQL treats NULLs as distinct in a unique index, so two default
+    -- assets could both be LT0001 while the index looked like it was guarding
+    -- them. A unique index that silently doesn't apply is worse than none.
+    `asset_tag`         VARCHAR(64) NULL,
+    -- What the QR actually encodes: an opaque token, install-wide unique, minted
+    -- on first label print. Deliberately NOT the id (…/a/4711 invites 4712) and
+    -- deliberately NOT the asset tag (two companies may both use LT0001).
+    `qr_token`          VARCHAR(64) NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `idx_assets_location` (`location_id`),
     KEY `idx_assets_supplier` (`supplier_id`),
-    CONSTRAINT `fk_assets_location` FOREIGN KEY (`location_id`) REFERENCES `asset_locations` (`id`) ON DELETE SET NULL
+    KEY `idx_assets_cost_centre` (`cost_centre_id`),
+    KEY `idx_assets_tenant` (`tenant_id`),
+    -- Lookup only. See the asset_tag comment for why this one is NOT unique.
+    KEY `idx_assets_tag` (`tenant_id`, `asset_tag`),
+    KEY `idx_assets_tenant_service_tag` (`tenant_id`, `service_tag`),
+    -- This one IS safe to make unique: the token is install-wide and never NULL
+    -- once minted, so there is no NULL-distinctness trap.
+    UNIQUE KEY `uq_assets_qr_token` (`qr_token`),
+    CONSTRAINT `fk_assets_location` FOREIGN KEY (`location_id`) REFERENCES `asset_locations` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_assets_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
     -- fk_assets_supplier (supplier_id -> suppliers.id) is added in db_verify.php:
     -- the suppliers table is defined later in this file, so the FK can't be inline here.
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Counters for generated asset tags (PR #164) - the same shape, and claimed the
+-- same way, as ticket_number_counters: one atomic upsert, never read-then-write.
+-- counter_key is 'asset' (counting once across companies) or 'asset:co<id>'
+-- (each company on its own; 0 = the Default company, so the key is never NULL).
+-- next_value holds the LAST number issued. See includes/services/asset_tags.php.
+CREATE TABLE IF NOT EXISTS `asset_tag_counters` (
+    `counter_key`       VARCHAR(64) NOT NULL,
+    `next_value`        BIGINT NOT NULL DEFAULT 1,
+    `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`counter_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Asset label designs (GH #229). A design is what one label looks like (items
+-- placed in mm, design_json) on a stock (stock_json): a tape or roll, one label
+-- per page, or a sheet of labels in rows and columns. Printing makes a PDF at the
+-- stock's exact size. Slice 1 designs come from a template whose items are worked
+-- out from the company's label settings at print time; the designer (slice 2)
+-- saves its own items. tenant_id is the company; NULL = every company. One
+-- is_default per company: what Print label uses unless another is picked. version
+-- moves on every save, so two people cannot silently overwrite each other.
+-- See includes/asset_label_designs.php and wiki Asset-Label-Designer-Design.
+CREATE TABLE IF NOT EXISTS `asset_label_designs` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT NULL,
+    `name`             VARCHAR(100) NOT NULL,
+    `stock_json`       TEXT NOT NULL,
+    `design_json`      MEDIUMTEXT NOT NULL,
+    `is_default`       TINYINT(1) NOT NULL DEFAULT 0,
+    `version`          INT NOT NULL DEFAULT 1,
+    `created_by`       INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_by`       INT NULL,
+    `updated_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_ald_tenant` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Fonts uploaded for labels (GH #229): a brand font, or one for a language the
+-- bundled Noto Sans does not cover. Checked to be a real TTF / OTF / WOFF / WOFF2
+-- from its first bytes, stored under system/uploads/label-fonts with a name of
+-- our making, and served only through api/assets/label_font.php (company-scoped).
+-- A font in use by a design cannot be deleted.
+CREATE TABLE IF NOT EXISTS `asset_label_fonts` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT NULL,
+    `name`             VARCHAR(100) NOT NULL,
+    `original_name`    VARCHAR(255) NULL,
+    `stored_name`      VARCHAR(100) NOT NULL,
+    `format`           VARCHAR(10) NOT NULL,                -- ttf | otf | woff | woff2
+    `size_bytes`       INT NOT NULL DEFAULT 0,
+    `created_by`       INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_alf_tenant` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who is holding an asset.
+--
+-- EITHER a requester (`user_id`) OR a member of the desk (`analyst_id`), never
+-- both and never neither. AssetsService enforces that; the database cannot,
+-- because a CHECK across two columns is not portable to every MySQL version
+-- this product supports.
+--
+-- 🔴 `user_id` IS NULLABLE, AND WAS NOT. Assets could only be assigned to a
+-- requester, and analysts are not requesters - on a real install most of the
+-- desk had no `users` row at all, so an analyst holding a laptop simply could
+-- not be recorded. Relaxing the rule cannot invalidate an existing row, because
+-- every existing row already has a user.
+--
+-- ⚠️ TWO unique keys, one per kind of holder. MySQL permits repeated NULLs in a
+-- unique key, so `uq_user_asset` no longer constrains analyst rows at all (their
+-- user_id is NULL) and would have let the same analyst be given the same asset
+-- any number of times. `uq_analyst_asset` is what actually stops that.
 CREATE TABLE IF NOT EXISTS `users_assets` (
     `id`                        INT NOT NULL AUTO_INCREMENT,
-    `user_id`                   INT NOT NULL,
+    `user_id`                   INT NULL,
+    `analyst_id`                INT NULL,
     `asset_id`                  INT NOT NULL,
     `assigned_datetime`         DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `assigned_by_analyst_id`    INT NULL,
     `notes`                     VARCHAR(500) NULL,
     `expected_return_date`      DATE NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_user_asset` (`user_id`, `asset_id`),
+    UNIQUE KEY `uq_analyst_asset` (`analyst_id`, `asset_id`),
     CONSTRAINT `fk_users_assets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
+    CONSTRAINT `fk_users_assets_holder_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_users_assets_analyst` FOREIGN KEY (`assigned_by_analyst_id`) REFERENCES `analysts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -973,7 +3523,8 @@ CREATE TABLE IF NOT EXISTS `asset_checkout_log` (
 CREATE TABLE IF NOT EXISTS `asset_history` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `asset_id`          INT NOT NULL,
-    `analyst_id`        INT NOT NULL,
+    -- NULL = automated action (Intune sync, agent inventory, workflow) without a human analyst
+    `analyst_id`        INT NULL,
     `field_name`        VARCHAR(100) NOT NULL,
     `old_value`         VARCHAR(500) NULL,
     `new_value`         VARCHAR(500) NULL,
@@ -981,6 +3532,55 @@ CREATE TABLE IF NOT EXISTS `asset_history` (
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_asset_history_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`),
     CONSTRAINT `fk_asset_history_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- REST inventory (#194 Part B). The rows an external tool reports live in the
+-- inventory tables themselves (source = 'rest:<source>'); these say who owns a
+-- source name, which asset each of its devices is, and when each section was seen.
+--
+-- One analyst per (company, source name) - the integration's service account,
+-- the first to write it. A rotated key acts as the same analyst.
+CREATE TABLE IF NOT EXISTS `asset_inventory_source_owners` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT NOT NULL,
+    `source`           VARCHAR(48) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    `owner_analyst_id` INT NOT NULL,
+    `created_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_inventory_source_owner` (`tenant_id`, `source`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `asset_inventory_sources` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `asset_id`          INT NOT NULL,
+    `tenant_id`         INT NOT NULL,
+    `source`            VARCHAR(48) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    `source_device_ref` VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_inventory_device_ref` (`tenant_id`, `source`, `source_device_ref`),
+    UNIQUE KEY `uq_inventory_asset_source` (`asset_id`, `source`),
+    CONSTRAINT `fk_inventory_source_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- GH #200 Part B: the last good data (observed_at, fingerprint - NULL until a section
+-- has once succeeded) and, beside it, the last attempt and what came of it, so a
+-- failed or skipped section never makes old data look new or throws it away.
+-- imported_by_id is NULL for the agent, which is no analyst.
+CREATE TABLE IF NOT EXISTS `asset_inventory_sections` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `inventory_source_id` INT NOT NULL,
+    `section_name` VARCHAR(32) NOT NULL,
+    `observed_at` DATETIME NULL,
+    `imported_at` DATETIME NULL,
+    `imported_by_id` INT NULL,
+    `fingerprint` CHAR(64) NULL,
+    `last_outcome` VARCHAR(16) NULL,
+    `last_error` VARCHAR(500) NULL,
+    `last_attempt_at` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_inventory_source_section` (`inventory_source_id`, `section_name`),
+    CONSTRAINT `fk_inventory_section_source` FOREIGN KEY (`inventory_source_id`) REFERENCES `asset_inventory_sources` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `asset_disks` (
@@ -992,9 +3592,53 @@ CREATE TABLE IF NOT EXISTS `asset_disks` (
     `size_bytes`    BIGINT NULL,
     `free_bytes`    BIGINT NULL,
     `used_percent`  DECIMAL(5,1) NULL,
-    `source`        VARCHAR(20) NOT NULL DEFAULT 'agent',
+    `source`        VARCHAR(64) NOT NULL DEFAULT 'agent',
+    `observed_at` DATETIME NULL,
+    `imported_at` DATETIME NULL,
+    `external_id` VARCHAR(128) COLLATE utf8mb4_bin NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_disks_source_item` (`asset_id`, `source`, `external_id`),
     CONSTRAINT `fk_asset_disks_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The physical drives, as opposed to the lettered volumes in asset_disks above.
+-- One NVMe stick can carry C: and D:, and one volume can span two disks, so the
+-- two are separate tables rather than half-NULL rows in one. The serial is the
+-- reason it exists: warranty claims and disposal audits (discussion #97).
+CREATE TABLE IF NOT EXISTS `asset_physical_disks` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `asset_id`       INT NOT NULL,
+    `model`          VARCHAR(255) NULL,
+    `serial`         VARCHAR(100) NULL,
+    `size_bytes`     BIGINT NULL,
+    `media_type`     VARCHAR(100) NULL,
+    `interface_type` VARCHAR(50) NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_asset_physical_disks_asset` (`asset_id`),
+    -- "Also hide the other 49 drives like this" counts across the whole estate
+    -- with `WHERE pd.model <=> ?` (assetDiskMatchCount), so this is a scan of
+    -- every drive row on every asset screen that offers the option.
+    KEY `idx_asset_physical_disks_model` (`model`(100)),
+    CONSTRAINT `fk_asset_physical_disks_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Drives you have told FreeITSM not to show (a 0 GB "Microsoft Virtual Disk",
+-- say). A RULE, never a flag on the disk row: asset_physical_disks is cleared
+-- and rewritten on every agent report, so a flag there would be gone by the
+-- next scheduled run. Matched exactly on model AND size, both NULL-safe.
+-- asset_id NULL = every asset; set = this one only.
+CREATE TABLE IF NOT EXISTS `asset_disk_hide_rules` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`             INT NULL,
+    `asset_id`              INT NULL,
+    `model`                 VARCHAR(255) NULL,
+    `size_bytes`            BIGINT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_adhr_asset` (`asset_id`),
+    KEY `idx_adhr_model` (`model`(100)),
+    CONSTRAINT `fk_adhr_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `asset_network_adapters` (
@@ -1006,7 +3650,12 @@ CREATE TABLE IF NOT EXISTS `asset_network_adapters` (
     `subnet_mask`   VARCHAR(45) NULL,
     `gateway`       VARCHAR(45) NULL,
     `dhcp_enabled`  TINYINT(1) NULL,
+    `source` VARCHAR(64) NOT NULL DEFAULT 'agent',
+    `observed_at` DATETIME NULL,
+    `imported_at` DATETIME NULL,
+    `external_id` VARCHAR(128) COLLATE utf8mb4_bin NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_network_adapters_source_item` (`asset_id`, `source`, `external_id`),
     CONSTRAINT `fk_asset_network_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1022,6 +3671,460 @@ CREATE TABLE IF NOT EXISTS `asset_devices` (
     PRIMARY KEY (`id`),
     KEY `idx_asset_devices_asset` (`asset_id`),
     CONSTRAINT `fk_asset_devices_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- Custom asset fields — recording things that are not Windows computers.
+--
+-- The `assets` columns above describe a PC, because that is what the agent
+-- reports. A printer, a headset or a television needs different columns, and
+-- which ones differs per customer, so they are user-defined rather than
+-- hard-coded: a field is DECLARED here and its answers are stored one row per
+-- asset per field, typed.
+--
+-- Typing, validation and storage rules are shared with the CMDB's property
+-- system via includes/typed_fields.php. Only the definition and value tables
+-- are separate — see docs/design/flexible-asset-fields.md §2.3 for why.
+-- ============================================================================
+
+-- The catalogue. 🔑 A field is defined ONCE, install-wide, and then attached to
+-- as many asset types as want it — so a television's "IP address" is the SAME
+-- field as a network device's and one report can span both. (The CMDB scopes
+-- properties per class, which is right for 8 classes and wrong for "absolutely
+-- anything".)
+CREATE TABLE IF NOT EXISTS `asset_fields` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    -- Stable machine key. NEVER changes: import mappings and saved reports point
+    -- at it, so renaming the LABEL from "Size" to "Screen size" must not break a
+    -- nightly import.
+    `field_key`         VARCHAR(100) NOT NULL,
+    `label`             VARCHAR(150) NOT NULL,
+    -- One of TypedFields::TYPES. ⚠️ Cannot be changed once values exist — a
+    -- presentational variant is a MODE inside `config` (text/textarea is `text`
+    -- + config.multiline; date/time/datetime is `date` + config.date_mode), so
+    -- that flipping one keeps the field's identity and every answer given to it.
+    `field_type`        VARCHAR(20) NOT NULL,
+    -- Per-type JSON settings: multiline, decimals, unit, date_mode, ref_kind…
+    `config`            LONGTEXT NULL,
+    `help_text`         VARCHAR(500) NULL,
+    `is_unique`         TINYINT(1) NOT NULL DEFAULT 0,
+    `is_searchable`     TINYINT(1) NOT NULL DEFAULT 0,
+    `show_in_list`      TINYINT(1) NOT NULL DEFAULT 0,
+    -- Multi-tenancy: NULL = a global default field shared by every company; set
+    -- = one a company added for itself. Same convention as asset_types.
+    `tenant_id`         INT NULL,
+    -- ⚠️ SOFT delete, never hard. asset_field_values.field_id points here, so
+    -- dropping the row silently destroys every answer ever recorded against it.
+    -- form_fields learned this the hard way; see its own comment.
+    `is_deleted`        TINYINT(1) NOT NULL DEFAULT 0,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- ⚠️ Does NOT dedupe GLOBAL fields: MySQL treats NULLs as distinct, so two
+    -- tenant_id-NULL rows may share a key as far as this index is concerned.
+    -- Global-key dedup is enforced in application code, exactly as asset_types
+    -- documents for the same reason.
+    UNIQUE KEY `uq_asset_fields_tenant_key` (`tenant_id`, `field_key`),
+    CONSTRAINT `fk_asset_fields_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Allowed values for a `dropdown` field. Mirrors cmdb_class_property_options,
+-- colour included, so a coloured pill renders the same in both modules.
+CREATE TABLE IF NOT EXISTS `asset_field_options` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `field_id`          INT NOT NULL,
+    `option_value`      VARCHAR(255) NOT NULL,
+    `colour`            VARCHAR(7) NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_asset_field_options_field` (`field_id`),
+    CONSTRAINT `fk_asset_field_options_field` FOREIGN KEY (`field_id`) REFERENCES `asset_fields` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 🔑 A field SET is a bundle you ATTACH, not a copy you make. "Peripheral
+-- basics" = Serial + Warranty end, attached to Headset, Webcam and Keyboard;
+-- add a field to the set and all three gain it at once. Without sets the same
+-- two fields get re-declared fourteen times and adding a fifteenth means
+-- editing fourteen types.
+CREATE TABLE IF NOT EXISTS `asset_field_sets` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(150) NOT NULL,
+    `description`       VARCHAR(500) NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    `tenant_id`         INT NULL,
+    `is_deleted`        TINYINT(1) NOT NULL DEFAULT 0,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_asset_field_sets_tenant` (`tenant_id`),
+    CONSTRAINT `fk_asset_field_sets_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What is in a set. 🔑 `is_required` lives HERE, not on the field: a serial
+-- number may be required for laptops and optional for keyboards — same field,
+-- different obligation.
+CREATE TABLE IF NOT EXISTS `asset_field_set_fields` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `set_id`            INT NOT NULL,
+    `field_id`          INT NOT NULL,
+    `sort_order`        INT NOT NULL DEFAULT 0,
+    `is_required`       TINYINT(1) NOT NULL DEFAULT 0,
+    `default_value`     VARCHAR(255) NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_field_set_field` (`set_id`, `field_id`),
+    KEY `ix_afsf_field` (`field_id`),
+    CONSTRAINT `fk_afsf_set` FOREIGN KEY (`set_id`) REFERENCES `asset_field_sets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_afsf_field` FOREIGN KEY (`field_id`) REFERENCES `asset_fields` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A set attached to an asset TYPE — every Television gets these fields.
+CREATE TABLE IF NOT EXISTS `asset_type_field_sets` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `asset_type_id`     INT NOT NULL,
+    `set_id`            INT NOT NULL,
+    `sort_order`        INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_type_field_set` (`asset_type_id`, `set_id`),
+    KEY `ix_atfs_set` (`set_id`),
+    CONSTRAINT `fk_atfs_type` FOREIGN KEY (`asset_type_id`) REFERENCES `asset_types` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_atfs_set` FOREIGN KEY (`set_id`) REFERENCES `asset_field_sets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Which built-in Key info sections and tabs an asset TYPE shows (GH #200). Presentation only:
+-- never what is stored or required. No row = shown, in the default place.
+CREATE TABLE IF NOT EXISTS `asset_type_layout` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `asset_type_id`     INT NOT NULL,
+    `item_kind`         VARCHAR(10) NOT NULL,
+    `item_key`          VARCHAR(32) NOT NULL,
+    `is_shown`          TINYINT(1) NOT NULL DEFAULT 1,
+    `sort_order`        INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_type_layout_item` (`asset_type_id`, `item_kind`, `item_key`),
+    CONSTRAINT `fk_atl_type` FOREIGN KEY (`asset_type_id`) REFERENCES `asset_types` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Connected assets (GH #200 part C): a monitor plugged into a computer, a phone in
+-- a dock. A PHYSICAL attachment - not custody (users_assets), not a CMDB dependency.
+-- One row per source: the same monitor confirmed by a person and observed by a tool
+-- is two rows, and each source only ever opens or closes its own. asset_id is the
+-- side that reported it (the asset a REST report was about, or the one a person was
+-- on); the page shows a connection from both ends. disconnected_at NULL = connected.
+CREATE TABLE IF NOT EXISTS `asset_connections` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `asset_id`            INT NOT NULL,
+    `connected_asset_id`  INT NOT NULL,
+    `source`              VARCHAR(64) NOT NULL,
+    `connected_at`        DATETIME NOT NULL,
+    `first_observed_at`   DATETIME NULL,
+    `last_observed_at`    DATETIME NULL,
+    `disconnected_at`     DATETIME NULL,
+    `confirmed_by_id`     INT NULL,
+    `disconnected_by_id`  INT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_asset_connections_asset` (`asset_id`, `disconnected_at`),
+    KEY `idx_asset_connections_other` (`connected_asset_id`, `disconnected_at`),
+    CONSTRAINT `fk_asset_connections_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_asset_connections_other` FOREIGN KEY (`connected_asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The asset <-> configuration item link (GH #201): "these two records are the same piece of
+-- equipment". One row per PERIOD of being linked, closed (unlinked_at) and never deleted, so
+-- the table is also the history - the CMDB has none of its own. At most one live row per asset
+-- and per CI, enforced by AssetCiLinkService under a lock. asset_id follows a merge;
+-- original_asset_id and asset_name are the record it was made on, and never change. No foreign
+-- key on cmdb_object_id: a deleted CI's row stays, with its name and class kept in ci_name.
+CREATE TABLE IF NOT EXISTS `asset_ci_links` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `asset_id`           INT NOT NULL,
+    `original_asset_id`  INT NOT NULL,
+    `asset_name`         VARCHAR(255) NULL,
+    `cmdb_object_id`     INT NOT NULL,
+    `linked_at`          DATETIME NOT NULL,
+    `linked_by_id`       INT NULL,
+    `link_source`        VARCHAR(80) NOT NULL DEFAULT 'ui',
+    `unlinked_at`        DATETIME NULL,
+    `unlinked_by_id`     INT NULL,
+    `unlink_source`      VARCHAR(80) NULL,
+    `unlink_reason`      VARCHAR(20) NULL,
+    `ci_name`            VARCHAR(255) NULL,
+    `ci_class_name`      VARCHAR(150) NULL,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
+    PRIMARY KEY (`id`),
+    KEY `idx_asset_ci_links_asset` (`asset_id`, `unlinked_at`),
+    KEY `idx_asset_ci_links_ci` (`cmdb_object_id`, `unlinked_at`),
+    CONSTRAINT `fk_asset_ci_links_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Reconciliation you can review (GH #200 part D): the cases matching already refuses
+-- to guess about - two assets sharing a serial, a reused hostname, an ambiguous match,
+-- a peripheral a tool reported that matches no asset - kept for a person to decide.
+-- match_key makes the same case one row however often it is seen again.
+-- status: open | merged | different | ignored | resolved (it sorted itself out).
+CREATE TABLE IF NOT EXISTS `asset_review_items` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT NOT NULL,
+    `kind`             VARCHAR(32) NOT NULL,
+    `match_key`        VARCHAR(191) NOT NULL,
+    `asset_id`         INT NULL,
+    `other_asset_id`   INT NULL,
+    `source`           VARCHAR(64) NULL,
+    `detail`           VARCHAR(1000) NULL,
+    `first_seen_at`    DATETIME NOT NULL,
+    `last_seen_at`     DATETIME NOT NULL,
+    `status`           VARCHAR(16) NOT NULL DEFAULT 'open',
+    `resolved_by_id`   INT NULL,
+    `resolved_at`      DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_review_key` (`tenant_id`, `match_key`),
+    KEY `idx_asset_review_status` (`tenant_id`, `status`),
+    CONSTRAINT `fk_asset_review_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_asset_review_other` FOREIGN KEY (`other_asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Manufacturer and model names (GH #200 part D): "HP Inc." and "Hewlett-Packard" shown
+-- and filtered as "HP". Applied when values are SHOWN; assets keep what was reported.
+-- Install-wide - a vendor's name is not a company's choice. from_value matches without
+-- regard to case (the column's collation).
+CREATE TABLE IF NOT EXISTS `asset_name_mappings` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `field`          VARCHAR(16) NOT NULL,
+    `from_value`     VARCHAR(100) NOT NULL,
+    `to_value`       VARCHAR(100) NOT NULL,
+    `created_by_id`  INT NULL,
+    `created_at`     DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_name_mapping` (`field`, `from_value`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Protected values (GH #200 part D): a name, manufacturer or model a person set that
+-- no reporting tool may overwrite. What the tool reports instead is kept beside it
+-- (reported_*), so the page can show the disagreement; Release lets the tool win again.
+CREATE TABLE IF NOT EXISTS `asset_protected_fields` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `asset_id`         INT NOT NULL,
+    `field_name`       VARCHAR(32) NOT NULL,
+    `protected_by_id`  INT NULL,
+    `protected_at`     DATETIME NOT NULL,
+    `reported_value`   VARCHAR(255) NULL,
+    `reported_source`  VARCHAR(64) NULL,
+    `reported_at`      DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_protected_field` (`asset_id`, `field_name`),
+    CONSTRAINT `fk_asset_protected_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Two assets merged into one by a person from the review list (GH #200 part D).
+-- The merged asset is gone, so this is what still finds the one that was kept:
+-- its QR label (merged_qr_token) and a REST tool still reporting to its id.
+-- No FK on merged_asset_id: that asset no longer exists.
+CREATE TABLE IF NOT EXISTS `asset_merges` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `merged_asset_id`    INT NOT NULL,
+    `into_asset_id`      INT NOT NULL,
+    `tenant_id`          INT NULL,
+    `merged_hostname`    VARCHAR(50) NULL,
+    `merged_service_tag` VARCHAR(50) NULL,
+    `merged_asset_tag`   VARCHAR(64) NULL,
+    `merged_qr_token`    VARCHAR(64) NULL,
+    `merged_by_id`       INT NULL,
+    `merged_at`          DATETIME NOT NULL,
+    `summary`            TEXT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_merges_merged` (`merged_asset_id`),
+    KEY `idx_asset_merges_into` (`into_asset_id`),
+    KEY `idx_asset_merges_qr` (`merged_qr_token`),
+    CONSTRAINT `fk_asset_merges_into` FOREIGN KEY (`into_asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A set attached to ONE asset — the pilot case. Ten televisions, three of them
+-- trialled as smart TVs: tick "Smart TV" on those three and only those three
+-- show IP address, MAC address and Netflix enabled. The other seven do not
+-- carry empty fields, they carry no fields.
+--
+-- 🔑 It attaches a SET, never a loose field. If any asset could invent its own
+-- field, no two assets would be comparable and "list every smart TV's IP
+-- address" becomes unanswerable. The constraint is the feature.
+CREATE TABLE IF NOT EXISTS `asset_field_set_assets` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `asset_id`              INT NOT NULL,
+    `set_id`                INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_field_set_asset` (`asset_id`, `set_id`),
+    KEY `ix_afsa_set` (`set_id`),
+    CONSTRAINT `fk_afsa_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_afsa_set` FOREIGN KEY (`set_id`) REFERENCES `asset_field_sets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_afsa_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The answers. One row per asset per field. 🔑 NO ROW MEANS NOT SET — which is
+-- exactly what a wide table cannot express: a `smart_tv_ip` column would sit
+-- empty on every laptop in the estate forever.
+--
+-- No tenant_id: inherited from the asset, as cmdb_object_properties and
+-- ticket_assets inherit theirs.
+CREATE TABLE IF NOT EXISTS `asset_field_values` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    `asset_id`      INT NOT NULL,
+    `field_id`      INT NOT NULL,
+    -- Always 0 today. Reserved so that multi-value fields can be added later
+    -- without surgery on the unique key: Database Verification restores columns
+    -- and primary keys, not changes to an existing UNIQUE index.
+    `seq`           INT NOT NULL DEFAULT 0,
+    `value_text`    TEXT NULL,
+    `value_number`  DECIMAL(20,4) NULL,
+    `value_date`    DATETIME NULL,
+    `value_boolean` TINYINT(1) NULL,
+    -- ⚠️ Polymorphic — which table this points at is decided by the field's
+    -- `config.ref_kind` and the registry in includes/typed_fields.php. No FK is
+    -- possible, so a dangling reference is caught by a sweep, never by a hook.
+    -- Same rule as the `documents` block.
+    `value_ref_id`  INT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_asset_field_value` (`asset_id`, `field_id`, `seq`),
+    -- The filter indexes cmdb_object_properties never got. Without these,
+    -- "every asset whose Warranty Provider is X" scans every value in the table.
+    KEY `ix_afv_field_text` (`field_id`, `value_text`(64)),
+    KEY `ix_afv_field_number` (`field_id`, `value_number`),
+    KEY `ix_afv_field_date` (`field_id`, `value_date`),
+    CONSTRAINT `fk_afv_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_afv_field` FOREIGN KEY (`field_id`) REFERENCES `asset_fields` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- Asset import — CSV now, an API source later.
+--
+-- 🔑 CSV and API are the SAME feature. A source produces rows of key => value;
+-- everything after that — map, reconcile, validate, apply, log — is shared, and
+-- only the front half differs (parse a file vs fetch and walk a JSON path).
+-- The schema is therefore written for both, and `source_kind` is the only
+-- column that knows the difference.
+--
+-- See docs/design/flexible-asset-fields.md §6.
+-- ============================================================================
+
+-- A saved, re-runnable import. The mapping is worth keeping precisely because
+-- the same spreadsheet arrives again next month.
+CREATE TABLE IF NOT EXISTS `asset_import_profiles` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(150) NOT NULL,
+    -- What is being imported INTO. Only 'asset' is built; the column exists from
+    -- day one so a CMDB import is a later commit rather than a new project —
+    -- which is also the parked "how does an estate get into the CMDB?" question.
+    `target`            VARCHAR(20) NOT NULL DEFAULT 'asset',
+    `source_kind`       VARCHAR(10) NOT NULL DEFAULT 'csv',   -- csv | api
+    -- JSON. csv: delimiter, encoding, has_header. api: url, auth, root path…
+    `source_config`     LONGTEXT NULL,
+    -- 🔑 ORDERED JSON list of the columns that identify a row — the single most
+    -- important setting here. See asset_import_run_entries for what happens on
+    -- 0 / 1 / many matches.
+    `match_keys`        LONGTEXT NULL,
+    -- What to do with a row that was in the source last time and is gone now.
+    -- Never a default guess: ignore | flag | deactivate.
+    `on_missing`        VARCHAR(20) NOT NULL DEFAULT 'ignore',
+    -- A dropdown value the field's option list does not have: reject | add.
+    `on_unknown_option` VARCHAR(10) NOT NULL DEFAULT 'reject',
+    -- fill = only populate blanks; overwrite = the source wins. The blunt
+    -- version of source precedence; per-field precedence is a later job.
+    `write_mode`        VARCHAR(10) NOT NULL DEFAULT 'fill',
+    -- Applied to rows that do not name their own.
+    `default_asset_type_id`   INT NULL,
+    `default_status_id`       INT NULL,
+    -- A field set attached to every asset this profile touches — how a CSV of
+    -- pilot smart TVs carries its own extra fields.
+    `apply_field_set_id`      INT NULL,
+    `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    `tenant_id`         INT NULL,
+    `created_by_analyst_id`   INT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_aip_tenant` (`tenant_id`),
+    CONSTRAINT `fk_aip_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_aip_type` FOREIGN KEY (`default_asset_type_id`) REFERENCES `asset_types` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_aip_status` FOREIGN KEY (`default_status_id`) REFERENCES `asset_status_types` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_aip_set` FOREIGN KEY (`apply_field_set_id`) REFERENCES `asset_field_sets` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Source column -> where it lands. `target_kind` says which side of the fence:
+-- a built-in `assets` column, or a custom field by its stable field_key.
+CREATE TABLE IF NOT EXISTS `asset_import_mappings` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `profile_id`        INT NOT NULL,
+    -- A CSV header, or (later) a JSON path.
+    `source_key`        VARCHAR(255) NOT NULL,
+    `target_kind`       VARCHAR(10) NOT NULL,      -- core | field
+    -- 'hostname' for core; a field_key for field. ⚠️ The KEY, never the label —
+    -- renaming a field's label must not break a nightly import.
+    `target_key`        VARCHAR(100) NOT NULL,
+    -- JSON: trim, case, date format, value substitutions.
+    `transform`         LONGTEXT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_aim_profile_source` (`profile_id`, `source_key`),
+    CONSTRAINT `fk_aim_profile` FOREIGN KEY (`profile_id`) REFERENCES `asset_import_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One run. Mirrors directory_sync_runs, including `mode`, because that design
+-- already answers "what did it do, and can I see it before it does it?".
+CREATE TABLE IF NOT EXISTS `asset_import_runs` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `profile_id`        INT NULL,
+    -- 🔑 preview is not a lesser run — it is the SAME run that stops before
+    -- writing. Anything a preview cannot tell you, a live run would surprise
+    -- you with.
+    `mode`              VARCHAR(10) NOT NULL DEFAULT 'live',   -- live | preview
+    `status`            VARCHAR(12) NOT NULL DEFAULT 'running',-- running | ok | stopped | failed
+    `source_name`       VARCHAR(255) NULL,     -- the uploaded file's own name, for the log
+    `stored_file`       VARCHAR(255) NULL,     -- our generated name; a preview keeps it so
+                                               -- committing does not need a re-upload
+    `started_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `finished_datetime` DATETIME NULL,
+    `seen_count`        INT NOT NULL DEFAULT 0,
+    `created_count`     INT NOT NULL DEFAULT 0,
+    `updated_count`     INT NOT NULL DEFAULT 0,
+    `unchanged_count`   INT NOT NULL DEFAULT 0,
+    `conflict_count`    INT NOT NULL DEFAULT 0,
+    `skipped_count`     INT NOT NULL DEFAULT 0,
+    `error_count`       INT NOT NULL DEFAULT 0,
+    `message`           TEXT NULL,
+    `triggered_by_analyst_id` INT NULL,
+    `tenant_id`         INT NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_air_profile` (`profile_id`, `started_datetime`),
+    KEY `ix_air_status` (`status`),
+    CONSTRAINT `fk_air_profile` FOREIGN KEY (`profile_id`) REFERENCES `asset_import_profiles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What the run did to each ROW. "47 updated" is a number; this is the answer to
+-- "updated how, and which?", which is the only version anybody can act on.
+--
+-- 🔑 THIS IS ALSO THE HOLDING AREA. A row that could not be imported is kept
+-- here with `action = 'error'` and its source line verbatim in `raw_row`, to be
+-- reviewed, corrected and retried — rather than silently dropped (the data and
+-- the reason are both lost) or silently auto-created (which invents an asset
+-- type called "Televsion" the first time somebody typos a spreadsheet).
+CREATE TABLE IF NOT EXISTS `asset_import_run_entries` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `run_id`            INT NOT NULL,
+    `row_number`        INT NULL,              -- line in the source, for "row 14 is wrong"
+    -- create | update | unchanged | conflict | skip | error | deactivate
+    `action`            VARCHAR(16) NOT NULL,
+    `asset_id`          INT NULL,              -- NULL on a preview, a skip or an error
+    `source_ref`        VARCHAR(255) NULL,     -- the value the match key was tried on
+    `display_name`      VARCHAR(255) NULL,
+    -- Human-readable: which fields changed, or exactly why nothing happened.
+    `detail`            VARCHAR(1000) NULL,
+    -- ⚠️ The ONE place JSON belongs in this design: the source row verbatim, so
+    -- a run is diffable and a parked row can be retried without re-fetching.
+    `raw_row`           LONGTEXT NULL,
+    -- Set when a parked row has been dealt with, so the holding area empties.
+    `resolved_datetime` DATETIME NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_aire_run` (`run_id`, `action`),
+    KEY `ix_aire_asset` (`asset_id`),
+    -- The holding area's own query: everything still needing attention.
+    KEY `ix_aire_unresolved` (`action`, `resolved_datetime`),
+    CONSTRAINT `fk_aire_run` FOREIGN KEY (`run_id`) REFERENCES `asset_import_runs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `asset_dashboard_widgets` (
@@ -1086,6 +4189,7 @@ CREATE TABLE IF NOT EXISTS `ticket_dashboard_widgets` (
     `display_order`         INT NOT NULL DEFAULT 0,
     `is_active`             TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1096,6 +4200,7 @@ CREATE TABLE IF NOT EXISTS `analyst_ticket_dashboard_widgets` (
     `sort_order`        INT NOT NULL DEFAULT 0,
     `status_filter`     VARCHAR(50) NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_analyst_ticket_widget` (`analyst_id`, `widget_id`),
     CONSTRAINT `fk_atdw_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`),
@@ -1166,6 +4271,7 @@ CREATE TABLE IF NOT EXISTS `servers` (
     `guest_os`          VARCHAR(255) NULL,
     `last_synced`       DATETIME NULL,
     `raw_data`          LONGTEXT NULL,
+    `is_demo`                    TINYINT(1) NOT NULL DEFAULT 0,   -- set by the Virtualisation demo (System -> Demo Data)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1257,6 +4363,7 @@ CREATE TABLE IF NOT EXISTS `change_types` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(50) NOT NULL,
     `colour`            VARCHAR(20) NULL,
+    `approval_route`    VARCHAR(20) NOT NULL DEFAULT 'review',
     `is_default`        TINYINT(1) NOT NULL DEFAULT 0,
     `display_order`     INT NOT NULL DEFAULT 0,
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
@@ -1273,6 +4380,7 @@ INSERT IGNORE INTO `change_types` (`name`, `colour`, `is_default`, `display_orde
 CREATE TABLE IF NOT EXISTS `change_statuses` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(50) NOT NULL,
+    `stage`             VARCHAR(20) NULL,
     `is_closed`         TINYINT(1) NOT NULL DEFAULT 0,
     `colour`            VARCHAR(20) NULL,
     `is_default`        TINYINT(1) NOT NULL DEFAULT 0,
@@ -1283,17 +4391,17 @@ CREATE TABLE IF NOT EXISTS `change_statuses` (
     UNIQUE KEY `uq_change_statuses_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `change_statuses` (`name`, `is_closed`, `colour`, `is_default`, `display_order`) VALUES
-    ('Draft',            0, '#9e9e9e', 1, 10),
-    ('Submitted',        0, '#2563eb', 0, 20),
-    ('Pending Approval', 0, '#e65100', 0, 30),
-    ('Approved',         0, '#2e7d32', 0, 40),
-    ('Rejected',         1, '#c62828', 0, 50),
-    ('Scheduled',        0, '#9333ea', 0, 60),
-    ('In Progress',      0, '#1565c0', 0, 70),
-    ('Completed',        1, '#1b5e20', 0, 80),
-    ('Failed',           1, '#c62828', 0, 90),
-    ('Cancelled',        1, '#bdbdbd', 0, 100);
+INSERT IGNORE INTO `change_statuses` (`name`, `stage`, `is_closed`, `colour`, `is_default`, `display_order`) VALUES
+    ('Draft',            'draft',        0, '#9e9e9e', 1, 10),
+    ('Submitted',        'draft',        0, '#2563eb', 0, 20),
+    ('Pending Approval', 'awaiting',     0, '#e65100', 0, 30),
+    ('Approved',         'approved',     0, '#2e7d32', 0, 40),
+    ('Rejected',         'stopped',      1, '#c62828', 0, 50),
+    ('Scheduled',        'implementing', 0, '#9333ea', 0, 60),
+    ('In Progress',      'implementing', 0, '#1565c0', 0, 70),
+    ('Completed',        'done',         1, '#1b5e20', 0, 80),
+    ('Failed',           'done',         1, '#c62828', 0, 90),
+    ('Cancelled',        'stopped',      1, '#bdbdbd', 0, 100);
 
 CREATE TABLE IF NOT EXISTS `change_priorities` (
     `id`                INT NOT NULL AUTO_INCREMENT,
@@ -1382,6 +4490,7 @@ INSERT IGNORE INTO `change_field_layout` (`field_key`, `section_id`, `display_or
 
 CREATE TABLE IF NOT EXISTS `changes` (
     `id`                            INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`                     INT NULL,
     `title`                         VARCHAR(255) NOT NULL,
     `change_type_id`                INT NULL,
     `status_id`                     INT NULL,
@@ -1392,6 +4501,8 @@ CREATE TABLE IF NOT EXISTS `changes` (
     `assigned_to_id`                INT NULL,
     `approver_id`                   INT NULL,
     `approval_datetime`             DATETIME NULL,
+    `approval_id`                   INT NULL,
+    `template_version_id`           INT NULL,
     `work_start_datetime`           DATETIME NULL,
     `work_end_datetime`             DATETIME NULL,
     `outage_start_datetime`         DATETIME NULL,
@@ -1405,7 +4516,8 @@ CREATE TABLE IF NOT EXISTS `changes` (
     `risk_likelihood`               TINYINT NULL,
     `risk_impact_score`             TINYINT NULL,
     `risk_score`                    TINYINT NULL,
-    `risk_level`                    VARCHAR(20) NULL,
+    `risk_level`                    VARCHAR(50) NULL,
+    `risk_policy_version_id`        INT NULL,   -- #246: NULL = the built-in 5 x 5
     `pir_was_successful`            TINYINT(1) NULL,
     `pir_actual_start`              DATETIME NULL,
     `pir_actual_end`                DATETIME NULL,
@@ -1418,11 +4530,13 @@ CREATE TABLE IF NOT EXISTS `changes` (
     `created_by_id`                 INT NULL,
     `created_datetime`              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `modified_datetime`             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_changes_status_id` (`status_id`),
     KEY `ix_changes_priority_id` (`priority_id`),
     KEY `ix_changes_change_type_id` (`change_type_id`),
     KEY `ix_changes_impact_id` (`impact_id`),
+    KEY `ix_changes_tenant_id` (`tenant_id`),
     CONSTRAINT `fk_changes_requester` FOREIGN KEY (`requester_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_changes_assigned_to` FOREIGN KEY (`assigned_to_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_changes_approver` FOREIGN KEY (`approver_id`) REFERENCES `analysts` (`id`),
@@ -1430,7 +4544,8 @@ CREATE TABLE IF NOT EXISTS `changes` (
     CONSTRAINT `fk_changes_status` FOREIGN KEY (`status_id`) REFERENCES `change_statuses` (`id`),
     CONSTRAINT `fk_changes_priority` FOREIGN KEY (`priority_id`) REFERENCES `change_priorities` (`id`),
     CONSTRAINT `fk_changes_change_type` FOREIGN KEY (`change_type_id`) REFERENCES `change_types` (`id`),
-    CONSTRAINT `fk_changes_impact` FOREIGN KEY (`impact_id`) REFERENCES `change_impacts` (`id`)
+    CONSTRAINT `fk_changes_impact` FOREIGN KEY (`impact_id`) REFERENCES `change_impacts` (`id`),
+    CONSTRAINT `fk_changes_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `change_attachments` (
@@ -1442,7 +4557,10 @@ CREATE TABLE IF NOT EXISTS `change_attachments` (
     `file_type`         VARCHAR(100) NULL,
     `uploaded_by_id`    INT NULL,
     `uploaded_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `sha256`            CHAR(64) NULL,
+    `client_reference` VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_change_attachment_reference` (`change_id`, `uploaded_by_id`, `client_reference`),
     CONSTRAINT `fk_change_attachments_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_change_attachments_uploaded_by` FOREIGN KEY (`uploaded_by_id`) REFERENCES `analysts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1456,10 +4574,75 @@ CREATE TABLE IF NOT EXISTS `change_audit` (
     `old_value`         VARCHAR(1000) NULL,
     `new_value`         VARCHAR(1000) NULL,
     `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     INDEX `idx_change_audit_change` (`change_id`),
     CONSTRAINT `fk_change_audit_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_change_audit_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One row per approval round (#180 Part 1); see includes/changes/approvals.php.
+-- fk_change_approvals_change is RESTRICT, NOT CASCADE, on purpose: a change that has
+-- approval records is evidence, and a stray DELETE must fail rather than wipe them.
+-- ChangesService::deleteChange() removes the rounds itself when the settings allow it.
+CREATE TABLE IF NOT EXISTS `change_approvals` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `change_id`         INT NOT NULL,
+    `round_no`          INT NOT NULL,
+    `route`             VARCHAR(20) NOT NULL,
+    `state`             VARCHAR(20) NOT NULL,
+    `is_independent`    TINYINT(1) NULL,
+    `content_hash`      CHAR(64) NULL,
+    `snapshot`          LONGTEXT NULL,
+    `opened_by_id`      INT NULL,
+    `opened_datetime`   DATETIME NOT NULL,
+    `decided_by_id`     INT NULL,
+    `decided_datetime`  DATETIME NULL,
+    `decision_note`     TEXT NULL,
+    `closed_reason`     VARCHAR(255) NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_change_approvals_round` (`change_id`, `round_no`),
+    CONSTRAINT `fk_change_approvals_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`),
+    CONSTRAINT `fk_change_approvals_opened_by` FOREIGN KEY (`opened_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_change_approvals_decided_by` FOREIGN KEY (`decided_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every vote ever cast, never updated (#180 Part 1).
+CREATE TABLE IF NOT EXISTS `change_approval_votes` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `approval_id`       INT NOT NULL,
+    `analyst_id`        INT NULL,
+    `is_required`       TINYINT(1) NOT NULL,
+    `is_counted`        TINYINT(1) NOT NULL,
+    `vote`              VARCHAR(20) NOT NULL,
+    `comment`           TEXT NULL,
+    `content_hash`      CHAR(64) NULL,
+    `was_current`       TINYINT(1) NULL,
+    `voted_datetime`    DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_cav_approval` (`approval_id`),
+    CONSTRAINT `fk_cav_approval` FOREIGN KEY (`approval_id`) REFERENCES `change_approvals` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_cav_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every saved version of a change's long-text fields, in full (#180 Part 2).
+-- Written only by ChangesService, in the same transaction as the save; never
+-- updated or deleted by any endpoint. See includes/changes/revisions.php.
+CREATE TABLE IF NOT EXISTS `change_text_revisions` (
+    `id`                BIGINT NOT NULL AUTO_INCREMENT,
+    `change_id`         INT NOT NULL,
+    `field_key`         VARCHAR(40) NOT NULL,
+    `content`           LONGTEXT NULL,
+    `content_format`    VARCHAR(10) NOT NULL,
+    `content_hash`      CHAR(64) NOT NULL,
+    `is_baseline`       TINYINT(1) NOT NULL DEFAULT 0,
+    `editor_id`         INT NULL,
+    `source`            VARCHAR(10) NOT NULL,
+    `created_datetime`  DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_ctr_change_field` (`change_id`, `field_key`, `id`),
+    CONSTRAINT `fk_ctr_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ctr_editor` FOREIGN KEY (`editor_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `change_comments` (
@@ -1469,6 +4652,7 @@ CREATE TABLE IF NOT EXISTS `change_comments` (
     `comment_text`      LONGTEXT NOT NULL,
     `is_internal`       TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     INDEX `idx_change_comments_change` (`change_id`),
     CONSTRAINT `fk_change_comments_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
@@ -1485,6 +4669,7 @@ CREATE TABLE IF NOT EXISTS `change_cab_members` (
     `vote_datetime`     DATETIME NULL,
     `added_by_id`       INT NULL,
     `added_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_cab_change_analyst` (`change_id`, `analyst_id`),
     CONSTRAINT `fk_cab_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
@@ -1522,6 +4707,21 @@ CREATE TABLE IF NOT EXISTS `change_relations` (
     CONSTRAINT `fk_relations_created_by` FOREIGN KEY (`created_by_id`) REFERENCES `analysts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Incidents (tickets) linked to a change — the Change Management twin of
+-- problem_tickets. Right-click a ticket → "Link to change".
+CREATE TABLE IF NOT EXISTS `change_tickets` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `change_id`        INT NOT NULL,
+    `ticket_id`        INT NOT NULL,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_change_ticket` (`change_id`, `ticket_id`),
+    KEY `ix_ctickets_ticket` (`ticket_id`),
+    CONSTRAINT `fk_ctickets_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ctickets_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `change_categories` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(100) NOT NULL,
@@ -1552,12 +4752,75 @@ CREATE TABLE IF NOT EXISTS `change_templates` (
     `display_order`             INT NOT NULL DEFAULT 0,
     `created_by_id`             INT NULL,
     `created_datetime`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `scope_use`                 TEXT NULL,
+    `scope_not`                 TEXT NULL,
+    `open_fields`               VARCHAR(255) NOT NULL DEFAULT 'description',
+    `current_version_id`        INT NULL,
+    `retired_datetime`          DATETIME NULL,
+    `risk_policy_version_id`    INT NULL,   -- #246: the risk policy its ratings were given under
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_template_category` FOREIGN KEY (`category_id`) REFERENCES `change_categories` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_template_created_by` FOREIGN KEY (`created_by_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_template_change_type` FOREIGN KEY (`change_type_id`) REFERENCES `change_types` (`id`),
     CONSTRAINT `fk_template_priority` FOREIGN KEY (`priority_id`) REFERENCES `change_priorities` (`id`),
     CONSTRAINT `fk_template_impact` FOREIGN KEY (`impact_id`) REFERENCES `change_impacts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every version of a template submitted for approval (#180 §8); immutable once approved.
+-- RESTRICT on the template: a template with versions is evidence for every change it approved.
+CREATE TABLE IF NOT EXISTS `change_template_versions` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `template_id`       INT NOT NULL,
+    `version_no`        INT NOT NULL,
+    `state`             VARCHAR(20) NOT NULL,
+    `content`           LONGTEXT NOT NULL,
+    `content_hash`      CHAR(64) NOT NULL,
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NOT NULL,
+    `approved_by_id`    INT NULL,
+    `approved_datetime` DATETIME NULL,
+    `approval_note`     TEXT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ctv_template_version` (`template_id`, `version_no`),
+    CONSTRAINT `fk_ctv_template` FOREIGN KEY (`template_id`) REFERENCES `change_templates` (`id`),
+    CONSTRAINT `fk_ctv_created_by` FOREIGN KEY (`created_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_ctv_approved_by` FOREIGN KEY (`approved_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Change risk policies (#246): one row per install (tenant_id NULL) today, a company's own later.
+-- current_version_id NULL = the built-in 5 x 5. See includes/changes/risk_policy.php.
+CREATE TABLE IF NOT EXISTS `change_risk_policies` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`          INT NULL,
+    `current_version_id` INT NULL,
+    `updated_by_id`      INT NULL,
+    `updated_datetime`   DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_crp_tenant` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every saved version of a risk policy; never updated, so a change always shows the scale it was rated on.
+CREATE TABLE IF NOT EXISTS `change_risk_policy_versions` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `policy_id`        INT NOT NULL,
+    `version_no`       INT NOT NULL,
+    `content`          LONGTEXT NOT NULL,
+    `content_hash`     CHAR(64) NOT NULL,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_crpv_policy_version` (`policy_id`, `version_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who may use a template (#180 §8): no rows = everyone with Change Management.
+CREATE TABLE IF NOT EXISTS `change_template_teams` (
+    `id`          INT NOT NULL AUTO_INCREMENT,
+    `template_id` INT NOT NULL,
+    `team_id`     INT NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ctt_template_team` (`template_id`, `team_id`),
+    CONSTRAINT `fk_ctt_template` FOREIGN KEY (`template_id`) REFERENCES `change_templates` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ctt_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `change_notifications` (
@@ -1640,6 +4903,26 @@ CREATE TABLE IF NOT EXISTS `problem_tickets` (
     CONSTRAINT `fk_ptickets_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Ticket-to-ticket links (self-referential, typed). relation_type:
+--   'related'   = symmetric (order doesn't matter; reciprocal duplicates blocked);
+--   'duplicate' = source is a DUPLICATE OF target (target is the master);
+--   'parent'    = source is the PARENT OF target (target is the child).
+-- The service enforces: no self-link, at most one parent per child, at most one
+-- duplicate-master per ticket, and same-company only on multi-tenant installs.
+CREATE TABLE IF NOT EXISTS `ticket_links` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `source_ticket_id`  INT NOT NULL,
+    `target_ticket_id`  INT NOT NULL,
+    `relation_type`     VARCHAR(20) NOT NULL DEFAULT 'related',
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ticket_link` (`source_ticket_id`, `target_ticket_id`, `relation_type`),
+    KEY `ix_ticket_links_target` (`target_ticket_id`),
+    CONSTRAINT `fk_ticket_links_source` FOREIGN KEY (`source_ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ticket_links_target` FOREIGN KEY (`target_ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `problem_audit` (
     `id`               INT NOT NULL AUTO_INCREMENT,
     `problem_id`       INT NOT NULL,
@@ -1677,6 +4960,7 @@ CREATE TABLE IF NOT EXISTS `calendar_categories` (
     `is_active`     TINYINT(1) NOT NULL DEFAULT 1,
     `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1697,14 +4981,210 @@ CREATE TABLE IF NOT EXISTS `calendar_events` (
     `source`            VARCHAR(30) NULL,
     `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_calendar_events_category` FOREIGN KEY (`category_id`) REFERENCES `calendar_categories` (`id`),
     CONSTRAINT `fk_calendar_events_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+-- ----------------------------------------------------------
+-- Scheduled work -> the analyst's own calendar (GH discussion #75)
+-- ----------------------------------------------------------
+--
+-- Three tables, and the split is the point:
+--
+--   calendar_connections  ONE per install (usually), configured by an admin.
+--                         Microsoft app-only and Google Workspace domain-wide
+--                         delegation BOTH authenticate as the app rather than as
+--                         each person, so credentials belong here, not per user.
+--   calendar_enrolments   ONE per analyst. Whether they want it at all, which
+--                         connection, and WHICH ADDRESS is theirs.
+--   calendar_sync_events  What we put where. Without this a reassignment leaves
+--                         an orphan in somebody's calendar forever.
+--
+-- ⚠️ Provider-agnostic ON PURPOSE. FreeITSM already runs this pattern three
+-- times (messaging: Twilio/Meta; issue trackers: Jira/Azure DevOps; mailboxes:
+-- Microsoft/Google/IMAP) — see includes/integrations/IssueTrackerProvider.php,
+-- which itself says it copied MessagingProvider rather than reinventing. Only
+-- create/update/delete-an-event differs between providers; everything difficult
+-- here (whose work, what happens on reassign, not orphaning) is shared.
+
+CREATE TABLE IF NOT EXISTS `calendar_connections` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `name`                VARCHAR(100) NOT NULL,
+    -- 'microsoft' today. 'google' is the next one and needs no schema change.
+    `provider`            VARCHAR(20) NOT NULL DEFAULT 'microsoft',
+    -- Encrypted JSON, same convention as integration_connections.credentials.
+    -- NULL when borrowing a mailbox's credentials instead (below).
+    `credentials`         LONGTEXT NULL,
+    -- Borrow the Azure app registration already configured for a mailbox rather
+    -- than registering a second app. Most installs have done the Azure dance for
+    -- mail already; adding Calendars.ReadWrite to that app is far less work than
+    -- starting again. NULL = this connection carries its own credentials.
+    -- ⚠️ ON DELETE SET NULL, not CASCADE: deleting a mailbox must not silently
+    -- delete the calendar connection and everyone's enrolment with it. It breaks
+    -- loudly instead, which is recoverable.
+    `mailbox_id`          INT NULL,
+    `is_active`           TINYINT(1) NOT NULL DEFAULT 1,
+    -- Cached app-only access token, encrypted, exactly as target_mailboxes does
+    -- it. App-only tokens carry no refresh token and last about an hour, so this
+    -- is a cache and not a credential store — but it is still a bearer token that
+    -- grants calendar access on its own, so it is encrypted like one.
+    `token_data`          LONGTEXT NULL,
+    `last_error`          VARCHAR(500) NULL,
+    `last_error_datetime` DATETIME NULL,
+    `created_by`          INT NULL,
+    `created_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_calendar_connections_mailbox` FOREIGN KEY (`mailbox_id`) REFERENCES `target_mailboxes` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `calendar_enrolments` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`         INT NOT NULL,
+    -- 'off' | 'push' | 'feed'. ONE choice, not independent switches: with both a
+    -- push and a subscribed feed live you see every scheduled ticket TWICE, once
+    -- as a real event and once from the subscription.
+    `mode`               VARCHAR(10) NOT NULL DEFAULT 'off',
+    -- What of a TASK reaches the calendar: 'off' | 'work' | 'due' | 'both' (#75).
+    -- Separate from `mode`, which decides HOW things get there. Folding the two
+    -- together would need eight values to say two independent things, and
+    -- turning tickets off would silently take tasks with them. Defaults to
+    -- 'off': nobody asked for their task list to appear in Outlook overnight.
+    `task_mode`          VARCHAR(10) NOT NULL DEFAULT 'off',
+    `connection_id`      INT NULL,
+    -- The mailbox to write into. Normally analysts.email, but an analyst's
+    -- FreeITSM address is not always their mailbox UPN — a local account with a
+    -- personal address, or an LDAP import keyed differently. Without this the
+    -- only fix would be changing the address they log in with.
+    `calendar_address`   VARCHAR(255) NULL,
+    -- Reserved: encrypted per-analyst tokens, for a provider that genuinely needs
+    -- them (a personal, non-Workspace Google account). Neither provider planned
+    -- today uses it — the row exists so adding one is not a migration.
+    `credentials`        LONGTEXT NULL,
+    -- Microsoft Graph delta token for reading CHANGES back out of this mailbox
+    -- (GH #75, bi-directional). Opaque and long. NULL = never polled, so the
+    -- next run takes a baseline and applies nothing.
+    -- Graph change-notification subscription for this mailbox (GH #75).
+    -- Notifications make a change land in seconds instead of on the next poll;
+    -- the poll REMAINS as a backstop, because a notification that never arrives
+    -- looks exactly like nothing having changed.
+    `subscription_id`      VARCHAR(255) NULL,
+    -- Graph caps calendar subscriptions at ~3 days, so the cron renews them.
+    `subscription_expires` DATETIME NULL,
+    -- Random per subscription, echoed by Graph in every notification. It is the
+    -- ONLY thing distinguishing a real callback from anyone on the internet
+    -- POSTing to a deliberately public endpoint.
+    `subscription_secret`  VARCHAR(128) NULL,
+    `delta_token`        TEXT NULL,
+    `delta_synced_datetime` DATETIME NULL,
+    `last_sync_datetime` DATETIME NULL,
+    `last_error`         VARCHAR(500) NULL,
+    `created_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_calendar_enrolment_analyst` (`analyst_id`),
+    CONSTRAINT `fk_calendar_enrolments_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_calendar_enrolments_connection` FOREIGN KEY (`connection_id`) REFERENCES `calendar_connections` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `calendar_sync_events` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    -- A row belongs to a ticket OR a task, never both, so both are nullable
+    -- (#75). An install that predates tasks is relaxed by the probed MODIFY in
+    -- api/system/db_verify.php.
+    `ticket_id`          INT NULL,
+    `task_id`            INT NULL,
+    -- 'work' | 'due'. ONE TASK CAN PRODUCE TWO EVENTS: its scheduled work
+    -- window and its due date. Without this the second write finds the first
+    -- row and overwrites it, so an analyst who asked for both gets whichever
+    -- was reconciled last. Tickets only ever have a work window, hence the
+    -- default and no migration for existing rows.
+    `kind`               VARCHAR(16) NOT NULL DEFAULT 'work',
+    -- WHOSE calendar it went into. Not derivable from the ticket at delete time:
+    -- reassignment changes tickets.owner_id, and by then this row is the only
+    -- record of who the event was actually created for.
+    `analyst_id`         INT NOT NULL,
+    `connection_id`      INT NULL,
+    -- The provider's id for the event. Graph's are long and opaque.
+    `remote_event_id`    VARCHAR(500) NOT NULL,
+    -- The address it was written to, stored rather than looked up: an analyst can
+    -- change calendar_address, and the event still lives in the OLD mailbox.
+    `remote_calendar`    VARCHAR(255) NOT NULL,
+    `created_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- One event per ticket per person. A ticket reassigned A -> B -> A must not
+    -- accumulate rows, and this is what makes "delete the old one" a lookup.
+    -- One event per ticket per person. A ticket reassigned A -> B -> A must not
+    -- accumulate rows, and this is what makes "delete the old one" a lookup.
+    --
+    -- Still correct now ticket_id is nullable: MySQL allows any number of NULLs
+    -- in a UNIQUE index, so task rows pass straight through it rather than
+    -- colliding on (NULL, analyst).
+    UNIQUE KEY `uniq_calendar_sync_ticket_analyst` (`ticket_id`, `analyst_id`),
+    KEY `idx_calendar_sync_ticket` (`ticket_id`),
+    -- The task equivalent MUST include `kind`, or a task's work event and its
+    -- due event are the same row.
+    UNIQUE KEY `uniq_calendar_sync_task_analyst_kind` (`task_id`, `analyst_id`, `kind`),
+    KEY `idx_calendar_sync_task` (`task_id`),
+    CONSTRAINT `fk_calendar_sync_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_calendar_sync_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_calendar_sync_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tasks had NO history at all until calendar sync could change one from outside
+-- FreeITSM (#75) - a due date dragged in Outlook is a change nobody in FreeITSM
+-- made. Mirrors ticket_audit rather than inventing a second shape for the same
+-- idea, plus a `source` so an Outlook-driven change is tellable from a person's.
+CREATE TABLE IF NOT EXISTS `task_audit` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `task_id`            INT NOT NULL,
+    -- NULL when it was not a person: a calendar sync, a cron.
+    `analyst_id`         INT NULL,
+    `field_name`         VARCHAR(100) NOT NULL,
+    `old_value`          VARCHAR(500) NULL,
+    `new_value`          VARCHAR(500) NULL,
+    `source`             VARCHAR(20) NOT NULL DEFAULT 'app',
+    `created_datetime`   DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`            TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_task_audit_task` (`task_id`),
+    CONSTRAINT `fk_task_audit_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_task_audit_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- ----------------------------------------------------------
 -- Morning Checks
 -- ----------------------------------------------------------
+
+-- Optional grouping for the morning round (discussion #64). A check may sit in
+-- one group or none; ungrouped checks behave exactly as they always have, so an
+-- install that never opens the Groups tab sees no change.
+--
+-- ⚠️ ASSIGNMENT HERE IS GUIDANCE, NOT A LOCK. Nothing in the save path consults
+-- it. Whoever is in first thing can complete any check, which is the whole point
+-- on the morning somebody is off sick — the request was for routing and
+-- ownership, not for a permission.
+CREATE TABLE IF NOT EXISTS `morningChecks_Groups` (
+    `GroupID`           INT NOT NULL AUTO_INCREMENT,
+    `GroupName`         VARCHAR(255) NOT NULL,
+    `GroupDescription`  LONGTEXT NULL,
+    -- A group may be routed to a team OR to one analyst. Both NULL = nobody in
+    -- particular, which is the default and stays the common case.
+    `AssignedTeamID`    INT NULL,
+    `AssignedAnalystID` INT NULL,
+    `IsActive`          TINYINT(1) NOT NULL DEFAULT 1,
+    `SortOrder`         INT NOT NULL DEFAULT 0,
+    `CreatedDate`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `ModifiedDate`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`GroupID`),
+    KEY `ix_mcg_team` (`AssignedTeamID`),
+    KEY `ix_mcg_analyst` (`AssignedAnalystID`),
+    CONSTRAINT `fk_mcg_team`    FOREIGN KEY (`AssignedTeamID`)    REFERENCES `teams` (`id`)     ON DELETE SET NULL,
+    CONSTRAINT `fk_mcg_analyst` FOREIGN KEY (`AssignedAnalystID`) REFERENCES `analysts` (`id`)  ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `morningChecks_Checks` (
     `CheckID`           INT NOT NULL AUTO_INCREMENT,
@@ -1712,9 +5192,18 @@ CREATE TABLE IF NOT EXISTS `morningChecks_Checks` (
     `CheckDescription`  LONGTEXT NULL,
     `IsActive`          TINYINT(1) NOT NULL DEFAULT 1,
     `SortOrder`         INT NOT NULL DEFAULT 0,
+    -- Discussion #64. NULL group = ungrouped, which is where every existing
+    -- check starts. A check's own analyst overrides whatever its group says.
+    `GroupID`           INT NULL,
+    `AssignedAnalystID` INT NULL,
     `CreatedDate`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `ModifiedDate`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`CheckID`)
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`CheckID`),
+    KEY `ix_mcc_group` (`GroupID`),
+    KEY `ix_mcc_analyst` (`AssignedAnalystID`),
+    CONSTRAINT `fk_mcc_group`   FOREIGN KEY (`GroupID`)           REFERENCES `morningChecks_Groups` (`GroupID`) ON DELETE SET NULL,
+    CONSTRAINT `fk_mcc_analyst` FOREIGN KEY (`AssignedAnalystID`) REFERENCES `analysts` (`id`)                  ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Configurable status options for morning checks (drives the dashboard
@@ -1751,12 +5240,44 @@ CREATE TABLE IF NOT EXISTS `morningChecks_Results` (
     `Status`        VARCHAR(50) NULL,
     `Notes`         LONGTEXT NULL,
     `CreatedBy`     VARCHAR(100) NULL,
+    -- Who most recently SET the status (discussion #64). Deliberately separate
+    -- from CreatedBy, which keeps meaning "who first recorded a result today":
+    -- the v1 API exposes that as created_by, and redefining it would silently
+    -- change a published contract. The dashboard credits ModifiedBy and falls
+    -- back to CreatedBy, so somebody covering for an absent colleague is
+    -- attributed the check they actually did rather than the person who happened
+    -- to touch it first.
+    `ModifiedBy`    VARCHAR(100) NULL,
     `CreatedDate`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `ModifiedDate`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`ResultID`),
     UNIQUE KEY `uq_check_date` (`CheckID`, `CheckDate`),
     CONSTRAINT `fk_results_checks` FOREIGN KEY (`CheckID`) REFERENCES `morningChecks_Checks` (`CheckID`),
     CONSTRAINT `fk_results_status` FOREIGN KEY (`StatusID`) REFERENCES `morningChecks_Statuses` (`StatusID`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tickets and tasks raised FROM a morning check (discussion #64).
+--
+-- A link table rather than a column pair on the result, because one bad check
+-- can legitimately raise several things — a ticket for the supplier and a task
+-- to chase it — and because the alternative is two nullable columns that then
+-- need a third the first time somebody wants a second ticket.
+--
+-- No FK to tickets/tasks on purpose: the row is a breadcrumb, and a ticket being
+-- deleted or merged should not take the record of "this check raised something"
+-- with it. EntityType keeps it honest about which table the id belongs to.
+CREATE TABLE IF NOT EXISTS `morningChecks_ResultLinks` (
+    `LinkID`        INT NOT NULL AUTO_INCREMENT,
+    `ResultID`      INT NOT NULL,
+    `EntityType`    VARCHAR(20) NOT NULL,   -- 'ticket' | 'task'
+    `EntityID`      INT NOT NULL,
+    `EntityRef`     VARCHAR(100) NULL,      -- ticket number / task title snapshot, for display without a join
+    `CreatedByID`   INT NULL,
+    `CreatedDate`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`LinkID`),
+    KEY `ix_mcrl_result` (`ResultID`),
+    CONSTRAINT `fk_mcrl_result` FOREIGN KEY (`ResultID`) REFERENCES `morningChecks_Results` (`ResultID`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -1780,12 +5301,218 @@ CREATE TABLE IF NOT EXISTS `knowledge_articles` (
     `archived_datetime`     DATETIME NULL,
     `archived_by_id`        INT NULL,
     `version`               INT NOT NULL DEFAULT 1,
+    `tenant_id`             INT NULL,
+    `audience`              VARCHAR(20) NOT NULL DEFAULT 'internal',
+    `folder_id`             INT NULL,
+    `is_restricted`         TINYINT(1) NOT NULL DEFAULT 0,
+    `inherit_permissions`   TINYINT(1) NOT NULL DEFAULT 1,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
+    KEY `idx_knowledge_articles_tenant` (`tenant_id`),
+    KEY `idx_knowledge_articles_folder` (`folder_id`),
     CONSTRAINT `fk_knowledge_articles_author` FOREIGN KEY (`author_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_knowledge_articles_owner` FOREIGN KEY (`owner_id`) REFERENCES `analysts` (`id`),
-    CONSTRAINT `fk_knowledge_articles_archived_by` FOREIGN KEY (`archived_by_id`) REFERENCES `analysts` (`id`)
+    CONSTRAINT `fk_knowledge_articles_archived_by` FOREIGN KEY (`archived_by_id`) REFERENCES `analysts` (`id`),
+    -- NO "ON DELETE SET NULL" here, unlike fk_assets_tenant. For assets NULL means
+    -- "unassigned"; for knowledge NULL means "shared with EVERY company" — so
+    -- SET NULL would silently promote a deleted company's private articles into
+    -- everyone's knowledge base. Restrict instead: deleting a company with its
+    -- own articles must be a deliberate act, not a side effect.
+    CONSTRAINT `fk_knowledge_articles_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- knowledge_articles.tenant_id => which client company OWNS this article.
+--   ⚠️ NULL means SHARED WITH EVERY COMPANY here — NOT "belongs to Default", which
+--   is what NULL means for tickets/assets/changes. Knowledge is the one module
+--   where a NULL row is deliberately visible to all tenants (an MSP's generic
+--   "how to reset your password" serves every client). Hence Knowledge has its
+--   own filter helper and must NOT use activeTenantFilter(). See tenancy.php.
+--   NULL is also the zero-migration default: existing articles stay shared,
+--   which is exactly the pre-multi-tenancy behaviour.
+-- knowledge_articles.audience => WHO may read it, independent of who owns it:
+--   'internal' (analysts only) | 'customer' (+ signed-in self-service users)
+--   | 'public' (+ anonymous web chat visitors). Defaults to 'internal' so an
+--   upgrade can never start disclosing existing articles to the public — an
+--   author opts in. See includes/knowledge/audience.php.
+-- knowledge_articles.folder_id => which folder it lives in. NULL = the root,
+--   which is where every existing article lands on upgrade: zero migration, and
+--   the resulting state (root, inheriting, unrestricted) behaves exactly as the
+--   module did before folders existed.
+-- knowledge_articles.is_restricted       0 = Open (access rows are DENIES)
+--                                        1 = Restricted (access rows are GRANTS)
+-- knowledge_articles.inherit_permissions 1 = use the folder's rules, not my own.
+--   Defaults to 1 so an upgraded article inherits from a root that restricts
+--   nothing. See knowledge_folders below and includes/knowledge/visibility.php.
+
+
+-- ----------------------------------------------------------
+-- Knowledge folders and per-document permissions
+--
+-- Design: https://github.com/edmozley/freeitsm/wiki/Knowledge-Folders-and-Permissions
+--
+-- THE RULE: every axis NARROWS, nothing widens. An article is readable only if
+-- the company owns it (or it is shared), the reader's trust level reaches its
+-- audience, AND the access list does not exclude them. The axes are ANDed, never
+-- weighed against each other -- so an access-list grant can never reach past the
+-- "Who can see this" setting, and there is no precedence puzzle to solve.
+-- ----------------------------------------------------------
+
+-- A document lives in EXACTLY ONE folder. That is the load-bearing decision:
+-- with several parents "inherit from parent" has no answer -- most-permissive
+-- leaks, most-restrictive loses documents people filed themselves, and every
+-- system that tried it ended up with an effective-permissions dialog nobody
+-- could read. Appearing in two places is what knowledge_shortcuts is for.
+CREATE TABLE IF NOT EXISTS `knowledge_folders` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `parent_id`           INT NULL,
+    `name`                VARCHAR(255) NOT NULL,
+    `is_restricted`       TINYINT(1) NOT NULL DEFAULT 0,
+    `inherit_permissions` TINYINT(1) NOT NULL DEFAULT 1,
+    `owner_id`            INT NULL,
+    `tenant_id`           INT NULL,
+    `created_by_id`       INT NULL,
+    `created_datetime`    DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `modified_datetime`   DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_knowledge_folders_parent` (`parent_id`),
+    KEY `idx_knowledge_folders_tenant` (`tenant_id`),
+    -- A folder whose parent is deleted would be unreachable but still hold
+    -- documents, so deleting a parent must be a deliberate act that moves or
+    -- removes its children first.
+    CONSTRAINT `fk_knowledge_folders_parent` FOREIGN KEY (`parent_id`) REFERENCES `knowledge_folders` (`id`),
+    -- Same reasoning as fk_knowledge_articles_tenant: NO "ON DELETE SET NULL",
+    -- because NULL here means SHARED WITH EVERY COMPANY, so SET NULL would
+    -- silently promote a deleted company's private folder into everyone's tree.
+    CONSTRAINT `fk_knowledge_folders_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- knowledge_folders.is_restricted       0 = Open (rows below are DENIES)
+--                                       1 = Restricted (rows below are GRANTS)
+-- knowledge_folders.inherit_permissions 1 = take the parent's rules, ignore my own
+-- knowledge_folders.tenant_id           NULL = shared with EVERY company
+
+-- THERE IS NO allow/deny COLUMN HERE, AND ITS ABSENCE IS THE GUARANTEE.
+-- The polarity comes from the OBJECT: rows against an Open object are denies,
+-- rows against a Restricted object are grants. A contradictory pair therefore
+-- cannot be stored -- no precedence rule to remember, no effective-permissions
+-- dialog to explain. Same instinct as the audience ladder: make the
+-- contradiction inexpressible rather than adjudicating it.
+--
+-- Flipping an object's polarity WIPES its rows. A dormant wrong-polarity row
+-- that springs back on the next flip is the "unloaded checkbox looks exactly
+-- like OFF" failure wearing a different hat.
+CREATE TABLE IF NOT EXISTS `knowledge_acl` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `object_type`      VARCHAR(10) NOT NULL,
+    `object_id`        INT NOT NULL,
+    `principal_type`   VARCHAR(12) NOT NULL,
+    `principal_id`     INT NOT NULL,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- The lookup every permission check makes.
+    KEY `idx_knowledge_acl_object` (`object_type`, `object_id`),
+    KEY `idx_knowledge_acl_principal` (`principal_type`, `principal_id`),
+    -- One principal cannot be listed twice on the same object.
+    UNIQUE KEY `uq_knowledge_acl` (`object_type`, `object_id`, `principal_type`, `principal_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- knowledge_acl.object_type    'folder' | 'article'
+-- knowledge_acl.principal_type 'analyst' | 'team' | 'user' | 'user_group'
+-- No FOREIGN KEYs on object_id/principal_id: both are polymorphic, so there is
+-- no single table to point at. Rows are cleaned up where the object is deleted.
+
+-- A pointer with NO permissions of its own: it resolves to the target and the
+-- TARGET's rules decide. This is what preserves the single-parent tree while
+-- letting a document appear in two places.
+--   * a shortcut can never GRANT -- if you cannot read the target it is not a way in
+--   * shortcuts must be filtered by TARGET readability at list time, or the row
+--     leaks the target's title, which is the search-snippet leak in a new hat
+CREATE TABLE IF NOT EXISTS `knowledge_shortcuts` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `folder_id`        INT NULL,
+    `article_id`       INT NOT NULL,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_knowledge_shortcut` (`folder_id`, `article_id`),
+    CONSTRAINT `fk_knowledge_shortcuts_folder` FOREIGN KEY (`folder_id`) REFERENCES `knowledge_folders` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_knowledge_shortcuts_article` FOREIGN KEY (`article_id`) REFERENCES `knowledge_articles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- NOT lms_learning_groups. The driving case is ad hoc and short-lived -- three
+-- engineers on site for a week needing one folder -- and routing that through the
+-- LMS to grant a document permission would be daft. `users` has no grouping of
+-- any kind today, so a table was needed regardless.
+--
+-- 📌 THE NAME IS NOW A HISTORICAL ONE. This is the product's general grouping of
+-- people -- analysts and portal users together -- and it is managed on
+-- tickets/users.php (the Groups tab), not anywhere in Knowledge. Knowledge is
+-- simply the first thing that grants access to one.
+--
+-- 🔴 DO NOT RENAME IT TO MATCH. db_verify only ever CREATEs tables: under a new
+-- name it would make an empty one and leave the populated one orphaned beside it,
+-- and every membership on the install would silently stop granting anything --
+-- with a green tick on the verification screen. The lookup in
+-- knowledgeViewerPrincipals() catches its own PDOException and reads a missing
+-- table as "no groups yet", so nothing would report the loss either. A slightly
+-- odd table name is the cheaper of the two problems, and it is invisible to users.
+CREATE TABLE IF NOT EXISTS `knowledge_user_groups` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(100) NOT NULL,
+    `description`      VARCHAR(500) NULL,
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_knowledge_user_groups_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `knowledge_user_group_members` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `group_id`         INT NOT NULL,
+    `member_type`      VARCHAR(10) NOT NULL,
+    `member_id`        INT NOT NULL,
+    `expires_at`       DATETIME NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_knowledge_group_member` (`group_id`, `member_type`, `member_id`),
+    KEY `idx_knowledge_group_member` (`member_type`, `member_id`),
+    CONSTRAINT `fk_knowledge_group_members_group` FOREIGN KEY (`group_id`) REFERENCES `knowledge_user_groups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- knowledge_user_group_members.member_type 'analyst' | 'user'
+-- knowledge_user_group_members.expires_at  THE REASON THIS TABLE EXISTS.
+--   "For the week" is the requirement as stated, and an access list that quietly
+--   stays open after the engineers go home is the failure worth designing out on
+--   day one. NULL = no expiry.
+
+-- Modelled on document_access_log, which already does this for attached files.
+--
+-- VIEWS ARE A DIFFERENT VOLUME CLASS FROM EDITS. knowledge_articles.view_count
+-- already increments on every read, and a row per view on a busy KB is millions a
+-- year. Creates, edits, permission changes, deletes and administrator-floor
+-- passes are RARE, and are what somebody actually comes looking for -- so views
+-- get sampled, deduped per person per day, or held to a retention window rather
+-- than being allowed to bury them.
+CREATE TABLE IF NOT EXISTS `knowledge_audit` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `object_type`      VARCHAR(10) NOT NULL,
+    `object_id`        INT NOT NULL,
+    `action`           VARCHAR(20) NOT NULL,
+    `analyst_id`       INT NULL,
+    `user_id`          INT NULL,
+    `detail`           LONGTEXT NULL,
+    `ip_address`       VARCHAR(45) NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_knowledge_audit_object` (`object_type`, `object_id`),
+    KEY `idx_knowledge_audit_action` (`action`, `created_datetime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- knowledge_audit.action 'create' | 'edit' | 'view' | 'delete' | 'restore'
+--                        | 'move' | 'permissions' | 'admin_override'
+--   'admin_override' is written EVERY time the knowledge.admin floor lets
+--   somebody past an access list they were not on. That floor exists so a
+--   Restricted folder whose only grantee has left is recoverable rather than
+--   lost -- but a permission that always passes must leave a trace, or it is
+--   indistinguishable from not having a permission system.
 CREATE TABLE IF NOT EXISTS `knowledge_article_versions` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `article_id`        INT NOT NULL,
@@ -1803,6 +5530,7 @@ CREATE TABLE IF NOT EXISTS `knowledge_tags` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `name`              VARCHAR(50) NOT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_knowledge_tags_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1810,9 +5538,75 @@ CREATE TABLE IF NOT EXISTS `knowledge_tags` (
 CREATE TABLE IF NOT EXISTS `knowledge_article_tags` (
     `article_id`    INT NOT NULL,
     `tag_id`        INT NOT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`article_id`, `tag_id`),
     CONSTRAINT `fk_article_tags_article` FOREIGN KEY (`article_id`) REFERENCES `knowledge_articles` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_article_tags_tag` FOREIGN KEY (`tag_id`) REFERENCES `knowledge_tags` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Knowledge gaps — the Knowledge assistant
+--
+-- One closed ticket at a time tells you almost nothing: "reset password, asked
+-- user to log in again" is not an article. Fourteen of them is a different
+-- statement entirely. These three tables hold the answer to "what has this
+-- service desk answered over and over that the knowledge base never learned?"
+--
+-- knowledge_gap_tickets is a CACHE, not a source of truth: every row can be
+-- deleted and rebuilt by re-running the analysis. It exists because embedding
+-- a ticket costs a paid API call, so we do it once.
+-- ----------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `knowledge_gap_tickets` (
+    `ticket_id`             INT NOT NULL,
+    `embedding`             LONGTEXT NULL,
+    `embedded_datetime`     DATETIME NULL,
+    -- Similarity to the CLOSEST published article. Low = nothing in the KB
+    -- answers this ticket, which is what makes it a gap candidate.
+    `best_article_id`       INT NULL,
+    `best_similarity`       FLOAT NULL,
+    -- 0-100: how much an article could actually be written from this one
+    -- ticket. Drives which ticket in a cluster gets drafted from, and whether
+    -- the assistant has to interview the analyst instead.
+    `richness`              INT NOT NULL DEFAULT 0,
+    `analysed_datetime`     DATETIME NULL,
+    `tenant_id`             INT NULL,
+    PRIMARY KEY (`ticket_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `knowledge_gap_clusters` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `label`                 VARCHAR(255) NOT NULL,
+    `seed_ticket_id`        INT NULL,
+    -- The ticket the assistant would draft FROM — the richest in the cluster,
+    -- not the newest. A thin ticket counts towards the total but never gets
+    -- handed to the model as the source.
+    `best_ticket_id`        INT NULL,
+    `max_richness`          INT NOT NULL DEFAULT 0,
+    `ticket_count`          INT NOT NULL DEFAULT 0,
+    `first_ticket_datetime` DATETIME NULL,
+    `last_ticket_datetime`  DATETIME NULL,
+    -- open | dismissed | written. 'dismissed' must survive a re-analysis, which
+    -- is why clusters are stored at all rather than recomputed on each view.
+    `status`                VARCHAR(20) NOT NULL DEFAULT 'open',
+    `dismissed_by_id`       INT NULL,
+    `dismissed_datetime`    DATETIME NULL,
+    `article_id`            INT NULL,
+    `signature`             VARCHAR(64) NULL,
+    `tenant_id`             INT NULL,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_kgc_status` (`status`),
+    KEY `ix_kgc_signature` (`signature`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `knowledge_gap_cluster_tickets` (
+    `cluster_id`    INT NOT NULL,
+    `ticket_id`     INT NOT NULL,
+    `similarity`    FLOAT NULL,
+    PRIMARY KEY (`cluster_id`, `ticket_id`),
+    CONSTRAINT `fk_kgct_cluster` FOREIGN KEY (`cluster_id`) REFERENCES `knowledge_gap_clusters` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -1824,8 +5618,33 @@ CREATE TABLE IF NOT EXISTS `software_inventory_apps` (
     `display_name`      VARCHAR(512) NOT NULL,
     `publisher`         VARCHAR(512) NULL,
     `first_detected`    DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Manually added applications (#1549). Cloud platforms - Xero, Canva, Figma -
+    -- have nothing to install, so nothing discovers them and until now they could
+    -- not be recorded at all. That also made the whole of `software_licences`
+    -- unreachable for SaaS, because its app_id is NOT NULL: a renewal date, a
+    -- seat count and a cost had nowhere to hang.
+    --
+    -- 'agent'  = found by the inventory agent, system-info submit or Intune
+    -- 'api'    = first reported by a REST inventory import (#194)
+    -- 'manual' = typed in by a person
+    --
+    -- ⚠️ THE AGENT MAY ADOPT A MANUAL ROW, BUT MUST NEVER OVERWRITE IT.
+    -- Its lookup is `display_name = ? AND (publisher IS NULL OR publisher = ?)`,
+    -- so a hand-typed "Adobe Creative Cloud" with no publisher already matches
+    -- what an agent later reports - and that is CORRECT, the installs should
+    -- attach to the row somebody already curated. What must not happen is the
+    -- agent rewriting the name, publisher, URL or notes a person chose, or
+    -- flipping source back to 'agent'. See the guard in the submit endpoint.
+    `source`            VARCHAR(20) NOT NULL DEFAULT 'agent',
+    -- Where you go to administer it. A SaaS app's real "location".
+    `app_url`           VARCHAR(500) NULL,
+    `notes`             LONGTEXT NULL,
+    `created_by`        INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
-    UNIQUE KEY `ux_app_display_publisher` (`display_name`(400), `publisher`(360))
+    UNIQUE KEY `ux_app_display_publisher` (`display_name`(400), `publisher`(360)),
+    KEY `ix_software_apps_source` (`source`),
+    CONSTRAINT `fk_software_apps_created_by` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `software_inventory_detail` (
@@ -1840,9 +5659,12 @@ CREATE TABLE IF NOT EXISTS `software_inventory_detail` (
     `system_component`  TINYINT(1) NOT NULL DEFAULT 0,
     `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `last_seen`         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `source`            VARCHAR(20) NOT NULL DEFAULT 'agent',
+    `source`            VARCHAR(64) NOT NULL DEFAULT 'agent',
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    `observed_at` DATETIME NULL,
+    `imported_at` DATETIME NULL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `ux_software_detail_host_app` (`host_id`, `app_id`),
+    UNIQUE KEY `ux_software_detail_host_app_source` (`host_id`, `app_id`, `source`),
     CONSTRAINT `fk_software_detail_app` FOREIGN KEY (`app_id`) REFERENCES `software_inventory_apps` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1864,9 +5686,22 @@ CREATE TABLE IF NOT EXISTS `software_licences` (
     `created_by`        INT NULL,
     `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_software_licences_app` FOREIGN KEY (`app_id`) REFERENCES `software_inventory_apps` (`id`),
     CONSTRAINT `fk_software_licences_analyst` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Ingest log for the software-inventory agent submissions. The submit
+-- endpoint has always written here (best-effort, failures swallowed) but the
+-- table was never defined anywhere — added 2026-07-03 so the logging works.
+CREATE TABLE IF NOT EXISTS `software_inventory_log` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `host_id`           INT NULL,
+    `api_response`      LONGTEXT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_sil_host_id` (`host_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `apikeys` (
@@ -1876,6 +5711,11 @@ CREATE TABLE IF NOT EXISTS `apikeys` (
     `label`      VARCHAR(100) NULL,
     `datestamp`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `active`     TINYINT(1) NULL DEFAULT 1,
+    -- Multi-tenancy: the company this ingest key belongs to. A monitoring agent
+    -- authenticates with its key, so assets it reports are stamped with this
+    -- company (the "pinned mailbox" equivalent for asset ingest). NULL = the
+    -- Default company, so existing keys keep working unchanged at N=1.
+    `tenant_id`  INT NULL,
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_apikeys_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1888,6 +5728,47 @@ CREATE TABLE IF NOT EXISTS `api_rate_limits` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_apikey_window` (`apikey_id`, `window_start`),
     CONSTRAINT `fk_rate_limits_apikey` FOREIGN KEY (`apikey_id`) REFERENCES `apikeys` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- REST API v1 keys (System > API) — distinct from the legacy `apikeys` table
+-- above (used by the api/external ingest endpoints). v1 keys are stored as a
+-- SHA-256 hash (shown once at creation), carry a granular permission map
+-- (JSON: {"tickets":["read","create"],...}), an optional company scope
+-- (JSON array of tenant ids; NULL = all companies), an optional expiry and
+-- per-minute rate-limit override, and act as an analyst so audit rows, notes
+-- and workflow events keep a real author.
+-- ----------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `api_keys` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `name`                  VARCHAR(100) NOT NULL,
+    `key_prefix`            VARCHAR(16) NOT NULL,
+    `key_hash`              CHAR(64) NOT NULL,
+    `analyst_id`            INT NOT NULL,
+    `permissions`           LONGTEXT NULL,
+    `company_ids`           TEXT NULL,
+    `rate_limit_per_minute` INT NULL,
+    `active`                TINYINT(1) NOT NULL DEFAULT 1,
+    `expires_at`            DATETIME NULL,
+    `last_used_at`          DATETIME NULL,
+    `last_used_ip`          VARCHAR(45) NULL,
+    `created_by`            INT NULL,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_api_keys_hash` (`key_hash`),
+    CONSTRAINT `fk_api_keys_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`),
+    CONSTRAINT `fk_api_keys_created_by` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `api_key_rate_limits` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    `api_key_id`    INT NOT NULL,
+    `request_count` INT NOT NULL DEFAULT 0,
+    `window_start`  DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_api_key_window` (`api_key_id`, `window_start`),
+    CONSTRAINT `fk_api_key_rate_limits_key` FOREIGN KEY (`api_key_id`) REFERENCES `api_keys` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -1942,27 +5823,235 @@ CREATE TABLE IF NOT EXISTS `tasks` (
     `due_date`            DATE NULL,
     `assigned_analyst_id` INT NULL,
     `assigned_team_id`    INT NULL,
+    `assigned_supplier_id` INT NULL,                        -- 3.3.0: a contractor - a supplier doing the work (includes/task_contractors.php)
+    `assigned_contact_id` INT NULL,                         -- 3.3.0: the person there (contacts, of that supplier)
     `parent_task_id`      INT NULL,
     `ticket_id`           INT NULL,
     `change_id`           INT NULL,
     `contract_id`         INT NULL,
+    `tenant_id`           INT NULL,                 -- NULL = the Default company
     `board_position`      INT NOT NULL DEFAULT 0,
     `created_by_id`       INT NOT NULL,
     `created_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `completed_datetime`  DATETIME NULL,
+    `work_start_datetime` DATETIME NULL,             -- naive wall clock, like a ticket's scheduled work
+    `work_end_datetime`   DATETIME NULL,
+    `work_all_day`        TINYINT(1) NOT NULL DEFAULT 0,
+    -- Recurring tasks (#94). recurrence_id names the rule that made this
+    -- occurrence; recurrence_master_id points at the first task of the series.
+    -- The constraints are added after task_recurrences is created, below.
+    `recurrence_id`        INT NULL,
+    `recurrence_master_id` INT NULL,
+    -- Repeating task evidence (#181). scheduled_date: the date the repeat created
+    -- this occurrence for - set once, never edited, while due_date stays editable,
+    -- so a moved deadline stays visible. previous_occurrence_id: in a repeat set to
+    -- "after completion", the occurrence whose completion or skip made this one -
+    -- it is how a successor that should exist and does not is found. created_via:
+    -- manual, or repeat_completion / repeat_schedule / repeat_catchup.
+    -- completed_by_id: who completed it (cleared on reopening; task_events keeps it).
+    -- skipped_datetime: set when the occurrence was SKIPPED rather than done.
+    `scheduled_date`         DATE NULL,
+    -- GH #190 phase 4: the period this occurrence checks (from the repeat's "This occurrence checks"),
+    -- and the due date it was CREATED with (scheduled day + the repeat's due offset), set once.
+    `period_start`           DATE NULL,
+    `period_end`             DATE NULL,
+    `original_due_date`      DATE NULL,
+    `previous_occurrence_id` INT NULL,
+    `created_via`            VARCHAR(20) NULL,
+    `completed_by_id`        INT NULL,
+    `skipped_datetime`       DATETIME NULL,
+    -- Projects (3.2.0). A project's work items ARE tasks - there is no second task
+    -- system - so a task simply names the project, and the stage or phase of it,
+    -- that it belongs to. Both NULL on every task that is not project work.
+    `project_id`          INT NULL,
+    `project_stage_id`    INT NULL,
+    `estimate_hours`      DECIMAL(7,2) NULL,                -- 3.3.0: how long the work is expected to take (capacity, estimate vs actual)
+    `project_position`    INT NULL,                         -- GH #184: order within its project stage (the Plan tab); NULL = after the numbered ones
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
+    KEY `ix_tasks_project` (`project_id`),
+    KEY `ix_tasks_supplier` (`assigned_supplier_id`),
+    KEY `ix_tasks_project_stage` (`project_stage_id`),
     KEY `ix_tasks_status_id` (`status_id`),
     KEY `ix_tasks_priority_id` (`priority_id`),
+    KEY `idx_tasks_tenant` (`tenant_id`),
+    -- Recurring tasks (#94). The first finds every occurrence of a series, the
+    -- second answers "what else came from the same original", which is what the
+    -- detail panel's link to the master needs.
+    --
+    -- ⚠️ These were added to includes/db_verify_indexes.php by hand and never to
+    -- this file, so a FRESH install never had them - only an install that ran
+    -- Database Verification got them backfilled. Found when the generated index
+    -- list was rebuilt and tried to delete them.
+    KEY `ix_tasks_recurrence_id` (`recurrence_id`),
+    KEY `ix_tasks_recurrence_master` (`recurrence_master_id`),
+    KEY `ix_tasks_previous_occurrence` (`previous_occurrence_id`),
+    CONSTRAINT `fk_tasks_supplier` FOREIGN KEY (`assigned_supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_tasks_contact` FOREIGN KEY (`assigned_contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tasks_analyst` FOREIGN KEY (`assigned_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tasks_team` FOREIGN KEY (`assigned_team_id`) REFERENCES `teams` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tasks_parent` FOREIGN KEY (`parent_task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_tasks_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tasks_change` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tasks_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_tasks_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    -- SET NULL, never CASCADE: deleting a project must not delete the work people
+    -- did. ProjectsService::deleteProject() detaches its tasks by hand as well.
+    CONSTRAINT `fk_tasks_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_tasks_project_stage` FOREIGN KEY (`project_stage_id`) REFERENCES `project_stages` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_tasks_created_by` FOREIGN KEY (`created_by_id`) REFERENCES `analysts` (`id`),
     CONSTRAINT `fk_tasks_status` FOREIGN KEY (`status_id`) REFERENCES `task_statuses` (`id`),
     CONSTRAINT `fk_tasks_priority` FOREIGN KEY (`priority_id`) REFERENCES `task_priorities` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Recurring tasks (#94). One row per SERIES, not per occurrence and not a
+-- template: the task a series was created from IS its first occurrence, so
+-- nothing appears in a list, count or report that is not real work.
+CREATE TABLE IF NOT EXISTS `task_recurrences` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    -- completion = count from the day it was finished (what Planner does, and
+    -- what people mean by "monthly"). schedule = fixed dates whether or not the
+    -- last one was done, which is what a compliance review needs.
+    `mode`                VARCHAR(12) NOT NULL DEFAULT 'completion',
+    `freq`                VARCHAR(10) NOT NULL DEFAULT 'weekly',
+    `interval_n`          INT NOT NULL DEFAULT 1,
+    `weekdays`            VARCHAR(20) NULL,
+    `month_mode`          VARCHAR(4) NULL,
+    `day_of_month`        INT NULL,
+    `nth`                 INT NULL,
+    `nth_weekday`         INT NULL,
+    `month_of_year`       INT NULL,
+    `ends_mode`           VARCHAR(12) NOT NULL DEFAULT 'never',
+    `ends_on`             DATE NULL,
+    `max_occurrences`     INT NULL,
+    `occurrences_created` INT NOT NULL DEFAULT 1,
+    `copy_description`    TINYINT(1) NOT NULL DEFAULT 1,
+    `copy_subtasks`       TINYINT(1) NOT NULL DEFAULT 1,
+    `copy_assignee`       TINYINT(1) NOT NULL DEFAULT 1,
+    `copy_tags`           TINYINT(1) NOT NULL DEFAULT 1,
+    `copy_links`          TINYINT(1) NOT NULL DEFAULT 0,
+    `copy_attachments`    TINYINT(1) NOT NULL DEFAULT 0,
+    -- GH #190 phase 4: what each occurrence checks (none | scheduled_day | day_before | since_previous)
+    -- and when it is due relative to its scheduled day (same_day | days | next_working_day).
+    `period_mode`         VARCHAR(16) NOT NULL DEFAULT 'none',
+    `due_offset_mode`     VARCHAR(16) NOT NULL DEFAULT 'same_day',
+    `due_offset_days`     INT NOT NULL DEFAULT 0,
+    `next_due_date`       DATE NULL,
+    `is_active`           TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by_id`       INT NULL,
+    `created_datetime`    DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`    DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_task_recurrences_due` (`is_active`, `next_due_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Added after task_recurrences exists. Both SET NULL, deliberately: deleting the
+-- rule stops the series repeating, and deleting the first task must not take the
+-- work recorded on later occurrences with it.
+ALTER TABLE `tasks`
+    ADD CONSTRAINT `fk_tasks_recurrence` FOREIGN KEY (`recurrence_id`) REFERENCES `task_recurrences` (`id`) ON DELETE SET NULL,
+    ADD CONSTRAINT `fk_tasks_recurrence_master` FOREIGN KEY (`recurrence_master_id`) REFERENCES `tasks` (`id`) ON DELETE SET NULL;
+
+-- ============================================================================
+-- Repeating task evidence (#181). A record that OUTLIVES what it describes.
+--
+-- 🔴 None of these tables has a foreign key to tasks, task_recurrences or the
+-- checklist tables, deliberately. An auditor's question is "show me this check was
+-- done every month", and the answer must survive an occurrence being deleted, the
+-- series being stopped or its tasks removed, and the checklist template being
+-- deleted (Dr4inder on #181). A CASCADE here would delete the evidence with the
+-- thing it is evidence about. Rows are append-only: nothing updates or deletes them.
+-- ============================================================================
+
+-- One row per thing that happened to a task: created (by a person or by the
+-- repeat), status changed, completed (by whom, and the due date in force then),
+-- reopened, due / start date changed, assigned, skipped, a successor expected,
+-- a checklist attached or removed, evidence exported. Written by
+-- includes/services/task_history.php, from the one place each change happens.
+CREATE TABLE IF NOT EXISTS `task_events` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `task_id`          INT NOT NULL,
+    `recurrence_id`    INT NULL,                -- the series, so the report reads one series in one query
+    `event_type`       VARCHAR(30) NOT NULL,
+    `analyst_id`       INT NULL,                -- NULL = not a person (the repeat, a workflow, an API key with nobody behind it)
+    `actor_kind`       VARCHAR(12) NOT NULL DEFAULT 'analyst',   -- analyst | system | api | workflow | portal
+    `actor_name`       VARCHAR(150) NULL,       -- as it was then: an analyst renamed later is still named as they were
+    `from_value`       VARCHAR(255) NULL,
+    `to_value`         VARCHAR(255) NULL,
+    `detail_json`      TEXT NULL,
+    `job_run_id`       INT NULL,                -- the background job run that did it (#182), if one did
+    `created_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_task_events_task` (`task_id`, `id`),
+    KEY `idx_task_events_series` (`recurrence_id`, `event_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every version of a repeat's rule: a snapshot each time it is set up, changed,
+-- stopped, resumed or finishes on its own. 'baseline' is the version Database
+-- Verification recorded for a series that already existed when this shipped.
+-- Carries the series' title, first task and company, so a series whose tasks
+-- are all gone can still be listed (Tasks -> Evidence) and scoped by company.
+CREATE TABLE IF NOT EXISTS `task_recurrence_versions` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `recurrence_id`    INT NOT NULL,
+    `version_no`       INT NOT NULL,
+    `change_kind`      VARCHAR(20) NOT NULL,    -- baseline | created | changed | stopped | resumed | finished
+    `rule_json`        TEXT NOT NULL,
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `title`            VARCHAR(255) NULL,
+    `master_task_id`   INT NULL,
+    `tenant_id`        INT NULL,
+    `analyst_id`       INT NULL,
+    `actor_name`       VARCHAR(150) NULL,
+    `created_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_trv_series_version` (`recurrence_id`, `version_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A deleted occurrence of a repeat, frozen: the task as it stood, its checklists
+-- with every step, tick, value, result and exception note, its step history, its
+-- task history, comments, subtasks and attachment references - everything the
+-- evidence report reads (#181 section 9). Belongs to the SERIES, not the task.
+CREATE TABLE IF NOT EXISTS `task_removed_records` (
+    `id`                     INT NOT NULL AUTO_INCREMENT,
+    `task_id`                INT NOT NULL,
+    `recurrence_id`          INT NULL,
+    `previous_occurrence_id` INT NULL,
+    `tenant_id`              INT NULL,
+    `title`                  VARCHAR(255) NULL,
+    `scheduled_date`         DATE NULL,
+    `due_date`               DATE NULL,
+    `removed_by_id`          INT NULL,
+    `removed_by_name`        VARCHAR(150) NULL,
+    `removed_datetime`       DATETIME NOT NULL,
+    `snapshot_json`          LONGTEXT NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_trr_series` (`recurrence_id`),
+    KEY `idx_trr_task` (`task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Time actually spent on a task, as many sessions as it took (GH #112).
+-- Mirrors ticket_time_entries column for column: it is the same idea about a
+-- different record, and a second, subtly different shape is what later drifts.
+CREATE TABLE IF NOT EXISTS `task_time_entries` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `task_id`             INT NOT NULL,
+    `analyst_id`          INT NOT NULL,
+    `notes`               LONGTEXT NULL,
+    `time_spent_minutes`  INT NOT NULL,
+    `entry_datetime`      DATETIME NOT NULL,
+    `is_active`           TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime`    DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`    DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_task_time_entries_task_id` (`task_id`),
+    KEY `ix_task_time_entries_analyst_date` (`analyst_id`, `entry_datetime`),
+    -- CASCADE, unlike the ticket equivalent: deleting a task deletes it outright
+    -- (there is no trash for tasks), so leaving its time behind would orphan rows
+    -- that nothing can ever reach or tidy.
+    CONSTRAINT `fk_task_time_entries_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_task_time_entries_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `task_comments` (
@@ -1971,9 +6060,56 @@ CREATE TABLE IF NOT EXISTS `task_comments` (
     `analyst_id`        INT NOT NULL,
     `comment`           LONGTEXT NOT NULL,
     `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_task_comments_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_task_comments_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The other people on a task (GH #89, dschipfel). Shown as "Involved".
+--
+-- 🔴 THE OWNER IS NOT IN HERE, and that is the load-bearing decision. Who is
+-- accountable stays in `tasks.assigned_analyst_id` and nowhere else: two homes
+-- for one fact are two things that can disagree. Because that column keeps its
+-- exact meaning, the REST contract (`assignee_id` is a scalar), every stored
+-- workflow, and board grouping are unchanged BY DEFINITION rather than because
+-- somebody checked.
+--
+-- Shape copied from `change_cab_members` — Changes already solved "several named
+-- people on one record, each with their own state", and reusing it makes the
+-- optional per-person tick almost free. `is_required` is deliberately NOT copied.
+--
+-- ⚠️ ON DELETE CASCADE for `analyst_id`, which is where this DIVERGES from
+-- change_cab_members. A CAB row records a VOTE — a decision somebody made, worth
+-- keeping after they leave. A collaborator row is a MEMBERSHIP, and a membership
+-- held by an account that no longer exists means nothing. It also keeps
+-- api/tickets/delete_analyst.php working, which a restricting constraint would
+-- have blocked the first time anybody deleted an analyst who was helping on a task.
+--
+-- Must follow `tasks` and `analysts`: it points at both.
+CREATE TABLE IF NOT EXISTS `task_collaborators` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `task_id`            INT NOT NULL,
+    `analyst_id`         INT NOT NULL,
+    -- Recorded whether or not the per-person setting is on. Switching the setting
+    -- off hides ticks; it must never destroy them, the same rule that governs
+    -- narrowing `tasks_time_scope` when somebody has already logged hours.
+    `is_completed`       TINYINT(1) NOT NULL DEFAULT 0,
+    `completed_datetime` DATETIME NULL,
+    `added_by_id`        INT NULL,
+    `added_datetime`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`            TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    -- One row per person per task: adding somebody twice is not a second fact.
+    UNIQUE KEY `uq_task_collaborator` (`task_id`, `analyst_id`),
+    -- ⚠️ NOT redundant with the unique key above. "My tasks" now asks
+    -- "which tasks is THIS ANALYST on", which reads analyst-first; the composite
+    -- key is task-first and cannot serve it. Without this the new filter is a
+    -- full scan of the table on every board load.
+    KEY `ix_task_collaborators_analyst` (`analyst_id`),
+    CONSTRAINT `fk_task_collab_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_task_collab_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_task_collab_added_by` FOREIGN KEY (`added_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `task_tags` (
@@ -2003,6 +6139,117 @@ CREATE TABLE IF NOT EXISTS `task_tag_map` (
 -- Forms
 -- ----------------------------------------------------------
 
+-- A named exercise that several forms' submissions belong to - "Staff Survey
+-- 2026", "ISO 27001 evidence round". Entirely optional: a laptop request form
+-- belongs to no collection, and that is the normal case.
+--
+-- closed_datetime NULL = open. WHAT CLOSING DOES is an operator setting
+-- (forms_collection_close_effect: reporting_only / stop_submissions /
+-- stop_and_hide), not a property of this row, because different organisations
+-- mean different things by "closed". Whatever it means, it is evaluated when
+-- the portal or the fill page asks and is NEVER written onto the forms: if
+-- closing stamped is_portal_visible = 0 on three forms, reopening would turn
+-- all three back on, including one deliberately kept off the portal.
+--
+-- Declared before `forms` because forms.collection_id references it.
+-- WHO may request a form from the self-service catalogue (GH #145).
+--
+-- 🔑 NO ROWS MEANS EVERYONE. That is the normal case and every form that
+-- predates this, so the feature ships with no migration and no form silently
+-- becoming invisible. A form is restricted only once somebody names an
+-- audience for it.
+--
+-- ⚠️ This restricts the CATALOGUE, not the module. Analysts reach forms through
+-- module access and are unaffected: an audience answers "which customers may
+-- request this", not "who may administer it".
+--
+-- principal_type is 'user_group' today and nothing else. It exists as a column
+-- rather than the table being form_user_groups because naming individuals is
+-- the obvious next ask, and the column costs nothing now where a migration
+-- would cost something then. Same shape knowledge_acl uses.
+--
+-- 🔴 Carried forward by createVersion(). A per-form setting left out of that
+-- copy is a setting that pressing Save deletes - and here deleting it would
+-- silently republish a restricted form to every customer.
+CREATE TABLE IF NOT EXISTS `form_audiences` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `form_id`        INT NOT NULL,
+    `principal_type` VARCHAR(12) NOT NULL,   -- 'user_group'
+    `principal_id`   INT NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_form_audiences_form` (`form_id`),
+    -- The same audience cannot be added to a form twice.
+    UNIQUE KEY `uq_form_audiences` (`form_id`, `principal_type`, `principal_id`),
+    -- No FK on principal_id: it is polymorphic by design, so there is no single
+    -- table to point at. A group that is deleted simply stops matching, which
+    -- fails CLOSED - the form narrows rather than opening up.
+    CONSTRAINT `fk_form_audiences_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A form somebody has started and not finished.
+--
+-- 🔴 A SEPARATE TABLE, NOT A STATUS ON form_submissions. That table is read by
+-- the submissions list, the collection view, every count, the CSV and PDF
+-- exports, the approval inbox, the workflow triggers and the REST API. Putting
+-- drafts in it would mean teaching every one of those to exclude them, and any
+-- reader that was missed would present a half-filled record as a real
+-- submission - to an approver, in an export, or as a ticket. Here, a draft is
+-- simply invisible to all of them and nothing existing had to change.
+--
+-- A draft holds RAW answers and is never validated: not being finished is the
+-- entire point, so a required field may be empty and a conditional branch may
+-- be half-answered.
+CREATE TABLE IF NOT EXISTS `form_drafts` (
+    `id`            INT NOT NULL AUTO_INCREMENT,
+    -- The EXACT form version this was started against.
+    -- ⚠️ createVersion() gives every copied field a NEW id, so answers keyed by
+    -- the old ids would silently attach to the wrong questions on a newer
+    -- version. The draft is therefore pinned to the version it was typed into,
+    -- and a draft whose version is no longer the current one is offered back as
+    -- "this form has changed" rather than quietly mis-mapped.
+    `form_id`       INT NOT NULL,
+    -- WHOSE draft. `analysts` and `users` are separate id spaces, so the kind
+    -- has to be stored alongside the id rather than inferred - the same trap
+    -- form_submissions documents with its two separate submitted_by columns.
+    -- One column pair rather than two nullable ids because a UNIQUE key over
+    -- nullable columns does not constrain anything in MySQL: NULLs compare as
+    -- distinct, so duplicate drafts would slip straight through.
+    `owner_kind`    VARCHAR(10) NOT NULL,          -- 'analyst' | 'portal'
+    `owner_id`      INT NOT NULL,
+    -- {"<fieldId>": "<value>"} exactly as the filler holds it, including a
+    -- table question's rows as their own JSON. No new shape to teach anything.
+    `answers`       LONGTEXT NULL,
+    `created_date`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `modified_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- One draft per person per form version. Saving again overwrites, which is
+    -- what "continue where I left off" means; several named drafts of one form
+    -- is a different feature and a much larger one.
+    UNIQUE KEY `uq_form_drafts_owner` (`form_id`, `owner_kind`, `owner_id`),
+    -- Deleting a form takes its drafts with it. They are worthless without it.
+    -- ⚠️ No FK on owner_id: it points at `analysts` OR `users` depending on
+    -- owner_kind, and a column cannot reference two tables. Orphans are cleaned
+    -- up by the owner's own deletion path, not by the database.
+    CONSTRAINT `fk_form_drafts_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `form_collections` (
+    `id`              INT NOT NULL AUTO_INCREMENT,
+    `name`            VARCHAR(255) NOT NULL,
+    `description`     TEXT NULL,
+    `closed_datetime` DATETIME NULL,
+    `closed_by`       INT NULL,
+    `created_by`      INT NULL,
+    `created_date`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `modified_date`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`         TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    -- SET NULL on both: losing the analyst who made or closed a collection
+    -- must not take the collection, and with it the audit trail, with them.
+    CONSTRAINT `fk_form_collections_closed_by`  FOREIGN KEY (`closed_by`)  REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_form_collections_created_by` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `forms` (
     `id`             INT NOT NULL AUTO_INCREMENT,
     `title`          VARCHAR(255) NOT NULL,
@@ -2019,17 +6266,105 @@ CREATE TABLE IF NOT EXISTS `forms` (
     -- in-place saves.
     `parent_form_id` INT NULL,
     `version_number` INT NOT NULL DEFAULT 1,
-    PRIMARY KEY (`id`)
+    -- Show this form in the self-service portal's request catalogue.
+    -- SEPARATE from is_active, which is the analyst-side on/off: an internal
+    -- form (a new-starter request a manager fills in) is active but has no
+    -- business being offered to every customer. Defaults to 0 so no existing
+    -- form is exposed by an upgrade — the same fail-closed rule as article
+    -- visibility.
+    `is_portal_visible` TINYINT(1) NOT NULL DEFAULT 0,
+    -- Catalogue-request approval (#928). When requires_approval is on, a portal
+    -- submission of this form waits for the designated approver before a ticket is
+    -- raised. approver_id is that single sign-off analyst. requires_approval on with
+    -- approver_id NULL means "needs approval but nobody assigned" — treated as
+    -- unconfigured so it can never hold requests hostage (submitForm skips the gate).
+    `requires_approval` TINYINT(1) NOT NULL DEFAULT 0,
+    `approver_id`       INT NULL,
+    -- Group approval (GH #220): a team decides instead of approver_id when this is
+    -- set - approvals_required different members approve, rejections_required
+    -- different members reject. NULL = the named-person approval, unchanged.
+    `approval_team_id`           INT NULL,
+    `approvals_required`         INT NOT NULL DEFAULT 1,
+    `rejections_required`        INT NOT NULL DEFAULT 1,
+    -- Named-person mode only: refuse the requester approving their own request.
+    `approval_exclude_requester` TINYINT(1) NOT NULL DEFAULT 0,
+    -- What happens when this form is submitted, approved or rejected (#95).
+    -- JSON: {"submitted":[…],"approved":[…],"rejected":[…]}, each a list of
+    -- {type, args} in the workflow engine's own action shape — they ARE workflow
+    -- actions and are run by the same handlers. JSON-in-TEXT for the same reason
+    -- workflows.actions is: no migration every time a new action kind lands.
+    --
+    -- NULL is meaningful and differs from an empty list. NULL = never configured,
+    -- so the pre-#95 behaviour applies (nothing on submit; an approval raises a
+    -- ticket the hard-coded way). That is what lets this ship with no data
+    -- migration: every existing form keeps behaving exactly as it did. An empty
+    -- list means somebody opened the panel and chose nothing on purpose.
+    `submission_actions` TEXT NULL,
+    -- Which collection NEW submissions of this form are stamped into.
+    -- NULL = none, and that is the normal case. Carried forward by
+    -- createVersion(): the catalogue lists leaves, so a new version that
+    -- dropped this would silently unpair the form the moment somebody
+    -- pressed Save - exactly how approval gating was lost before #95.
+    `collection_id`     INT NULL,
+    -- WHERE this form's questions go, as opposed to what they are. JSON:
+    --   {"type":"flow|grid","rows":[{"cells":[{"field":<id>,"width":1-12,"rowspan":n}]}]}
+    --
+    -- NULL is meaningful and is the normal case: "never laid out". The layout is
+    -- then DERIVED from sort_order plus each field's width, which is precisely
+    -- what the form already draws — so this ships with no data migration and
+    -- every existing form renders unchanged.
+    --
+    -- 'flow' and 'grid' are the SAME format. A grid cell may span rows and may
+    -- hold no question at all; a flow layout is one where every rowspan is 1.
+    -- That is deliberate: it is what lets a cell designer arrive later as a UI
+    -- rather than a rewrite. See docs/design/form-designer.md.
+    --
+    -- Carried forward by createVersion(), like collection_id and
+    -- submission_actions. A per-form setting left out of that INSERT is a
+    -- setting that pressing Save deletes — that is how approval gating was lost.
+    `layout`            LONGTEXT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    -- RESTRICT (no delete rule): a frozen version can't be deleted while
+    -- newer versions chain off it — delete leaf-first (or the whole chain).
+    CONSTRAINT `fk_forms_parent` FOREIGN KEY (`parent_form_id`) REFERENCES `forms` (`id`),
+    -- SET NULL: losing the approver shouldn't delete the catalogue item, it just
+    -- becomes unconfigured (and stops gating) until a new approver is chosen.
+    CONSTRAINT `fk_forms_approver` FOREIGN KEY (`approver_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    -- SET NULL, like the approver: a deleted team leaves the form unconfigured.
+    CONSTRAINT `fk_forms_approval_team` FOREIGN KEY (`approval_team_id`) REFERENCES `teams` (`id`) ON DELETE SET NULL,
+    -- SET NULL: deleting a collection leaves its forms unpaired, which is a
+    -- legitimate state. Contrast form_submissions below, where it is not.
+    CONSTRAINT `fk_forms_collection` FOREIGN KEY (`collection_id`) REFERENCES `form_collections` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `form_fields` (
     `id`            INT NOT NULL AUTO_INCREMENT,
     `form_id`       INT NOT NULL,
+    -- One of FormsService::FIELD_TYPES. 'section' is a PRESENTATIONAL item, not a
+    -- question: it renders as a heading, never produces a form_submission_data row,
+    -- and owns every field below it until the next 'section'. Modelled as a row here
+    -- rather than its own table so one flat sort_order still describes the whole form
+    -- and the builder's existing drag-and-drop keeps working untouched.
     `field_type`    VARCHAR(50) NOT NULL,
     `label`         VARCHAR(255) NOT NULL,
     `options`       LONGTEXT NULL,
     `is_required`   TINYINT(1) NOT NULL DEFAULT 0,
     `sort_order`    INT NOT NULL DEFAULT 0,
+    -- Per-field JSON settings. Today it holds only the conditional-visibility rule:
+    --   {"visible_if":{"match":"all|any","rules":[{"field":<id>,"op":...,"value":...}]}}
+    -- `field` is a form_fields.id, which is exactly why field identity had to be fixed
+    -- first — a rule pointing at "the third question" would not survive a reorder.
+    -- NULL = always visible, which is every pre-existing row, so an upgraded form
+    -- renders identically.
+    `config`        LONGTEXT NULL,
+    -- Soft delete. Removing a field from the builder sets this instead of dropping the
+    -- row, because form_submission_data.field_id points at it: a hard delete silently
+    -- destroyed the answers every past respondent gave to that question. Hidden
+    -- everywhere a form is filled in; still shown in the submissions view so history
+    -- stays readable.
+    `is_deleted`    TINYINT(1) NOT NULL DEFAULT 0,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_form_fields_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -2037,10 +6372,109 @@ CREATE TABLE IF NOT EXISTS `form_fields` (
 CREATE TABLE IF NOT EXISTS `form_submissions` (
     `id`                INT NOT NULL AUTO_INCREMENT,
     `form_id`           INT NOT NULL,
+    -- The ANALYST who submitted it. Every reader LEFT JOINs this to `analysts`,
+    -- so a requester's id must NOT be written here: `users` and `analysts` are
+    -- separate id spaces and a collision would silently attribute a customer's
+    -- request to whichever analyst happened to share the number.
     `submitted_by`      INT NULL,
+    -- The REQUESTER who submitted it, via the portal's request catalogue.
+    -- Exactly one of these two is set; both NULL means an old row whose
+    -- submitter is unknown.
+    `submitted_by_user_id` INT NULL,
+    -- The ticket an analyst raised FROM this submission, once they have. NULL
+    -- means "not yet actioned", which is what the analyst queue filters on.
+    `ticket_id`         INT NULL,
     `submitted_date`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Catalogue-request approval (#928). approval_status is one of
+    -- 'not_required' (no gate, the default and every pre-#928 row), 'pending',
+    -- 'approved' or 'rejected'. approver_id is snapshotted from the form AT SUBMIT
+    -- TIME so later changes to the catalogue item never re-route history.
+    -- decided_by is who actually clicked (normally the approver). A fixed internal
+    -- vocabulary, not a user-configurable status, so string literals are safe.
+    `approval_status`            VARCHAR(20) NOT NULL DEFAULT 'not_required',
+    `approver_id`                INT NULL,
+    `approval_decided_by_id`     INT NULL,
+    `approval_decided_datetime`  DATETIME NULL,
+    `approval_comment`           TEXT NULL,
+    -- Group approval (GH #220), snapshotted from the form at submit time like
+    -- approver_id. approval_round goes up when an administrator moves the request;
+    -- only the current round's votes count.
+    `approval_team_id`           INT NULL,
+    `approvals_required`         INT NULL,
+    `rejections_required`        INT NULL,
+    `approval_exclude_requester` TINYINT(1) NOT NULL DEFAULT 0,
+    `approval_round`             INT NOT NULL DEFAULT 1,
+    -- Which collection this submission WAS part of, stamped at submit time
+    -- from forms.collection_id. The two are ALLOWED TO DISAGREE and that is
+    -- the point: re-pairing a form must never rewrite what last year's
+    -- responses belonged to. Same snapshot rule as approver_id above.
+    `collection_id`     INT NULL,
+    -- GH #190: a submission made inside a task occurrence. task_id is the
+    -- occurrence it is evidence for; tenant_id is that task's company, so the
+    -- Forms module shows it only to people who can see the task (forms are
+    -- otherwise install-wide). client_reference makes a retried submit return
+    -- the submission it already made. superseded_by_id: a correction replaced it.
+    `task_id`           INT NULL,
+    `tenant_id`         INT NULL,
+    `client_reference`  VARCHAR(64) NULL,
+    `superseded_by_id`  INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
-    CONSTRAINT `fk_form_submissions_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`)
+    KEY `idx_form_submissions_user` (`submitted_by_user_id`),
+    KEY `idx_form_submissions_task` (`task_id`),
+    UNIQUE KEY `uq_form_submissions_task_ref` (`task_id`, `client_reference`),
+    KEY `idx_form_submissions_ticket` (`ticket_id`),
+    KEY `idx_form_submissions_approval` (`approval_status`, `approver_id`),
+    KEY `idx_form_submissions_team` (`approval_status`, `approval_team_id`),
+    -- The collection view reads every submission for a collection across
+    -- several forms, so this is the column it filters on.
+    KEY `idx_form_submissions_collection` (`collection_id`),
+    CONSTRAINT `fk_form_submissions_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`),
+    CONSTRAINT `fk_form_submissions_user` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_form_submissions_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_form_submissions_approver` FOREIGN KEY (`approver_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_form_submissions_decided_by` FOREIGN KEY (`approval_decided_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_form_submissions_approval_team` FOREIGN KEY (`approval_team_id`) REFERENCES `teams` (`id`) ON DELETE SET NULL,
+    -- RESTRICT (no delete rule), DELIBERATELY: a collection holding
+    -- submissions can be CLOSED but not deleted. SET NULL here would quietly
+    -- destroy the very record this column exists to keep.
+    CONSTRAINT `fk_form_submissions_collection` FOREIGN KEY (`collection_id`) REFERENCES `form_collections` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Group approval votes (GH #220). One row per person per request per round: the
+-- UNIQUE key makes a second click from the same person count once, even when two
+-- clicks race. was_member: they were in the team when they voted. A vote is kept
+-- when its voter leaves the team or the company - it is the record of a decision.
+CREATE TABLE IF NOT EXISTS `form_submission_votes` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `submission_id`  INT NOT NULL,
+    `approval_round` INT NOT NULL DEFAULT 1,
+    `analyst_id`     INT NULL,
+    `decision`       VARCHAR(20) NOT NULL,            -- approved / rejected
+    `comment`        TEXT NULL,
+    `was_member`     TINYINT(1) NOT NULL DEFAULT 1,
+    `voted_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_form_submission_votes` (`submission_id`, `approval_round`, `analyst_id`),
+    CONSTRAINT `fk_form_submission_votes_submission` FOREIGN KEY (`submission_id`) REFERENCES `form_submissions` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_form_submission_votes_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- An administrator's actions on a request (GH #220): override (decided without
+-- the votes, with a reason) or moved (to another team or person, with a reason).
+-- Kept apart from the votes on purpose: an override is never counted as votes.
+CREATE TABLE IF NOT EXISTS `form_submission_approval_events` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `submission_id`  INT NOT NULL,
+    `analyst_id`     INT NULL,
+    `action`         VARCHAR(30) NOT NULL,            -- override_approved / override_rejected / moved
+    `detail`         TEXT NULL,
+    `reason`         TEXT NULL,
+    `event_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_form_submission_approval_events` (`submission_id`),
+    CONSTRAINT `fk_form_submission_approval_events_submission` FOREIGN KEY (`submission_id`) REFERENCES `form_submissions` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_form_submission_approval_events_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `form_submission_data` (
@@ -2048,6 +6482,7 @@ CREATE TABLE IF NOT EXISTS `form_submission_data` (
     `submission_id` INT NOT NULL,
     `field_id`      INT NOT NULL,
     `field_value`   LONGTEXT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     CONSTRAINT `fk_submission_data_submission` FOREIGN KEY (`submission_id`) REFERENCES `form_submissions` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_submission_data_field` FOREIGN KEY (`field_id`) REFERENCES `form_fields` (`id`)
@@ -2164,6 +6599,7 @@ CREATE TABLE IF NOT EXISTS `supplier_types` (
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2174,6 +6610,7 @@ CREATE TABLE IF NOT EXISTS `supplier_statuses` (
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2197,7 +6634,10 @@ CREATE TABLE IF NOT EXISTS `suppliers` (
     `is_active`                     TINYINT(1) NOT NULL DEFAULT 1,
     `supplies_assets`               TINYINT(1) NOT NULL DEFAULT 0,
     `created_datetime`              DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`)
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_suppliers_type` FOREIGN KEY (`supplier_type_id`) REFERENCES `supplier_types` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_suppliers_status` FOREIGN KEY (`supplier_status_id`) REFERENCES `supplier_statuses` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `contacts` (
@@ -2212,7 +6652,9 @@ CREATE TABLE IF NOT EXISTS `contacts` (
     `switchboard`       VARCHAR(50) NULL,
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`)
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    CONSTRAINT `fk_contacts_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `contract_statuses` (
@@ -2222,6 +6664,7 @@ CREATE TABLE IF NOT EXISTS `contract_statuses` (
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2232,6 +6675,7 @@ CREATE TABLE IF NOT EXISTS `payment_schedules` (
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2242,15 +6686,20 @@ CREATE TABLE IF NOT EXISTS `contract_term_tabs` (
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `contracts` (
     `id`                        INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`                 INT NULL,   -- the company that owns it (3.5.0); NULL = the Default company
     `contract_number`           VARCHAR(50) NOT NULL,
     `title`                     VARCHAR(255) NOT NULL,
     `description`               LONGTEXT NULL,
     `supplier_id`               INT NULL,
+    `party_type`                VARCHAR(10) NOT NULL DEFAULT 'supplier',
+    `customer_tenant_id`        INT NULL,
+    `customer_user_id`          INT NULL,
     `contract_owner_id`         INT NULL,
     `contract_status_id`        INT NULL,
     `contract_start`            DATE NULL,
@@ -2261,6 +6710,7 @@ CREATE TABLE IF NOT EXISTS `contracts` (
     `currency`                  VARCHAR(3) NULL,
     `payment_schedule_id`       INT NULL,
     `cost_centre`               VARCHAR(100) NULL,
+    `cost_centre_id`            INT NULL,            -- GH #160: the cost centre it is charged to (fk added by db_verify); cost_centre above is free text from before 3.5.0
     `dms_link`                  VARCHAR(500) NULL,
     `terms_status`              VARCHAR(20) NULL,
     `personal_data_transferred` TINYINT(1) NULL,
@@ -2269,7 +6719,21 @@ CREATE TABLE IF NOT EXISTS `contracts` (
     `dpia_dms_link`             VARCHAR(500) NULL,
     `is_active`                 TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`          DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`)
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    KEY `ix_contracts_supplier_id` (`supplier_id`),
+    KEY `ix_contracts_customer_tenant` (`customer_tenant_id`),
+    KEY `ix_contracts_customer_user` (`customer_user_id`),
+    KEY `ix_contracts_contract_end` (`contract_end`),
+    KEY `ix_contracts_tenant` (`tenant_id`),
+    KEY `ix_contracts_cost_centre` (`cost_centre_id`),
+    CONSTRAINT `fk_contracts_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_contracts_customer_tenant` FOREIGN KEY (`customer_tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_contracts_customer_user` FOREIGN KEY (`customer_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_contracts_owner` FOREIGN KEY (`contract_owner_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_contracts_status` FOREIGN KEY (`contract_status_id`) REFERENCES `contract_statuses` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_contracts_payment_schedule` FOREIGN KEY (`payment_schedule_id`) REFERENCES `payment_schedules` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_contracts_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `contract_term_values` (
@@ -2279,7 +6743,11 @@ CREATE TABLE IF NOT EXISTS `contract_term_values` (
     `content`           LONGTEXT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`)
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ctv_contract_tab` (`contract_id`, `term_tab_id`),
+    CONSTRAINT `fk_ctv_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ctv_term_tab` FOREIGN KEY (`term_tab_id`) REFERENCES `contract_term_tabs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -2288,6 +6756,7 @@ CREATE TABLE IF NOT EXISTS `contract_term_values` (
 
 CREATE TABLE IF NOT EXISTS `rfps` (
     `id`                       INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`                INT NULL,   -- the company that owns it (3.5.0); NULL = the Default company
     `name`                     VARCHAR(200) NOT NULL,
     `status`                   VARCHAR(50) NOT NULL DEFAULT 'draft',
     `contract_id`              INT NULL,
@@ -2301,6 +6770,8 @@ CREATE TABLE IF NOT EXISTS `rfps` (
     KEY `idx_rfps_status` (`status`),
     KEY `idx_rfps_contract_id` (`contract_id`),
     KEY `idx_rfps_supplier_id` (`chosen_supplier_id`),
+    KEY `idx_rfps_tenant` (`tenant_id`),
+    CONSTRAINT `fk_rfps_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_rfps_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_rfps_supplier` FOREIGN KEY (`chosen_supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_rfps_creator` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
@@ -2517,10 +6988,17 @@ CREATE TABLE IF NOT EXISTS `rfp_processing_log` (
 -- LMS (Learning Management System)
 -- ----------------------------------------------------------
 
+-- A course is either an uploaded SCORM package ('scorm' — rendered by the
+-- package itself inside an iframe) or authored here ('native' — lessons and
+-- questions in the tables below, rendered by our own player). content_type is
+-- the discriminator both player.php and the Courses tab branch on. Existing
+-- rows default to 'scorm', which is what they are.
 CREATE TABLE IF NOT EXISTS `lms_courses` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `title`                 VARCHAR(255) NOT NULL,
     `description`           LONGTEXT NULL,
+    `content_type`          VARCHAR(10) NOT NULL DEFAULT 'scorm',
+    `pass_mark`             INT NULL,
     `scorm_version`         VARCHAR(20) NULL,
     `manifest_identifier`   VARCHAR(255) NULL,
     `launch_url`            VARCHAR(500) NULL,
@@ -2529,7 +7007,59 @@ CREATE TABLE IF NOT EXISTS `lms_courses` (
     `created_by_id`         INT NULL,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---- Native course content (content_type = 'native') ----
+
+-- An ordered lesson within a course. `body` is TinyMCE HTML, exactly as
+-- knowledge_articles.body is — including inline base64 images, so a lesson is
+-- entirely self-contained with nothing on disk to lose or leak.
+CREATE TABLE IF NOT EXISTS `lms_lessons` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `course_id`             INT NOT NULL,
+    `title`                 VARCHAR(255) NOT NULL,
+    `body`                  LONGTEXT NULL,
+    `display_order`         INT NOT NULL DEFAULT 0,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    KEY `idx_lms_lessons_course` (`course_id`),
+    CONSTRAINT `fk_lms_lessons_course` FOREIGN KEY (`course_id`) REFERENCES `lms_courses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A question asked at the end of a lesson. question_type is one of
+-- 'single' (one right answer), 'multiple' (several) or 'truefalse'.
+CREATE TABLE IF NOT EXISTS `lms_questions` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `lesson_id`             INT NOT NULL,
+    `question_text`         TEXT NOT NULL,
+    `question_type`         VARCHAR(20) NOT NULL DEFAULT 'single',
+    `explanation`           TEXT NULL,
+    `display_order`         INT NOT NULL DEFAULT 0,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    KEY `idx_lms_questions_lesson` (`lesson_id`),
+    CONSTRAINT `fk_lms_questions_lesson` FOREIGN KEY (`lesson_id`) REFERENCES `lms_lessons` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One option of a question. `is_correct` is the answer key and is NEVER sent to
+-- a learner — api/lms/course_content.php strips it (see the comment there).
+CREATE TABLE IF NOT EXISTS `lms_answers` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `question_id`           INT NOT NULL,
+    `answer_text`           VARCHAR(500) NOT NULL,
+    `is_correct`            TINYINT(1) NOT NULL DEFAULT 0,
+    `display_order`         INT NOT NULL DEFAULT 0,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    KEY `idx_lms_answers_question` (`question_id`),
+    CONSTRAINT `fk_lms_answers_question` FOREIGN KEY (`question_id`) REFERENCES `lms_questions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `lms_learning_groups` (
@@ -2540,6 +7070,7 @@ CREATE TABLE IF NOT EXISTS `lms_learning_groups` (
     `created_by_id`         INT NULL,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2548,24 +7079,67 @@ CREATE TABLE IF NOT EXISTS `lms_learning_group_members` (
     `group_id`              INT NOT NULL,
     `analyst_id`            INT NOT NULL,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_lgm_group_analyst` (`group_id`, `analyst_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- WHO a course is given to. Three kinds of target, and `group_id` is read
+-- against whichever `target_type` names:
+--
+--   'learning_group'  lms_learning_groups   — ANALYSTS ONLY. The original, and
+--                     still the default, so every row that existed before this
+--                     column did keeps behaving exactly as it did.
+--   'user_group'      knowledge_user_groups — the product's general grouping of
+--                     people, holding analysts AND portal users together, managed
+--                     on tickets/users.php. This is what lets training reach the
+--                     self-service portal at all.
+--   'all_users'       EVERY active portal user. `group_id` is 0 and means nothing.
+--
+-- 🔑 A DELIBERATELY NON-POLYMORPHIC-LOOKING COLUMN NAME. `group_id` would more
+-- honestly be `target_id` now, but renaming it would rewrite every existing row's
+-- meaning in a migration for a cosmetic gain — the same trade already refused for
+-- knowledge_user_groups. The target_type beside it is what disambiguates.
 CREATE TABLE IF NOT EXISTS `lms_course_assignments` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
     `course_id`             INT NOT NULL,
+    `target_type`           VARCHAR(20) NOT NULL DEFAULT 'learning_group',
     `group_id`              INT NOT NULL,
     `deadline`              DATETIME NULL,
     `assigned_by_id`        INT NULL,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_lca_course_group` (`course_id`, `group_id`)
+    -- ⚠️ target_type is IN the key. Without it, learning group 2 and user group 2
+    -- collide on the same course and the second assignment is refused as a
+    -- duplicate of something it has nothing to do with.
+    UNIQUE KEY `uq_lca_course_target` (`course_id`, `target_type`, `group_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- One learner's standing on one course.
+--
+-- 🔑 THE LEARNER IS (learner_type, learner_id), NOT analyst_id. A course can now
+-- be given to a self-service portal user, who is a `users` row and has no analyst
+-- record at all — so the identity here has to say WHICH TABLE it means.
+--   learner_type 'analyst' -> analysts.id
+--   learner_type 'user'    -> users.id   (a self-service portal account)
+--
+-- ⚠️ `analyst_id` IS LEGACY AND IS NOT THE KEY ANY MORE. It is kept, in step with
+-- learner_id for analyst rows and NULL for portal learners, only so that this
+-- change is not a column DROP (which would make the release a MAJOR one — see
+-- RELEASING.md). NOTHING SHOULD READ IT. It goes at the next major version.
+--
+-- 🔴 THE UNIQUE KEY HAD TO MOVE WITH IT. `analyst_id` going nullable is not
+-- enough on its own: MySQL permits any number of NULLs in a unique index, so
+-- under the old (analyst_id, course_id) key EVERY portal learner would be
+-- unconstrained — the same person could accumulate a fresh progress row per
+-- visit, each with its own bookmark, and their place in a course would appear to
+-- reset at random.
 CREATE TABLE IF NOT EXISTS `lms_progress` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
-    `analyst_id`            INT NOT NULL,
+    `analyst_id`            INT NULL,
+    `learner_type`          VARCHAR(10) NOT NULL DEFAULT 'analyst',
+    `learner_id`            INT NOT NULL DEFAULT 0,
     `course_id`             INT NOT NULL,
     `status`                VARCHAR(20) NOT NULL DEFAULT 'not_started',
     `score_raw`             DECIMAL(10,2) NULL,
@@ -2580,8 +7154,37 @@ CREATE TABLE IF NOT EXISTS `lms_progress` (
     `attempt_count`         INT NOT NULL DEFAULT 0,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_lp_analyst_course` (`analyst_id`, `course_id`)
+    UNIQUE KEY `uq_lp_learner_course` (`learner_type`, `learner_id`, `course_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ONE ROW PER REMINDER ACTUALLY SENT. This is the fire-once guarantee, not a log.
+--
+-- 🔴 THE UNIQUE KEY IS THE FEATURE. Reminders are found by asking "whose deadline
+-- is N days away", which is true for the whole of that day and for every run
+-- inside it. The send is an INSERT IGNORE against this key, so the second run
+-- writes nothing and sends nothing. Without the key the INSERT IGNORE is
+-- meaningless and a nightly reminder becomes an hourly one — the same shape as
+-- workflow_scheduled_emissions, and the same reason.
+--
+-- `fingerprint` is what makes a CHANGED deadline a new reminder: it carries the
+-- deadline date the reminder was about, so moving a course from the 9th to the
+-- 20th legitimately reminds again, while re-running today does not. Mirrors the
+-- SLA notification fingerprint.
+--   kind 'before'  fingerprint '<due date>:<days before>'
+--   kind 'overdue' fingerprint '<due date>:<n>'  (the nth chase)
+CREATE TABLE IF NOT EXISTS `lms_reminders_sent` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `learner_type`   VARCHAR(10) NOT NULL,
+    `learner_id`     INT NOT NULL,
+    `course_id`      INT NOT NULL,
+    `reminder_kind`  VARCHAR(10) NOT NULL,
+    `fingerprint`    VARCHAR(100) NOT NULL,
+    `sent_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_lrs_once` (`learner_type`, `learner_id`, `course_id`, `reminder_kind`, `fingerprint`),
+    KEY `idx_lrs_sent` (`sent_datetime`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `lms_cmi_data` (
@@ -2595,6 +7198,90 @@ CREATE TABLE IF NOT EXISTS `lms_cmi_data` (
     UNIQUE KEY `uq_lcd_progress_element` (`progress_id`, `element`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Competency tests (3.0.0): a question bank, tests built from it, and one
+-- sitting per candidate with a frozen snapshot of what they were shown.
+CREATE TABLE IF NOT EXISTS `lms_ct_questions` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `skill`                 VARCHAR(120) NOT NULL,
+    `difficulty`            VARCHAR(20) NOT NULL,
+    `format`                VARCHAR(20) NOT NULL,
+    `question_text`         TEXT NOT NULL,
+    `answers_json`          TEXT NOT NULL,
+    `explanation`           TEXT NULL,
+    `status`                VARCHAR(20) NOT NULL DEFAULT 'draft',
+    `source`                VARCHAR(20) NOT NULL DEFAULT 'ai',
+    `role_context`          VARCHAR(255) NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_lctq_skill` (`skill`, `difficulty`, `format`),
+    KEY `ix_lctq_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `lms_ct_tests` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `title`                 VARCHAR(200) NOT NULL,
+    `role_description`      TEXT NULL,
+    `time_limit_minutes`    INT NULL,
+    `pass_mark`             INT NULL,
+    `is_archived`           TINYINT(1) NOT NULL DEFAULT 0,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `lms_ct_test_skills` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `test_id`        INT NOT NULL,
+    `skill`          VARCHAR(120) NOT NULL,
+    `difficulty`     VARCHAR(20) NOT NULL,
+    `format`         VARCHAR(20) NOT NULL,
+    `question_count` INT NOT NULL DEFAULT 5,
+    `sort_order`     INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_lcts_test` (`test_id`),
+    CONSTRAINT `fk_lcts_test` FOREIGN KEY (`test_id`) REFERENCES `lms_ct_tests` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `lms_ct_test_questions` (
+    `id`          INT NOT NULL AUTO_INCREMENT,
+    `test_id`     INT NOT NULL,
+    `question_id` INT NOT NULL,
+    `sort_order`  INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_lcttq_test_question` (`test_id`, `question_id`),
+    KEY `ix_lcttq_question` (`question_id`),
+    CONSTRAINT `fk_lcttq_test` FOREIGN KEY (`test_id`) REFERENCES `lms_ct_tests` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_lcttq_question` FOREIGN KEY (`question_id`) REFERENCES `lms_ct_questions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `lms_ct_sittings` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `test_id`               INT NULL,
+    `candidate_name`        VARCHAR(200) NOT NULL,
+    `candidate_email`       VARCHAR(255) NULL,
+    `token_hash`            CHAR(64) NOT NULL,
+    `snapshot_json`         LONGTEXT NOT NULL,
+    `responses_json`        TEXT NULL,
+    `time_limit_minutes`    INT NULL,
+    `expires_datetime`      DATETIME NOT NULL,
+    `started_datetime`      DATETIME NULL,
+    `submitted_datetime`    DATETIME NULL,
+    `finish_reason`         VARCHAR(20) NULL,
+    `score_percent`         DECIMAL(5,1) NULL,
+    `skills_json`           TEXT NULL,
+    `notes`                 TEXT NULL,
+    `is_cancelled`          TINYINT(1) NOT NULL DEFAULT 0,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_lcs_token` (`token_hash`),
+    KEY `ix_lcs_test` (`test_id`),
+    CONSTRAINT `fk_lcs_test` FOREIGN KEY (`test_id`) REFERENCES `lms_ct_tests` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ----------------------------------------------------------
 -- Process Mapper
 -- ----------------------------------------------------------
@@ -2606,6 +7293,7 @@ CREATE TABLE IF NOT EXISTS `processes` (
     `created_by`        INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2624,6 +7312,7 @@ CREATE TABLE IF NOT EXISTS `process_steps` (
     `color2`            VARCHAR(20) NULL,
     `lane_id`           INT NULL,
     `group_id`          INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `idx_ps_process` (`process_id`),
     KEY `idx_ps_lane` (`lane_id`),
@@ -2636,6 +7325,7 @@ CREATE TABLE IF NOT EXISTS `process_connectors` (
     `from_step_id`      INT NOT NULL,
     `to_step_id`        INT NOT NULL,
     `label`             VARCHAR(255) NULL DEFAULT '',
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `idx_pc_process` (`process_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -2721,24 +7411,139 @@ CREATE TABLE IF NOT EXISTS `workflows` (
     `last_run_datetime` DATETIME NULL,
     `last_run_status`   VARCHAR(20) NULL,             -- 'success' | 'failed' | 'skipped' | 'aborted'
     `run_count`         INT NOT NULL DEFAULT 0,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    -- GH #209. NULL = SHARED: runs for every company's events (and every workflow
+    -- from before companies). Set = runs only for that company's events, and its
+    -- actions may only touch that company's records. CASCADE, never SET NULL: a
+    -- deleted company's workflows must go with it, not become shared ones.
+    `tenant_id`         INT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_workflows_trigger` (`trigger_event`),
-    KEY `idx_workflows_active` (`is_active`)
+    KEY `idx_workflows_active` (`is_active`),
+    KEY `idx_workflows_tenant` (`tenant_id`),
+    CONSTRAINT `fk_workflows_created_by` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_workflows_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Execution rows deliberately SURVIVE workflow deletion (they're the audit
+-- trail): workflow_id is nullable with ON DELETE SET NULL, and workflow_name
+-- snapshots the name at run time so orphaned runs stay attributable.
 CREATE TABLE IF NOT EXISTS `workflow_executions` (
     `id`                INT NOT NULL AUTO_INCREMENT,
-    `workflow_id`       INT NOT NULL,
+    `workflow_id`       INT NULL,
+    `workflow_name`     VARCHAR(255) NULL,            -- snapshot at run time; survives workflow deletion
     `trigger_event`     VARCHAR(100) NOT NULL,
     `trigger_payload`   TEXT NULL,                    -- JSON snapshot of the event payload
     `status`            VARCHAR(20) NOT NULL,         -- 'running' | 'success' | 'failed' | 'skipped' | 'aborted'
+    `is_dry_run`        TINYINT(1) NOT NULL DEFAULT 0, -- 1 = actions were described, not executed
     `started_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `finished_datetime` DATETIME NULL,
     `step_log`          TEXT NULL,                    -- JSON array of per-step results
     `error_message`     TEXT NULL,
+    -- GH #209. The company the EVENT belonged to (the ticket's, the task's...), so
+    -- the run log - which holds the payload - is shown only to people who can see
+    -- that company. NULL = no company known (a settings event, or a run from
+    -- before this column): shown only to people who can see every company.
+    `tenant_id`         INT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_we_workflow` (`workflow_id`),
-    KEY `idx_we_started` (`started_datetime`)
+    KEY `idx_we_started` (`started_datetime`),
+    KEY `idx_we_tenant` (`tenant_id`),
+    CONSTRAINT `fk_we_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflows` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_we_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Outbound webhook delivery queue. The `send_webhook` workflow action enqueues
+-- a row (status 'pending'); the cron worker (cron/webhook_deliveries.php)
+-- delivers it asynchronously with retries + exponential backoff, so a slow or
+-- dead endpoint never blocks the host request. The signing secret is NOT
+-- stored — the signature header is computed at enqueue time and kept in
+-- request_headers, so retries reuse it without persisting the secret.
+-- Time-based workflow triggers: the fire-once ledger.
+--
+-- Every other trigger hangs off a write path (someone saved a ticket), so there
+-- is a moment to dispatch from. "The SLA is about to breach" is not an event —
+-- nothing happened, TIME PASSED — so a cron has to go looking. And the condition
+-- it finds STAYS TRUE: a breached SLA is still breached on the next run. Without
+-- this ledger the escalation would re-fire every few minutes, forever.
+--
+-- `fingerprint` is the state the emission was recorded against (an SLA target,
+-- a contract end date). If that changes — priority changed, contract renewed —
+-- the fingerprint changes, and the new deadline is allowed to fire again. Without
+-- it, "fire once" would silently mean "fire once ever, even if the thing you were
+-- watching changed underneath you".
+--
+-- The UNIQUE key is what makes it atomic: INSERT IGNORE, and only the insert that
+-- actually created a row dispatches. Two overlapping cron runs cannot double-fire.
+CREATE TABLE IF NOT EXISTS `workflow_scheduled_emissions` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `trigger_event`     VARCHAR(100) NOT NULL,   -- e.g. 'sla.breached'
+    `entity_key`        VARCHAR(120) NOT NULL,   -- WHAT: 'ticket:183:response'
+    `fingerprint`       VARCHAR(64)  NOT NULL,   -- the STATE it fired against
+    `emitted_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_wse_once` (`trigger_event`, `entity_key`, `fingerprint`),
+    KEY `idx_wse_emitted` (`emitted_datetime`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Webhook message formats. A chat "preset" is just a JSON body template with a
+-- {{message}} slot — Slack is {"text": "{{message}}"}, Discord is
+-- {"content": "{{message}}"} — so they live as DATA rather than a PHP switch,
+-- and an admin can add Google Chat / Mattermost / Rocket.Chat with no code change.
+-- Built-ins are seeded and LOCKED (is_builtin = 1); users add their own.
+-- NB `custom` and `full` are NOT rows here: they aren't message-wrapping formats,
+-- they're structurally different, and they stay in the engine.
+CREATE TABLE IF NOT EXISTS `webhook_message_formats` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `format_key`     VARCHAR(40) NOT NULL,           -- stored in the workflow's action args
+    `label`          VARCHAR(100) NOT NULL,          -- shown in the Format dropdown
+    `body_template`  TEXT NOT NULL,                  -- JSON, with {{message}} (and any payload vars)
+    `url_pattern`    VARCHAR(255) NULL,              -- regex fragment; warns on a mismatched webhook URL
+    `markdown_hint`  VARCHAR(255) NULL,              -- e.g. Discord's **bold** vs Slack's *bold*
+    `is_builtin`     TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = shipped, not editable/deletable
+    `is_active`      TINYINT(1) NOT NULL DEFAULT 1,
+    `display_order`  INT NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_wmf_key` (`format_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `webhook_message_formats` (`format_key`, `label`, `body_template`, `url_pattern`, `markdown_hint`, `is_builtin`, `display_order`) VALUES
+    ('slack',   'Slack',            '{"text": "{{message}}"}',    'hooks\\.slack\\.com',                                        'Slack mrkdwn: *bold*, _italic_, `code`. Links are <https://example.com|like this>.', 1, 10),
+    ('teams',   'Microsoft Teams',  '{"@type": "MessageCard", "@context": "https://schema.org/extensions", "summary": "{{message}}", "text": "{{message}}"}', 'webhook\\.office\\.com|office\\.com/webhookb2|logic\\.azure\\.com', 'Teams MessageCard: **bold**, *italic*, [link](https://example.com).', 1, 20),
+    ('discord', 'Discord',          '{"content": "{{message}}"}', 'discord(app)?\\.com/api/webhooks',                           'Discord markdown: **bold** (two asterisks — a single *asterisk* is italic). Emoji shortcodes like :rotating_light: work.', 1, 30),
+    ('teams_workflows', 'Microsoft Teams (Workflows card)', '{"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": null, "content": {"$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "type": "AdaptiveCard", "version": "1.4", "msteams": {"width": "Full"}, "body": [{"type": "TextBlock", "text": "{{message}}", "wrap": true}], "actions": [{"type": "Action.OpenUrl", "title": "Open in FreeITSM", "url": "{{link}}"}]}}]}', 'logic\\.azure\\.com|powerplatform\\.com|powerautomate\\.com', 'Teams card: **bold**, *italic*, [link](https://example.com), - a list item; a blank line starts a new paragraph.', 1, 40);
+
+CREATE TABLE IF NOT EXISTS `webhook_deliveries` (
+    `id`                 INT NOT NULL AUTO_INCREMENT,
+    `workflow_id`        INT NULL,                       -- source workflow (SET NULL if deleted)
+    `execution_id`       INT NULL,                       -- the workflow_executions row that enqueued it
+    `preset`             VARCHAR(20) NULL,               -- 'custom' | 'slack' | 'teams' | 'discord'
+    -- 2000, not 1000: the URL is ENCRYPTED at rest (AES-256-GCM, ENC: prefix),
+    -- which inflates it by ~1/3 + 28 bytes. A max-length 1000-char URL becomes
+    -- ~1377 chars — at VARCHAR(1000) MySQL would silently truncate it, and a
+    -- truncated ciphertext can never be decrypted again.
+    `url`                VARCHAR(2000) NOT NULL,
+    `method`             VARCHAR(10) NOT NULL DEFAULT 'POST',
+    `request_headers`    TEXT NULL,                      -- JSON array of header lines (Content-Type + optional signature; NO secret)
+    `request_body`       MEDIUMTEXT NULL,                -- the rendered JSON payload; purged per the payload-retention setting
+    `payload_purged`     TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = body scrubbed by retention (so "empty" != "never had one"); blocks Replay
+    `status`             VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending | delivering | delivered | failed | dead
+    `attempts`           INT NOT NULL DEFAULT 0,
+    `max_attempts`       INT NOT NULL DEFAULT 6,
+    `next_attempt_at`    DATETIME NULL,                  -- earliest time to (re)try; NULL = asap
+    `last_status_code`   INT NULL,
+    `last_error`         VARCHAR(500) NULL,
+    `response_snippet`   MEDIUMTEXT NULL,                 -- full response body from the endpoint, for the delivery log
+    `created_datetime`   DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`   DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `delivered_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_wd_due` (`status`, `next_attempt_at`),
+    KEY `idx_wd_workflow` (`workflow_id`),
+    KEY `idx_wd_created` (`created_datetime`),
+    CONSTRAINT `fk_wd_workflow` FOREIGN KEY (`workflow_id`) REFERENCES `workflows` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -2764,11 +7569,44 @@ CREATE TABLE IF NOT EXISTS `system_settings` (
 INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
     ('tasks_calendar_span_mode', 'deadline');
 
+INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+    ('ticket_checklist_closure_mode', 'per_template'),
+    ('ticket_checklist_empty_closure_mode', 'off');
+
 -- SSO global switches: master kill switch (off until a provider is configured)
 -- and the local-login break-glass toggle (on by default).
 INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
     ('sso_enabled', '0'),
     ('local_login_enabled', '1');
+
+-- Install-wide date and time format (GH #105). Set in System > Date and time
+-- formats; an analyst can override it for themselves in Preferences. These are
+-- the values the app rendered BEFORE the setting existed, so seeding them means
+-- an upgrade changes nothing on screen. Values are KEYS from DateFmt, never
+-- pattern strings - see includes/timezone.php.
+INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+    ('date_format', 'd_mon_y'),
+    ('time_format', '24h');
+
+-- Asset reconciliation: default list of generic/placeholder serial numbers to ignore
+-- intune_sync_hostnames is ON for a new install (there is nothing to rename yet)
+-- and OFF on an upgrade (db_verify seeds '0'), so an upgrade renames nothing.
+INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+    ('intune_company_id', NULL),
+    ('intune_sync_hostnames', '1'),
+    -- OFF everywhere: assigning assets to people is the administrator's to switch on.
+    ('intune_assign_primary_user', '0'),
+    -- PR #166: a new install asks chat customers in their chat (an upgrade gets '0').
+    ('csat_in_channel', '1'),
+    ('asset_reconciliation_ignored_serials', 'TO BE FILLED BY O.E.M.\nDEFAULT STRING\nNONE\nSYSTEM SERIAL NUMBER\nNOT SPECIFIED\n123456789');
+
+-- Asset tag auto-generation (PR #164). Off, so a new install behaves as before
+-- until somebody switches it on. The format uses ticket numbering's tokens.
+INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+    ('asset_tag_autogen_enabled', '0'),
+    ('asset_tag_format', 'AST-{#####}'),
+    ('asset_tag_start', '1'),
+    ('asset_tag_scope', 'per_company');
 
 CREATE TABLE IF NOT EXISTS `trusted_devices` (
     `id`                 INT NOT NULL AUTO_INCREMENT,
@@ -2815,6 +7653,7 @@ CREATE TABLE IF NOT EXISTS `status_services` (
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
     `display_order`     INT NOT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2849,18 +7688,25 @@ CREATE TABLE IF NOT EXISTS `service_impact_levels` (
     `severity_order`    INT NOT NULL DEFAULT 99,
     `display_order`     INT NOT NULL DEFAULT 0,
     `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    -- Does time at this level count against uptime? A property OF the level
+    -- rather than a separate "downtime rules" screen, so a custom level added
+    -- later is asked the question when it is created instead of silently
+    -- defaulting to whatever a second list happened to say. Planned maintenance
+    -- is excluded by convention — counting it makes a well-run service look
+    -- worse than a neglected one.
+    `counts_as_downtime` TINYINT(1) NOT NULL DEFAULT 1,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_service_impact_levels_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `service_impact_levels` (`name`, `colour`, `is_default`, `severity_order`, `display_order`) VALUES
-    ('Major Outage',   '#dc2626', 0, 1, 10),
-    ('Partial Outage', '#f59e0b', 0, 2, 20),
-    ('Degraded',       '#eab308', 0, 3, 30),
-    ('Maintenance',    '#0891b2', 0, 4, 40),
-    ('Operational',    '#16a34a', 1, 5, 50),
-    ('No Disruption',  '#9ca3af', 0, 6, 60);
+INSERT IGNORE INTO `service_impact_levels` (`name`, `colour`, `is_default`, `severity_order`, `display_order`, `counts_as_downtime`) VALUES
+    ('Major Outage',   '#dc2626', 0, 1, 10, 1),
+    ('Partial Outage', '#f59e0b', 0, 2, 20, 1),
+    ('Degraded',       '#eab308', 0, 3, 30, 1),
+    ('Maintenance',    '#0891b2', 0, 4, 40, 0),
+    ('Operational',    '#16a34a', 1, 5, 50, 0),
+    ('No Disruption',  '#9ca3af', 0, 6, 60, 0);
 
 CREATE TABLE IF NOT EXISTS `status_incidents` (
     `id`                    INT NOT NULL AUTO_INCREMENT,
@@ -2871,6 +7717,7 @@ CREATE TABLE IF NOT EXISTS `status_incidents` (
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `resolved_datetime`     DATETIME NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_status_incidents_status_id` (`status_id`),
     CONSTRAINT `fk_status_incidents_status` FOREIGN KEY (`status_id`) REFERENCES `service_incident_statuses` (`id`)
@@ -2881,9 +7728,103 @@ CREATE TABLE IF NOT EXISTS `status_incident_services` (
     `incident_id`       INT NOT NULL,
     `service_id`        INT NOT NULL,
     `impact_level_id`   INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_sis_impact_level_id` (`impact_level_id`),
     CONSTRAINT `fk_sis_impact_level` FOREIGN KEY (`impact_level_id`) REFERENCES `service_impact_levels` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Incident update log (discussion #59, phase 2)
+--
+-- status_incident_services holds only the CURRENT impact per service: saving an
+-- incident deletes and re-inserts those rows, so downgrading a service from
+-- Major Outage to Degraded overwrote the earlier value and the history reported
+-- the whole incident at whatever it ended on. That is what this fixes.
+--
+-- ⚠️ EACH UPDATE IS A FULL SNAPSHOT, not a diff. Every save writes one row here
+-- plus one _update_services row per affected service, describing the state at
+-- that moment. Carrying values forward from a diff would mean the reader has to
+-- reconstruct state, and a single missing row would silently shift a service's
+-- whole timeline. A snapshot costs a few more rows and cannot drift.
+--
+-- A service being restored is recorded either by moving it to a level that does
+-- not count as downtime, or by dropping it from the snapshot entirely. Both end
+-- its interval at that update, which is why the reader does not need a special
+-- "resolved" marker per service.
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `status_incident_updates` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `incident_id`       INT NOT NULL,
+    `status_id`         INT NULL,
+    `comment`           LONGTEXT NULL,
+    -- Internal by default (#99). An update written before this column
+    -- existed becomes internal, so an upgrade can never retroactively
+    -- publish troubleshooting notes to the self-service portal.
+    `is_internal` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- Every read walks an incident's updates in time order, so both are indexed.
+    KEY `ix_siu_incident_id` (`incident_id`),
+    KEY `ix_siu_created` (`created_datetime`),
+    CONSTRAINT `fk_siu_incident` FOREIGN KEY (`incident_id`) REFERENCES `status_incidents` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `status_incident_update_services` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `update_id`         INT NOT NULL,
+    `service_id`        INT NOT NULL,
+    `impact_level_id`   INT NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_sius_update_id` (`update_id`),
+    KEY `ix_sius_service_id` (`service_id`),
+    CONSTRAINT `fk_sius_update` FOREIGN KEY (`update_id`) REFERENCES `status_incident_updates` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Planned maintenance (3.2.0) - includes/service_status_planned.php
+--
+-- 🔑 NOT a status_incidents row until it starts. Fifteen readers (the board,
+-- the portal, Watchtower, uptime, Report Packs, the REST API, Warbot) decide
+-- "open" from the incident's status, and none of them knows a start time; a
+-- future incident would show the service under maintenance days early and
+-- count from the wrong moment. So the plan waits here, shown as Upcoming, and
+-- at planned_start becomes an ordinary incident (backdated to planned_start)
+-- through ServiceStatusService - workflows fire as for any incident - and at
+-- planned_end is resolved (backdated to planned_end). state: scheduled |
+-- started | finished | cancelled. planned_end NULL = resolved by hand.
+-- project_id: the project that announced it (Projects -> Connections).
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `status_planned` (
+    `id`                      INT NOT NULL AUTO_INCREMENT,
+    `title`                   VARCHAR(255) NOT NULL,
+    `comment`                 TEXT NULL,
+    `planned_start_datetime`  DATETIME NOT NULL,   -- UTC
+    `planned_end_datetime`    DATETIME NULL,       -- UTC
+    `state`                   VARCHAR(12) NOT NULL DEFAULT 'scheduled',
+    `incident_id`             INT NULL,
+    `project_id`              INT NULL,
+    `created_by_id`           INT NULL,
+    `created_datetime`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`                 TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_sp_state_start` (`state`, `planned_start_datetime`),
+    KEY `ix_sp_project` (`project_id`),
+    CONSTRAINT `fk_sp_incident` FOREIGN KEY (`incident_id`) REFERENCES `status_incidents` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_sp_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `status_planned_services` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `planned_id`        INT NOT NULL,
+    `service_id`        INT NOT NULL,
+    `impact_level_id`   INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_sps_planned` (`planned_id`),
+    CONSTRAINT `fk_sps_planned` FOREIGN KEY (`planned_id`) REFERENCES `status_planned` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------
@@ -2916,6 +7857,7 @@ CREATE TABLE IF NOT EXISTS `cmdb_classes` (
     `is_active`         TINYINT(1) NULL DEFAULT 1,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_cmdb_classes_key` (`class_key`),
     KEY `ix_cmdb_classes_icon_id` (`icon_id`),
@@ -2932,8 +7874,14 @@ CREATE TABLE IF NOT EXISTS `cmdb_class_properties` (
     `target_class_id`   INT NULL,
     -- only used when property_type = 'object_ref'
     `is_required`       TINYINT(1) NULL DEFAULT 0,
+    -- object_ref only: a dependency recorded as a field rather than a
+    -- relationship (e.g. a Database whose "Host Server" points at a Server).
+    -- 1 = if the referenced object fails, the object holding this field is
+    -- affected. Ignored for every other property type.
+    `spreads_impact`    TINYINT(1) NOT NULL DEFAULT 0,
     `display_order`     INT NULL DEFAULT 0,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_cmdb_class_property_key` (`class_id`, `property_key`),
     CONSTRAINT `fk_cmdb_cp_class` FOREIGN KEY (`class_id`) REFERENCES `cmdb_classes` (`id`) ON DELETE CASCADE,
@@ -2948,6 +7896,7 @@ CREATE TABLE IF NOT EXISTS `cmdb_class_property_options` (
     -- hex colour like "#22c55e", optional. Drives the coloured pill on the
     -- object detail page when set; plain text fallback otherwise.
     `display_order`     INT NULL DEFAULT 0,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_cmdb_cpo_property_id` (`property_id`),
     CONSTRAINT `fk_cmdb_cpo_property` FOREIGN KEY (`property_id`) REFERENCES `cmdb_class_properties` (`id`) ON DELETE CASCADE
@@ -2961,15 +7910,32 @@ CREATE TABLE IF NOT EXISTS `cmdb_objects` (
     `is_planned`        TINYINT(1) NOT NULL DEFAULT 0,
     `ai_summary`        LONGTEXT NULL,
     `ai_summary_generated_at` DATETIME NULL,
+    -- Multi-tenancy: SCOPED DATA. The company this configuration item belongs
+    -- to; NULL = the Default company (which is every CI on a single-company
+    -- install, and every pre-existing CI on upgrade). A CI belongs to exactly
+    -- one company — there are no shared CIs — so parent/child, relationships and
+    -- object_ref properties must all stay within one company; that invariant is
+    -- enforced in CmdbService, not by the schema.
+    -- Only cmdb_objects carries this: classes, properties, relationship types
+    -- and icons are install-wide admin config, and the child tables
+    -- (cmdb_object_properties, cmdb_object_relationships, ticket_cmdb_objects)
+    -- inherit their company from the object they hang off.
+    `tenant_id`         INT NULL,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_cmdb_objects_class_id` (`class_id`),
     KEY `ix_cmdb_objects_parent_id` (`parent_id`),
     KEY `ix_cmdb_objects_name` (`name`),
     KEY `ix_cmdb_objects_is_planned` (`is_planned`),
+    KEY `ix_cmdb_objects_tenant_id` (`tenant_id`),
     CONSTRAINT `fk_cmdb_objects_class` FOREIGN KEY (`class_id`) REFERENCES `cmdb_classes` (`id`),
-    CONSTRAINT `fk_cmdb_objects_parent` FOREIGN KEY (`parent_id`) REFERENCES `cmdb_objects` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_cmdb_objects_parent` FOREIGN KEY (`parent_id`) REFERENCES `cmdb_objects` (`id`) ON DELETE CASCADE,
+    -- SET NULL, never CASCADE: deleting a company must not destroy its CI
+    -- records — they revert to Default so the estate history survives. Mirrors
+    -- fk_assets_tenant.
+    CONSTRAINT `fk_cmdb_objects_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `cmdb_object_properties` (
@@ -2981,6 +7947,7 @@ CREATE TABLE IF NOT EXISTS `cmdb_object_properties` (
     `value_date`        DATETIME NULL,
     `value_boolean`     TINYINT(1) NULL,
     `value_object_id`   INT NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_cmdb_op_obj_prop` (`object_id`, `property_id`),
     KEY `ix_cmdb_op_value_object_id` (`value_object_id`),
@@ -2994,9 +7961,29 @@ CREATE TABLE IF NOT EXISTS `cmdb_relationship_types` (
     `verb`              VARCHAR(100) NOT NULL,
     `inverse_verb`      VARCHAR(100) NOT NULL,
     `description`       VARCHAR(500) NULL,
+    -- Whether a failure travels along this relationship, and which way.
+    --   'none'    = it does not spread impact (e.g. "is located in")
+    --   'to_from' = if the TO object fails, the FROM object is affected
+    --               ("A depends on B": B breaks, so A is affected)
+    --   'from_to' = if the FROM object fails, the TO object is affected
+    --               ("A hosts B": A breaks, so B is affected)
+    -- Defaults to 'none' so an upgraded install reports nothing until someone
+    -- deliberately says a relationship carries impact.
+    `impact_direction`  VARCHAR(10) NOT NULL DEFAULT 'none',
+    -- GH #199 Part C: what a failure travelling along this relationship MEANS.
+    --   'none'       = an ordinary dependency: the object it reaches is affected
+    --   'membership' = membership of a redundant group ("is a member of" a cluster):
+    --                  losing some members reduces the group's redundancy; losing all
+    --                  of them affects it
+    --   'placement'  = placement with failover ("runs on", for a highly available
+    --                  role ONLY): the object may be interrupted while its host's group
+    --                  has another member, and is affected when it has none
+    -- One column, so a type can never be both. 'none' everywhere means today's results.
+    `redundancy`        VARCHAR(20) NOT NULL DEFAULT 'none',
     `display_order`     INT NULL DEFAULT 0,
     `is_active`         TINYINT(1) NULL DEFAULT 1,
     `created_datetime`  DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_cmdb_rel_type_verb` (`verb`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -3007,6 +7994,7 @@ CREATE TABLE IF NOT EXISTS `cmdb_object_relationships` (
     `to_object_id`          INT NOT NULL,
     `relationship_type_id`  INT NOT NULL,
     `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_cmdb_or_triple` (`from_object_id`, `to_object_id`, `relationship_type_id`),
     KEY `ix_cmdb_or_to_object_id` (`to_object_id`),
@@ -3030,6 +8018,128 @@ CREATE TABLE IF NOT EXISTS `ticket_cmdb_objects` (
     CONSTRAINT `fk_tco_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_tco_cmdb_object` FOREIGN KEY (`cmdb_object_id`) REFERENCES `cmdb_objects` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_tco_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Join table linking tickets to assets (M:N). Asked for in discussion #57.
+-- Drives the "Affected equipment" section on the ticket reading pane and the
+-- "Tickets" tab on the asset detail page.
+--
+-- Two nullable "created by" columns, not one: an analyst can attach any asset
+-- from the ticket screen, and a portal user can attach one of their own when
+-- raising a ticket. Analysts and end users live in different tables, so there is
+-- no single id that covers both. Exactly one is set on any given row; both are
+-- NULL only where the row was created by an automated path.
+--
+-- No tenant_id: the company is inherited from the ticket and the asset, both of
+-- which carry their own, and a link may only ever be made between two rows in
+-- the same company. That is enforced in application code, as it is for
+-- ticket_cmdb_objects.
+-- Assets covered by a contract (discussion #106).
+--
+-- No tenant_id, for the same reason ticket_assets has none: the company comes
+-- from the asset, which carries its own. Contracts are NOT company-scoped at
+-- all today, so the asset side is the only side that can answer "whose is
+-- this?" - which is exactly why every list of linked assets must be filtered to
+-- the companies the reader can reach, and why the write re-checks rather than
+-- trusting the list it was picked from.
+--
+-- `reference` is the link's own free text: the phone number on a SIM, a line
+-- ID, a seat number. It belongs on the LINK rather than the asset because it
+-- describes the asset's place in this contract, and the same handset moved to a
+-- different agreement keeps the handset and loses the line.
+CREATE TABLE IF NOT EXISTS `contract_assets` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `contract_id`      INT NOT NULL,
+    `asset_id`         INT NOT NULL,
+    `reference`        VARCHAR(190) NULL,
+    `linked_by_id`     INT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_contract_asset` (`contract_id`, `asset_id`),
+    KEY `ix_ca_asset_id` (`asset_id`),
+    CONSTRAINT `fk_ca_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ca_asset`    FOREIGN KEY (`asset_id`)    REFERENCES `assets` (`id`)    ON DELETE CASCADE,
+    CONSTRAINT `fk_ca_analyst`  FOREIGN KEY (`linked_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Saved table views (discussion #96).
+--
+-- One row per saved view, for ANY table that runs the shared data-table engine
+-- (assets/js/data-table.js). `table_key` names which — 'assets', 'tasks',
+-- 'calendar', 'changes' — so a view saved on the asset table can never appear on
+-- the tasks table.
+--
+-- `config` is the engine's own state as JSON: which columns are visible and in
+-- what order, the sort, and the per-column filters. Deliberately opaque to the
+-- database: the engine owns that shape and a column per setting would need a
+-- migration every time it gained one.
+--
+-- No tenant_id. A view is a way of LOOKING at rows, not the rows themselves; its
+-- filters are applied to whatever the reader was already allowed to see, so a
+-- shared view cannot expose another company's assets.
+--
+-- owner_id is SET NULL rather than CASCADE, so a team or public view survives
+-- the person who wrote it leaving. A private view with no owner then matches
+-- nobody, which is harmless - it is unreachable rather than exposed.
+CREATE TABLE IF NOT EXISTS `table_views` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `table_key`        VARCHAR(32) NOT NULL,
+    `name`             VARCHAR(120) NOT NULL,
+    `description`      VARCHAR(500) NULL,
+    `owner_id`         INT NULL,
+    `visibility`       VARCHAR(10) NOT NULL DEFAULT 'private',
+    `team_id`          INT NULL,
+    `config`           MEDIUMTEXT NOT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL,
+    `last_used_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_tv_table_key` (`table_key`),
+    KEY `ix_tv_owner` (`owner_id`),
+    KEY `ix_tv_team` (`team_id`),
+    CONSTRAINT `fk_tv_owner` FOREIGN KEY (`owner_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_tv_team`  FOREIGN KEY (`team_id`)  REFERENCES `teams` (`id`)    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `report_packs` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(200) NOT NULL,
+    `description`      VARCHAR(500) NULL,
+    `owner_id`         INT NULL,
+    `design`           LONGTEXT NOT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL,
+    `updated_by`       INT NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_rp_owner` (`owner_id`),
+    CONSTRAINT `fk_rp_owner`   FOREIGN KEY (`owner_id`)   REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_rp_updater` FOREIGN KEY (`updated_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `report_pack_shares` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `pack_id`          INT NOT NULL,
+    `target_type`      VARCHAR(20) NOT NULL,
+    `target_id`        INT NULL,
+    `target_value`     VARCHAR(255) NULL,
+    `can_edit`         TINYINT(1) NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_rps_pack` (`pack_id`),
+    KEY `ix_rps_target` (`target_type`, `target_id`),
+    CONSTRAINT `fk_rps_pack` FOREIGN KEY (`pack_id`) REFERENCES `report_packs` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `ticket_assets` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`             INT NOT NULL,
+    `asset_id`              INT NOT NULL,
+    `created_datetime`      DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_by_analyst_id` INT NULL,
+    `created_by_user_id`    INT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ticket_asset` (`ticket_id`, `asset_id`),
+    KEY `ix_ta_asset_id` (`asset_id`),
+    CONSTRAINT `fk_ta_ticket`  FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ta_asset`   FOREIGN KEY (`asset_id`)  REFERENCES `assets` (`id`)  ON DELETE CASCADE,
+    CONSTRAINT `fk_ta_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_ta_user`    FOREIGN KEY (`created_by_user_id`)    REFERENCES `users` (`id`)    ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -3063,6 +8173,7 @@ CREATE TABLE IF NOT EXISTS `network_diagrams` (
     `footer_left`           VARCHAR(200) NULL,
     `footer_center`         VARCHAR(200) NULL,
     `footer_right`          VARCHAR(200) NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_net_diag_parent` (`parent_diagram_id`),
     KEY `ix_net_diag_author` (`created_by_analyst_id`),
@@ -3078,6 +8189,7 @@ CREATE TABLE IF NOT EXISTS `network_diagram_nodes` (
     `y`              INT NOT NULL DEFAULT 0,
     `size`           VARCHAR(20) NOT NULL DEFAULT 'medium',
     `icon_override`  VARCHAR(100) NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_net_node_diag` (`diagram_id`),
     KEY `ix_net_node_cmdb` (`cmdb_object_id`),
@@ -3093,13 +8205,65 @@ CREATE TABLE IF NOT EXISTS `network_diagram_connectors` (
     `cmdb_relationship_id`     INT NULL,
     `label`                    VARCHAR(255) NULL,
     `line_style`               VARCHAR(20) NULL DEFAULT 'solid',
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
     PRIMARY KEY (`id`),
     KEY `ix_net_conn_diag` (`diagram_id`),
     KEY `ix_net_conn_from` (`from_node_id`),
     KEY `ix_net_conn_to` (`to_node_id`),
     CONSTRAINT `fk_net_conn_diag` FOREIGN KEY (`diagram_id`) REFERENCES `network_diagrams` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_net_conn_from` FOREIGN KEY (`from_node_id`) REFERENCES `network_diagram_nodes` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_net_conn_to`   FOREIGN KEY (`to_node_id`)   REFERENCES `network_diagram_nodes` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_net_conn_to`   FOREIGN KEY (`to_node_id`)   REFERENCES `network_diagram_nodes` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_net_conn_rel`  FOREIGN KEY (`cmdb_relationship_id`) REFERENCES `cmdb_object_relationships` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Search corpus. One row per SEARCHABLE UNIT, whatever it came from: a ticket
+-- subject, an email body, an internal note, and later the extracted text of an
+-- attachment or a knowledge article. Keeping them in one table (rather than a
+-- FULLTEXT index per source table) is what lets a single query rank a note hit
+-- against an attachment hit -- relevance scores from different full-text indexes
+-- are computed against their own corpus statistics and are not comparable.
+--
+-- DERIVED, NOT AUTHORITATIVE. Every row is rebuildable from its source; nothing
+-- is stored here that does not exist elsewhere. `body` holds STRIPPED PLAINTEXT,
+-- never the HTML in emails.body_content -- indexing markup makes every ticket
+-- "contain" div, span and style.
+--
+-- ⚠️ tenant_scope exists because NULL means DIFFERENT THINGS in the source
+-- tables: a ticket with tenant_id IS NULL belongs to the DEFAULT company, while
+-- a knowledge article with tenant_id IS NULL is SHARED WITH EVERY company -- the
+-- exact opposite. Overloading NULL here would make the scope of a row depend on
+-- which source_type it came from, so the meaning is written down instead:
+--   'company' -> visible to tenant_id only
+--   'default' -> the source's NULL meant "the default company"
+--   'shared'  -> the source's NULL meant "every company"
+--
+-- ⚠️ PORTAL EXPOSURE IS DELIBERATELY NOT MODELLED YET. is_internal is a fact we
+-- can always establish (a note is internal or it is not). Whether a requester
+-- may see a message sent to a third party is an install SETTING applied at read
+-- time, and whether portal users get content search at all is still an open
+-- product question -- so phase 1 is analyst-only and nothing here should be read
+-- as sufficient for exposing search to customers.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `search_documents` (
+    `id`               BIGINT NOT NULL AUTO_INCREMENT,
+    `source_type`      VARCHAR(32) NOT NULL,
+    `source_id`        INT NOT NULL,
+    `ticket_id`        INT NULL,
+    `tenant_id`        INT NULL,
+    `tenant_scope`     VARCHAR(16) NOT NULL DEFAULT 'company',
+    `is_internal`      TINYINT(1) NOT NULL DEFAULT 0,
+    `title`            VARCHAR(500) NULL,
+    `body`             MEDIUMTEXT NULL,
+    `source_datetime`  DATETIME NULL,
+    `indexed_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_search_docs_source` (`source_type`,`source_id`),
+    KEY `idx_search_docs_ticket` (`ticket_id`),
+    KEY `idx_search_docs_tenant` (`tenant_id`),
+    FULLTEXT KEY `ft_search_docs` (`title`,`body`),
+    FULLTEXT KEY `ft_search_docs_title` (`title`),
+    CONSTRAINT `fk_search_docs_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Seed the curated icon library on first run. Adding more icons later means
@@ -3179,120 +8343,2177 @@ INSERT INTO `cmdb_icons` (`icon_key`, `label`, `display_order`) SELECT * FROM (S
 
 -- Seed a small starter set of relationship verbs so analysts have something
 -- to work with on first run. Easily editable from CMDB → Settings.
-INSERT INTO `cmdb_relationship_types` (`verb`, `inverse_verb`, `description`, `display_order`)
-SELECT * FROM (SELECT 'depends on'  AS verb, 'is depended on by' AS inverse_verb, 'A needs B in order to function'  AS description, 10 AS display_order) AS t
+-- Only 'depends on' carries impact out of the box: "A depends on B" means B
+-- failing affects A, so impact travels to_from. A network link and a management
+-- relationship do NOT propagate failure, so they stay 'none' — the blast radius
+-- should under-claim by default rather than invent consequences.
+INSERT INTO `cmdb_relationship_types` (`verb`, `inverse_verb`, `description`, `impact_direction`, `display_order`)
+SELECT * FROM (SELECT 'depends on'  AS verb, 'is depended on by' AS inverse_verb, 'A needs B in order to function'  AS description, 'to_from' AS impact_direction, 10 AS display_order) AS t
 WHERE NOT EXISTS (SELECT 1 FROM `cmdb_relationship_types` WHERE verb = 'depends on');
-INSERT INTO `cmdb_relationship_types` (`verb`, `inverse_verb`, `description`, `display_order`)
-SELECT * FROM (SELECT 'connects to' AS verb, 'is connected from' AS inverse_verb, 'A has a network or data link to B' AS description, 20 AS display_order) AS t
+INSERT INTO `cmdb_relationship_types` (`verb`, `inverse_verb`, `description`, `impact_direction`, `display_order`)
+SELECT * FROM (SELECT 'connects to' AS verb, 'is connected from' AS inverse_verb, 'A has a network or data link to B' AS description, 'none' AS impact_direction, 20 AS display_order) AS t
 WHERE NOT EXISTS (SELECT 1 FROM `cmdb_relationship_types` WHERE verb = 'connects to');
-INSERT INTO `cmdb_relationship_types` (`verb`, `inverse_verb`, `description`, `display_order`)
-SELECT * FROM (SELECT 'managed by'  AS verb, 'manages'           AS inverse_verb, 'A is administered by B'           AS description, 30 AS display_order) AS t
+INSERT INTO `cmdb_relationship_types` (`verb`, `inverse_verb`, `description`, `impact_direction`, `display_order`)
+SELECT * FROM (SELECT 'managed by'  AS verb, 'manages'           AS inverse_verb, 'A is administered by B'           AS description, 'none' AS impact_direction, 30 AS display_order) AS t
 WHERE NOT EXISTS (SELECT 1 FROM `cmdb_relationship_types` WHERE verb = 'managed by');
 
-SET FOREIGN_KEY_CHECKS = 1;
-
 -- ----------------------------------------------------------
--- Seed: Default admin account
+-- War room — fallback chat for when Teams/Slack is unavailable
 -- ----------------------------------------------------------
--- Username: admin  |  Password: freeitsm
--- IMPORTANT: Change this password after first login!
-INSERT INTO `analysts` (`username`, `password_hash`, `full_name`, `email`, `is_active`, `created_datetime`)
-SELECT 'admin', '$2y$12$z9jzs9Sqol4i.ThVE/wwL.EzvbYtZrU0GHpzUJX7UC6ODp5h.q2U2', 'Administrator', 'admin@localhost', 1, UTC_TIMESTAMP()
-FROM DUAL
-WHERE NOT EXISTS (SELECT 1 FROM `analysts` LIMIT 1);
+-- Every conversation is a row in `warroom_channels`, of one of four KINDS, so
+-- that a message needs exactly one foreign key rather than a nullable column per
+-- kind. The kinds differ in where their identity comes from:
+--
+--   all    the one all-hands room. Always exists, always listed first: in a real
+--          outage you want one obvious place for everybody, not six team rooms
+--          and an argument about which to use.
+--   team   one per team. `team_id` is UNIQUE and CASCADEs, and the channel's NAME
+--          IS NOT STORED — it is read from `teams` at display time. So a team
+--          channel cannot be duplicated, cannot be orphaned, and cannot be
+--          renamed into something the team is no longer called.
+--   custom somebody made it. This kind, and only this kind, has a lifecycle
+--          (create, rename, archive) — the cost of the feature, paid knowingly.
+--   dm     a pair of analysts. `dm_key` is "<lower id>:<higher id>" and UNIQUE.
+--          Without that constraint two people opening a DM with each other at the
+--          same moment get one conversation each and neither sees the other's —
+--          exactly the failure you would hit mid-incident, when both are trying.
+--
+-- Retention is a setting (`warroom_retention_days`, 0 = keep forever) applied
+-- opportunistically on send, so it needs no cron — a tool for the day the
+-- internet is down should not depend on scheduled jobs having been set up.
+CREATE TABLE IF NOT EXISTS `warroom_channels` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `kind`              VARCHAR(10) NOT NULL DEFAULT 'custom',
+    `team_id`           INT NULL,
+    `dm_key`            VARCHAR(41) NULL,
+    `name`              VARCHAR(120) NULL,
+    `topic`             VARCHAR(255) NULL,
+    `is_private`        TINYINT(1) NOT NULL DEFAULT 0,
+    `created_by`        INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `archived_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    -- One channel per team, and one DM per pair. Both are UNIQUE over a NULLABLE
+    -- column, which MySQL allows to repeat NULLs — so the other kinds are unaffected.
+    UNIQUE KEY `uq_warroom_channels_team` (`team_id`),
+    UNIQUE KEY `uq_warroom_channels_dm` (`dm_key`),
+    KEY `ix_warroom_channels_kind` (`kind`, `archived_datetime`),
+    CONSTRAINT `fk_warroom_channels_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE,
+    -- SET NULL: a channel must outlive whoever opened it, or deleting a leaver
+    -- would take the incident room with them.
+    CONSTRAINT `fk_warroom_channels_creator` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- SSO group access, generic IMAP/SMTP intake, and AI-ready foundations.
-CREATE TABLE IF NOT EXISTS `access_groups` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-    `group_key` VARCHAR(80) NOT NULL,
-    `display_name` VARCHAR(120) NOT NULL,
-    `description` TEXT NULL,
-    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+-- Membership, for private custom channels and for DMs. Team membership is NOT
+-- duplicated here — it lives in `analyst_teams` and is read from there, so the
+-- two can never disagree about who is in a team.
+CREATE TABLE IF NOT EXISTS `warroom_channel_members` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `channel_id`       INT NOT NULL,
+    `analyst_id`       INT NOT NULL,
     `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_access_groups_key` (`group_key`)
+    UNIQUE KEY `uq_warroom_member` (`channel_id`, `analyst_id`),
+    KEY `ix_warroom_member_analyst` (`analyst_id`),
+    CONSTRAINT `fk_warroom_member_channel` FOREIGN KEY (`channel_id`) REFERENCES `warroom_channels` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_warroom_member_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `access_group_modules` (
-    `id` INT NOT NULL AUTO_INCREMENT,
-    `access_group_id` INT NOT NULL,
-    `module_key` VARCHAR(100) NOT NULL,
+-- The two delete rules on a message differ on purpose:
+--   channel_id CASCADE   delete a channel and its conversation goes with it.
+--   analyst_id SET NULL  delete an analyst and the conversation SURVIVES. This
+--                        is the record of what was said during an incident;
+--                        losing half of it because somebody left the company
+--                        would be the wrong trade. Those rows show as
+--                        "Former analyst".
+--
+-- `edited_datetime` / `deleted_datetime` are RECORDED, not hidden. This table is
+-- the record of what was said during an incident, so a message that changed after
+-- the fact says so, and a deleted one leaves a tombstone rather than a silent gap.
+-- The body and any attachments really are destroyed on delete — the point is that
+-- somebody can see a message was removed, not that its contents survive.
+CREATE TABLE IF NOT EXISTS `warroom_messages` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `channel_id`       INT NULL,
+    `analyst_id`       INT NULL,
+    `body`             TEXT NOT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_bot`           TINYINT(1) NOT NULL DEFAULT 0,
+    `reply_to_id`      INT NULL,
+    `edited_datetime`  DATETIME NULL,
+    `deleted_datetime` DATETIME NULL,
+    `deleted_by`       INT NULL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_access_group_module` (`access_group_id`, `module_key`),
-    CONSTRAINT `fk_access_group_modules_group` FOREIGN KEY (`access_group_id`) REFERENCES `access_groups` (`id`) ON DELETE CASCADE
+    -- (channel_id, id): every read is "this channel, newer than id N".
+    KEY `ix_warroom_messages_channel` (`channel_id`, `id`),
+    -- Retention deletes by age across every channel at once.
+    KEY `ix_warroom_messages_created` (`created_datetime`),
+    -- Warbot's reply points at the message it answers, which is also how a
+    -- duplicate answer is prevented when the trigger is retried.
+    KEY `ix_warroom_messages_reply` (`reply_to_id`),
+    CONSTRAINT `fk_warroom_messages_channel` FOREIGN KEY (`channel_id`) REFERENCES `warroom_channels` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_warroom_messages_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_warroom_messages_deleter` FOREIGN KEY (`deleted_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `analyst_access_groups` (
-    `id` INT NOT NULL AUTO_INCREMENT,
+-- ⚠️ THERE IS NO `content_type` COLUMN, AND THAT IS THE POINT. What an attachment
+-- is served as is worked out from its extension against our own map at serve time
+-- (`attachmentServeRules`, security finding F5 — an attachment that declares its
+-- own type can declare `image/svg+xml` and run script in the reader's session).
+-- Storing the uploader's claim would only leave something for a future endpoint to
+-- trust by mistake, so the temptation is removed rather than merely documented.
+--
+-- `stored_name` is the random name includes/uploads.php generated; `original_name`
+-- is for display and the download filename only, and never touches the path.
+CREATE TABLE IF NOT EXISTS `warroom_attachments` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `message_id`       INT NOT NULL,
+    `stored_name`      VARCHAR(100) NOT NULL,
+    `original_name`    VARCHAR(255) NOT NULL,
+    `size_bytes`       INT NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_warroom_attachments_message` (`message_id`),
+    KEY `ix_warroom_attachments_stored` (`stored_name`),
+    CONSTRAINT `fk_warroom_attachments_message` FOREIGN KEY (`message_id`) REFERENCES `warroom_messages` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who was named in a message. One row PER RECIPIENT — `@everyone` is expanded at
+-- send time rather than stored as a flag, which keeps "what has my name on it" a
+-- simple equality, and makes the record point-in-time correct: you notified the
+-- people entitled to that channel then, not whoever is entitled to it now.
+--
+-- ⚠️ There is no read column. A mention is unread when its message is newer than
+-- your `warroom_reads` marker for that channel — reusing state that already exists
+-- rather than adding a second copy that can disagree with it.
+CREATE TABLE IF NOT EXISTS `warroom_mentions` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `message_id`       INT NOT NULL,
+    `analyst_id`       INT NOT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- The same person cannot be named twice by one message, however many times
+    -- their name appears in it.
+    UNIQUE KEY `uq_warroom_mention` (`message_id`, `analyst_id`),
+    -- (analyst_id, id): the notifications panel asks "mine, newest first".
+    KEY `ix_warroom_mentions_analyst` (`analyst_id`, `id`),
+    CONSTRAINT `fk_warroom_mentions_message` FOREIGN KEY (`message_id`) REFERENCES `warroom_messages` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_warroom_mentions_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- How far each analyst has read in each channel, so the list can show what is new.
+-- Upserted, and the id only ever moves forward (GREATEST) — an out-of-order poll
+-- must not un-read a channel.
+CREATE TABLE IF NOT EXISTS `warroom_reads` (
+    `id`                   INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`           INT NOT NULL,
+    `channel_id`           INT NOT NULL,
+    `last_read_message_id` INT NOT NULL DEFAULT 0,
+    `updated_datetime`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_warroom_read` (`analyst_id`, `channel_id`),
+    CONSTRAINT `fk_warroom_reads_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_warroom_reads_channel` FOREIGN KEY (`channel_id`) REFERENCES `warroom_channels` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who is currently in the war room. Knowing whether anyone is actually reading
+-- is most of the value when your usual chat is down, so this is not a frill.
+--
+-- One row per analyst, upserted by the same poll that fetches messages: presence
+-- costs no extra request, and the table cannot grow beyond the analyst count.
+-- Shape mirrors `ticket_presence` (surrogate id + UNIQUE on the natural key) —
+-- the pattern collision detection already established. Unlike messages, presence
+-- is ephemeral, so an analyst delete CASCADEs it away.
+CREATE TABLE IF NOT EXISTS `warroom_presence` (
+    `id`         INT NOT NULL AUTO_INCREMENT,
     `analyst_id` INT NOT NULL,
-    `access_group_id` INT NOT NULL,
-    `source` VARCHAR(20) NOT NULL DEFAULT 'manual',
+    `channel_id` INT NULL,
+    `last_seen`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_analyst_access_group_source` (`analyst_id`, `access_group_id`, `source`),
-    CONSTRAINT `fk_aag_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_aag_group` FOREIGN KEY (`access_group_id`) REFERENCES `access_groups` (`id`) ON DELETE CASCADE
+    UNIQUE KEY `uq_warroom_presence` (`analyst_id`),
+    KEY `ix_warroom_presence_last_seen` (`last_seen`),
+    CONSTRAINT `fk_warroom_presence_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_warroom_presence_channel` FOREIGN KEY (`channel_id`) REFERENCES `warroom_channels` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `auth_provider_group_mappings` (
+-- The recent trail (#124). Every record an analyst opens, in the order they
+-- opened it, so the waffle drawer can draw an outline of how they got where they
+-- are: a heading per run of records in one module, the records indented under it.
+-- includes/recent_trail.php carries the reasoning; the two properties that are
+-- easy to "correct" by mistake are these:
+--
+-- 🔴 NO UNIQUE KEY on (analyst_id, entity_type, entity_id), and that is the whole
+--    design rather than an omission. This is a LOG. Opening a ticket at 09:00 and
+--    again at 15:00 has to be two rows under two headings — deduplicating them
+--    into one would delete the fact the outline exists to show. recentTrailPrune()
+--    caps the table instead, by count and by age.
+--
+-- ⚠️ entity_type holds the ENTITY names from entityLinkTypes() — 'knowledge_article',
+--    not the module key 'knowledge'. The module a row is filed under is derived at
+--    render time, so moving a record type between modules is one edit in one PHP
+--    file and never a data migration.
+--
+-- Must follow `analysts`: it points at it, and CASCADE is right because a trail is
+-- one analyst's own history and means nothing once the account is gone.
+CREATE TABLE IF NOT EXISTS `analyst_recent_trail` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`       INT NOT NULL,
+    `entity_type`      VARCHAR(40) NOT NULL,
+    `entity_id`        INT NOT NULL,
+    `visited_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    -- Every read and every prune is "this analyst, newest first". One index does
+    -- both, and it is the only one the table needs.
+    KEY `ix_analyst_recent_trail_analyst` (`analyst_id`, `visited_datetime`),
+    CONSTRAINT `fk_analyst_recent_trail_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The all-hands room. Seeded rather than created on demand so a fresh install has
+-- somewhere to talk before anybody has a team; warRoomEnsureChannels() creates it
+-- too, for installations that predate this line.
+INSERT INTO `warroom_channels` (`kind`, `created_datetime`)
+SELECT 'all', UTC_TIMESTAMP() FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `warroom_channels` WHERE `kind` = 'all');
+
+
+-- ------------------------------------------------------------
+-- Checklists & SOP Management
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `checklist_categories` (
     `id` INT NOT NULL AUTO_INCREMENT,
-    `provider_id` INT NOT NULL,
-    `external_group_value` VARCHAR(255) NOT NULL,
-    `access_group_id` INT NOT NULL,
+    `name` VARCHAR(100) NOT NULL UNIQUE,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `checklist_roles` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL UNIQUE,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `checklist_templates` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `tenant_id` INT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `description` TEXT NULL,
+    `keywords` TEXT NULL,
+    `category` VARCHAR(100) NULL DEFAULT 'General',
+    `suggested_role` VARCHAR(100) NULL,
+    `scope` ENUM('ticket','task','both') NOT NULL DEFAULT 'both',
+    `closure_mode` ENUM('warn','block') NOT NULL DEFAULT 'warn',
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by_id` INT NULL,
     `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `version_no` INT NOT NULL DEFAULT 0,       -- #181: the newest checklist_template_versions row; 0 = never versioned
+  `is_demo` tinyint(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_provider_external_group` (`provider_id`, `external_group_value`),
-    CONSTRAINT `fk_apgm_provider` FOREIGN KEY (`provider_id`) REFERENCES `auth_providers` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_apgm_group` FOREIGN KEY (`access_group_id`) REFERENCES `access_groups` (`id`) ON DELETE CASCADE
+    KEY `idx_tpl_category` (`category`),
+    KEY `idx_tpl_scope` (`scope`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `intake_channels` (
+CREATE TABLE IF NOT EXISTS `checklist_template_items` (
     `id` INT NOT NULL AUTO_INCREMENT,
-    `channel_key` VARCHAR(100) NOT NULL,
-    `display_name` VARCHAR(150) NOT NULL,
-    `channel_type` VARCHAR(20) NOT NULL DEFAULT 'email',
-    `enabled` TINYINT(1) NOT NULL DEFAULT 1,
-    `config_json` JSON NULL,
+    `template_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `description` TEXT NULL,
+    `is_mandatory` TINYINT(1) NOT NULL DEFAULT 1,
+    `suggested_role` VARCHAR(100) NULL,
+    `sort_order` INT NOT NULL DEFAULT 1,
+    `requires_input` TINYINT(1) NOT NULL DEFAULT 0,
+    `input_placeholder` VARCHAR(255) NULL,
+    `default_value` VARCHAR(255) NULL,
+    `result_mode` VARCHAR(10) NOT NULL DEFAULT 'none',   -- #181: 'pass_fail' asks for Pass / Fail / Not applicable on tasks
     `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_demo` tinyint(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_intake_channels_key` (`channel_key`)
+    KEY `idx_item_tpl` (`template_id`),
+    CONSTRAINT `fk_chk_tpl_items_tpl` FOREIGN KEY (`template_id`) REFERENCES `checklist_templates` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `intake_messages` (
+CREATE TABLE IF NOT EXISTS `ticket_checklists` (
     `id` INT NOT NULL AUTO_INCREMENT,
-    `channel_id` INT NOT NULL,
-    `external_message_id` VARCHAR(255) NOT NULL,
-    `sender_identity` VARCHAR(255) NULL,
-    `subject` VARCHAR(500) NULL,
-    `body_text` LONGTEXT NULL,
-    `body_html` LONGTEXT NULL,
-    `status` VARCHAR(30) NOT NULL DEFAULT 'new',
-    `ticket_id` INT NULL,
-    `metadata_json` JSON NULL,
+    `ticket_id` INT NOT NULL,
+    `template_id` INT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `closure_mode` ENUM('warn','block') NOT NULL DEFAULT 'warn',
+    `created_by_id` INT NULL,
     `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `processed_datetime` DATETIME NULL,
+  `is_demo` tinyint(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uq_intake_external_message` (`channel_id`, `external_message_id`),
-    CONSTRAINT `fk_intake_messages_channel` FOREIGN KEY (`channel_id`) REFERENCES `intake_channels` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_intake_messages_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE SET NULL
+    KEY `idx_chk_ticket` (`ticket_id`),
+    CONSTRAINT `fk_ticket_checklists_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `ai_provider_settings` (
+CREATE TABLE IF NOT EXISTS `ticket_checklist_items` (
     `id` INT NOT NULL AUTO_INCREMENT,
-    `ai_triage_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-    `ai_pre_ticket_collection_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-    `ai_provider_type` VARCHAR(50) NULL,
-    `ai_endpoint_url` TEXT NULL,
-    `ai_model` VARCHAR(120) NULL,
-    `ai_is_sovereign_offline` TINYINT(1) NOT NULL DEFAULT 0,
+    `ticket_checklist_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `suggested_role` VARCHAR(100) NULL,
+    `is_mandatory` TINYINT(1) NOT NULL DEFAULT 1,
+    `is_completed` TINYINT(1) NOT NULL DEFAULT 0,
+    `completed_by_id` INT NULL,
+    `completed_by_name` VARCHAR(150) NULL,
+    `completed_datetime` DATETIME NULL,
+    `requires_input` TINYINT(1) NOT NULL DEFAULT 0,
+    `input_placeholder` VARCHAR(255) NULL,
+    `response_value` TEXT NULL,
+    `sort_order` INT NOT NULL DEFAULT 1,
+  `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_item_ticket_chk` (`ticket_checklist_id`),
+    CONSTRAINT `fk_ticket_chk_items_chk` FOREIGN KEY (`ticket_checklist_id`) REFERENCES `ticket_checklists` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Checklists on TASKS (discussion #138, round three). The same two shapes as
+-- ticket_checklists / ticket_checklist_items, keyed on a task: attaching a
+-- checklist copies the template's steps, exactly as it does on a ticket, so
+-- editing a template later never changes work already in progress. Only used
+-- while Tasks → Settings → Checklists is switched on (tasks_checklists_enabled).
+-- ⚠️ The code deletes children itself (ChecklistsService) - a table grown by
+-- Database Verification has no foreign keys, so the CASCADEs below cannot be
+-- relied on everywhere.
+CREATE TABLE IF NOT EXISTS `task_checklists` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_id` INT NOT NULL,
+    `template_id` INT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `closure_mode` ENUM('warn','block') NOT NULL DEFAULT 'warn',
+    `sort_order` INT NOT NULL DEFAULT 0,
+    `created_by_id` INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `template_version` INT NULL,                -- #181: which checklist_template_versions row it was copied from
+    `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_task_chk_task` (`task_id`),
+    CONSTRAINT `fk_task_checklists_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Forms a task needs (GH #190): the requirement, its shared draft and the
+-- submission that met it. One row per form per task occurrence; the repeat copies
+-- the requirement (never the answers) to each new occurrence. Only used while
+-- Tasks → Settings → Checklists has "Forms on tasks" on (tasks_forms_enabled).
+-- 🔴 NO foreign keys, like the #181 history tables: the submission and this row
+-- are an occurrence's evidence and must not be cascaded away with a form.
+-- `revision` makes every draft save and submit CONDITIONAL on what the saver
+-- last read, so two analysts with the occurrence open get a visible conflict
+-- rather than one silently overwriting the other.
+CREATE TABLE IF NOT EXISTS `task_forms` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_id` INT NOT NULL,
+    `form_id` INT NOT NULL,                     -- the exact form VERSION this occurrence is filled on
+    `title` VARCHAR(255) NOT NULL,              -- the form's title when added, kept if the form is renamed
+    `is_required` TINYINT(1) NOT NULL DEFAULT 1,
+    `requirement_mode` ENUM('warn','block') NOT NULL DEFAULT 'block',
+    `submission_id` INT NULL,                   -- the submission that currently meets it
+    `draft_json` LONGTEXT NULL,                 -- shared by everyone who may work the occurrence
+    `draft_by_id` INT NULL,
+    `draft_by_name` VARCHAR(150) NULL,
+    `draft_datetime` DATETIME NULL,
+    `revision` INT NOT NULL DEFAULT 0,
+    `sort_order` INT NOT NULL DEFAULT 0,
+    `added_by_id` INT NULL,
+    `added_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_task_forms_task` (`task_id`),
+    KEY `idx_task_forms_submission` (`submission_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The procedures a task occurrence is carried out against (GH #190 phase 2):
+-- references to Knowledge articles, shown in the task's Work view through
+-- Knowledge's own visibility rules. When the occurrence is completed (or
+-- skipped), each article's text AS IT STOOD is frozen into a snapshot, because
+-- an ordinary Knowledge save edits an article in place - only "save as a new
+-- version" keeps the old text - so the version number alone cannot promise
+-- the words behind historical evidence. No foreign keys: evidence outlives
+-- the article, the task and the series.
+CREATE TABLE IF NOT EXISTS `task_procedures` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_id` INT NOT NULL,
+    `article_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,              -- the article's title when added
+    `sort_order` INT NOT NULL DEFAULT 0,
+    `added_by_id` INT NULL,
+    `added_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `snapshot_id` INT NULL,                     -- the text it was completed against
+    `article_version` INT NULL,                 -- knowledge_articles.version at that moment
+    `frozen_datetime` DATETIME NULL,
+    `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_task_procedures_task` (`task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Each distinct procedure text ONCE, keyed by its hash: 365 daily occurrences
+-- done against the same SOP store it once.
+CREATE TABLE IF NOT EXISTS `task_procedure_snapshots` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `content_hash` CHAR(64) NOT NULL,
+    `article_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `body` LONGTEXT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_task_procedure_snapshots_hash` (`content_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Follow-up work raised from, or linked to, a task occurrence (GH #190 phase 3):
+-- a ticket or task that fixes what a check found. Its own table because
+-- tasks.ticket_id is already "the ticket this task belongs to", and a subtask is
+-- part of the task rather than a follow-up from it. `source_kind` / `source_id`
+-- say where it came from (a checklist step, or a form submission);
+-- `client_reference` stops a retried Create making a second one. No foreign keys:
+-- the link is part of the occurrence's record.
+CREATE TABLE IF NOT EXISTS `task_follow_ups` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_id` INT NOT NULL,
+    `kind` VARCHAR(10) NOT NULL,                -- ticket | task
+    `record_id` INT NOT NULL,
+    `created_here` TINYINT(1) NOT NULL DEFAULT 0,
+    `source_kind` VARCHAR(10) NULL,             -- step | form
+    `source_id` INT NULL,
+    `note` TEXT NULL,
+    `client_reference` VARCHAR(64) NULL,
+    `created_by_id` INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_task_follow_ups_task` (`task_id`),
+    UNIQUE KEY `uq_task_follow_ups_ref` (`task_id`, `client_reference`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `task_checklist_items` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `task_checklist_id` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `description` TEXT NULL,                    -- GH #190: the template step's description, copied so the step reads in place
+    `suggested_role` VARCHAR(100) NULL,
+    `is_mandatory` TINYINT(1) NOT NULL DEFAULT 1,
+    `is_completed` TINYINT(1) NOT NULL DEFAULT 0,
+    `completed_by_id` INT NULL,
+    `completed_by_name` VARCHAR(150) NULL,
+    `completed_datetime` DATETIME NULL,
+    `requires_input` TINYINT(1) NOT NULL DEFAULT 0,
+    `input_placeholder` VARCHAR(255) NULL,
+    `response_value` TEXT NULL,
+    `sort_order` INT NOT NULL DEFAULT 1,
+    -- #181: a step can ask for a RESULT as well as a tick - Pass, Fail or Not
+    -- applicable, and Fail asks for an exception note - so a task can be done
+    -- while recording that the control it checked did not pass. Copied from the
+    -- template step's result_mode: 'none' (a tick, as before) or 'pass_fail'.
+    `result_mode` VARCHAR(10) NOT NULL DEFAULT 'none',
+    `result` VARCHAR(10) NULL,                -- pass | fail | na
+    `exception_note` TEXT NULL,
+    `is_demo` tinyint(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_item_task_chk` (`task_checklist_id`),
+    CONSTRAINT `fk_task_chk_items_chk` FOREIGN KEY (`task_checklist_id`) REFERENCES `task_checklists` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- #181: every tick, untick, value and result on a task's checklist step, with who
+-- and when, before and after. Unticking used to erase who ticked a step; this keeps
+-- it. after_completion marks a change made once the task was already complete.
+-- No foreign keys, for the reason given on task_events.
+CREATE TABLE IF NOT EXISTS `task_checklist_item_events` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `task_id`           INT NOT NULL,
+    `task_checklist_id` INT NOT NULL,
+    `item_id`           INT NOT NULL,
+    `checklist_title`   VARCHAR(255) NULL,
+    `item_title`        VARCHAR(255) NULL,
+    `action`            VARCHAR(20) NOT NULL,    -- ticked | unticked | value | result
+    `before_json`       TEXT NULL,
+    `after_json`        TEXT NULL,
+    `after_completion`  TINYINT(1) NOT NULL DEFAULT 0,
+    `analyst_id`        INT NULL,
+    `actor_name`        VARCHAR(150) NULL,
+    `created_datetime`  DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_tcie_task` (`task_id`, `id`),
+    KEY `idx_tcie_item` (`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- #181: every saved version of a checklist template. Saving a template rewrites
+-- its steps; the version keeps what it said before, and each checklist on a task
+-- records which version it was copied from (task_checklists.template_version).
+-- Outlives the template, so a deleted procedure is still on the record.
+CREATE TABLE IF NOT EXISTS `checklist_template_versions` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `template_id`      INT NOT NULL,
+    `version_no`       INT NOT NULL,
+    `snapshot_json`    LONGTEXT NOT NULL,
+    `analyst_id`       INT NULL,
+    `created_datetime` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ctv_template_version` (`template_id`, `version_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Domains module (GitHub #154)
+-- ----------------------------------------------------------
+-- A register of the web domains an organisation (or each client company of an
+-- MSP) holds: who registered them, when they expire, how they are protected,
+-- and whether their DNS and certificates look healthy. SCOPED DATA: a domain
+-- belongs to one company, and tenant_id NULL means the Default company.
+
+-- The operator's own words for where a domain has got to. Global, like ticket
+-- statuses: a status has to MEAN the same in a cross-company report.
+-- alerts_enabled = 0 is how "we are letting this one lapse" stops the reminders.
+CREATE TABLE IF NOT EXISTS `domain_statuses` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(100) NOT NULL,
+    `colour`           VARCHAR(7) NULL,
+    `alerts_enabled`   TINYINT(1) NOT NULL DEFAULT 1,
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `display_order`    INT NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The account at a registrar that holds some of the domains: which login, who
+-- owns it, who holds its second factor. NEVER a password - that belongs in a
+-- password manager, and the notes field says where.
+CREATE TABLE IF NOT EXISTS `domain_registrar_accounts` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`           INT NULL,                  -- NULL = the Default company
+    `supplier_id`         INT NULL,                  -- the registrar, as a Contracts supplier
+    `account_name`        VARCHAR(150) NOT NULL,
+    `account_reference`   VARCHAR(150) NULL,         -- account number / login name at the registrar
+    `login_url`           VARCHAR(500) NULL,
+    `owner_analyst_id`    INT NULL,
+    `two_factor_holder`   VARCHAR(255) NULL,
+    `notes`               TEXT NULL,
+    `created_by`          INT NULL,
+    `created_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`             TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_dra_tenant` (`tenant_id`),
+    KEY `idx_dra_supplier` (`supplier_id`),
+    CONSTRAINT `fk_dra_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_dra_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_dra_owner` FOREIGN KEY (`owner_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `domains` (
+    `id`                     INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`              INT NULL,               -- NULL = the Default company
+    `domain_name`            VARCHAR(253) NOT NULL,  -- lower-case ASCII (punycode for IDNs)
+    `display_name`           VARCHAR(253) NULL,      -- the Unicode form, only when it differs
+    `status_id`              INT NULL,
+    `purpose`                VARCHAR(20) NOT NULL DEFAULT 'primary',
+    `registrar_supplier_id`  INT NULL,
+    `registrar_account_id`   INT NULL,
+    `registrar_name`         VARCHAR(255) NULL,      -- as the registry reports it
+    `registration_date`      DATE NULL,
+    `expiry_date`            DATE NULL,
+    `last_renewed_date`      DATE NULL,
+    `registry_updated_date`  DATE NULL,
+    `renewal_mode`           VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    `transfer_lock`          TINYINT(1) NULL,        -- NULL = not known
+    `registry_lock`          TINYINT(1) NULL,
+    `dnssec`                 TINYINT(1) NULL,
+    `registry_statuses`      VARCHAR(500) NULL,
+    `auth_code`              TEXT NULL,              -- encrypted at rest (encryptValue); never returned by a list
+    `registrant_name`        VARCHAR(255) NULL,
+    `owner_analyst_id`       INT NULL,
+    `tech_contact_id`        INT NULL,               -- a Contracts contact (the agency, the host)
+    `customer_user_id`       INT NULL,               -- the person at the customer this domain is for
+    `customer_supplier_id`   INT NULL,               -- OR a supplier (organisation) it is for (#162)
+    `customer_contact_id`    INT NULL,               -- and optionally one of that supplier's contacts
+    `tech_analyst_id`        INT NULL,               -- OR the technical contact is one of your analysts (#162)
+    `nameservers`            TEXT NULL,              -- one per line
+    `dns_provider`           VARCHAR(255) NULL,
+    `hosting_provider`       VARCHAR(255) NULL,
+    `ssl_hosts`              VARCHAR(500) NULL,      -- extra host names to check certificates on
+    `dkim_selectors`         VARCHAR(255) NULL,
+    `cost`                   DECIMAL(10,2) NULL,
+    `currency`               VARCHAR(3) NULL,
+    `billing_years`          TINYINT NOT NULL DEFAULT 1,
+    `cost_centre`            VARCHAR(100) NULL,             -- the free text from before GH #188, shown until a cost centre is chosen
+    `cost_centre_id`         INT NULL,                      -- GH #188: System -> Cost centres, in the domain's company
+    `contract_id`            INT NULL,
+    `tags`                   VARCHAR(500) NULL,
+    `notes`                  TEXT NULL,
+    `monitoring_enabled`     TINYINT(1) NOT NULL DEFAULT 1,
+    `lookup_source`          VARCHAR(10) NULL,       -- rdap | whois | manual
+    `last_lookup_datetime`   DATETIME NULL,
+    `last_lookup_error`      VARCHAR(255) NULL,
+    `last_check_datetime`    DATETIME NULL,
+    `ssl_expiry_date`        DATE NULL,              -- the soonest-expiring certificate checked
+    `ssl_issuer`             VARCHAR(255) NULL,
+    `security_score`         TINYINT NULL,
+    `security_grade`         VARCHAR(2) NULL,
+    `check_results`          LONGTEXT NULL,          -- JSON: the last posture checks
+    `watch_baseline`         LONGTEXT NULL,          -- JSON: what change detection compares against
+    -- A subdomain's parent (students.example.org → example.org), in the same
+    -- company. Its registration - registrar, expiry, renewal - is the parent's:
+    -- it is never looked up at a registry and has no expiry alerts of its own.
+    -- One level only: a parent is never itself a subdomain.
+    `parent_domain_id`       INT NULL,
+    -- GH #203. public | internal (DomainScope, includes/domains/scope.php). An
+    -- internal domain never leaves the network: DNS through this server only, no
+    -- registry, CT, look-alike scan or HTTPS connection. It gets a health status
+    -- instead of a grade.
+    `scope`                  VARCHAR(10) NOT NULL DEFAULT 'public',
+    -- Internal health: the last COMPLETED result (healthy | problem), when that
+    -- was, when it was last healthy, and whether the latest attempt failed to
+    -- complete. Stale is worked out when read (domainHealth), never stored.
+    `health_status`              VARCHAR(10) NULL,
+    `health_completed_datetime`  DATETIME NULL,
+    `health_healthy_datetime`    DATETIME NULL,
+    `health_incomplete`          TINYINT(1) NOT NULL DEFAULT 0,
+    `created_by`             INT NULL,
+    `created_datetime`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`       DATETIME NULL,
+    `is_demo`                TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_domains_tenant` (`tenant_id`),
+    KEY `idx_domains_name` (`domain_name`),
+    KEY `idx_domains_expiry` (`expiry_date`),
+    KEY `idx_domains_status` (`status_id`),
+    KEY `idx_domains_customer_user` (`customer_user_id`),
+    KEY `idx_domains_customer_supplier` (`customer_supplier_id`),
+    KEY `idx_domains_customer_contact` (`customer_contact_id`),
+    KEY `idx_domains_tech_analyst` (`tech_analyst_id`),
+    KEY `idx_domains_cost_centre` (`cost_centre_id`),
+    KEY `idx_domains_parent` (`parent_domain_id`),
+    CONSTRAINT `fk_domains_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_status` FOREIGN KEY (`status_id`) REFERENCES `domain_statuses` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_registrar` FOREIGN KEY (`registrar_supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_account` FOREIGN KEY (`registrar_account_id`) REFERENCES `domain_registrar_accounts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_owner` FOREIGN KEY (`owner_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_customer_user` FOREIGN KEY (`customer_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_tech_contact` FOREIGN KEY (`tech_contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_customer_supplier` FOREIGN KEY (`customer_supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_customer_contact` FOREIGN KEY (`customer_contact_id`) REFERENCES `contacts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_tech_analyst` FOREIGN KEY (`tech_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_domains_cost_centre` FOREIGN KEY (`cost_centre_id`) REFERENCES `cost_centres` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Field-level history, the same shape as task_audit. analyst_id is NULL when
+-- nobody did it: a lookup, a nightly check or change detection wrote the row,
+-- and `source` says which.
+CREATE TABLE IF NOT EXISTS `domain_audit` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `domain_id`        INT NOT NULL,
+    `analyst_id`       INT NULL,
+    `field_name`       VARCHAR(100) NOT NULL,
+    `old_value`        VARCHAR(1000) NULL,
+    `new_value`        VARCHAR(1000) NULL,
+    `source`           VARCHAR(20) NOT NULL DEFAULT 'app',   -- app | api | lookup | check | monitor | import
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_domain_audit_domain` (`domain_id`, `created_datetime`),
+    CONSTRAINT `fk_domain_audit_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Fire-once ledger for alerts: one row per (domain, kind, fingerprint). The
+-- fingerprint carries the date the alert is about, so renewing a domain (a new
+-- expiry date) re-arms every window without anybody clearing anything.
+CREATE TABLE IF NOT EXISTS `domain_alerts_sent` (
+    `id`             INT NOT NULL AUTO_INCREMENT,
+    `domain_id`      INT NOT NULL,
+    `alert_kind`     VARCHAR(30) NOT NULL,
+    `fingerprint`    VARCHAR(100) NOT NULL,
+    `sent_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_alert` (`domain_id`, `alert_kind`, `fingerprint`),
+    CONSTRAINT `fk_domain_alerts_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Look-alike domains found by the typo-squat scanner: somebody else's
+-- registration of a name one keystroke from yours. has_mx matters most - a
+-- look-alike that can receive mail can catch misaddressed invoices.
+CREATE TABLE IF NOT EXISTS `domain_lookalikes` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `domain_id`           INT NOT NULL,
+    `lookalike`           VARCHAR(253) NOT NULL,
+    `technique`           VARCHAR(30) NOT NULL,
+    `has_a`               TINYINT(1) NOT NULL DEFAULT 0,
+    `has_mx`              TINYINT(1) NOT NULL DEFAULT 0,
+    `first_seen_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `last_seen_datetime`  DATETIME NULL,
+    `dismissed`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_lookalike` (`domain_id`, `lookalike`),
+    CONSTRAINT `fk_domain_lookalikes_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Certificates the public Certificate Transparency logs say were issued for a
+-- domain (via crt.sh). An unexpected issuer or host name is how you learn that
+-- somebody obtained a certificate for your name.
+CREATE TABLE IF NOT EXISTS `domain_certificates` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `domain_id`           INT NOT NULL,
+    `crtsh_id`            BIGINT NOT NULL,
+    `common_name`         VARCHAR(255) NULL,
+    `name_value`          TEXT NULL,
+    `issuer`              VARCHAR(500) NULL,
+    `not_before`          DATETIME NULL,
+    `not_after`           DATETIME NULL,
+    `first_seen_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `acknowledged`        TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_certificate` (`domain_id`, `crtsh_id`),
+    CONSTRAINT `fk_domain_certificates_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Certificates recorded by hand against a domain or subdomain: the ones its
+-- checks cannot reach (an internal server, a VPN appliance, a SAML signing or
+-- code-signing certificate). Their expiry joins the checked certificates'
+-- alerts, calendar entries and Watchtower count. The provider is a Contracts
+-- supplier (supplier_id) or, when it is not one, plain text (provider_name).
+CREATE TABLE IF NOT EXISTS `domain_manual_certificates` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `domain_id`        INT NOT NULL,
+    `purpose`          VARCHAR(255) NOT NULL,         -- the system or purpose it is for
+    `cert_type_id`     INT NULL,
+    `supplier_id`      INT NULL,
+    `provider_name`    VARCHAR(255) NULL,
+    `expiry_date`      DATE NOT NULL,
+    `url`              VARCHAR(500) NULL,
+    `notes`            TEXT NULL,
+    `created_by`       INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dmc_domain` (`domain_id`),
+    KEY `idx_dmc_expiry` (`expiry_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The certificate types a recorded certificate can be (Domains → Settings),
+-- one list for every company, like the domain statuses.
+CREATE TABLE IF NOT EXISTS `domain_certificate_types` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(100) NOT NULL,
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `display_order`    INT NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- HTTPS endpoints on an INTERNAL domain (GH #203, slice 2): the host:port whose
+-- certificate is checked, switched on per target - never assumed on the domain,
+-- its apex or www. The host is the domain or a name under it; the address it
+-- resolves to must be in a permitted network, and the port a permitted port
+-- (Domains -> Settings -> Internal monitoring), at every connection. The
+-- connection goes to the address this server's resolver gave, with the host
+-- name kept for SNI and the certificate's name check.
+-- Two dates, as for the domain's own health: the last COMPLETED check (one that
+-- ran to an answer, a confirmed problem included) and the last HEALTHY one.
+-- status: healthy | expiring | problem (the last completed result).
+-- incomplete: the latest attempt could not run (a resolver error, a refused
+-- address or port) - it says nothing about the target, so the known status stays.
+CREATE TABLE IF NOT EXISTS `domain_endpoints` (
+    `id`                      INT NOT NULL AUTO_INCREMENT,
+    `domain_id`               INT NOT NULL,
+    `host`                    VARCHAR(253) NOT NULL,
+    `port`                    INT NOT NULL DEFAULT 443,
+    `warn_days`               INT NOT NULL DEFAULT 21,     -- certificate warning window
+    `trust_profile_id`        INT NULL,                    -- NULL = the server's normal CA bundle
+    `http_path`               VARCHAR(500) NULL,           -- GH #243: an optional HTTP check - the path to GET
+    `http_expect`             VARCHAR(100) NULL,           -- its expected status codes, e.g. "200, 204"; empty = 200
+    `status`                  VARCHAR(12) NULL,
+    `incomplete`              TINYINT(1) NOT NULL DEFAULT 0,
+    `detail_key`              VARCHAR(40) NULL,            -- why: expired, untrusted, no_answer, network_refused ...
+    `detail_params`           TEXT NULL,                   -- JSON for the detail's message
+    `address`                 VARCHAR(45) NULL,            -- the address last connected to
+    `cert_json`               TEXT NULL,                   -- the certificate last read: subject, issuer, dates, names, checks
+    `last_attempt_datetime`   DATETIME NULL,
+    `last_completed_datetime` DATETIME NULL,
+    `last_healthy_datetime`   DATETIME NULL,
+    `created_by`              INT NULL,
+    `created_datetime`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`        DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_endpoint` (`domain_id`, `host`, `port`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Expected DNS records (GH #243, #203 slice 3): what each name of an internal
+-- domain should hold. No values = the record type only has to exist (an address
+-- that changes, say); values = the normalised, sorted set must match exactly.
+-- Checked through this server's resolver only, like the rest of an internal domain.
+CREATE TABLE IF NOT EXISTS `domain_expected_records` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `domain_id`        INT NOT NULL,
+    `host`             VARCHAR(253) NOT NULL,
+    `record_type`      VARCHAR(5) NOT NULL,                -- DomainRecordType: A | AAAA | CNAME | NS | SOA
+    `expected_values`  TEXT NULL,                          -- one per line; NULL = only that the type exists
+    `created_by`       INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_expected_record` (`domain_id`, `host`, `record_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Trust profiles (GH #203, slice 2): an organisation's own certificate
+-- authorities, for checking internal certificates. A profile changes WHICH CAs
+-- are trusted for an endpoint, never WHETHER the chain and the host name are
+-- checked. Domains only, one list for every company; administrators only.
+CREATE TABLE IF NOT EXISTS `domain_trust_profiles` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(100) NOT NULL,
+    `ca_pem`           MEDIUMTEXT NOT NULL,                -- one or more CA certificates, PEM
+    `summary`          VARCHAR(1000) NULL,                 -- each CA's name and expiry, worked out on save
+    `created_by`       INT NULL,
     `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_datetime` DATETIME NULL,
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `access_groups` (`group_key`, `display_name`, `description`) VALUES
-('guest', 'FreeITSM Guest', 'Read-only or portal-adjacent access foundation.'),
-('support', 'FreeITSM Support', 'Service desk analyst module access.'),
-('admin', 'FreeITSM Admin', 'Administrative FreeITSM access.'),
-('sysadmin', 'FreeITSM SysAdmin', 'System administration access.'),
-('devops', 'FreeITSM DevOps', 'DevOps and operational module access.');
+-- ---------------------------------------------------------------------------
+-- Domains, joined to the rest of FreeITSM (3.0.0). Four plain links - each is
+-- one row per pair, deleted with either side - and the record of which status
+-- incident a domain raised. A link carries no company of its own: it is only
+-- ever made, and only ever shown, between two records the analyst can already
+-- see (includes/domains/links.php).
+-- ---------------------------------------------------------------------------
+
+-- The configuration items that depend on a domain: what breaks if it lapses.
+CREATE TABLE IF NOT EXISTS `domain_cmdb_objects` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `domain_id`             INT NOT NULL,
+    `cmdb_object_id`        INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_cmdb_obj` (`domain_id`, `cmdb_object_id`),
+    KEY `ix_dco_cmdb_object` (`cmdb_object_id`),
+    CONSTRAINT `fk_dco_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dco_cmdb_object` FOREIGN KEY (`cmdb_object_id`) REFERENCES `cmdb_objects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dco_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The Service Status services that run on a domain: the ones a lapsed domain
+-- or a failed certificate takes down (Domains -> Settings -> Service Status).
+CREATE TABLE IF NOT EXISTS `domain_status_services` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `domain_id`             INT NOT NULL,
+    `service_id`            INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_status_service` (`domain_id`, `service_id`),
+    KEY `ix_dss_service` (`service_id`),
+    CONSTRAINT `fk_dss_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dss_service` FOREIGN KEY (`service_id`) REFERENCES `status_services` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dss_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tickets about a domain, linked from either side (the ticket's reading pane
+-- or the domain's page) - the same shape as ticket_cmdb_objects.
+CREATE TABLE IF NOT EXISTS `ticket_domains` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `ticket_id`             INT NOT NULL,
+    `domain_id`             INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ticket_domain` (`ticket_id`, `domain_id`),
+    KEY `ix_ticket_domains_domain` (`domain_id`),
+    CONSTRAINT `fk_td_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_td_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_td_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Runbooks: knowledge articles pinned to a domain ("how to move this domain's
+-- DNS"), linked from the domain or from the article.
+CREATE TABLE IF NOT EXISTS `domain_knowledge_articles` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `domain_id`             INT NOT NULL,
+    `article_id`            INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_article` (`domain_id`, `article_id`),
+    KEY `ix_dka_article` (`article_id`),
+    CONSTRAINT `fk_dka_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dka_article` FOREIGN KEY (`article_id`) REFERENCES `knowledge_articles` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dka_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Status incidents a domain raised by itself (Domains -> Settings -> Service
+-- Status -> raise automatically). One row per (domain, trigger, fingerprint):
+-- the fingerprint carries the date the problem is about, so the same lapse
+-- never raises twice, and renewing re-arms it - the domain_alerts_sent rule.
+-- resolved_datetime is set when the domain recovers and the incident is closed.
+CREATE TABLE IF NOT EXISTS `domain_status_incidents` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `domain_id`         INT NOT NULL,
+    `incident_id`       INT NOT NULL,
+    `trigger_kind`      VARCHAR(30) NOT NULL,
+    `fingerprint`       VARCHAR(100) NOT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `resolved_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_domain_status_incident` (`domain_id`, `trigger_kind`, `fingerprint`),
+    KEY `ix_dsi_incident` (`incident_id`),
+    CONSTRAINT `fk_dsi_domain` FOREIGN KEY (`domain_id`) REFERENCES `domains` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_dsi_incident` FOREIGN KEY (`incident_id`) REFERENCES `status_incidents` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Cost centres (GH #160, stage 1) - System -> Cost Centres
+-- ----------------------------------------------------------
+-- The finance department's list, kept here so things can be charged to it later
+-- (stage 2: assets and service bookings). Most organisations hold the real list
+-- in their accounting system and copy it in by import or through the REST API,
+-- so a cost centre is matched on its CODE, never on its id.
+--
+-- 🔑 Always belongs to ONE company - tenant_id is NOT NULL, unlike most config
+-- tables where NULL means "shared". Two companies can both have a 0010.
+CREATE TABLE IF NOT EXISTS `cost_centres` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT NOT NULL,
+    -- 🔑 TEXT, NEVER A NUMBER. "0010" and "N1414" are both real codes, and a
+    -- number column would turn the first into 10. Unique per company, and the
+    -- unicode_ci collation makes that check ignore case: n1414 = N1414.
+    `code`             VARCHAR(50) NOT NULL,
+    `name`             VARCHAR(150) NOT NULL,
+    `description`      VARCHAR(500) NULL,
+    -- The hierarchy. NULL = top level. Always in the same company - the service
+    -- refuses anything else, and refuses a loop.
+    `parent_id`        INT NULL,
+    -- Inactive = not offered for NEW assignments. Anything already charged to it
+    -- keeps it. Retiring, not deleting, is the normal path.
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_cost_centres_code` (`tenant_id`, `code`),
+    KEY `ix_cost_centres_parent` (`parent_id`),
+    -- SET NULL rather than RESTRICT: the service already refuses to delete a cost
+    -- centre that has children, and RESTRICT on a self-reference can block the
+    -- company CASCADE below part-way through.
+    CONSTRAINT `fk_cost_centres_parent` FOREIGN KEY (`parent_id`) REFERENCES `cost_centres` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_cost_centres_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Preference templates (discussion #124) - System -> Preference templates.
+-- A named set of preferences captured from somebody's real ones and given to
+-- people in one go. See includes/preference_templates.php.
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `preference_templates` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(100) NOT NULL,
+    `description`      VARCHAR(255) NULL,
+    -- JSON: user_preferences key => value, or null for "the built-in default"
+    -- (applying a null REMOVES the person's own value). Only the keys of the
+    -- sections ticked when it was captured.
+    `settings`         LONGTEXT NOT NULL,
+    -- 1 = given to every analyst the moment they are created. At most one row.
+    `for_new_analysts` TINYINT(1) NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Leases (3.5.0) - Assets -> Leases. A lease agreement, its schedules (each with
+-- its own dates and cost), and the assets on each schedule with what became of
+-- them. See includes/leases.php.
+-- ----------------------------------------------------------
+
+-- What became of a leased asset. A configurable list (Assets -> Settings ->
+-- Leasing). `kind`: 'active' = still on lease (counts towards Due back);
+-- 'closed' = finished with (returned, bought out).
+CREATE TABLE IF NOT EXISTS `lease_outcomes` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `name`             VARCHAR(100) NOT NULL,
+    `kind`             VARCHAR(10) NOT NULL DEFAULT 'active',
+    `is_default`       TINYINT(1) NOT NULL DEFAULT 0,
+    `display_order`    INT NOT NULL DEFAULT 0,
+    `is_active`        TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `lease_outcomes` (`id`, `name`, `kind`, `is_default`, `display_order`) VALUES
+    (1, 'On lease',   'active', 1, 1),
+    (2, 'Extended',   'active', 0, 2),
+    (3, 'Returned',   'closed', 0, 3),
+    (4, 'Bought out', 'closed', 0, 4);
+
+-- The agreement. Scoped data like assets: NULL tenant = the Default company.
+CREATE TABLE IF NOT EXISTS `leases` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`        INT NULL,
+    `name`             VARCHAR(200) NOT NULL,
+    `reference`        VARCHAR(100) NULL,     -- the lessor's agreement number
+    `supplier_id`      INT NULL,              -- the lessor (shared supplier list)
+    `cost_centre_id`   INT NULL,              -- GH #160: one of the lease's company's
+    `contract_id`      INT NULL,              -- optional, in the same company
+    `notice_days`      INT NULL,              -- notice the lessor needs before an end date
+    `notes`            TEXT NULL,
+    `created_by`       INT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_leases_tenant` (`tenant_id`),
+    KEY `ix_leases_supplier` (`supplier_id`),
+    KEY `ix_leases_cost_centre` (`cost_centre_id`),
+    KEY `ix_leases_contract` (`contract_id`),
+    CONSTRAINT `fk_leases_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_leases_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_leases_cost_centre` FOREIGN KEY (`cost_centre_id`) REFERENCES `cost_centres` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_leases_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A group of kit on one agreement with its own dates and cost - 10 PCs from one
+-- date, 10 monitors from another. A simple lease has one.
+CREATE TABLE IF NOT EXISTS `lease_schedules` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `lease_id`         INT NOT NULL,
+    `name`             VARCHAR(200) NULL,
+    `reference`        VARCHAR(100) NULL,     -- the lessor's schedule number
+    `start_date`       DATE NULL,
+    `end_date`         DATE NULL,
+    `cost`             DECIMAL(18,2) NULL,
+    `cost_period`      VARCHAR(10) NOT NULL DEFAULT 'month',   -- month | quarter | year | total
+    `currency`         VARCHAR(3) NULL,
+    `order_number`     VARCHAR(100) NULL,
+    `notes`            TEXT NULL,
+    `display_order`    INT NOT NULL DEFAULT 0,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_lease_schedules_lease` (`lease_id`),
+    KEY `ix_lease_schedules_end` (`end_date`),
+    CONSTRAINT `fk_lease_schedules_lease` FOREIGN KEY (`lease_id`) REFERENCES `leases` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- An asset on a schedule. start_date / end_date are the asset's OWN dates when
+-- they differ from the schedule's (extending one laptop); NULL = the schedule's.
+-- The asset's lease_start / lease_expiry are kept in step with the effective dates.
+CREATE TABLE IF NOT EXISTS `lease_assets` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `schedule_id`      INT NOT NULL,
+    `asset_id`         INT NOT NULL,
+    `outcome_id`       INT NULL,
+    `start_date`       DATE NULL,
+    `end_date`         DATE NULL,
+    `outcome_date`     DATE NULL,             -- when it was returned / bought out
+    `notes`            VARCHAR(500) NULL,
+    `created_by`       INT NULL,
+    `created_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_lease_assets` (`schedule_id`, `asset_id`),
+    KEY `ix_lease_assets_asset` (`asset_id`),
+    KEY `ix_lease_assets_outcome` (`outcome_id`),
+    CONSTRAINT `fk_lease_assets_schedule` FOREIGN KEY (`schedule_id`) REFERENCES `lease_schedules` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_lease_assets_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_lease_assets_outcome` FOREIGN KEY (`outcome_id`) REFERENCES `lease_outcomes` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- System -> Photo Album: a webcam photo turned into ASCII art, in the browser.
+-- 🔑 The PHOTO is never sent here - only the art (text), its colours when the
+-- Colour palette is used, and a small JPEG of the art for the album grid.
+-- Personal: each analyst sees and deletes only their own.
+CREATE TABLE IF NOT EXISTS `photo_album` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `analyst_id`       INT NOT NULL,
+    `title`            VARCHAR(150) NOT NULL,
+    `style`            VARCHAR(20) NOT NULL DEFAULT 'braille',  -- braille | classic | blocks
+    `palette`          VARCHAR(20) NOT NULL DEFAULT 'green',    -- green | amber | paper | colour
+    `width_chars`      SMALLINT NOT NULL,
+    `height_chars`     SMALLINT NOT NULL,
+    `art`              MEDIUMTEXT NOT NULL,                     -- the characters, one line per row
+    `colours`          MEDIUMTEXT NULL,                         -- base64 RGB, 3 bytes per character; Colour palette only
+    `thumbnail`        MEDIUMTEXT NOT NULL,                     -- data:image/jpeg;base64 of the art, for the album grid
+    `created_datetime` DATETIME NOT NULL,                       -- UTC
+    PRIMARY KEY (`id`),
+    KEY `ix_photo_album_analyst` (`analyst_id`, `created_datetime`),
+    CONSTRAINT `fk_photo_album_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Projects (3.2.0). Design: docs/design/projects.md.
+-- ----------------------------------------------------------
+-- A project is a CONTAINER over ordinary tasks (tasks.project_id), not a second
+-- task system. Scoped data like tickets: NULL tenant_id = the Default company.
+CREATE TABLE IF NOT EXISTS `projects` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`         INT NULL,
+    `name`              VARCHAR(200) NOT NULL,
+    `summary`           TEXT NULL,                        -- a paragraph: what and why
+    `goal`              VARCHAR(500) NULL,                -- one sentence: what "done" means
+    -- A key into the code-defined presets (includes/projects/methodologies.php).
+    -- A LENS over one data model: switching it converts and deletes nothing.
+    `methodology`       VARCHAR(20) NOT NULL DEFAULT 'simple',   -- simple | staged | agile
+    `status`            VARCHAR(20) NOT NULL DEFAULT 'proposed', -- proposed | active | on_hold | closed | cancelled
+    -- 'auto' = worked out from the plan; anything else is a person's call, and
+    -- health_note says why.
+    `health`            VARCHAR(10) NOT NULL DEFAULT 'auto',     -- auto | green | amber | red
+    `health_note`       VARCHAR(500) NULL,
+    `priority`          VARCHAR(10) NOT NULL DEFAULT 'medium',  -- 3.3.0: low | medium | high | critical (the words are a setting)
+    `visibility`        VARCHAR(10) NOT NULL DEFAULT 'everyone', -- 3.3.0: everyone | members (includes/projects/visibility.php)
+    `report_schedule`   VARCHAR(12) NOT NULL DEFAULT 'off',      -- 3.3.0: off | weekly | fortnightly | monthly - a draft report each period
+    `report_schedule_kind` VARCHAR(20) NOT NULL DEFAULT 'highlight', -- highlight | checkpoint | exception
+    `owner_analyst_id`  INT NULL,                         -- the project manager
+    `start_date`        DATE NULL,
+    `target_end_date`   DATE NULL,
+    `actual_end_date`   DATE NULL,
+    -- The project's identity on its card: a colour from a fixed palette and an
+    -- icon key from a fixed set (validated by the service, never free CSS/SVG).
+    `colour`            VARCHAR(20) NOT NULL DEFAULT 'coral',
+    `icon`              VARCHAR(30) NOT NULL DEFAULT 'rocket',
+    -- Phase 2. The business case (Staged projects - reviewed at every gate) and
+    -- the tailoring: which tools this project uses, as JSON, against its method's
+    -- defaults. NULL = the method's defaults.
+    `business_case`     TEXT NULL,
+    `tailoring`         VARCHAR(500) NULL,
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `closed_datetime`   DATETIME NULL,
+    -- What the alert scan last SAW (includes/projects/alerts.php): the health
+    -- shown and the tolerance breaches, so an alert fires on a change only and
+    -- re-arms once it clears. NULL health = never scanned: the first scan only
+    -- records, so an upgrade does not ring every bell at once.
+    `alert_health`      VARCHAR(10) NULL,
+    `alert_exceptions`  VARCHAR(100) NULL,
+    -- The project's budget currency (ISO 4217), stamped when it is created and
+    -- never derived on read: changing the install's default later must not
+    -- relabel a budget that already exists (includes/projects/budget.php).
+    `currency`          CHAR(3) NULL,
+    -- Intake and approval (3.3.0) - includes/projects/intake.php. The case for
+    -- the project is business_case; these are the proposal's own figures, who
+    -- proposed it when that was not an analyst (a form), and the approval.
+    -- approval_status: NULL = needs none (and every project before 3.3.0),
+    -- pending, approved, rejected.
+    `estimated_cost`    DECIMAL(18,2) NULL,
+    `estimated_benefit` TEXT NULL,
+    `approval_status`   VARCHAR(10) NULL,
+    `approval_by_id`    INT NULL,
+    `approval_datetime` DATETIME NULL,
+    `approval_notes`    TEXT NULL,
+    `form_submission_id` INT NULL,
+    `proposed_by_name`  VARCHAR(200) NULL,
+    `proposed_by_email` VARCHAR(255) NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,   -- set by the demo data importer (#1297)
+    PRIMARY KEY (`id`),
+    KEY `idx_projects_tenant` (`tenant_id`),
+    KEY `idx_projects_approval` (`approval_status`),
+    KEY `idx_projects_status` (`status`),
+    KEY `idx_projects_owner` (`owner_analyst_id`),
+    CONSTRAINT `fk_projects_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_projects_owner` FOREIGN KEY (`owner_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_projects_created_by` FOREIGN KEY (`created_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_projects_approval_by` FOREIGN KEY (`approval_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_projects_submission` FOREIGN KEY (`form_submission_id`) REFERENCES `form_submissions` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Budget lines (3.2.0) - includes/projects/budget.php. Planned and actual per
+-- line, in the PROJECT's currency. A line can name a contract (its value is
+-- the actual unless one is typed, and only when the currencies match) and a
+-- cost centre of the project's company. Labour is not a line: it is worked
+-- out from the time logged on the project's tasks.
+CREATE TABLE IF NOT EXISTS `project_budget_lines` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `project_id`       INT NOT NULL,
+    `title`            VARCHAR(200) NOT NULL,
+    `category`         VARCHAR(20) NOT NULL DEFAULT 'other',   -- hardware | software | services | labour | travel | other
+    `planned_amount`   DECIMAL(18,2) NULL,
+    `actual_amount`    DECIMAL(18,2) NULL,
+    `contract_id`      INT NULL,
+    `cost_centre_id`   INT NULL,
+    `notes`            VARCHAR(500) NULL,
+    `planned_date`     DATE NULL,                              -- 3.3.0: when the money is expected to go out
+    `spent_date`       DATE NULL,                              -- 3.3.0: when it went out
+    `forecast_amount`  DECIMAL(18,2) NULL,                     -- 3.3.0: expected final cost; NULL = the larger of planned and actual
+    `position`         INT NOT NULL DEFAULT 0,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_pbl_project` (`project_id`),
+    CONSTRAINT `fk_pbl_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pbl_contract` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pbl_cost_centre` FOREIGN KEY (`cost_centre_id`) REFERENCES `cost_centres` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Project reports (3.2.0) - the AI project manager's drafts and people's own
+-- reports. kind: briefing (the Overview's "Brief me" - the latest one is shown)
+-- | highlight | exception | checkpoint. status: draft | approved. The AI
+-- PROPOSES, a person approves: ai_drafted says the AI wrote it, ai_edited that
+-- a person has since changed it, and only approved reports are final.
+CREATE TABLE IF NOT EXISTS `project_reports` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `project_id`        INT NOT NULL,
+    `kind`              VARCHAR(20) NOT NULL,
+    `title`             VARCHAR(200) NOT NULL,
+    `body`              MEDIUMTEXT NULL,
+    `status`            VARCHAR(10) NOT NULL DEFAULT 'draft',
+    `ai_drafted`        TINYINT(1) NOT NULL DEFAULT 0,
+    `ai_edited`         TINYINT(1) NOT NULL DEFAULT 0,
+    `ai_model`          VARCHAR(120) NULL,
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_by_id`     INT NULL,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `approved_by_id`    INT NULL,
+    `approved_datetime` DATETIME NULL,
+    `sent_datetime`     DATETIME NULL,                         -- 3.3.0: last emailed
+    `sent_by_id`        INT NULL,
+    `sent_to`           TEXT NULL,                             -- every address it has gone to, comma-separated
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `ix_prep_project` (`project_id`, `kind`),
+    CONSTRAINT `fk_prep_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Hourly rates for labour (3.2.0), each from a date. Time logged on a day is
+-- priced at the rate in force THAT day, so raising a rate never re-prices the
+-- past. scope: default (ref_id NULL, the install's currency) | project
+-- (ref_id = project, its currency) | analyst (ref_id = analyst, the install's
+-- currency). Which scopes count is Projects -> Settings -> Budget.
+CREATE TABLE IF NOT EXISTS `project_labour_rates` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `scope`            VARCHAR(10) NOT NULL,
+    `ref_id`           INT NULL,
+    `hourly_rate`      DECIMAL(12,2) NOT NULL,
+    `effective_from`   DATE NOT NULL,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    KEY `ix_plr_scope` (`scope`, `ref_id`, `effective_from`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The TIME BOXES of a project. One table for phases, stages and sprints, because
+-- they are the same thing seen through different methods - which is what makes
+-- switching method safe: nothing has to be converted.
+CREATE TABLE IF NOT EXISTS `project_stages` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `project_id`        INT NOT NULL,
+    `kind`              VARCHAR(10) NOT NULL DEFAULT 'phase',    -- phase | stage | sprint
+    `name`              VARCHAR(150) NOT NULL,
+    `goal`              VARCHAR(500) NULL,
+    `start_date`        DATE NULL,
+    `end_date`          DATE NULL,
+    `position`          INT NOT NULL DEFAULT 0,
+    `status`            VARCHAR(10) NOT NULL DEFAULT 'planned',  -- planned | active | closed
+    -- The gate at the end of a stage (Staged projects): go | go_with_conditions | stop.
+    `gate_decision`         VARCHAR(20) NULL,
+    `gate_notes`            TEXT NULL,
+    `gate_decided_by`       INT NULL,
+    `gate_decided_datetime` DATETIME NULL,
+    `gate_kind`         VARCHAR(10) NOT NULL DEFAULT 'standard',   -- 3.3.0: standard | golive (a go-live gate starts with its own checklist)
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_project_stages_project` (`project_id`, `position`),
+    CONSTRAINT `fk_project_stages_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A project's history: who changed what, when. Method switches, status changes
+-- and health overrides always land here.
+CREATE TABLE IF NOT EXISTS `project_audit` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `project_id`       INT NOT NULL,
+    `analyst_id`       INT NULL,
+    `field_name`       VARCHAR(100) NOT NULL,
+    `old_value`        VARCHAR(1000) NULL,
+    `new_value`        VARCHAR(1000) NULL,
+    `source`           VARCHAR(20) NOT NULL DEFAULT 'app',   -- app | api | demo
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    KEY `idx_project_audit_project` (`project_id`, `created_datetime`),
+    CONSTRAINT `fk_project_audit_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Projects joined to the rest of FreeITSM (3.2.0). One join table per kind -
+-- the Domains pattern - so every link is a real FK that cascades with either
+-- side, and permission checks stay per module (includes/projects/links.php).
+CREATE TABLE IF NOT EXISTS `project_assets` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `asset_id`              INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_pas_pair` (`project_id`, `asset_id`),
+    KEY `ix_pas_target` (`asset_id`),
+    CONSTRAINT `fk_pas_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pas_target` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pas_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `project_changes` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `change_id`             INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_pch_pair` (`project_id`, `change_id`),
+    KEY `ix_pch_target` (`change_id`),
+    CONSTRAINT `fk_pch_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pch_target` FOREIGN KEY (`change_id`) REFERENCES `changes` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pch_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `project_tickets` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `ticket_id`             INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ptk_pair` (`project_id`, `ticket_id`),
+    KEY `ix_ptk_target` (`ticket_id`),
+    CONSTRAINT `fk_ptk_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ptk_target` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ptk_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `project_contracts` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `contract_id`           INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_pco_pair` (`project_id`, `contract_id`),
+    KEY `ix_pco_target` (`contract_id`),
+    CONSTRAINT `fk_pco_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pco_target` FOREIGN KEY (`contract_id`) REFERENCES `contracts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pco_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `project_cmdb_objects` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `cmdb_object_id`        INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_pcm_pair` (`project_id`, `cmdb_object_id`),
+    KEY `ix_pcm_target` (`cmdb_object_id`),
+    CONSTRAINT `fk_pcm_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pcm_target` FOREIGN KEY (`cmdb_object_id`) REFERENCES `cmdb_objects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pcm_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `project_knowledge_articles` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `article_id`            INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_pka_pair` (`project_id`, `article_id`),
+    KEY `ix_pka_target` (`article_id`),
+    CONSTRAINT `fk_pka_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pka_target` FOREIGN KEY (`article_id`) REFERENCES `knowledge_articles` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pka_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Projects 3.3.0: the problems a project exists to fix (or that it caused).
+CREATE TABLE IF NOT EXISTS `project_problems` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `problem_id`            INT NOT NULL,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ppr_pair` (`project_id`, `problem_id`),
+    KEY `ix_ppr_target` (`problem_id`),
+    CONSTRAINT `fk_ppr_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ppr_target` FOREIGN KEY (`problem_id`) REFERENCES `problems` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ppr_analyst` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---- Projects phase 2 (3.2.0): roles, members, scope, RACI, RAID, tolerances ----
+
+-- The project roles offered on a project's People tab. Seeded with the
+-- PRINCE2-style roles plus Team member and Stakeholder; editable in
+-- Projects -> Settings -> Roles. Install-wide, like a list of words.
+CREATE TABLE IF NOT EXISTS `project_roles` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `name`              VARCHAR(100) NOT NULL,
+    `description`       VARCHAR(255) NULL,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_project_roles_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Who is on a project: exactly one of an analyst, a team or a person from People
+-- (a business sponsor with no analyst account can still hold a role). They are
+-- the RACI matrix's columns.
+CREATE TABLE IF NOT EXISTS `project_members` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `analyst_id`            INT NULL,
+    `team_id`               INT NULL,
+    `user_id`               INT NULL,
+    `role_id`               INT NULL,
+    `supplier_id`           INT NULL,                           -- 3.3.0: a contractor on the team (Contracts -> Suppliers)
+    `contact_id`            INT NULL,                           -- 3.3.0: a person at that supplier
+    `notes`                 VARCHAR(255) NULL,
+    `power`                 TINYINT NULL,                       -- 3.3.0 stakeholder map: 1-5, how much they can affect it
+    `interest`              TINYINT NULL,                       -- 1-5, how much it affects them
+    `stance`                VARCHAR(10) NULL,                   -- champion | supporter | neutral | sceptic | blocker
+    `keep_informed`         VARCHAR(255) NULL,                  -- the communications plan: how, and how often
+    `position`              INT NOT NULL DEFAULT 0,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`               TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_project_members_project` (`project_id`, `position`),
+    KEY `ix_pmem_analyst` (`analyst_id`),
+    CONSTRAINT `fk_pmem_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pmem_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pmem_contact` FOREIGN KEY (`contact_id`) REFERENCES `contacts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pmem_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pmem_team` FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pmem_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pmem_role` FOREIGN KEY (`role_id`) REFERENCES `project_roles` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pmem_created_by` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Deliverables and requirements, in one tree. The MoSCoW board and the RACI
+-- matrix are two views of it: MoSCoW sorts the rows, RACI says who does what.
+CREATE TABLE IF NOT EXISTS `project_items` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `project_id`          INT NOT NULL,
+    `parent_id`           INT NULL,
+    `title`               VARCHAR(255) NOT NULL,
+    `description`         TEXT NULL,
+    `acceptance_criteria` TEXT NULL,
+    `moscow`              VARCHAR(10) NULL,                         -- must | should | could | wont
+    `stage_id`            INT NULL,
+    `status`              VARCHAR(20) NOT NULL DEFAULT 'proposed',  -- proposed | agreed | in_progress | accepted | dropped
+    `position`            INT NOT NULL DEFAULT 0,
+    `created_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`             TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_project_items_project` (`project_id`, `position`),
+    CONSTRAINT `fk_pitem_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pitem_parent` FOREIGN KEY (`parent_id`) REFERENCES `project_items` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pitem_stage` FOREIGN KEY (`stage_id`) REFERENCES `project_stages` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The RACI matrix: one letter per (item, member). Exactly one A per item is a
+-- rule the screen enforces and the service checks.
+CREATE TABLE IF NOT EXISTS `project_raci` (
+    `id`          INT NOT NULL AUTO_INCREMENT,
+    `project_id`  INT NOT NULL,
+    `item_id`     INT NOT NULL,
+    `member_id`   INT NOT NULL,
+    `letter`      CHAR(1) NOT NULL,                                 -- R | A | C | I
+    `is_demo`     TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_praci_cell` (`item_id`, `member_id`),
+    KEY `ix_praci_project` (`project_id`),
+    CONSTRAINT `fk_praci_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_praci_item` FOREIGN KEY (`item_id`) REFERENCES `project_items` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_praci_member` FOREIGN KEY (`member_id`) REFERENCES `project_members` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The RAID log: risks, assumptions, issues, decisions (and lessons). The risk
+-- heat map is drawn from it, never kept separately.
+CREATE TABLE IF NOT EXISTS `project_raid` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `project_id`        INT NOT NULL,
+    `type`              VARCHAR(12) NOT NULL,                       -- risk | assumption | issue | dependency (3.3.0) | decision | lesson
+    `title`             VARCHAR(255) NOT NULL,
+    `description`       TEXT NULL,
+    `probability`       TINYINT NULL,                               -- 1-5, risks only
+    `impact`            TINYINT NULL,                               -- 1-5, risks and issues
+    `response`          VARCHAR(12) NULL,                           -- avoid | reduce | transfer | accept | share
+    `response_plan`     TEXT NULL,
+    `owner_analyst_id`  INT NULL,
+    `status`            VARCHAR(10) NOT NULL DEFAULT 'open',        -- open | closed
+    `due_date`          DATE NULL,
+    `ticket_id`         INT NULL,                                   -- an issue that became, or came from, a ticket
+    `knowledge_article_id` INT NULL,                                -- a lesson turned into a Knowledge article
+    `escalated_datetime` DATETIME NULL,                             -- 3.3.0: set = escalated (open entries only)
+    `escalated_by_id`   INT NULL,
+    `escalation_note`   VARCHAR(500) NULL,
+    `decided_by`        VARCHAR(150) NULL,                          -- 3.3.0, decisions: who made it (a name - often not an analyst)
+    `decided_date`      DATE NULL,
+    `rationale`         TEXT NULL,                                  -- why it was decided
+    `raised_by_id`      INT NULL,
+    `raised_datetime`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `closed_datetime`   DATETIME NULL,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_project_raid_project` (`project_id`, `type`, `status`),
+    CONSTRAINT `fk_praid_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_praid_owner` FOREIGN KEY (`owner_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_praid_ticket` FOREIGN KEY (`ticket_id`) REFERENCES `tickets` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_praid_raised_by` FOREIGN KEY (`raised_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_praid_article` FOREIGN KEY (`knowledge_article_id`) REFERENCES `knowledge_articles` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_praid_escalated_by` FOREIGN KEY (`escalated_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Follow-up actions on a RAID entry (3.3.0): ordinary project tasks - what was
+-- agreed after a decision, the mitigation for a risk, the fix for an issue. A
+-- join, so the Tasks table is untouched; deleting either side drops the link
+-- only, never the task.
+CREATE TABLE IF NOT EXISTS `project_raid_tasks` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `raid_id`           INT NOT NULL,
+    `task_id`           INT NOT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_prt_pair` (`raid_id`, `task_id`),
+    KEY `ix_prt_task` (`task_id`),
+    CONSTRAINT `fk_prt_raid` FOREIGN KEY (`raid_id`) REFERENCES `project_raid` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_prt_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tolerances: how far a project (stage_id NULL) or a stage may drift before it is
+-- an exception. time = days late; risk = the highest open risk score (1-25).
+CREATE TABLE IF NOT EXISTS `project_tolerances` (
+    `id`          INT NOT NULL AUTO_INCREMENT,
+    `project_id`  INT NOT NULL,
+    `stage_id`    INT NULL,
+    `dimension`   VARCHAR(12) NOT NULL,                             -- time | risk | cost (3.3.0)
+    `value`       INT NOT NULL,
+    `is_demo`     TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_ptol_dimension` (`project_id`, `stage_id`, `dimension`),
+    CONSTRAINT `fk_ptol_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_ptol_stage` FOREIGN KEY (`stage_id`) REFERENCES `project_stages` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Asset targets (3.2.0): live progress measured from Assets - "312 of 480
+-- laptops replaced". A set of assets in scope (the project's linked assets, or
+-- a filter: type and/or a field containing a value, in the project's company)
+-- and a rule for when one counts as done. Counts are worked out on read, never
+-- stored; the snapshots only keep one point a day for the burn-up line.
+CREATE TABLE IF NOT EXISTS `project_asset_targets` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `name`                  VARCHAR(150) NOT NULL,
+    `scope`                 VARCHAR(10) NOT NULL DEFAULT 'filter',   -- filter | linked
+    `scope_type_id`         INT NULL,                                 -- asset_types.id, filter only
+    `scope_field`           VARCHAR(30) NULL,                         -- model | manufacturer | operating_system | hostname
+    `scope_value`           VARCHAR(100) NULL,                        -- "contains" text for scope_field
+    `done_field`            VARCHAR(30) NOT NULL,                     -- status | location | operating_system | feature_release | model | manufacturer | bitlocker_status | tpm_version
+    `done_op`               VARCHAR(20) NOT NULL,                     -- is | is_not | contains | not_contains | at_least
+    `done_value`            VARCHAR(100) NULL,
+    `target_date`           DATE NULL,                                -- NULL = the project's target end date
+    `position`              INT NOT NULL DEFAULT 0,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL,
+    `is_demo`               TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_patg_project` (`project_id`, `position`),
+    CONSTRAINT `fk_patg_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_patg_type` FOREIGN KEY (`scope_type_id`) REFERENCES `asset_types` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_patg_created_by` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One point a day per target for the burn-up line, written when the project is opened.
+CREATE TABLE IF NOT EXISTS `project_asset_target_snapshots` (
+    `id`         INT NOT NULL AUTO_INCREMENT,
+    `target_id`  INT NOT NULL,
+    `snap_date`  DATE NOT NULL,
+    `done`       INT NOT NULL DEFAULT 0,
+    `total`      INT NOT NULL DEFAULT 0,
+    `is_demo`    TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_patgs_day` (`target_id`, `snap_date`),
+    CONSTRAINT `fk_patgs_target` FOREIGN KEY (`target_id`) REFERENCES `project_asset_targets` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Project templates saved from a project (3.2.0). The plan is JSON with days
+-- counted from the start and no people, companies or links, so one template
+-- serves every company. The built-in templates live in code, not here.
+CREATE TABLE IF NOT EXISTS `project_templates` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `name`                  VARCHAR(150) NOT NULL,
+    `description`           VARCHAR(500) NULL,
+    `content`               MEDIUMTEXT NOT NULL,                      -- see includes/projects/templates.php
+    `is_active`             TINYINT(1) NOT NULL DEFAULT 1,            -- 0 = not offered for new projects
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL,
+    `is_demo`               TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_project_templates_name` (`name`),
+    CONSTRAINT `fk_ptpl_created_by` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Milestones (3.3.0): the dates a project promises ("Move day", "Go-live").
+-- A named date, not work. Done, missed or due is worked out from done_date and
+-- due_date, never stored; a missed one turns automatic health amber.
+CREATE TABLE IF NOT EXISTS `project_milestones` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `project_id`            INT NOT NULL,
+    `stage_id`              INT NULL,                                 -- NULL = the whole project's
+    `name`                  VARCHAR(150) NOT NULL,
+    `due_date`              DATE NOT NULL,
+    `done_date`             DATE NULL,                                -- set = reached
+    `done_by_analyst_id`    INT NULL,
+    `notes`                 VARCHAR(500) NULL,
+    `position`              INT NOT NULL DEFAULT 0,
+    `created_by_analyst_id` INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL,
+    `is_demo`               TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_pms_project` (`project_id`, `due_date`),
+    KEY `ix_pms_stage` (`stage_id`),
+    CONSTRAINT `fk_pms_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pms_stage` FOREIGN KEY (`stage_id`) REFERENCES `project_stages` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pms_done_by` FOREIGN KEY (`done_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pms_created_by` FOREIGN KEY (`created_by_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Change control (3.3.0) - includes/projects/control.php. A baseline is the
+-- plan as it stood when it was agreed: dates, budget, work and Must scope, with
+-- the detail (stages, milestones, Must items, budget lines) as JSON so later
+-- drift can be shown item by item. Never edited; a new one is taken instead.
+CREATE TABLE IF NOT EXISTS `project_baselines` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `project_id`        INT NOT NULL,
+    `number`            INT NOT NULL,                                 -- 1, 2, 3 within the project
+    `label`             VARCHAR(150) NULL,
+    `reason`            VARCHAR(12) NOT NULL DEFAULT 'manual',       -- manual | start | stage | change
+    `stage_id`          INT NULL,                                     -- the stage whose start took it
+    `change_request_id` INT NULL,                                     -- the change whose approval took it
+    `start_date`        DATE NULL,
+    `target_end_date`   DATE NULL,
+    `budget_planned`    DECIMAL(14,2) NULL,
+    `currency`          CHAR(3) NULL,
+    `task_count`        INT NOT NULL DEFAULT 0,
+    `estimate_hours`    DECIMAL(9,2) NULL,
+    `must_count`        INT NOT NULL DEFAULT 0,
+    `snapshot`          MEDIUMTEXT NULL,                              -- JSON: stages, milestones, must, lines
+    `created_by_id`     INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    KEY `idx_pbase_project` (`project_id`, `number`),
+    KEY `ix_pbase_stage` (`stage_id`),
+    KEY `ix_pbase_change` (`change_request_id`),
+    CONSTRAINT `fk_pbase_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pbase_stage` FOREIGN KEY (`stage_id`) REFERENCES `project_stages` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pbase_created_by` FOREIGN KEY (`created_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A request to change the agreed plan, with what it does to time, cost and
+-- scope. Approved, rejected or withdrawn - never deleted, it is the audit trail.
+-- `applied` records what approving did (JSON: the target moved, the budget line added).
+CREATE TABLE IF NOT EXISTS `project_change_requests` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `project_id`       INT NOT NULL,
+    `number`           INT NOT NULL,                                  -- CR-1, CR-2 within the project
+    `title`            VARCHAR(200) NOT NULL,
+    `description`      TEXT NULL,
+    `reason`           TEXT NULL,
+    `impact_days`      INT NULL,                                      -- + later, - sooner
+    `impact_cost`      DECIMAL(14,2) NULL,                            -- + more, - a saving
+    `impact_scope`     VARCHAR(1000) NULL,
+    `status`           VARCHAR(12) NOT NULL DEFAULT 'proposed',       -- proposed | approved | rejected | withdrawn
+    `raised_by_id`     INT NULL,
+    `raised_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `decided_by_id`    INT NULL,
+    `decided_datetime` DATETIME NULL,
+    `decision_notes`   TEXT NULL,
+    `applied`          TEXT NULL,
+    `baseline_id`      INT NULL,
+    `updated_datetime` DATETIME NULL,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    KEY `idx_pcr_project` (`project_id`, `status`),
+    KEY `ix_pcr_baseline` (`baseline_id`),
+    CONSTRAINT `fk_pcr_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pcr_raised_by` FOREIGN KEY (`raised_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pcr_decided_by` FOREIGN KEY (`decided_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pcr_baseline` FOREIGN KEY (`baseline_id`) REFERENCES `project_baselines` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Benefits realisation (3.3.0) - includes/projects/benefits.php. What the
+-- project is meant to improve, measured from a baseline towards a target, and
+-- reviewed on a date - including AFTER the project has closed, which is when
+-- most benefits arrive. status: open (still reviewed) | closed (stop reviewing).
+-- Achieved / missed are worked out from the measurements, never stored.
+CREATE TABLE IF NOT EXISTS `project_benefits` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `project_id`       INT NOT NULL,
+    `title`            VARCHAR(200) NOT NULL,
+    `measure`          VARCHAR(255) NULL,                             -- how it is measured
+    `unit`             VARCHAR(30) NULL,
+    `direction`        VARCHAR(4) NOT NULL DEFAULT 'up',              -- up = higher is better, down = lower is better
+    `baseline_value`   DECIMAL(18,2) NULL,
+    `target_value`     DECIMAL(18,2) NULL,
+    `target_date`      DATE NULL,
+    `owner_analyst_id` INT NULL,
+    `review_date`      DATE NULL,
+    `review_months`    INT NULL,                                      -- NULL / 0 = no repeat
+    `status`           VARCHAR(10) NOT NULL DEFAULT 'open',
+    `notes`            TEXT NULL,
+    `position`         INT NOT NULL DEFAULT 0,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime` DATETIME NULL,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_pben_project` (`project_id`, `position`),
+    KEY `ix_pben_review` (`status`, `review_date`),
+    KEY `ix_pben_owner` (`owner_analyst_id`),
+    CONSTRAINT `fk_pben_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pben_owner` FOREIGN KEY (`owner_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Task flow (3.3.0) - includes/projects/flow.php. How many of a project's tasks
+-- sat in each status at the end of each day - the cumulative flow diagram. The
+-- day's row is rewritten until the day is over; nothing earlier is touched.
+-- Before the first row, only when tasks were created and finished is known.
+CREATE TABLE IF NOT EXISTS `project_task_flow` (
+    `project_id`  INT NOT NULL,
+    `day`         DATE NOT NULL,
+    `status_id`   INT NOT NULL,
+    `task_count`  INT NOT NULL DEFAULT 0,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`project_id`, `day`, `status_id`),
+    CONSTRAINT `fk_ptf_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Task dependencies (3.3.0) - includes/projects/dependencies.php. Finish-to-
+-- start: task_id cannot start until depends_on_id has finished (plus lag_days).
+-- "Waiting on", clashes and the critical path are worked out on read.
+CREATE TABLE IF NOT EXISTS `task_dependencies` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `task_id`          INT NOT NULL,                                  -- the one that waits
+    `depends_on_id`    INT NOT NULL,                                  -- the one it waits for
+    `lag_days`         INT NOT NULL DEFAULT 0,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_tdep_pair` (`task_id`, `depends_on_id`),
+    KEY `ix_tdep_on` (`depends_on_id`),
+    CONSTRAINT `fk_tdep_task` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_tdep_on` FOREIGN KEY (`depends_on_id`) REFERENCES `tasks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A stage gate's checklist (3.3.0) - includes/projects/gatecheck.php. What must
+-- be true before a go: a tick (check), a document attached to the project
+-- (document), a named analyst's sign-off (signoff) or a linked change approved
+-- (change - worked out from the change, never stored as done).
+CREATE TABLE IF NOT EXISTS `project_gate_items` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `project_id`       INT NOT NULL,
+    `stage_id`         INT NOT NULL,
+    `kind`             VARCHAR(10) NOT NULL DEFAULT 'check',          -- check | document | signoff | change
+    `title`            VARCHAR(200) NOT NULL,
+    `analyst_id`       INT NULL,                                      -- signoff: who signs
+    `change_id`        INT NULL,                                      -- change: which linked change
+    `document_id`      INT NULL,                                      -- document: the one that satisfies it
+    `done_by_id`       INT NULL,
+    `done_datetime`    DATETIME NULL,
+    `notes`            VARCHAR(500) NULL,
+    `position`         INT NOT NULL DEFAULT 0,
+    `created_by_id`    INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    KEY `idx_pgi_stage` (`stage_id`, `position`),
+    KEY `ix_pgi_project` (`project_id`),
+    KEY `ix_pgi_analyst` (`analyst_id`),
+    CONSTRAINT `fk_pgi_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pgi_stage` FOREIGN KEY (`stage_id`) REFERENCES `project_stages` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pgi_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_pgi_done_by` FOREIGN KEY (`done_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One measurement of a benefit, on a date. The latest by date is "now".
+CREATE TABLE IF NOT EXISTS `project_benefit_measures` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `benefit_id`       INT NOT NULL,
+    `value`            DECIMAL(18,2) NOT NULL,
+    `measured_date`    DATE NOT NULL,
+    `note`             VARCHAR(500) NULL,
+    `recorded_by_id`   INT NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,   -- 3.3.0: System -> Demo data
+    PRIMARY KEY (`id`),
+    KEY `idx_pbm_benefit` (`benefit_id`, `measured_date`),
+    CONSTRAINT `fk_pbm_benefit` FOREIGN KEY (`benefit_id`) REFERENCES `project_benefits` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pbm_recorded_by` FOREIGN KEY (`recorded_by_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Projects 3.3.0: the AI project assistant (Ask AI on a project) - includes/projects/assistant_chat.php.
+-- One conversation per person per project (analyst_id), or one shared by the project when
+-- Projects -> Settings -> AI -> Assistant memory is 'project' (analyst_id NULL). `summary` is the
+-- long-term memory: older turns folded into a few paragraphs, so a long conversation resumes warm.
+CREATE TABLE IF NOT EXISTS `project_ai_threads` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `project_id`        INT NOT NULL,
+    `analyst_id`        INT NULL,                                   -- NULL = the project's shared conversation
+    `summary`           MEDIUMTEXT NULL,                            -- what earlier turns established
+    `summary_upto_id`   INT NULL,                                   -- the last message folded into it
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_pait_owner` (`project_id`, `analyst_id`),
+    KEY `ix_pait_analyst` (`analyst_id`),
+    CONSTRAINT `fk_pait_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_pait_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `project_ai_messages` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `thread_id`         INT NOT NULL,
+    `role`              VARCHAR(10) NOT NULL,                       -- user | assistant
+    `kind`              VARCHAR(10) NOT NULL DEFAULT 'chat',        -- chat | open (a greeting) | resume (since we last spoke)
+    `content`           MEDIUMTEXT NULL,
+    `proposals`         MEDIUMTEXT NULL,                            -- JSON: changes the assistant proposed, each with its status
+    `looked_at`         TEXT NULL,                                  -- JSON: the read tools it used, for 'what did it check'
+    `analyst_id`        INT NULL,                                   -- who wrote it (a user turn), or who it answered
+    `model`             VARCHAR(120) NULL,
+    `tokens_in`         INT NULL,
+    `tokens_out`        INT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_paim_thread` (`thread_id`, `id`),
+    CONSTRAINT `fk_paim_thread` FOREIGN KEY (`thread_id`) REFERENCES `project_ai_threads` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_paim_analyst` FOREIGN KEY (`analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------
+-- Files: secure file and folder sharing on a desktop (files/).
+-- PESSIMISTIC: nothing is visible to anybody until a files_permissions row
+-- grants it. The bytes live on disk as <storage root>/yyyy/mm/dd/<random>.bin;
+-- the real name, type, size and SHA-256 live here only. See includes/files/.
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `files_folders` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `parent_id`             INT NULL,                               -- NULL = a top-level folder
+    `name`                  VARCHAR(255) NOT NULL,
+    `inherit_permissions`   TINYINT(1) NOT NULL DEFAULT 1,          -- 1 = parent's entries apply here too
+    `watermark`             TINYINT(1) NULL,                        -- viewer watermark: NULL = as the parent, 0 off, 1 on
+    `created_by`            INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_by`            INT NULL,
+    `updated_datetime`      DATETIME NULL,
+    `deleted_by`            INT NULL,
+    `deleted_datetime`      DATETIME NULL,                          -- set = in the recycle bin
+    PRIMARY KEY (`id`),
+    KEY `ix_files_folders_parent` (`parent_id`, `deleted_datetime`),
+    CONSTRAINT `fk_files_folders_parent` FOREIGN KEY (`parent_id`) REFERENCES `files_folders` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `files_items` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `folder_id`             INT NOT NULL,
+    `name`                  VARCHAR(255) NOT NULL,
+    `current_version_id`    INT NULL,
+    `size_bytes`            BIGINT NOT NULL DEFAULT 0,              -- of the current version
+    `mime_type`             VARCHAR(150) NULL,
+    `created_by`            INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_by`            INT NULL,
+    `updated_datetime`      DATETIME NULL,
+    `deleted_by`            INT NULL,
+    `deleted_datetime`      DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `ix_files_items_folder` (`folder_id`, `deleted_datetime`),
+    CONSTRAINT `fk_files_items_folder` FOREIGN KEY (`folder_id`) REFERENCES `files_folders` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One row per uploaded version. A copied file SHARES its source's storage_path
+-- rather than duplicating the bytes, so a purge must check nothing else points
+-- at a .bin before deleting it.
+CREATE TABLE IF NOT EXISTS `files_versions` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `item_id`               INT NOT NULL,
+    `version_no`            INT NOT NULL DEFAULT 1,
+    `storage_path`          VARCHAR(255) NOT NULL,                  -- relative to the storage root: yyyy/mm/dd/<hex>.bin
+    `size_bytes`            BIGINT NOT NULL DEFAULT 0,
+    `mime_type`             VARCHAR(150) NULL,
+    `sha256`                CHAR(64) NULL,
+    `uploaded_by`           INT NULL,
+    `uploaded_datetime`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_files_versions_item` (`item_id`, `version_no`),
+    KEY `ix_files_versions_path` (`storage_path`),
+    CONSTRAINT `fk_files_versions_item` FOREIGN KEY (`item_id`) REFERENCES `files_items` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Grants only - there are no Deny entries. level: 1 View, 2 Download, 3 Upload,
+-- 4 Modify, 5 Full control; each includes the ones below it.
+CREATE TABLE IF NOT EXISTS `files_permissions` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `folder_id`             INT NOT NULL,
+    `principal_type`        VARCHAR(10) NOT NULL,                   -- analyst | team
+    `principal_id`          INT NOT NULL,
+    `level`                 TINYINT NOT NULL DEFAULT 1,
+    `granted_by`            INT NULL,
+    `granted_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_files_permission` (`folder_id`, `principal_type`, `principal_id`),
+    KEY `ix_files_permissions_principal` (`principal_type`, `principal_id`),
+    CONSTRAINT `fk_files_permissions_folder` FOREIGN KEY (`folder_id`) REFERENCES `files_folders` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- EVERY action, including reads and refusals. No foreign keys on purpose: the
+-- trail must outlive the folders, files and people it mentions, so the name and
+-- path are copied in at the time.
+CREATE TABLE IF NOT EXISTS `files_audit` (
+    `id`                    BIGINT NOT NULL AUTO_INCREMENT,
+    `analyst_id`            INT NULL,
+    `analyst_name`          VARCHAR(150) NULL,
+    `action`                VARCHAR(40) NOT NULL,
+    `folder_id`             INT NULL,
+    `item_id`               INT NULL,
+    `version_id`            INT NULL,
+    `target_path`           VARCHAR(1000) NULL,
+    `detail`                TEXT NULL,                              -- JSON
+    `ip_address`            VARCHAR(45) NULL,
+    `user_agent`            VARCHAR(255) NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_files_audit_created` (`created_datetime`),
+    KEY `ix_files_audit_item` (`item_id`, `id`),
+    KEY `ix_files_audit_folder` (`folder_id`, `id`),
+    KEY `ix_files_audit_analyst` (`analyst_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Shortcuts. EITHER in a folder (folder_id set: everyone who can see the folder
+-- sees it - but only if they can also see the target) OR on one person's desktop
+-- (analyst_id set, folder_id NULL). A shortcut grants nothing: opening it goes
+-- through the target's own permissions.
+CREATE TABLE IF NOT EXISTS `files_shortcuts` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `folder_id`             INT NULL,                               -- in this folder
+    `analyst_id`            INT NULL,                               -- on this person's desktop
+    `target_type`           VARCHAR(10) NOT NULL,                   -- folder | item
+    `target_id`             INT NOT NULL,
+    `name`                  VARCHAR(255) NOT NULL,
+    `created_by`            INT NULL,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ix_files_shortcuts_folder` (`folder_id`),
+    KEY `ix_files_shortcuts_analyst` (`analyst_id`),
+    KEY `ix_files_shortcuts_target` (`target_type`, `target_id`),
+    CONSTRAINT `fk_files_shortcuts_folder` FOREIGN KEY (`folder_id`) REFERENCES `files_folders` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A chunked upload in progress. The pieces collect in <storage root>/_incoming/<token>.part.
+CREATE TABLE IF NOT EXISTS `files_uploads` (
+    `id`                    INT NOT NULL AUTO_INCREMENT,
+    `token`                 CHAR(32) NOT NULL,
+    `analyst_id`            INT NOT NULL,
+    `folder_id`             INT NOT NULL,
+    `item_id`               INT NULL,                               -- set = a new version of this file
+    `file_name`             VARCHAR(255) NOT NULL,
+    `size_bytes`            BIGINT NOT NULL DEFAULT 0,
+    `received_bytes`        BIGINT NOT NULL DEFAULT 0,
+    `created_datetime`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_datetime`      DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_files_uploads_token` (`token`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- Seed: the project roles a fresh install starts with (PRINCE2-style, in our
+-- own words). Only into an empty table, so an edited list is never put back.
+INSERT INTO `project_roles` (`name`, `description`, `display_order`)
+SELECT * FROM (
+    SELECT 'Executive' AS n, 'Owns the business case and makes the final call at each gate' AS d, 1 AS o UNION ALL
+    SELECT 'Senior User', 'Speaks for the people who will use what the project delivers', 2 UNION ALL
+    SELECT 'Senior Supplier', 'Speaks for the people building or supplying it', 3 UNION ALL
+    SELECT 'Project Manager', 'Runs the project day to day', 4 UNION ALL
+    SELECT 'Team Manager', 'Leads a team delivering part of the work', 5 UNION ALL
+    SELECT 'Project Assurance', 'Checks independently that the project is being run properly', 6 UNION ALL
+    SELECT 'Project Support', 'Helps with plans, records and admin', 7 UNION ALL
+    SELECT 'Team member', 'Does the work', 8 UNION ALL
+    SELECT 'Stakeholder', 'Needs to be kept informed', 9
+) s
+WHERE NOT EXISTS (SELECT 1 FROM `project_roles` LIMIT 1);
+
+-- Seed: the domain statuses a fresh install starts with. Only into an empty
+-- table, so a deliberately edited list is never put back.
+INSERT INTO `domain_statuses` (`name`, `colour`, `alerts_enabled`, `display_order`)
+SELECT * FROM (
+    SELECT 'Active' AS n, '#16a34a' AS c, 1 AS a, 1 AS o UNION ALL
+    SELECT 'Transfer in progress', '#2563eb', 1, 2 UNION ALL
+    SELECT 'Parked', '#64748b', 1, 3 UNION ALL
+    SELECT 'Letting lapse', '#d97706', 0, 4 UNION ALL
+    SELECT 'Cancelled', '#dc2626', 0, 5
+) s
+WHERE NOT EXISTS (SELECT 1 FROM `domain_statuses` LIMIT 1);
+
+-- Seed: the certificate types, into an empty table only (the same rule).
+INSERT INTO `domain_certificate_types` (`name`, `display_order`)
+SELECT * FROM (
+    SELECT 'DV (domain validated)' AS n, 1 AS o UNION ALL
+    SELECT 'OV (organisation validated)', 2 UNION ALL
+    SELECT 'EV (extended validation)', 3 UNION ALL
+    SELECT 'Wildcard', 4 UNION ALL
+    SELECT 'Multi-domain (SAN)', 5 UNION ALL
+    SELECT 'Code signing', 6 UNION ALL
+    SELECT 'Email (S/MIME)', 7 UNION ALL
+    SELECT 'Client / device', 8 UNION ALL
+    SELECT 'Internal CA', 9 UNION ALL
+    SELECT 'Other', 10
+) t
+WHERE NOT EXISTS (SELECT 1 FROM `domain_certificate_types` LIMIT 1);
+-- ===========================================================================
+-- Starters & leavers (4.6.0). A case is someone joining, moving or leaving.
+-- The module owns only what nothing else holds - who, which kind, which date,
+-- which template - and drives the rest through other modules' services: the
+-- steps are TASKS (a parent task, a subtask per step), kit moves through ASSET
+-- custody, checklists come from CHECKLISTS, automation from WORKFLOWS.
+-- See includes/starters/service.php.
+-- ===========================================================================
+
+-- What happens for a kind of change: a named list of steps.
+CREATE TABLE IF NOT EXISTS `jml_templates` (
+    `id`                INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`         INT NULL,                       -- NULL = shared by every company
+    `kind`              VARCHAR(10) NOT NULL,           -- starter | mover | leaver (JmlKind)
+    `name`              VARCHAR(150) NOT NULL,
+    `description`       VARCHAR(500) NULL,
+    `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+    `display_order`     INT NOT NULL DEFAULT 0,
+    -- The questions (a Forms form, any version of it) - asked on the case's task,
+    -- or answered in the portal before the case opens. NULL = no questions.
+    `form_id`           INT NULL,
+    -- When a form opens a case, which template it gets: JSON {match, rules:[{question,
+    -- op, value}]} against the answers, by question LABEL so a new form version
+    -- keeps working. NULL = the template to use when no other one matches.
+    `match_rule`        TEXT NULL,
+    `created_datetime`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`           TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_jml_templates_kind` (`kind`, `is_active`),
+    CONSTRAINT `fk_jml_templates_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_jml_templates_form` FOREIGN KEY (`form_id`) REFERENCES `forms` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One step of a template. Becomes a subtask of the case's task, due
+-- due_offset_days from the case's date (negative = before it), for the team or
+-- analyst named, with the checklist template attached if one is chosen.
+CREATE TABLE IF NOT EXISTS `jml_template_steps` (
+    `id`                     INT NOT NULL AUTO_INCREMENT,
+    `template_id`            INT NOT NULL,
+    `title`                  VARCHAR(255) NOT NULL,
+    `description`            TEXT NULL,
+    `assigned_team_id`       INT NULL,
+    `assigned_analyst_id`    INT NULL,
+    `due_offset_days`        INT NOT NULL DEFAULT 0,
+    `checklist_template_id`  INT NULL,
+    -- Only if: JSON {match, rules:[{question, op, value}]} against the case's
+    -- answers (same operators as a form's show/hide rules). NULL = always.
+    `condition_rule`         TEXT NULL,
+    `display_order`          INT NOT NULL DEFAULT 0,
+    `is_demo`                TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_jml_template_steps_template` (`template_id`, `display_order`),
+    CONSTRAINT `fk_jml_steps_template` FOREIGN KEY (`template_id`) REFERENCES `jml_templates` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_jml_steps_team` FOREIGN KEY (`assigned_team_id`) REFERENCES `teams` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_steps_analyst` FOREIGN KEY (`assigned_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_steps_checklist` FOREIGN KEY (`checklist_template_id`) REFERENCES `checklist_templates` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A case: one person joining, moving or leaving on a date. The work is the
+-- task parent_task_id and its subtasks - progress is read from them, never
+-- stored here twice.
+CREATE TABLE IF NOT EXISTS `jml_cases` (
+    `id`                  INT NOT NULL AUTO_INCREMENT,
+    `tenant_id`           INT NULL,                     -- NULL = the Default company
+    `kind`                VARCHAR(10) NOT NULL,         -- starter | mover | leaver
+    -- The person: a user already in FreeITSM, or - for a starter not yet in
+    -- Users - just a name and an email until they are added.
+    `user_id`             INT NULL,
+    `person_name`         VARCHAR(255) NOT NULL,
+    `person_email`        VARCHAR(255) NULL,
+    `job_title`           VARCHAR(150) NULL,
+    `manager_user_id`     INT NULL,
+    `effective_date`      DATE NOT NULL,                -- first day, move date or last day
+    `status`              VARCHAR(12) NOT NULL DEFAULT 'open',   -- open | done | cancelled
+    `template_id`         INT NULL,
+    `parent_task_id`      INT NULL,
+    -- The answers: a Forms submission - from the portal, or filled in on the task.
+    `form_submission_id`  INT NULL,
+    -- 1 while the template's steps wait for the answers they depend on.
+    `steps_pending`       TINYINT(1) NOT NULL DEFAULT 0,
+    `notes`               TEXT NULL,
+    `owner_analyst_id`    INT NULL,
+    `created_by`          INT NULL,
+    `created_datetime`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `completed_datetime`  DATETIME NULL,
+    `is_demo`             TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_jml_cases_status_date` (`status`, `effective_date`),
+    KEY `idx_jml_cases_tenant` (`tenant_id`),
+    KEY `idx_jml_cases_user` (`user_id`),
+    CONSTRAINT `fk_jml_cases_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_manager` FOREIGN KEY (`manager_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_template` FOREIGN KEY (`template_id`) REFERENCES `jml_templates` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_task` FOREIGN KEY (`parent_task_id`) REFERENCES `tasks` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_owner` FOREIGN KEY (`owner_analyst_id`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_created_by` FOREIGN KEY (`created_by`) REFERENCES `analysts` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_jml_cases_submission` FOREIGN KEY (`form_submission_id`) REFERENCES `form_submissions` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A case's history, the same shape as project_audit.
+CREATE TABLE IF NOT EXISTS `jml_audit` (
+    `id`               INT NOT NULL AUTO_INCREMENT,
+    `case_id`          INT NOT NULL,
+    `analyst_id`       INT NULL,
+    `field_name`       VARCHAR(100) NOT NULL,
+    `old_value`        VARCHAR(1000) NULL,
+    `new_value`        VARCHAR(1000) NULL,
+    `created_datetime` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `is_demo`          TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_jml_audit_case` (`case_id`, `created_datetime`),
+    CONSTRAINT `fk_jml_audit_case` FOREIGN KEY (`case_id`) REFERENCES `jml_cases` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ----------------------------------------------------------
+-- Seed: Default admin account
+-- ----------------------------------------------------------
+-- Username: admin  |  Password: freeitsm
+-- The account is created with must_change_password = 1, so this password cannot be
+-- kept: the first sign-in can go nowhere but the change-password screen.
+--
+-- ⚠️ must_change_password MUST be listed here explicitly. It defaults to 0, and
+-- docker-compose.yml mounts this file as a /docker-entrypoint-initdb.d script — so on
+-- the Docker quickstart THIS seed runs, not the one in api/system/db_verify.php, whose
+-- `COUNT(*) === 0` test then finds the row already present and never fires. Leaving the
+-- column out here left admin/freeitsm permanently valid on the flagship install path,
+-- while README.md promised the opposite. Reported by Erlend Volden.
+INSERT INTO `analysts` (`username`, `password_hash`, `full_name`, `email`, `is_active`, `is_admin`, `must_change_password`, `created_datetime`)
+SELECT 'admin', '$2y$12$z9jzs9Sqol4i.ThVE/wwL.EzvbYtZrU0GHpzUJX7UC6ODp5h.q2U2', 'Administrator', 'admin@localhost', 1, 1, 1, UTC_TIMESTAMP()
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `analysts` LIMIT 1);

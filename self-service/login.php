@@ -5,14 +5,24 @@
 session_start();
 
 // Already logged in - redirect to dashboard
-if (isset($_SESSION['ss_user_id'])) {
+/* …unless an administrator is previewing this page — see auth/login.php for
+   why that exemption exists. */
+if (isset($_SESSION['ss_user_id']) && !(isset($_GET['preview']) && !empty($_SESSION['is_admin']))) {
     header('Location: index.php');
     exit;
 }
 
 require_once '../config.php';
 require_once '../includes/functions.php';
-require_once '../includes/ldap.php';
+require_once '../includes/branding.php';   // the organisation's logo (GH #87)
+
+/* The portal sign-in screen's appearance. Same rules as the analyst one:
+   read from the database, validated in includes/branding.php, never taken
+   from the request. ?nobranding=1 is the same safety valve. */
+$brandNone    = isset($_GET['nobranding']);
+$brandPreview = isset($_GET['preview']) && !empty($_SESSION['is_admin']);
+$brand        = $brandNone ? null : brandingLoginDesign(null, 'portal');
+$brandLogo    = $brandNone ? ((defined('BASE_URL') ? BASE_URL : '/') . BRANDING_DEFAULT_LOGO) : brandingLogoUrl();
 require_once '../includes/tenancy.php';
 require_once '../includes/i18n.php';
 I18n::initFromSession();
@@ -22,6 +32,11 @@ $translationNamespaces = ['common', 'self-service'];
 // An SSO sign-in attempt that failed bounces back here with a message.
 $sso_error = $_SESSION['sso_error'] ?? null;
 unset($_SESSION['sso_error']);
+
+// Only offer "create an account" if an admin has enabled self-registration.
+require_once '../includes/self_service.php';
+$ssRegistrationEnabled = false;
+try { $ssRegistrationEnabled = selfServiceRegistrationEnabled(connectToDatabase()); } catch (Exception $e) {}
 
 // Work out SSO / local availability for the email-first router (mirrors the
 // analyst login). At N=1 with SSO off this all collapses to the local form.
@@ -36,23 +51,57 @@ try {
     $ssoOn   = ($cfg['sso_enabled'] ?? '0') === '1';
     $localOn = ($cfg['local_login_enabled'] ?? '1') !== '0';
     if ($ssoOn) {
-        // Only GLOBAL providers are shown up front (single-company installs).
-        // On a multi-tenant install we never list providers up front — the
+        // Only GLOBAL providers are shown up front, on every install. A
+        // company-owned provider is never listed — on a multi-tenant install the
         // email-first router reveals only the requester's own company's IdP(s).
-        $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND protocol = 'oidc' AND tenant_id IS NULL ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
+        // A global one leaks nothing: the analyst login already shows it (GH #156).
+        // protocol='oidc' ONLY — an LDAP provider has no button and nothing to
+        // redirect to. Directory users type their password into the ordinary
+        // form and api/self-service/login.php checks it by bind, so LDAP never
+        // needs a button; it only changes what the first field will accept.
+        //
+        // GH #147: a provider can hide its button here (portal_show_button = 0)
+        // for an email-box-only page, and can claim email domains so the box
+        // sends those addresses straight to it. Both columns only once Database
+        // Verification has added them.
+        require_once '../includes/sso_identity.php';
+        $portalRouting = ssoPortalRoutingColumnsReady($ssoConn);
+        $ssoProviders = $ssoConn->query("SELECT id, display_name FROM auth_providers WHERE enabled = 1 AND tenant_id IS NULL AND protocol = 'oidc'"
+            . ($portalRouting ? ' AND portal_show_button = 1' : '')
+            . " ORDER BY sort_order, display_name")->fetchAll(PDO::FETCH_ASSOC);
+        // 🔑 With every button hidden the list above is empty, and the email box
+        // must still appear: it routes people on a listed domain, and people
+        // already linked to a provider. Hiding a button must never switch the
+        // router off.
+        $routerNeeded = $portalRouting && (int)$ssoConn->query(
+            "SELECT COUNT(*) FROM auth_providers WHERE enabled = 1 AND protocol = 'oidc'
+                AND (tenant_id IS NULL OR (portal_email_domains IS NOT NULL AND portal_email_domains <> ''))"
+        )->fetchColumn() > 0;
     }
     $multiTenant = isMultiTenant($ssoConn);
-} catch (Exception $e) { $ssoProviders = []; }
+
+    // Is ANY directory available to the portal (global or company-owned)? This
+    // only decides the first field's type and label. `type="email"` would have
+    // the browser refuse a bare username outright — and a username is the whole
+    // point for staff who were never given a mailbox.
+    $hasLdap = (int)$ssoConn->query(
+        "SELECT COUNT(*) FROM auth_providers WHERE enabled = 1 AND protocol = 'ldap'"
+    )->fetchColumn() > 0;
+} catch (Exception $e) { $ssoProviders = []; $hasLdap = false; }
+$hasLdap = $hasLdap ?? false;
 // On a multi-tenant install the router is active whenever SSO is on (companies
 // own their own providers, resolved per-email — there may be no global ones).
-$ssoActive = $ssoOn && ($multiTenant || !empty($ssoProviders));
+// It also stays active when buttons are hidden (GH #147), see $routerNeeded.
+$routerNeeded = $routerNeeded ?? false;
+$ssoActive = $ssoOn && ($multiTenant || !empty($ssoProviders) || $routerNeeded);
 // Break-glass: ?local=1 always reveals the local form, even when local login is "off".
 $forceLocal   = isset($_GET['local']);
-$localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortalProviders($ssoConn)));
+$localAllowed = $localOn || $forceLocal;
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars(t('self-service.login.title')); ?></title>
@@ -60,12 +109,58 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
+            /* The default IS the gradient this page already used. */
+            background: var(--login-bg, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+            min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
         }
+
+        /* ---- branding designer hooks (#1427) ---- */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, var(--login-dim, 0));
+            pointer-events: none;
+            z-index: 0;
+        }
+        .login-strip {
+            position: fixed;
+            left: 0;
+            right: 0;
+            z-index: 5;
+            padding: 10px 16px;
+            text-align: center;
+            font-size: 13.5px;
+            line-height: 1.4;
+        }
+        .login-strip-banner { background: var(--login-banner-bg, #111827); color: var(--login-banner-fg, #fff); font-weight: 600; }
+        .login-strip-banner[data-at="top"]    { top: 0; }
+        .login-strip-banner[data-at="bottom"] { bottom: 0; }
+        .login-strip-footer {
+            bottom: 0;
+            color: var(--login-footer-fg, #fff);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+            font-size: 12.5px;
+        }
+        /* …and they must not sit on top of each other. */
+        body:has(.login-strip-banner[data-at="bottom"]) .login-strip-footer { bottom: 42px; }
+        /* Inside .login-header, straight under the h1 - so no negative margin
+           here. The -14px copied from the analyst login (where the tagline sits
+           OUTSIDE the header) pulled it up into the heading (GH #150). */
+        .login-header .login-tagline { margin: 0 0 6px; color: #555; font-size: 14px; }
+        body[data-logo-pos="hidden"] .login-header img,
+        body[data-logo-pos="hidden"] .company-logo { display: none; }
+        body[data-form-pos="left"]  .login-container { margin-right: auto; margin-left: 6vw; }
+        body[data-form-pos="right"] .login-container { margin-left: auto; margin-right: 6vw; }
+        body[data-card="glass"] .login-container {
+            background: rgba(255, 255, 255, 0.82);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        body[data-card="flat"] .login-container { box-shadow: none; border: 1px solid rgba(0, 0, 0, 0.12); }
         .login-container {
             background: white;
             padding: 40px;
@@ -79,8 +174,20 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
             margin-bottom: 30px;
         }
         .login-header img {
-            width: 250px;
+            /* 🔴 This was a hardcoded 250px, so the designer's logo size did
+               NOTHING on this screen — the control was offered on all three
+               tabs and only ever worked on the analyst one. Found while adding
+               the height setting.
+               Both settings are MAXIMA and the logo keeps its own proportions.
+               `min(…, 100%)` is the phone guarantee: the card is 400px wide but
+               only ~296px of that is usable on a 360px screen once its padding
+               is taken off — and this logo is REPLACEABLE, so a customer's own
+               600px file must not push the card wider than the phone. Cap it
+               rather than trust the file. */
+            width: auto;
             height: auto;
+            max-width: min(var(--login-logo-size, 250px), 100%);
+            max-height: var(--login-logo-height, none);
             margin-bottom: 25px;
         }
         .login-header h1 {
@@ -106,7 +213,17 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 5px;
-            font-size: 14px;
+            /* ⚠️ 16px, and NOT behind a `max-width` media query.
+               iOS zooms the page in on any field it renders below 16px, and
+               then leaves it zoomed. This is the first page a requester ever
+               sees, so it is the worst place for that.
+               The gate is deliberately absent: the zoom depends on the DEVICE,
+               not on the viewport width, and an iPhone held sideways reports
+               844px — wider than any phone breakpoint we use — so a width-gated
+               rule would miss exactly the case where the field is hardest to
+               read. Both fields on this page (email and password) come through
+               this one rule. */
+            font-size: 16px;
             transition: border-color 0.3s;
         }
         .form-group input:focus {
@@ -148,6 +265,11 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
             text-decoration: none;
         }
         .login-links a:hover { text-decoration: underline; }
+        /* "Powered by FreeITSM" - very faint and small, the last line inside the
+           card (Ed). currentColor + opacity, so it suits a dark card too. */
+        .powered-by { margin-top: 14px; text-align: center; font-size: 10.5px; letter-spacing: .3px; opacity: .38; }
+        .powered-by a { color: inherit; text-decoration: none; }
+        .powered-by a:hover { text-decoration: underline; }
         .login-links .divider {
             color: #ccc;
             margin: 0 8px;
@@ -204,12 +326,22 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
         .ss-text-link:hover { color: #666; }
     </style>
 </head>
-<body>
+<body<?php if ($brand): ?> data-form-pos="<?php echo htmlspecialchars($brand['form_position']); ?>" data-card="<?php echo htmlspecialchars($brand['card_style']); ?>" data-logo-pos="<?php echo htmlspecialchars($brand['logo_position']); ?>" style="<?php echo htmlspecialchars(brandingLoginCss($brand)); ?>"<?php endif; ?>>
+<?php if ($brand && $brand['banner_position'] !== 'off' && $brand['banner_text'] !== ''): ?>
+    <div class="login-strip login-strip-banner" data-at="<?php echo htmlspecialchars($brand['banner_position']); ?>"><?php echo htmlspecialchars($brand['banner_text']); ?></div>
+<?php endif; ?>
     <div class="login-container">
         <div class="login-header">
-            <img src="../assets/images/CompanyLogo.png" alt="Company Logo">
-            <h1><?php echo htmlspecialchars(t('self-service.login.heading')); ?></h1>
-            <p id="loginSubtitle"><?php echo htmlspecialchars(t('self-service.login.subtitle')); ?></p>
+            <img src="<?php echo htmlspecialchars(brandingLogoUrl()); ?>" alt="Company Logo">
+            <h1><?php echo htmlspecialchars($brand && $brand['heading'] !== '' ? $brand['heading'] : t('self-service.login.heading')); ?></h1>
+            <?php /* GH #150. Tagline 1 under the heading; Tagline 2 takes the
+                     place of "Sign in to view your tickets", which stays as the
+                     default when it is empty. Both always printed so the branding
+                     preview fills in these elements instead of guessing. */
+                  $tag1 = $brand['subheading'] ?? '';
+                  $tag2 = $brand['subheading2'] ?? ''; ?>
+            <p class="login-tagline" data-tagline="1"<?php echo $tag1 === '' ? ' hidden' : ''; ?>><?php echo htmlspecialchars($tag1); ?></p>
+            <p id="loginSubtitle" data-tagline="2" data-default="<?php echo htmlspecialchars(t('self-service.login.subtitle')); ?>"><?php echo htmlspecialchars($tag2 !== '' ? $tag2 : t('self-service.login.subtitle')); ?></p>
         </div>
 
         <div class="error-message" id="errorMsg"<?php if ($sso_error): ?> style="display:block;"<?php endif; ?>><?php echo $sso_error ? htmlspecialchars($sso_error) : ''; ?></div>
@@ -218,8 +350,11 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
         <div id="loginSection">
             <form id="loginForm" onsubmit="return handleLogin(event)" autocomplete="off">
                 <div class="form-group">
-                    <label for="email">Email or directory username</label>
-                    <input type="text" id="email" required autofocus autocomplete="off">
+                    <label for="email"><?php echo htmlspecialchars(t($hasLdap ? 'self-service.login.identifier' : 'self-service.login.email')); ?></label>
+                    <?php /* text, not email, once a directory exists: staff with no mailbox sign in
+                             with the username their directory knows them by, and the browser's own
+                             email validation would refuse to submit it. */ ?>
+                    <input type="<?php echo $hasLdap ? 'text' : 'email'; ?>" id="email" required autofocus autocomplete="off">
                 </div>
                 <div class="form-group" id="passwordGroup"<?php if ($ssoActive): ?> style="display:none;"<?php endif; ?>>
                     <label for="password"><?php echo htmlspecialchars(t('self-service.login.password')); ?></label>
@@ -235,12 +370,15 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
                 <!-- Multi-tenant: provider buttons for the resolved company are injected here. -->
                 <div id="ssoPicker"></div>
 
-                <?php if (!$multiTenant): ?>
-                    <!-- Single-company: providers are global, so show them up front. -->
+                <?php if (!empty($ssoProviders)): ?>
+                    <!-- Global providers serve every company, so show them up front
+                         on any install (GH #156 - multi-tenant used to hide them). -->
                     <div class="sso-divider"><span></span><?php echo htmlspecialchars(t('self-service.login.or')); ?><span></span></div>
                     <?php foreach ($ssoProviders as $p): ?>
                         <a class="sso-provider-btn" href="../api/auth/oidc_login.php?provider=<?php echo (int)$p['id']; ?>&amp;portal=self-service"><?php echo htmlspecialchars($p['display_name']); ?></a>
                     <?php endforeach; ?>
+                <?php endif; ?>
+                <?php if (!$multiTenant): ?>
                     <?php if ($localAllowed): ?>
                         <a href="#" id="showLocalLink" class="ss-text-link"><?php echo htmlspecialchars(t('self-service.login.use_local_account')); ?></a>
                     <?php endif; ?>
@@ -248,9 +386,18 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
             <?php endif; ?>
 
             <div class="login-links">
+                <?php /* ⚠️ NOT gated on $ssRegistrationEnabled (GH #134). This is the
+                         only route to a password for somebody whose account was created
+                         FOR them, and a desk that creates its customers by hand is
+                         exactly the desk that leaves self-registration off — so gating
+                         it would hide the link from the people who need it most. */ ?>
+                <a href="forgot-password.php"><?php echo htmlspecialchars(t('self-service.login.forgot_password')); ?></a>
+                <span class="divider">|</span>
+                <?php if ($ssRegistrationEnabled): ?>
                 <a href="register.php"><?php echo htmlspecialchars(t('self-service.login.create_account')); ?></a>
                 <span class="divider">|</span>
-                <a href="../login.php"><?php echo htmlspecialchars(t('self-service.login.analyst_login')); ?></a>
+                <?php endif; ?>
+                <a href="../auth/login.php"><?php echo htmlspecialchars(t('self-service.login.analyst_login')); ?></a>
             </div>
         </div>
 
@@ -270,11 +417,17 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
                 <a onclick="backToLogin()"><?php echo htmlspecialchars(t('self-service.login.back_to_login')); ?></a>
             </div>
         </div>
+        <?php /* Outside both steps, so it shows on the password step and the code step alike. */ ?>
+        <div class="powered-by"><a href="https://freeitsm.co.uk" target="_blank" rel="noopener"><?php echo htmlspecialchars(t('self-service.login.powered_by')); ?></a></div>
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
     <script>
+    // The line under the heading as the page opened (Tagline 2, or the default).
+    // The two-step code step borrows it for its own instruction and puts it back.
+    const LOGIN_SUBTITLE = document.getElementById('loginSubtitle').textContent;
+
     async function handleLogin(e) {
         e.preventDefault();
         const btn = document.getElementById('loginBtn');
@@ -288,7 +441,9 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    email: document.getElementById('email').value.trim(),
+                    // May be an email OR a directory username — the endpoint
+                    // looks the account up on both columns.
+                    identifier: document.getElementById('email').value.trim(),
                     password: document.getElementById('password').value
                 })
             });
@@ -355,7 +510,9 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
     function backToLogin() {
         document.getElementById('mfaSection').classList.remove('active');
         document.getElementById('loginSection').style.display = '';
-        document.getElementById('loginSubtitle').textContent = t('self-service.login.subtitle');
+        // Back to what the page opened with, which may be the admin's Tagline 2
+        // rather than the built-in "Sign in to view your tickets".
+        document.getElementById('loginSubtitle').textContent = LOGIN_SUBTITLE;
         document.getElementById('errorMsg').style.display = 'none';
         document.getElementById('loginBtn').disabled = false;
         document.getElementById('loginBtn').textContent = t('self-service.login.sign_in');
@@ -465,5 +622,9 @@ $localAllowed = $localOn || $forceLocal || (isset($ssoConn) && !empty(ldapPortal
     })();
 <?php endif; ?>
     </script>
+<?php if ($brand && $brand['footer_text'] !== ''): ?>
+    <div class="login-strip login-strip-footer"><?php echo htmlspecialchars($brand['footer_text']); ?></div>
+<?php endif; ?>
+<?php if ($brandPreview) { $previewDefaultHeading = t('self-service.login.heading'); require __DIR__ . '/../includes/branding_preview.php'; } ?>
 </body>
 </html>

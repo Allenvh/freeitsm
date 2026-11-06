@@ -1,0 +1,716 @@
+<?php
+/** Native evidence metadata, without exposing protected storage paths. */
+function apiSerializeChangeAttachment(array $row): array {
+    return [
+        'id'=>(int)$row['id'], 'change_id'=>(int)$row['change_id'],
+        'file_name'=>$row['file_name'], 'file_size'=>$row['file_size']===null ? null : (int)$row['file_size'],
+        'file_type'=>$row['file_type'], 'sha256'=>$row['sha256'],
+        'uploaded_by_id'=>$row['uploaded_by_id']===null ? null : (int)$row['uploaded_by_id'],
+        'uploaded_at'=>apiIsoDate($row['uploaded_datetime']), 'client_reference'=>$row['client_reference'],
+        'content_url'=>'/api/v1/changes/' . (int)$row['change_id'] . '/attachments/' . (int)$row['id'] . '/content',
+    ];
+}
+
+function apiChangeAttachmentsList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn, $apiKey, $params[0]);
+    // ?client_reference= answers "did my upload arrive?" without sending the file again (#194 design).
+    $ref = isset($_GET['client_reference']) && is_string($_GET['client_reference']) ? $_GET['client_reference'] : null;
+    $stmt=$conn->prepare('SELECT * FROM change_attachments WHERE change_id=?' . ($ref !== null ? ' AND client_reference=?' : '') . ' ORDER BY id');
+    $stmt->execute($ref !== null ? [$params[0], $ref] : [$params[0]]);
+    apiRespond(array_map('apiSerializeChangeAttachment', $stmt->fetchAll(PDO::FETCH_ASSOC)));
+}
+
+function apiChangeAttachmentsCreate(PDO $conn, array $apiKey, array $params, array $body): void {
+    // Route permission is deliberately independent of changes.update/CAB powers.
+    apiLoadChange($conn, $apiKey, $params[0]);
+    if (!isset($_FILES['file'])) { apiError(422, 'missing_file', 'Send a multipart/form-data file part named file.'); }
+    if (isset($_POST['client_reference']) && !is_string($_POST['client_reference'])) {
+        apiError(422,'invalid_field','client_reference must be a string.');
+    }
+    try {
+        $result=ChangesService::uploadAttachment($conn,ActorContext::fromApiKey($apiKey),$params[0],
+            $_FILES['file'],$_POST['client_reference'] ?? null);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    $stmt=$conn->prepare('SELECT * FROM change_attachments WHERE id=?'); $stmt->execute([$result['id']]);
+    $attachment=apiSerializeChangeAttachment($stmt->fetch(PDO::FETCH_ASSOC));
+    if ($result['replayed']) { apiRespond($attachment, 200); }
+    apiRespond($attachment, 201);
+}
+
+function apiChangeAttachmentContent(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn,$apiKey,$params[0]);
+    $stmt=$conn->prepare('SELECT file_path,file_name FROM change_attachments WHERE id=? AND change_id=?');
+    $stmt->execute([$params[1],$params[0]]); $row=$stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) { apiError(404,'not_found','Attachment not found.'); }
+    $root=realpath(dirname(__DIR__,3) . '/change-management/attachments');
+    $path=$root ? realpath($root . '/' . $row['file_path']) : false;
+    if (!$path || !str_starts_with($path,$root . DIRECTORY_SEPARATOR) || !is_file($path)) {
+        apiError(404,'not_found','Attachment file not found.');
+    }
+    $name=str_replace(['"',"\r","\n"],'',$row['file_name']) ?: 'attachment';
+    header('Content-Type: application/octet-stream');
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Disposition: attachment; filename="' . $name . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+    header('Content-Length: ' . filesize($path)); header('Cache-Control: private, no-store');
+    readfile($path); exit;
+}
+
+/**
+ * FreeITSM REST API v1 — changes resource (Change Management).
+ *
+ * Mirrors the module's internal endpoints so a change touched via the API is
+ * indistinguishable from one touched in the UI:
+ *   - create/update mirror api/change-management/save.php: per-field audit
+ *     with the SAME human field labels ('Title', 'Status', 'Work Start', …),
+ *     display NAMES for lookups, '(empty)' placeholders, 200-char truncation,
+ *     action_type 'status_change' for status else 'field_change', longtext
+ *     bodies deliberately NOT audited, and the change.approved workflow event
+ *     on a genuine transition into Approved.
+ *   - risk is computed server-side exactly like the UI, under the change's risk
+ *     policy (#246): score = likelihood × impact, the result from the policy's
+ *     matrix. The built-in 5 x 5 bands Low ≤4 / Medium ≤9 / High ≤15 /
+ *     Very High ≤20 / Critical. GET /change-risk-policy returns the policy in use.
+ *   - CAB voting mirrors submit_cab_vote.php: the key's acts-as analyst must
+ *     be an un-voted member; any required Reject sends the change back to
+ *     Draft; the all/majority threshold on required members auto-approves
+ *     (with approval_datetime + audit + workflow dispatch).
+ *   - comments are append + delete (no edit), always internal — like the UI.
+ *   - DELETE removes the change, its attachment files, and cascades children.
+ *
+ * Changes ARE company-scoped (changes.tenant_id, Phase 3), so the key's company
+ * scope restricts every list + by-id read/write (apiKeyTenantFilter on the list,
+ * apiKeyCanAccessTenantRow via apiLoadChange). A change outside scope is a 404;
+ * NULL tenant_id normalises to the Default company. Invisible at N=1. CHG-####
+ * references are derived from the id, exactly as the UI renders them.
+ *
+ * The WRITES (create / update / delete / comments / CAB roster + vote) are
+ * delegated to ChangesService — the same rules the UI's
+ * api/change-management/*.php endpoints now call. The reads, serialisers, list
+ * filters, CAB roster read, and reference lookups below are API-only and stay
+ * here. (ChangesService requires the workflow engine for change.approved.)
+ */
+
+require_once dirname(__DIR__, 3) . '/includes/service_context.php';
+require_once dirname(__DIR__, 3) . '/includes/services/changes.php';
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The display reference of a change, such as CHG-0042.
+ *
+ * @param int $id  the changes row id
+ */
+function apiChangeNumber(int $id): string {
+    return 'CHG-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
+}
+
+/**
+ * The SELECT for changes, with the names of the type, status, priority, impact,
+ * category, the people involved and the company.
+ */
+function apiChangeSelect(): string {
+    return "SELECT c.*,
+                   ct.name AS type_name,
+                   cs.name AS status_name, cs.stage AS status_stage, cs.is_closed AS status_is_closed,
+                   cp.name AS priority_name,
+                   ci.name AS impact_name,
+                   cc.name AS category_name,
+                   rq.full_name AS requester_name,
+                   asg.full_name AS assigned_to_name,
+                   ap.full_name AS approver_name,
+                   cb.full_name AS created_by_name,
+                   tn.name AS company_name
+            FROM changes c
+            LEFT JOIN change_types      ct  ON ct.id = c.change_type_id
+            LEFT JOIN change_statuses   cs  ON cs.id = c.status_id
+            LEFT JOIN change_priorities cp  ON cp.id = c.priority_id
+            LEFT JOIN change_impacts    ci  ON ci.id = c.impact_id
+            LEFT JOIN change_categories cc  ON cc.id = c.category_id
+            LEFT JOIN analysts          rq  ON rq.id = c.requester_id
+            LEFT JOIN analysts          asg ON asg.id = c.assigned_to_id
+            LEFT JOIN analysts          ap  ON ap.id = c.approver_id
+            LEFT JOIN analysts          cb  ON cb.id = c.created_by_id
+            LEFT JOIN tenants           tn  ON tn.id = c.tenant_id";
+}
+
+/**
+ * Summary shape (lists). Detail adds the longtext bodies, PIR, attachments, links.
+ *
+ * @param array $r  the changes row as apiChangeSelect() loads it, with the lookup and people names
+ */
+function apiSerializeChange(array $r): array {
+    $rel = function ($id, $name, array $extra = []) {
+        return $id === null ? null : array_merge(['id' => (int)$id, 'name' => $name], $extra);
+    };
+    $category = null;
+    if ($r['category_id'] !== null) {
+        $category = ['id' => (int)$r['category_id'], 'name' => $r['category_name']];
+    } elseif ($r['category'] !== null && $r['category'] !== '') {
+        $category = ['id' => null, 'name' => $r['category']]; // legacy free-text category
+    }
+    return [
+        'id'            => (int)$r['id'],
+        'change_number' => apiChangeNumber((int)$r['id']),
+        'company'       => $rel($r['tenant_id'], $r['company_name']),
+        'title'         => $r['title'],
+        'change_type'   => $rel($r['change_type_id'], $r['type_name']),
+        // stage (#180) is what approvals go by - a status can be renamed, its stage cannot drift.
+        'status'        => $rel($r['status_id'], $r['status_name'], ['is_closed' => (bool)($r['status_is_closed'] ?? false), 'stage' => $r['status_stage'] ?? null]),
+        'priority'      => $rel($r['priority_id'], $r['priority_name']),
+        'impact'        => $rel($r['impact_id'], $r['impact_name']),
+        'category'      => $category,
+        'requester'     => $rel($r['requester_id'], $r['requester_name']),
+        'assigned_to'   => $rel($r['assigned_to_id'], $r['assigned_to_name']),
+        'approver'      => $rel($r['approver_id'], $r['approver_name']),
+        'approval_at'   => apiIsoDate($r['approval_datetime']),
+        'cab'           => [
+            'required'      => (bool)$r['cab_required'],
+            'approval_type' => $r['cab_approval_type'],
+        ],
+        'risk'          => [
+            'likelihood' => $r['risk_likelihood'] !== null ? (int)$r['risk_likelihood'] : null,
+            'impact'     => $r['risk_impact_score'] !== null ? (int)$r['risk_impact_score'] : null,
+            'score'      => $r['risk_score'] !== null ? (int)$r['risk_score'] : null,
+            'level'      => $r['risk_level'],
+            'policy'     => apiChangeRiskPolicyRef($r),
+        ],
+        'schedule'      => [
+            'work_start_at'   => apiIsoDate($r['work_start_datetime']),
+            'work_end_at'     => apiIsoDate($r['work_end_datetime']),
+            'outage_start_at' => apiIsoDate($r['outage_start_datetime']),
+            'outage_end_at'   => apiIsoDate($r['outage_end_datetime']),
+        ],
+        'created_by'    => $rel($r['created_by_id'], $r['created_by_name']),
+        'created_at'    => apiIsoDate($r['created_datetime']),
+        'modified_at'   => apiIsoDate($r['modified_datetime']),
+    ];
+}
+
+/**
+ * Loads one change row (apiChangeSelect), or answers 404 and stops - including for a
+ * change in a company the key cannot reach.
+ *
+ * @param int $changeId  the changes id
+ */
+function apiLoadChange(PDO $conn, array $apiKey, int $changeId): array {
+    // Company isolation: a change outside the key's scope is "not found".
+    if (!apiKeyCanAccessTenantRow($conn, $apiKey, 'changes', $changeId)) {
+        apiError(404, 'not_found', 'Change not found.');
+    }
+    $stmt = $conn->prepare(apiChangeSelect() . " WHERE c.id = ?");
+    $stmt->execute([$changeId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        apiError(404, 'not_found', 'Change not found.');
+    }
+    return $row;
+}
+
+// The change audit-write, risk banding, lookup resolution/defaults, 1-5 risk
+// validation, and the change.approved dispatch now live in ChangesService
+// (includes/services/changes.php) — the single home shared with the UI's
+// api/change-management/*.php endpoints.
+
+// ---------------------------------------------------------------------------
+// GET /changes
+// ---------------------------------------------------------------------------
+function apiChangesList(PDO $conn, array $apiKey, array $params, array $body): void {
+    $where = ['1=1'];
+    $args  = [];
+
+    // Optional explicit company filter (must be within the key's scope).
+    if (isset($_GET['company_id']) && $_GET['company_id'] !== '') {
+        $cid = (int)$_GET['company_id'];
+        if (!apiKeyCanAccessTenant($conn, $apiKey, $cid)) {
+            apiError(403, 'forbidden', 'This API key is not scoped to that company.');
+        }
+        if ($cid === getDefaultTenantId($conn)) {
+            $where[] = '(c.tenant_id = ? OR c.tenant_id IS NULL)';
+        } else {
+            $where[] = 'c.tenant_id = ?';
+        }
+        $args[] = $cid;
+    }
+
+    $state = strtolower(trim($_GET['state'] ?? 'all'));
+    if ($state === 'open')   $where[] = "(cs.is_closed IS NULL OR cs.is_closed = 0)";
+    if ($state === 'closed') $where[] = "cs.is_closed = 1";
+
+    foreach ([
+        'status_id'      => 'c.status_id',
+        'change_type_id' => 'c.change_type_id',
+        'priority_id'    => 'c.priority_id',
+        'impact_id'      => 'c.impact_id',
+        'category_id'    => 'c.category_id',
+        'requester_id'   => 'c.requester_id',
+        'assigned_to_id' => 'c.assigned_to_id',
+        'approver_id'    => 'c.approver_id',
+    ] as $param => $col) {
+        if (isset($_GET[$param]) && $_GET[$param] !== '') {
+            $where[] = "$col = ?";
+            $args[]  = (int)$_GET[$param];
+        }
+    }
+    foreach ([
+        'status'      => 'cs.name',
+        'change_type' => 'ct.name',
+        'priority'    => 'cp.name',
+        'impact'      => 'ci.name',
+        'risk_level'  => 'c.risk_level',
+    ] as $param => $col) {
+        if (isset($_GET[$param]) && $_GET[$param] !== '') {
+            $where[] = "$col = ?";
+            $args[]  = trim($_GET[$param]);
+        }
+    }
+    if (isset($_GET['cab_required']) && $_GET['cab_required'] !== '') {
+        $where[] = 'c.cab_required = ?';
+        $args[]  = $_GET['cab_required'] === 'true' ? 1 : 0;
+    }
+    if (isset($_GET['q']) && trim($_GET['q']) !== '') {
+        $q = trim($_GET['q']);
+        // "CHG-0042" (or "chg42") finds the change by its reference.
+        if (preg_match('/^chg-?0*(\d+)$/i', $q, $m)) {
+            $where[] = '(c.title LIKE ? OR c.id = ?)';
+            $args[]  = '%' . $q . '%';
+            $args[]  = (int)$m[1];
+        } else {
+            $where[] = 'c.title LIKE ?';
+            $args[]  = '%' . $q . '%';
+        }
+    }
+    foreach ([
+        'created_since'   => ['c.created_datetime',    '>='],
+        'modified_since'  => ['c.modified_datetime',   '>='],
+        'work_start_from' => ['c.work_start_datetime', '>='],
+        'work_start_to'   => ['c.work_start_datetime', '<'],
+    ] as $param => [$col, $op]) {
+        if (isset($_GET[$param]) && $_GET[$param] !== '') {
+            $where[] = "$col $op ?";
+            $args[]  = apiParseDate($_GET[$param], $param);
+        }
+    }
+
+    $sortable = [
+        'id' => 'c.id', 'created_at' => 'c.created_datetime', 'modified_at' => 'c.modified_datetime',
+        'title' => 'c.title', 'work_start_at' => 'c.work_start_datetime', 'risk_score' => 'c.risk_score',
+        'priority' => 'c.priority_id', 'status' => 'c.status_id',
+    ];
+    $sortParam = trim($_GET['sort'] ?? '-created_at');
+    $desc = strncmp($sortParam, '-', 1) === 0;
+    $sortKey = ltrim($sortParam, '-');
+    if (!isset($sortable[$sortKey])) {
+        apiError(400, 'invalid_parameter', "Unknown sort field '{$sortKey}'. Sortable: " . implode(', ', array_keys($sortable)));
+    }
+    $orderSql = $sortable[$sortKey] . ($desc ? ' DESC' : ' ASC');
+
+    [$page, $perPage, $offset] = apiPagination();
+
+    // Company scope (the key's accessible companies; Default also owns NULL). No-op at N=1.
+    [$scopeSql, $scopeArgs] = apiKeyTenantFilter($conn, $apiKey, 'c');
+    $whereSql = implode(' AND ', $where) . $scopeSql;
+    $args = array_merge($args, $scopeArgs);
+
+    $countStmt = $conn->prepare(
+        "SELECT COUNT(*) FROM changes c
+         LEFT JOIN change_statuses cs ON cs.id = c.status_id
+         LEFT JOIN change_types ct ON ct.id = c.change_type_id
+         LEFT JOIN change_priorities cp ON cp.id = c.priority_id
+         LEFT JOIN change_impacts ci ON ci.id = c.impact_id
+         WHERE $whereSql"
+    );
+    $countStmt->execute($args);
+    $total = (int)$countStmt->fetchColumn();
+
+    $stmt = $conn->prepare(apiChangeSelect() . " WHERE $whereSql ORDER BY $orderSql LIMIT $perPage OFFSET $offset");
+    $stmt->execute($args);
+    $changes = array_map('apiSerializeChange', $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+    apiRespond($changes, 200, [
+        'page'        => $page,
+        'per_page'    => $perPage,
+        'total'       => $total,
+        'total_pages' => (int)ceil($total / $perPage),
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// GET /changes/{id} — detail incl. bodies, PIR, attachments, linked problems
+// ---------------------------------------------------------------------------
+function apiChangesGet(PDO $conn, array $apiKey, array $params, array $body): void {
+    $r = apiLoadChange($conn, $apiKey, $params[0]);
+    $change = apiSerializeChange($r);
+
+    $change['description']        = $r['description'];
+    $change['reason_for_change']  = $r['reason_for_change'];
+    $change['risk']['evaluation'] = $r['risk_evaluation'];
+    $change['test_plan']          = $r['test_plan'];
+    $change['rollback_plan']      = $r['rollback_plan'];
+    // The approval (#180): the current round, and current_version - the fingerprint a
+    // vote or decision must send back as content_hash, so it names what was read.
+    require_once dirname(__DIR__, 3) . '/includes/changes/approvals.php';
+    $raw = $conn->prepare("SELECT * FROM changes WHERE id = ?");
+    $raw->execute([(int)$params[0]]);
+    $change['approval'] = changeApprovalLiveState($conn, $raw->fetch(PDO::FETCH_ASSOC), changeApprovalSettings($conn));
+    $change['pir'] = [
+        'review'          => $r['post_implementation_review'],
+        'was_successful'  => $r['pir_was_successful'] === null ? null : (bool)$r['pir_was_successful'],
+        'actual_start_at' => apiIsoDate($r['pir_actual_start']),
+        'actual_end_at'   => apiIsoDate($r['pir_actual_end']),
+        'lessons_learned' => $r['pir_lessons_learned'],
+        'follow_up'       => $r['pir_follow_up'],
+    ];
+
+    $att = $conn->prepare(
+        "SELECT id, file_name, file_size, file_type, uploaded_datetime
+         FROM change_attachments WHERE change_id = ? ORDER BY uploaded_datetime ASC"
+    );
+    $att->execute([$params[0]]);
+    $change['attachments'] = array_map(function ($a) {
+        return [
+            'id'          => (int)$a['id'],
+            'file_name'   => $a['file_name'],
+            'file_size'   => $a['file_size'] !== null ? (int)$a['file_size'] : null,
+            'file_type'   => $a['file_type'],
+            'uploaded_at' => apiIsoDate($a['uploaded_datetime']),
+        ];
+    }, $att->fetchAll(PDO::FETCH_ASSOC));
+
+    // Problems this change fixes (linked from the problem side; read both ways).
+    $change['linked_problems'] = [];
+    try {
+        $pr = $conn->prepare(
+            "SELECT p.id, p.problem_number, p.title, cr.relation_type
+             FROM change_relations cr
+             JOIN problems p ON p.id = cr.related_id
+             WHERE cr.change_id = ? AND cr.related_type = 'problem'
+             ORDER BY p.created_datetime DESC"
+        );
+        $pr->execute([$params[0]]);
+        $change['linked_problems'] = array_map(function ($p) {
+            return [
+                'id'             => (int)$p['id'],
+                'problem_number' => $p['problem_number'],
+                'title'          => $p['title'],
+                'relation_type'  => $p['relation_type'],
+            ];
+        }, $pr->fetchAll(PDO::FETCH_ASSOC));
+    } catch (Exception $e) { /* problems module absent */ }
+
+    apiRespond($change);
+}
+
+// ---------------------------------------------------------------------------
+// POST /changes
+// ---------------------------------------------------------------------------
+function apiChangesCreate(PDO $conn, array $apiKey, array $params, array $body): void {
+    // Company is auth-adjacent (like the acting analyst): an explicit company_id
+    // (validated + within the key's scope) or the key's default company.
+    if (isset($body['company_id']) && $body['company_id'] !== '' && $body['company_id'] !== null) {
+        $tenantId = (int)$body['company_id'];
+        if (!getTenantById($conn, $tenantId)) {
+            apiError(422, 'invalid_field', "Unknown company id: {$tenantId}");
+        }
+        if (!apiKeyCanAccessTenant($conn, $apiKey, $tenantId)) {
+            apiError(403, 'forbidden', 'This API key is not scoped to that company.');
+        }
+    } else {
+        $tenantId = apiKeyDefaultTenantId($conn, $apiKey);
+    }
+    try {
+        $changeId = ChangesService::createChange($conn, ActorContext::fromApiKey($apiKey), $tenantId, $body);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond(apiSerializeChange(apiLoadChange($conn, $apiKey, $changeId)), 201);
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /changes/{id}
+// ---------------------------------------------------------------------------
+function apiChangesUpdate(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        ChangesService::updateChange($conn, ActorContext::fromApiKey($apiKey), (int)$params[0], $body);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond(apiSerializeChange(apiLoadChange($conn, $apiKey, $params[0])));
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /changes/{id} — permanent; removes attachment files, cascades children
+// ---------------------------------------------------------------------------
+function apiChangesDelete(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        ChangesService::deleteChange($conn, ActorContext::fromApiKey($apiKey), (int)$params[0]);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond(['id' => $params[0], 'deleted' => true]);
+}
+
+// ---------------------------------------------------------------------------
+// Comments — append + delete (no edit), always internal, like the UI
+// ---------------------------------------------------------------------------
+function apiChangeCommentsList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn, $apiKey, $params[0]);
+    $stmt = $conn->prepare(
+        "SELECT cm.id, cm.comment_text, cm.created_datetime, cm.analyst_id, a.full_name AS analyst_name
+         FROM change_comments cm LEFT JOIN analysts a ON a.id = cm.analyst_id
+         WHERE cm.change_id = ? ORDER BY cm.created_datetime DESC, cm.id DESC"
+    );
+    $stmt->execute([$params[0]]);
+    apiRespond(array_map(function ($c) {
+        return [
+            'id'         => (int)$c['id'],
+            'text'       => $c['comment_text'],
+            'analyst'    => $c['analyst_id'] === null ? null : ['id' => (int)$c['analyst_id'], 'name' => $c['analyst_name']],
+            'created_at' => apiIsoDate($c['created_datetime']),
+        ];
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC)));
+}
+
+/** POST /changes/{id}/comments - adds a comment to the change through ChangesService. */
+function apiChangeCommentsCreate(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        $commentId = ChangesService::createComment($conn, ActorContext::fromApiKey($apiKey), (int)$params[0], $body);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond(['id' => $commentId, 'change_id' => $params[0], 'text' => trim((string)($body['text'] ?? ''))], 201);
+}
+
+/** DELETE /changes/{id}/comments/{commentId} - deletes a comment through ChangesService. */
+function apiChangeCommentsDelete(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        ChangesService::deleteComment($conn, ActorContext::fromApiKey($apiKey), (int)$params[1], (int)$params[0]);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond(['id' => $params[1], 'deleted' => true]);
+}
+
+// ---------------------------------------------------------------------------
+// GET /changes/{id}/audit
+// ---------------------------------------------------------------------------
+function apiChangeAuditList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn, $apiKey, $params[0]);
+    $stmt = $conn->prepare(
+        "SELECT au.id, au.action_type, au.field_name, au.old_value, au.new_value, au.created_datetime,
+                au.analyst_id, a.full_name AS analyst_name
+         FROM change_audit au LEFT JOIN analysts a ON a.id = au.analyst_id
+         WHERE au.change_id = ? ORDER BY au.created_datetime DESC, au.id DESC"
+    );
+    $stmt->execute([$params[0]]);
+    apiRespond(array_map(function ($e) {
+        return [
+            'id'         => (int)$e['id'],
+            'action'     => $e['action_type'],
+            'field'      => $e['field_name'],
+            'old_value'  => $e['old_value'],
+            'new_value'  => $e['new_value'],
+            'analyst'    => $e['analyst_id'] === null ? null : ['id' => (int)$e['analyst_id'], 'name' => $e['analyst_name']],
+            'created_at' => apiIsoDate($e['created_datetime']),
+        ];
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC)));
+}
+
+// ---------------------------------------------------------------------------
+// CAB — roster + votes
+// ---------------------------------------------------------------------------
+function apiChangeCabGet(PDO $conn, array $apiKey, array $params, array $body): void {
+    $change = apiLoadChange($conn, $apiKey, $params[0]);
+    $stmt = $conn->prepare(
+        "SELECT m.analyst_id, a.full_name, m.is_required, m.vote, m.vote_comment, m.vote_datetime
+         FROM change_cab_members m LEFT JOIN analysts a ON a.id = m.analyst_id
+         WHERE m.change_id = ? ORDER BY a.full_name"
+    );
+    $stmt->execute([$params[0]]);
+    $members = array_map(function ($m) {
+        return [
+            'analyst_id'  => (int)$m['analyst_id'],
+            'name'        => $m['full_name'],
+            'is_required' => (bool)$m['is_required'],
+            'vote'        => $m['vote'],
+            'vote_comment' => $m['vote_comment'],
+            'voted_at'    => apiIsoDate($m['vote_datetime']),
+        ];
+    }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+    $required = array_values(array_filter($members, fn($m) => $m['is_required']));
+    apiRespond([
+        'cab_required'  => (bool)$change['cab_required'],
+        'approval_type' => $change['cab_approval_type'],
+        'members'       => $members,
+        'progress'      => [
+            'required_total'    => count($required),
+            'required_approved' => count(array_filter($required, fn($m) => $m['vote'] === 'Approve')),
+            'required_rejected' => count(array_filter($required, fn($m) => $m['vote'] === 'Reject')),
+        ],
+    ]);
+}
+
+/** POST /changes/{id}/cab — replace the roster (diff-sync + audit, like save_cab_members.php). */
+function apiChangeCabSave(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        ChangesService::saveCab($conn, ActorContext::fromApiKey($apiKey), (int)$params[0], $body['members'] ?? null);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiChangeCabGet($conn, $apiKey, $params, $body);
+}
+
+/**
+ * GET /changes/{id}/approvals - every approval round of a change (#180), oldest first,
+ * each with its route, state, who decided and when, its snapshot (the material values
+ * and, for long text, the revision ids it was given) and every vote, with whether it
+ * counted and whether it was cast against the current version.
+ */
+function apiChangeApprovalsList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn, $apiKey, (int)$params[0]);   // 404 outside the key's companies
+    require_once dirname(__DIR__, 3) . '/includes/changes/approvals.php';
+    apiRespond(changeApprovalRounds($conn, (int)$params[0]));
+}
+
+/**
+ * POST /changes/{id}/approval/decide - the named approver approves or rejects, as the
+ * analyst this key acts as. approval_id + content_hash (from GET /changes/{id}) name
+ * what was read; required where the approval rules refuse out-of-date decisions.
+ */
+function apiChangeApprovalDecide(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        $res = ChangesService::decideApproval($conn, ActorContext::fromApiKey($apiKey), (int)$params[0], $body);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond($res, 201);
+}
+
+/** POST /changes/{id}/cancel - to the first Stopped-stage status, keeping every record (#180). */
+function apiChangesCancel(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        ChangesService::cancelChange($conn, ActorContext::fromApiKey($apiKey), (int)$params[0], $body);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiChangesGet($conn, $apiKey, $params, $body);
+}
+
+/**
+ * GET /changes/{id}/revisions - every saved version of the long-text fields (#180),
+ * newest first, WITHOUT content (?field=test_plan to filter).
+ */
+function apiChangeRevisionsList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn, $apiKey, (int)$params[0]);
+    require_once dirname(__DIR__, 3) . '/includes/changes/revisions.php';
+    $field = isset($_GET['field']) && $_GET['field'] !== '' ? (string)$_GET['field'] : null;
+    if ($field !== null && !isset(ChangeRevisions::FIELDS[$field]) && $field !== 'comment') {
+        apiError(400, 'invalid_parameter', "Unknown field: {$field}");
+    }
+    $out = array_map(function ($r) {
+        $r['created_at'] = apiIsoDate($r['created_at']);
+        return $r;
+    }, ChangeRevisions::listFor($conn, (int)$params[0], $field));
+    apiRespond($out);
+}
+
+/** GET /changes/{id}/revisions/{revision_id} - one revision with its full content. */
+function apiChangeRevisionGet(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiLoadChange($conn, $apiKey, (int)$params[0]);
+    require_once dirname(__DIR__, 3) . '/includes/changes/revisions.php';
+    $rev = ChangeRevisions::get($conn, (int)$params[0], (int)$params[1]);
+    if ($rev === null) {
+        apiError(404, 'not_found', 'Revision not found.');
+    }
+    $rev['created_at'] = apiIsoDate($rev['created_at']);
+    apiRespond($rev);
+}
+
+/** POST /changes/{id}/cab/vote — the key's acts-as analyst votes; mirrors submit_cab_vote.php. */
+function apiChangeCabVote(PDO $conn, array $apiKey, array $params, array $body): void {
+    try {
+        $res = ChangesService::voteCab($conn, ActorContext::fromApiKey($apiKey), (int)$params[0], $body);
+    } catch (ServiceError $e) { apiFailFromService($e); }
+    apiRespond($res, 201);
+}
+
+// ---------------------------------------------------------------------------
+// Reference lookups
+// ---------------------------------------------------------------------------
+// @param string $table  the change lookup table to list (change_statuses, change_types ...) - fixed by the caller, never input
+// @param bool $hasIsClosed  true to include the table's is_closed column (change_statuses only)
+function apiChangeLookupList(PDO $conn, string $table, bool $hasIsClosed = false): void {
+    $cols = 'id, name, colour, is_default, is_active' . ($hasIsClosed ? ', is_closed, stage' : '');
+    $rows = $conn->query("SELECT $cols FROM `$table` ORDER BY display_order, name")->fetchAll(PDO::FETCH_ASSOC);
+    apiRespond(array_map(function ($r) use ($hasIsClosed) {
+        $out = [
+            'id'         => (int)$r['id'],
+            'name'       => $r['name'],
+            'colour'     => $r['colour'],
+            'is_default' => (bool)$r['is_default'],
+            'is_active'  => (bool)$r['is_active'],
+        ];
+        if ($hasIsClosed) {
+            $out['is_closed'] = (bool)$r['is_closed'];
+            $out['stage']     = $r['stage'];   // #180: draft|awaiting|approved|implementing|done|stopped, null = not classified
+        }
+        return $out;
+    }, $rows));
+}
+
+/** GET /change-statuses - the change statuses, with is_closed. */
+function apiChangeStatusesList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiChangeLookupList($conn, 'change_statuses', true);
+}
+/** GET /change-types - the change types. */
+function apiChangeTypesList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiChangeLookupList($conn, 'change_types');
+}
+/** GET /change-priorities - the change priorities. */
+function apiChangePrioritiesList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiChangeLookupList($conn, 'change_priorities');
+}
+/** GET /change-impacts - the change impact levels. */
+function apiChangeImpactsList(PDO $conn, array $apiKey, array $params, array $body): void {
+    apiChangeLookupList($conn, 'change_impacts');
+}
+/**
+ * The risk policy a change's ratings were given under (#246), for its 'risk' block:
+ * which version, its name and how many levels each axis has. Null when unrated.
+ *
+ * @param array $r  the changes row
+ */
+function apiChangeRiskPolicyRef(array $r): ?array {
+    // The serializer has no connection of its own; one is opened once per request, and
+    // ChangeRiskPolicy caches each version, so a list of 100 changes costs one lookup each.
+    static $conn = null;
+    $conn = $conn ?? connectToDatabase();
+    if ($r['risk_likelihood'] === null && $r['risk_impact_score'] === null) return null;
+    require_once __DIR__ . '/../../../includes/changes/risk_policy.php';
+    $vid = isset($r['risk_policy_version_id']) && $r['risk_policy_version_id'] !== null ? (int)$r['risk_policy_version_id'] : null;
+    $c = ChangeRiskPolicy::content($conn, $vid);
+    return ['version_id' => $vid, 'builtin' => !empty($c['builtin']), 'name' => ChangeRiskPolicy::describeVersion($conn, $vid),
+            'levels' => ['likelihood' => count($c['likelihood'] ?? []), 'impact' => count($c['impact'] ?? [])]];
+}
+
+/**
+ * GET /change-risk-policy - the risk policy new assessments use (#246): its levels with
+ * their criteria, its results with their colours, and the matrix, so an integration can
+ * offer the right choices. The built-in 5 x 5 when none has been set.
+ */
+function apiChangeRiskPolicyGet(PDO $conn, array $apiKey, array $params, array $body): void {
+    require_once __DIR__ . '/../../../includes/changes/risk_policy.php';
+    $cur = ChangeRiskPolicy::current($conn, null);
+    $c = $cur['content'];
+    $lv = fn(string $axis) => array_map(fn($x, $n) => ['value' => $n + 1, 'label' => $x['label'], 'criteria' => ($x['criteria'] ?? '') !== '' ? $x['criteria'] : null],
+                                          $c[$axis], array_keys($c[$axis]));
+    apiRespond([
+        'version_id' => $cur['version_id'],
+        'version'    => $cur['version_no'],
+        'builtin'    => !empty($c['builtin']),
+        'name'       => ChangeRiskPolicy::describe($c, $cur['version_no']),
+        'likelihood' => $lv('likelihood'),
+        'impact'     => $lv('impact'),
+        'results'    => array_map(fn($x) => ['label' => $x['label'], 'colour' => $x['colour']], $c['results']),
+        'matrix'     => $c['matrix'],
+    ]);
+}
+
+/** GET /change-categories - the change categories, in display order. */
+function apiChangeCategoriesList(PDO $conn, array $apiKey, array $params, array $body): void {
+    $rows = $conn->query("SELECT id, name, description, is_active FROM change_categories ORDER BY display_order, name")->fetchAll(PDO::FETCH_ASSOC);
+    apiRespond(array_map(function ($r) {
+        return [
+            'id'          => (int)$r['id'],
+            'name'        => $r['name'],
+            'description' => $r['description'],
+            'is_active'   => (bool)$r['is_active'],
+        ];
+    }, $rows));
+}

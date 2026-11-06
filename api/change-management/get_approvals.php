@@ -13,6 +13,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('changes');
 
 $analystId = $_SESSION['analyst_id'];
 $filter = $_GET['filter'] ?? 'all';
@@ -20,7 +21,8 @@ $filter = $_GET['filter'] ?? 'all';
 try {
     $conn = connectToDatabase();
 
-    // Base query for Pending Approval changes
+    // Changes awaiting approval: by the status's STAGE, never its name, so renaming
+    // Pending Approval does not empty this page (includes/changes/approvals.php).
     $changeJoins = "LEFT JOIN change_types      ct ON ct.id = c.change_type_id
                     LEFT JOIN change_statuses   cs ON cs.id = c.status_id
                     LEFT JOIN change_priorities cp ON cp.id = c.priority_id
@@ -47,7 +49,7 @@ try {
                 LEFT JOIN analysts assigned ON c.assigned_to_id = assigned.id
                 LEFT JOIN analysts requester ON c.requester_id = requester.id
                 LEFT JOIN analysts approver ON c.approver_id = approver.id
-                WHERE cs.name = 'Pending Approval'
+                WHERE cs.stage = 'awaiting'
                 ORDER BY c.created_datetime DESC";
         $params = [$analystId];
     } else {
@@ -69,7 +71,7 @@ try {
                 LEFT JOIN analysts assigned ON c.assigned_to_id = assigned.id
                 LEFT JOIN analysts requester ON c.requester_id = requester.id
                 LEFT JOIN analysts approver ON c.approver_id = approver.id
-                WHERE cs.name = 'Pending Approval'";
+                WHERE cs.stage = 'awaiting'";
 
         $params = [];
 
@@ -109,7 +111,7 @@ try {
                     SUM(CASE WHEN c.approver_id = ? THEN 1 ELSE 0 END) as cnt_assigned
                  FROM changes c
                  LEFT JOIN change_statuses cs ON cs.id = c.status_id
-                 WHERE cs.name = 'Pending Approval'";
+                 WHERE cs.stage = 'awaiting'";
     $countStmt = $conn->prepare($countSql);
     $countStmt->execute([$analystId, $analystId]);
     $countRow = $countStmt->fetch(PDO::FETCH_ASSOC);
@@ -118,7 +120,7 @@ try {
     $cabCountSql = "SELECT COUNT(*) FROM change_cab_members m
                     INNER JOIN changes c ON c.id = m.change_id
                     LEFT JOIN change_statuses cs ON cs.id = c.status_id
-                    WHERE m.analyst_id = ? AND m.vote IS NULL AND cs.name = 'Pending Approval'";
+                    WHERE m.analyst_id = ? AND m.vote IS NULL AND cs.stage = 'awaiting'";
     $cabCountStmt = $conn->prepare($cabCountSql);
     $cabCountStmt->execute([$analystId]);
     $cabCount = (int)$cabCountStmt->fetchColumn();
