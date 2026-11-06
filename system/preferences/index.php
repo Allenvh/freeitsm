@@ -5,12 +5,22 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/theme.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/timezone.php';
+require_once '../../includes/money.php';
+require_once '../../includes/ticket_workspace.php';
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'preferences';
+require_once __DIR__ . '/../includes/page_gate.php';
 $path_prefix = '../../';
-$translationNamespaces = ['common', 'system'];
+// ⚠️ 'watchtower' is here for ONE section — the "Mine" view's handling of cards
+// with no owner (#58). The setting is a personal preference, so it lives on this
+// screen rather than in Watchtower's own admin settings; its strings still
+// belong to that module. Without the namespace the labels render as raw keys.
+$translationNamespaces = ['common', 'system', 'watchtower'];
 $locales = I18n::getSupportedLocales();
 $currentLocale = I18n::getLocale();
 
@@ -19,8 +29,59 @@ $currentLocale = I18n::getLocale();
 // flicker we used to get from initial localStorage / default values
 // being replaced by AJAX-fetched values a moment later.
 $prefDefaults = [
+    // Display timezone. Defaults to the server zone (config.php) until the
+    // analyst picks one; every date across the app is stored UTC and shown
+    // in this zone (see includes/timezone.php).
+    'timezone'                   => date_default_timezone_get(),
+    // How a date and a time are WRITTEN, as opposed to which instant the zone
+    // above selects. '' means "follow whatever the administrator chose in
+    // System > Date and time formats" — the same idiom default_landing_page
+    // uses below, and the only value that is not itself a format key.
+    'date_format'                => '',
+    'time_format'                => '',
     'toast_position'             => 'bottom-right',
     'toast_animation'            => 'slide',
+    // Chime when a notification arrives. 'off' by default — whether a sound at
+    // your desk is welcome or infuriating is a personal answer, so it is opt-in
+    // per analyst rather than something an administrator turns on for everyone.
+    // Read on every analyst page by renderWaffleMenuJS(); played by
+    // assets/js/notification-sound.js.
+    'notification_sound'         => 'off',
+    // Desktop notifications (2.10.0): a Windows/macOS notification from the
+    // browser - in Edge, a Windows notification - for each new item in the bell,
+    // while FreeITSM is open in a tab. 'on' or ''. The browser's own permission
+    // is asked for when it is switched on. Read by renderWaffleMenuJS().
+    'desktop_notifications'      => '',
+    // Email me when a task is assigned to me (2.10.0). 'on' or ''. Read by
+    // notificationsTaskAssignedEmail() in includes/notifications_router.php.
+    'task_assigned_email'        => '',
+    // How a task opens: 'panel' is the right-hand drawer, 'modal' is a large
+    // near-full-screen window that lays the same content out in two columns.
+    // Per analyst rather than per install, because it is a working-style
+    // preference — the drawer keeps the board visible behind it, the modal gives
+    // the description and comments room to breathe.
+    'tasks_detail_view'          => 'panel',
+    'tasks_open_panel'           => 'quick',   // GH #219: the Table, Calendar and Timeline's panel
+    // Whether clicking away closes the draggable search panel (#144, asked for
+    // by mbsouth). '' — only the ✕ or Escape — because the panel is draggable:
+    // it is meant to be parked somewhere useful while you work, and a
+    // click-anywhere dismiss makes that pointless for the people who do that.
+    // Opt-in per analyst rather than per install, because which of the two you
+    // want is a working style, not a property of the service desk.
+    'search_panel_close_outside' => '',
+    // Whether the task calendar shows subtasks as well as tasks (#90). Written
+    // from two places that must agree: here, and the calendar's own Show
+    // control. '' is parent tasks only, which is what the calendar always did.
+    'tasks_calendar_subtasks'    => '',
+    // Whether the board stops listing a task's subtasks under its card once
+    // every one of them is complete. '' shows them regardless; 'on' tidies them
+    // away. Read by tasks/index.php into window.TASK_HIDE_DONE_SUBTASKS.
+    'tasks_hide_done_subtasks'   => '',
+    // GH #184: all | open | none. Unset falls back to the old key above.
+    'tasks_board_subtasks'       => '',
+    // GH #218 part B: 'on' folds an empty Checklists / Forms / Procedures / Follow-ups section to
+    // a heading in a task's Work view. '' shows them in full, as before.
+    'tasks_collapse_empty_work'  => '',
     // Left-panel visibility — one key per module that has a left panel.
     // Each module's header reads its key; module settings pages (where one
     // exists) edit the same key. Surfaced together below.
@@ -34,6 +95,25 @@ $prefDefaults = [
     'asset_management_sidebar_mode'  => 'always',
     'system_wiki_sidebar_mode'       => 'always',
     'mc_chart_fill_style'        => 'plain',
+    // Tickets inbox: what the screen does when several tickets are selected at
+    // once. Read by assets/js/inbox.js. 'summary' is the default because it puts
+    // what you are about to act on, and the actions themselves, on screen.
+    'tickets_multiselect_pane'   => 'summary',
+    // GH #218: the company New ticket pre-selects in the all-companies view. A tenant
+    // id, or '' for none. Checked against the companies the analyst can reach each
+    // time the form opens - a convenience, never an authority.
+    'tickets_new_ticket_company' => '',
+    // Use the ticket workspace (PR #211). On unless turned off, and only offered
+    // when an administrator has switched the workspace on; see
+    // ticketWorkspacePersonal() in includes/ticket_workspace.php.
+    'ticket_workspace'           => '1',
+    // Show the ticket list as Messages or as a Table (PR #213). Read by
+    // tickets/index.php; also switchable from the inbox's action row.
+    'tickets_list_layout'        => 'messages',
+    // Which front door "/" sends you to (discussion #63). Empty string means
+    // "whatever the administrator chose" — the only value that is NOT a landing
+    // key, because "follow the install default" is a real third choice here.
+    'default_landing_page'       => '',
 ];
 $prefs = $prefDefaults;
 if (isset($_SESSION['analyst_id'])) {
@@ -55,40 +135,174 @@ if (isset($_SESSION['analyst_id'])) {
         // Defaults stand
     }
 }
+// The workspace switch is offered only where it can do something: the install has
+// the workspace on, and this analyst can open Tickets at all.
+$showTicketWorkspace = false;
+if (isset($_SESSION['analyst_id'])) {
+    try {
+        $conn = connectToDatabase();
+        $showTicketWorkspace = ticketWorkspaceMode($conn) !== TicketWorkspaceMode::Off
+            && analystCanAccessModule($conn, (int)$_SESSION['analyst_id'], 'tickets');
+    } catch (Throwable $e) {
+        // Not shown
+    }
+}
+
+// The install-wide format, read separately from the per-analyst values above so
+// the "follow the install default" option can SAY what that currently is. A
+// choice you cannot see the consequence of is not really a choice.
+$installDate = DateFmt::DEFAULT_DATE;
+$installTime = DateFmt::DEFAULT_TIME;
+try {
+    $conn = $conn ?? connectToDatabase();
+    $stmt = $conn->prepare(
+        "SELECT setting_key, setting_value FROM system_settings
+         WHERE setting_key IN ('date_format','time_format')"
+    );
+    $stmt->execute();
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if ($row['setting_value'] === null || $row['setting_value'] === '') continue;
+        if ($row['setting_key'] === 'date_format' && isset(DateFmt::DATE_TEMPLATES[$row['setting_value']])) {
+            $installDate = $row['setting_value'];
+        }
+        if ($row['setting_key'] === 'time_format' && isset(DateFmt::TIME_TEMPLATES[$row['setting_value']])) {
+            $installTime = $row['setting_value'];
+        }
+    }
+} catch (Exception $e) {
+    // Built-in defaults stand
+}
+
+// One sample instant for every example on this page — a single-digit day and an
+// afternoon time are what actually tell the formats apart. Rendered through
+// DateFmt itself, so the examples cannot drift from what the app will do.
+$fmtSample = new DateTime('2026-08-05 14:30:00', new DateTimeZone(Tz::current()));
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars($currentLocale); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('system.preferences.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('system', t('system.preferences.title'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../../assets/css/subscribe.css?v=1">
     <style>
-        .prefs-container {
-            height: calc(100vh - 48px);
+        body {
+            /* System is the FIRST module whose DARK accent is a LIGHT colour (#90a4ae).
+               inbox.css renders .btn-primary/.add-btn as background:var(--accent) +
+               color:var(--on-accent) — and the global --on-accent stays WHITE in dark.
+               So pinning --accent alone would put white text on a light button. Pin
+               --on-accent too: it flips to near-black in dark. */
+            --accent: var(--sys-accent, #546e7a);
+            --accent-hover: var(--sys-accent-hover, #37474f);
+            --on-accent: var(--sys-on-accent, #fff);
+        }
+
+        /* Same shell as the other System pages (system/analysts) and the module
+           Settings pages: a flex wrapper pins the header and .settings-scroll is the
+           only scroll region, rather than a fragile `height: calc(100vh - 48px)`.
+           <body> stays unstyled so browser-extension nodes can't join the flex. */
+        .settings-shell { display: flex; flex-direction: column; height: 100vh; }
+        .settings-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
             overflow-y: auto;
-            padding: 30px;
+            width: 100%;
+            margin: 0;
+            box-sizing: border-box;
+            padding: 30px 24px 24px;
         }
+        .page-title { font-size: 22px; font-weight: 600; color: var(--text, #333); margin: 0 0 6px 0; }
+        .page-subtitle { font-size: 13px; color: var(--text-muted, #888); margin: 0 0 24px 0; line-height: 1.5; }
 
-        .prefs-card {
-            background: #fff;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            padding: 30px;
+        /* .tabs / .tab / .tab-content all come from inbox.css — .tab-content already
+           carries the card (surface, radius, shadow, 30px padding), so the panel IS
+           the card and there is no wrapper of our own. Only the first section's top
+           margin needs taming, since each panel now starts with one. */
+        .tab-content > .pref-section:first-child > h3 { margin-top: 0; }
+
+        /* My details + signatures (#80). */
+        .sig-details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 12px; }
+        .sig-details-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text, #333); }
+        .sig-details-grid input, .sig-field input[type="text"] {
+            padding: 9px 10px; border: 1px solid var(--border, #ddd); border-radius: 4px;
+            font-size: 14px; font-family: inherit;
+            background: var(--surface, #fff);
+            color: var(--text, #333);
+            box-sizing: border-box;
+            transition: border-color 0.15s, background-color 0.15s;
         }
-
-        .prefs-card h2 {
-            margin: 0 0 6px 0;
-            font-size: 20px;
-            color: #333;
+        .sig-details-grid input:focus, .sig-field input[type="text"]:focus {
+            outline: none;
+            border-color: var(--sys-accent, #546e7a);
         }
-
-        .prefs-card .subtitle {
-            margin: 0 0 30px 0;
+        .sig-details-grid input:disabled, .sig-field input[type="text"]:disabled {
+            background: var(--surface-2, #f5f5f5);
+            color: var(--text-muted, #888);
+            cursor: not-allowed;
+            border-color: var(--border, #e0e0e0);
+            opacity: 0.8;
+        }
+        .sig-details-grid label.is-disabled {
+            cursor: not-allowed;
+            opacity: 0.85;
+        }
+        .pref-managed-note {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            padding: 10px 14px;
+            border-radius: 6px;
             font-size: 13px;
-            color: #888;
+            line-height: 1.4;
+            background: var(--surface-2, rgba(84, 110, 122, 0.1));
+            color: var(--text, #333);
+            border-left: 3px solid var(--sys-accent, #546e7a);
         }
-
+        .pref-managed-note svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            stroke: var(--sys-accent, #546e7a);
+        }
+        .sig-btn { padding: 8px 16px; border-radius: 4px; border: 1px solid var(--border, #ddd); cursor: pointer; font-size: 13px; font-family: inherit; }
+        .sig-btn-primary { background: var(--accent, #2d6a4f); color: #fff; border-color: transparent; }
+        .sig-btn-secondary { background: var(--surface-2, #f1f1f1); color: var(--text, #333); }
+        .sig-btn-danger { background: var(--danger-bg, #f8d7da); color: var(--danger-text, #721c24); border-color: transparent; }
+        .sig-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .sig-empty { color: var(--text-muted, #666); font-size: 13px; padding: 10px 0; }
+        .sig-error { color: var(--danger-text, #721c24); }
+        .sig-card { border: 1px solid var(--border, #ddd); border-radius: 6px; overflow: hidden; }
+        .sig-card-head {
+            display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+            background: var(--surface-2, #f9f9f9); border-bottom: 1px solid var(--border, #ddd); font-size: 13px;
+        }
+        .sig-card-actions { margin-left: auto; display: flex; gap: 6px; }
+        .sig-default-badge {
+            font-size: 11px; padding: 2px 8px; border-radius: 10px;
+            background: var(--success-bg, #d4edda); color: var(--success-text, #155724);
+        }
+        .sig-card-body { padding: 12px; font-size: 13px; line-height: 1.5; background: var(--surface, #fff); color: var(--text, #333); }
+        .sig-editor { margin-top: 14px; padding: 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; background: var(--surface-2, #f9f9f9); }
+        .sig-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-bottom: 10px; max-width: 420px; }
+        .sig-default-row { flex-direction: row !important; align-items: center; gap: 8px; }
+        .sig-codes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
+        .sig-codes-label { font-size: 12px; color: var(--text-muted, #666); margin-right: 4px; }
+        .sig-code {
+            font-family: Consolas, Monaco, monospace; font-size: 11px; cursor: pointer;
+            padding: 3px 8px; border-radius: 10px;
+            border: 1px solid var(--border, #ddd); background: var(--surface, #fff); color: var(--text-muted, #666);
+        }
+        .sig-preview-wrap { margin-top: 10px; }
+        .sig-preview-label { font-size: 12px; color: var(--text-muted, #666); margin-bottom: 4px; }
+        .sig-preview {
+            border: 1px solid var(--border, #ddd); border-radius: 4px; padding: 12px; min-height: 60px;
+            background: #ffffff; color: #333333; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5;
+        }
+        .sig-editor-actions { display: flex; gap: 8px; margin-top: 12px; }
         .pref-section {
             margin-bottom: 32px;
         }
@@ -98,13 +312,13 @@ if (isset($_SESSION['analyst_id'])) {
         .pref-section h3 {
             margin: 0 0 6px 0;
             font-size: 15px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .pref-section p {
             margin: 0 0 16px 0;
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .position-grid {
@@ -113,8 +327,8 @@ if (isset($_SESSION['analyst_id'])) {
             gap: 4px;
             width: 192px;
             height: 128px;
-            background: #f0f0f0;
-            border: 2px solid #ddd;
+            background: var(--surface-hover, #f0f0f0);
+            border: 2px solid var(--border, #ddd);
             border-radius: 8px;
             padding: 8px;
         }
@@ -130,8 +344,8 @@ if (isset($_SESSION['analyst_id'])) {
         }
 
         .position-cell:hover { background: #d0d0d0; }
-        .position-cell.active { background: #546e7a; }
-        .position-cell.active .position-dot { background: #fff; }
+        .position-cell.active { background: var(--sys-accent, #546e7a); }
+        .position-cell.active .position-dot { background: var(--sys-on-accent, #fff); }
 
         .position-dot {
             width: 10px;
@@ -144,7 +358,7 @@ if (isset($_SESSION['analyst_id'])) {
         .anim-toggle {
             display: flex;
             gap: 0;
-            border: 2px solid #ddd;
+            border: 2px solid var(--border, #ddd);
             border-radius: 6px;
             overflow: hidden;
             width: fit-content;
@@ -154,36 +368,64 @@ if (isset($_SESSION['analyst_id'])) {
             padding: 8px 20px;
             font-size: 13px;
             font-weight: 500;
-            color: #666;
-            background: #f5f5f5;
+            color: var(--text-muted, #666);
+            background: var(--surface-3, #f5f5f5);
             cursor: pointer;
             border: none;
             transition: all 0.15s;
         }
 
-        .anim-option:not(:last-child) { border-right: 1px solid #ddd; }
+        .anim-option:not(:last-child) { border-right: 1px solid var(--border, #ddd); }
         .anim-option:hover { background: #e8e8e8; }
-        .anim-option.active { background: #546e7a; color: #fff; }
+        .anim-option.active { background: var(--sys-accent, #546e7a); color: var(--sys-on-accent, #fff); }
 
         .pref-language-select {
             font-size: 14px;
             padding: 8px 12px;
-            border: 2px solid #ddd;
+            border: 2px solid var(--border, #ddd);
             border-radius: 6px;
-            background: #fff;
+            background: var(--surface, #fff);
+            color: var(--text, #333);
             min-width: 240px;
             cursor: pointer;
         }
-        .pref-language-select:focus { outline: none; border-color: #546e7a; }
+        .pref-language-select:focus { outline: none; border-color: var(--sys-accent, #546e7a); }
 
         .pref-saving-hint {
             margin-left: 10px;
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             opacity: 0;
             transition: opacity 0.2s;
         }
         .pref-saving-hint.show { opacity: 1; }
+
+        /* The sidebar's module ticks (#124): the same coloured tiles as the waffle. */
+        .app-sidebar-pick { margin-top: 14px; }
+        .app-sidebar-pick[hidden] { display: none; }
+        .app-sidebar-pick-hint { margin: 0 0 8px; color: var(--text-muted, #666); font-size: 13px; }
+        .app-sidebar-pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; }
+        .app-sidebar-pick-item { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .app-sidebar-pick-item:hover { background: var(--surface-hover, #f0f0f0); }
+        .app-sidebar-pick-item .waffle-module-icon { width: 26px; height: 26px; margin: 0; border-radius: 6px; flex-shrink: 0; }
+        .app-sidebar-pick-item .waffle-module-icon svg { width: 16px; height: 16px; }
+
+        /* Module order (GH #187) - the list itself is assets/js/reorder-list.js. */
+        .module-order-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+        .module-order-note { font-size: 12px; color: var(--text-dim, #888); margin-top: 8px; }
+
+        /* Money (GH #189) - the three format dropdowns, and one row per currency exception. */
+        .money-picker { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .money-picker .pref-language-select { min-width: 160px; flex: 1; }
+        .money-sub { font-size: 13px; font-weight: 600; color: var(--text, #333); margin: 18px 0 2px; }
+        .money-exc { border: 1px solid var(--border, #ddd); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+        .money-exc-head { display: flex; align-items: center; gap: 10px; }
+        .money-exc-head .nm { flex: 1; font-size: 14px; color: var(--text, #333); }
+        .money-exc-head code { font-weight: 600; margin-right: 6px; }
+        .money-exc-head .eg { font-size: 13px; color: var(--text-muted, #666); font-variant-numeric: tabular-nums; }
+        .money-exc-head button { border: none; background: none; cursor: pointer; color: var(--text-dim, #888); font-size: 18px; line-height: 1; padding: 2px 6px; }
+        .money-exc-head button:hover { color: var(--danger, #c62828); }
+        .money-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 
         .sidebar-panels-list {
             display: flex;
@@ -198,27 +440,55 @@ if (isset($_SESSION['analyst_id'])) {
             justify-content: space-between;
             gap: 16px;
             padding: 8px 0;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid var(--border-soft, #f0f0f0);
         }
 
         .sidebar-panel-row:last-child { border-bottom: none; }
 
         .sidebar-panel-label {
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
         }
+
+        /* ---- Dark mode overrides (pale greys that would glow) ---- */
+        [data-theme-mode="dark"] .position-cell { background: #3a4250; }
+        [data-theme-mode="dark"] .position-cell:not(.active):hover { background: #46505f; }
+        [data-theme-mode="dark"] .position-dot { background: #8b95a5; }
+        [data-theme-mode="dark"] .anim-option:not(.active):hover { background: var(--surface-hover, #39414f); }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="system" data-mobile-page="settings" data-mobile-shell="own">
+    <div class="settings-shell">
     <?php include '../includes/header.php'; ?>
 
-    <div class="prefs-container">
-        <div class="prefs-card">
-            <h2><?php echo htmlspecialchars(t('system.preferences.title')); ?></h2>
-            <p class="subtitle"><?php echo htmlspecialchars(t('system.preferences.subtitle')); ?></p>
+    <div class="settings-scroll">
+        <h1 class="page-title"><?php echo htmlspecialchars(t('system.preferences.title')); ?></h1>
+        <p class="page-subtitle"><?php echo htmlspecialchars(t('system.preferences.subtitle')); ?></p>
 
+        <?php
+            // The tab bar. Not rendered from a settings manifest like a module's
+            // Settings page: a manifest binds every tab to a CAPABILITY, and there is
+            // nothing here to grant — every panel on this page is one analyst's own
+            // preference. So the bar is written out directly, using the same .tabs /
+            // .tab / .tab-content classes from inbox.css that the module pages use.
+            $prefTabs = [
+                'general'       => t('system.preferences.tab_general'),
+                'notifications' => t('system.preferences.tab_notifications'),
+                'display'       => t('system.preferences.tab_display'),
+                'details'       => t('system.preferences.tab_details'),
+            ];
+        ?>
+        <div class="tabs">
+            <?php $first = true; foreach ($prefTabs as $tabId => $tabLabel): ?>
+                <button class="tab<?php echo $first ? ' active' : ''; ?>" data-tab="<?php echo htmlspecialchars($tabId); ?>" onclick="switchTab('<?php echo htmlspecialchars($tabId); ?>')"><?php echo htmlspecialchars($tabLabel); ?></button>
+            <?php $first = false; endforeach; ?>
+        </div>
+
+        <div class="tab-content active" id="general-tab">
             <div class="pref-section">
-                <h3><?php echo htmlspecialchars(t('system.preferences.language_heading')); ?></h3>
+                <h3 id="language"><?php echo htmlspecialchars(t('system.preferences.language_heading')); ?></h3>
                 <p><?php echo htmlspecialchars(t('system.preferences.language_desc')); ?></p>
                 <select id="languageSelect" class="pref-language-select">
                     <?php foreach ($locales as $code => $native): ?>
@@ -231,22 +501,533 @@ if (isset($_SESSION['analyst_id'])) {
             </div>
 
             <div class="pref-section">
-                <h3><?php echo htmlspecialchars(t('system.preferences.position_heading')); ?></h3>
+                <h3 id="timezone"><?php echo htmlspecialchars(t('system.preferences.timezone_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.timezone_desc')); ?></p>
+                <?php
+                    // Group IANA zones by region for the dropdown (Europe/London → "Europe").
+                    $tzGroups = [];
+                    foreach (timezone_identifiers_list() as $tzId) {
+                        $parts = explode('/', $tzId, 2);
+                        $region = count($parts) === 2 ? $parts[0] : 'Other';
+                        $tzGroups[$region][] = $tzId;
+                    }
+                    ksort($tzGroups);
+                    $currentTz = $prefs['timezone'];
+                ?>
+                <select id="timezoneSelect" class="pref-language-select">
+                    <?php foreach ($tzGroups as $region => $zones): ?>
+                        <optgroup label="<?php echo htmlspecialchars($region); ?>">
+                            <?php foreach ($zones as $tzId): ?>
+                                <option value="<?php echo htmlspecialchars($tzId); ?>" <?php echo $tzId === $currentTz ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($tzId); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                    <?php endforeach; ?>
+                </select>
+                <span class="pref-saving-hint" id="tzSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <?php /* Date and time FORMAT — sits under Timezone because that is where
+                     someone looks next, but answers a different question: the zone above
+                     picks WHICH INSTANT, this picks HOW IT IS WRITTEN. Neither changes
+                     what is stored. Each option is labelled with its rendered example. */ ?>
+            <div class="pref-section">
+                <h3 id="date-format"><?php echo htmlspecialchars(t('system.preferences.dateformat_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.dateformat_desc')); ?></p>
+                <select id="dateFormatSelect" class="pref-language-select">
+                    <option value="" <?php echo $prefs['date_format'] === '' ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars(t('system.preferences.format_follow_default', [
+                            'example' => DateFmt::render($fmtSample, DateFmt::DATE_TEMPLATES[$installDate]),
+                        ])); ?>
+                    </option>
+                    <?php foreach (DateFmt::DATE_TEMPLATES as $key => $tpl): ?>
+                        <option value="<?php echo htmlspecialchars($key); ?>" <?php echo $prefs['date_format'] === $key ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars(DateFmt::render($fmtSample, $tpl)); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <span class="pref-saving-hint" id="dateFormatSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <div class="pref-section">
+                <h3 id="time-format"><?php echo htmlspecialchars(t('system.preferences.timeformat_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.timeformat_desc')); ?></p>
+                <select id="timeFormatSelect" class="pref-language-select">
+                    <option value="" <?php echo $prefs['time_format'] === '' ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars(t('system.preferences.format_follow_default', [
+                            'example' => DateFmt::render($fmtSample, DateFmt::TIME_TEMPLATES[$installTime]),
+                        ])); ?>
+                    </option>
+                    <?php foreach (DateFmt::TIME_TEMPLATES as $key => $tpl): ?>
+                        <option value="<?php echo htmlspecialchars($key); ?>" <?php echo $prefs['time_format'] === $key ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars(DateFmt::render($fmtSample, $tpl)); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <span class="pref-saving-hint" id="timeFormatSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <?php /* Money (GH #189): how amounts are written for THIS analyst. The
+                     currency of a record is never theirs to change here - only its
+                     look. '' follows System > Currencies; the per-currency map wins
+                     over both (see includes/money.php for the order). */
+                $moneyInstall  = Money::installSettings();
+                $moneyFollowEg = Money::format(1234567.891, $moneyInstall['default'], $moneyInstall['format']);
+            ?>
+            <div class="pref-section">
+                <h3 id="money"><?php echo htmlspecialchars(t('system.preferences.money_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.money_desc')); ?></p>
+                <select id="moneyMode" class="pref-language-select">
+                    <option value=""><?php echo htmlspecialchars(t('system.preferences.money_follow', ['example' => $moneyFollowEg])); ?></option>
+                    <option value="own"><?php echo htmlspecialchars(t('system.preferences.money_own')); ?></option>
+                </select>
+                <span class="pref-saving-hint" id="moneySavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+                <div class="money-picker" id="moneyAll" hidden></div>
+                <h4 class="money-sub"><?php echo htmlspecialchars(t('system.preferences.money_exc_heading')); ?></h4>
+                <p><?php echo htmlspecialchars(t('system.preferences.money_exc_desc')); ?></p>
+                <div id="moneyExc"></div>
+                <div class="money-add">
+                    <select class="pref-language-select" id="moneyExcAdd" aria-label="<?php echo htmlspecialchars(t('system.preferences.money_add')); ?>"></select>
+                    <button type="button" class="btn btn-secondary" id="moneyExcAddBtn"><?php echo htmlspecialchars(t('system.preferences.money_add')); ?></button>
+                </div>
+            </div>
+
+            <?php
+                // Start page (discussion #63). Shown with the administrator's choice
+                // named, so "use the site default" is not a guess.
+                require_once __DIR__ . '/../../includes/landing.php';
+                $landingDefaultKey = 'analyst';
+                try {
+                    $landingDefaultKey = landingInstallDefault(connectToDatabase());
+                } catch (Exception $e) {
+                    // Falls back to 'analyst', which is what index.php would do too.
+                }
+                $landingDefaultName = $landingDefaultKey === 'portal'
+                    ? t('system.preferences.landing_portal')
+                    : t('system.preferences.landing_analyst');
+            ?>
+            <!-- How a task opens (Ed's request). A working-style choice, so it is
+                 per analyst: the drawer keeps the board visible behind it, the
+                 modal gives the description and comments room. -->
+            <div class="pref-section">
+                <h3 id="task-view"><?php echo htmlspecialchars(t('system.preferences.task_view_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.task_view_desc')); ?></p>
+                <select id="taskViewSelect" class="pref-language-select">
+                    <option value="panel" <?php echo $prefs['tasks_detail_view'] !== 'modal' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.task_view_panel')); ?></option>
+                    <option value="modal" <?php echo $prefs['tasks_detail_view'] === 'modal' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.task_view_modal')); ?></option>
+                </select>
+                <span class="pref-saving-hint" id="taskViewSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+                <?php /* GH #219: the same question for Tasks' other views - their side panel. */ ?>
+                <p style="margin-top:14px;"><?php echo htmlspecialchars(t('system.preferences.task_open_other_desc')); ?></p>
+                <select id="taskOpenSelect" class="pref-language-select">
+                    <option value="quick" <?php echo $prefs['tasks_open_panel'] !== 'full' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.task_open_quick')); ?></option>
+                    <option value="full" <?php echo $prefs['tasks_open_panel'] === 'full' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.task_open_full')); ?></option>
+                </select>
+                <span class="pref-saving-hint" id="taskOpenSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <!-- Closing the search panel (#144). Sits beside "Opening a task"
+                 because it is the same kind of choice: how a shared UI surface
+                 behaves for YOU. Off by default — see the note by the default. -->
+            <div class="pref-section">
+                <h3 id="search-panel"><?php echo htmlspecialchars(t('system.preferences.search_dismiss_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.search_dismiss_desc')); ?></p>
+                <label class="toggle-group">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="searchDismissToggle" <?php echo $prefs['search_panel_close_outside'] === 'on' ? 'checked' : ''; ?>>
+                        <span class="toggle-slider"></span>
+                    </span>
+                    <span class="toggle-label"><?php echo htmlspecialchars(t('system.preferences.search_dismiss_label')); ?></span>
+                </label>
+                <span class="pref-saving-hint" id="searchDismissSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <!-- Subtasks on the task calendar (#90). The calendar's own Show control
+                 writes the same preference, so the two stay in step; this is here
+                 because that is where somebody looks for a setting they half
+                 remember changing, and its neighbour above already is. -->
+            <div class="pref-section">
+                <h3 id="cal-subtasks"><?php echo htmlspecialchars(t('system.preferences.cal_subtasks_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.cal_subtasks_desc')); ?></p>
+                <select id="calSubtaskSelect" class="pref-language-select">
+                    <option value=""     <?php echo $prefs['tasks_calendar_subtasks'] === ''     ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('tasks.filter.parents_only')); ?></option>
+                    <option value="both" <?php echo $prefs['tasks_calendar_subtasks'] === 'both' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('tasks.filter.parents_and_subtasks')); ?></option>
+                    <option value="only" <?php echo $prefs['tasks_calendar_subtasks'] === 'only' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('tasks.filter.subtasks_only')); ?></option>
+                </select>
+                <span class="pref-saving-hint" id="calSubtaskSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <!-- Subtasks listed under their card on the board. -->
+            <div class="pref-section">
+                <h3 id="board-subtasks"><?php echo htmlspecialchars(t('system.preferences.board_subtasks_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.board_subtasks_desc')); ?></p>
+                <?php // The same choice as the Tasks sidebar's "Subtasks on cards" (GH #184);
+                      // the old on/off "hide once all are complete" starts as Open.
+                      $__bs = in_array($prefs['tasks_board_subtasks'], ['all', 'open', 'none'], true) ? $prefs['tasks_board_subtasks'] : ($prefs['tasks_hide_done_subtasks'] === 'on' ? 'open' : 'all'); ?>
+                <select id="boardSubtasksSelect" class="pref-language-select">
+                    <?php foreach (['all', 'open', 'none'] as $__m): ?>
+                        <option value="<?php echo $__m; ?>"<?php echo $__bs === $__m ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.board_subtasks_' . $__m)); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span class="pref-saving-hint" id="boardSubtasksSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <!-- GH #218: empty Checklists, Forms, Procedures and Follow-ups folded to a heading. -->
+            <div class="pref-section">
+                <h3 id="work-fold"><?php echo htmlspecialchars(t('system.preferences.work_fold_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.work_fold_desc')); ?></p>
+                <select id="workFoldSelect" class="pref-language-select">
+                    <option value=""><?php echo htmlspecialchars(t('system.preferences.work_fold_show')); ?></option>
+                    <option value="on"<?php echo $prefs['tasks_collapse_empty_work'] === 'on' ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.work_fold_collapse')); ?></option>
+                </select>
+                <span class="pref-saving-hint" id="workFoldSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <div class="pref-section">
+                <h3 id="start-page"><?php echo htmlspecialchars(t('system.preferences.landing_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.landing_desc')); ?></p>
+                <select id="landingSelect" class="pref-language-select">
+                    <option value=""><?php echo htmlspecialchars(t('system.preferences.landing_default', ['name' => $landingDefaultName])); ?></option>
+                    <option value="analyst" <?php echo $prefs['default_landing_page'] === 'analyst' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.landing_analyst')); ?></option>
+                    <option value="portal" <?php echo $prefs['default_landing_page'] === 'portal' ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.landing_portal')); ?></option>
+                </select>
+                <span class="pref-saving-hint" id="landingSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+                <p class="pref-hint" style="margin-top:8px;color:var(--text-muted,#666);font-size:12px;"><?php echo htmlspecialchars(t('system.preferences.landing_note')); ?></p>
+            </div>
+
+            <?php /* Watchtower's "Mine" view (#58). Six of the ten cards have no
+                     owner to narrow to, and what should happen to them is a
+                     genuine judgement call rather than something to decide for
+                     everybody — so it is a choice. Default is to keep them. */ ?>
+            <div class="pref-section">
+                <h3 id="watchtower"><?php echo htmlspecialchars(t('watchtower.scope.impersonal_heading')); ?></h3>
+                <div class="anim-toggle" id="wtImpersonalToggle">
+                    <button class="anim-option" data-wtimp="show"><?php echo htmlspecialchars(t('watchtower.scope.impersonal_show')); ?></button>
+                    <button class="anim-option" data-wtimp="hide"><?php echo htmlspecialchars(t('watchtower.scope.impersonal_hide')); ?></button>
+                </div>
+                <p class="pref-hint" style="margin-top:8px;color:var(--text-muted,#666);font-size:12px;">
+                    <?php echo htmlspecialchars(t('watchtower.scope.impersonal_note')); ?>
+                </p>
+            </div>
+
+            <?php
+                // My work calendar (GH #75). Today the only option is a subscribe
+                // link; when the Graph push lands it becomes a third choice in the
+                // SAME control rather than a second switch — with both live you
+                // would see every scheduled ticket twice.
+                require_once __DIR__ . '/../../includes/calendar_sync/calendar_sync.php';
+                $feedAllowed = false;
+                try { $feedAllowed = scheduleFeedAllowed(connectToDatabase()); } catch (Exception $e) {}
+            ?>
+            <div class="pref-section">
+                <h3 id="working-hours"><?php echo htmlspecialchars(t('system.preferences.workcal_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.workcal_desc')); ?></p>
+
+                <?php if (!$feedAllowed): ?>
+                    <?php /* Says WHY rather than showing nothing. A control that is
+                             simply absent reads as a bug; one that explains itself
+                             does not generate a support ticket. */ ?>
+                    <p class="pref-hint" style="color:var(--text-muted,#666);font-size:13px;">
+                        <?php echo htmlspecialchars(t('system.preferences.workcal_disabled')); ?>
+                    </p>
+                <?php else: ?>
+                    <div class="anim-toggle" id="workCalToggle">
+                        <button class="anim-option" data-workcal="off"><?php echo htmlspecialchars(t('system.preferences.workcal_off')); ?></button>
+                        <?php /* One control, three options — never two switches.
+                                 With a push AND a subscribed feed both live you
+                                 would see every scheduled ticket twice, once as a
+                                 real event and once from the subscription. */ ?>
+                        <button class="anim-option" data-workcal="push" id="workCalPushBtn"><?php echo htmlspecialchars(t('system.preferences.workcal_push')); ?></button>
+                        <button class="anim-option" data-workcal="feed"><?php echo htmlspecialchars(t('system.preferences.workcal_feed')); ?></button>
+                    </div>
+
+                    <?php /* Says WHY the direct option is unavailable. An option
+                             that is simply missing reads as a bug, and one that is
+                             greyed out with no reason is worse — this is the
+                             screen where somebody is deciding. */ ?>
+                    <p class="pref-hint" id="workCalPushWhy" style="display:none;margin-top:8px;color:var(--text-muted,#666);font-size:12px;"></p>
+
+                    <div id="workCalPushPanel" style="display:none;margin-top:12px;">
+                        <?php /* Which connection (#133), when the system has more
+                                 than one: Microsoft 365 and a CalDAV server side
+                                 by side, say. Hidden when there is only one - a
+                                 choice of one is not a choice. */ ?>
+                        <div id="workCalConnRow" style="display:none;margin-bottom:10px;">
+                            <div style="font-size:13px;margin-bottom:6px;"><?php echo htmlspecialchars(t('system.preferences.workcal_conn')); ?></div>
+                            <select id="workCalConn" class="pref-language-select"></select>
+                        </div>
+                        <p class="pref-hint" style="color:var(--text-muted,#666);font-size:12px;" id="workCalPushInfo"></p>
+
+                        <?php /* CalDAV (#133). The analyst signs in as themselves
+                                 and chooses their own calendar: a CalDAV server has
+                                 no way for FreeITSM to write into everybody's, and
+                                 nobody else has the password that reaches theirs.
+                                 Shown only when the system's connection is CalDAV. */ ?>
+                        <div id="calDavPanel" style="display:none;margin-top:12px;max-width:560px;">
+                            <p class="pref-hint" id="calDavIntro" style="color:var(--text-muted,#666);font-size:12px;"></p>
+
+                            <div id="calDavCurrent" style="display:none;margin:8px 0 12px;">
+                                <span id="calDavCurrentText" style="font-size:13px;"></span>
+                                <button type="button" class="sig-btn sig-btn-secondary" id="calDavChange" style="margin-left:8px;"><?php echo htmlspecialchars(t('system.preferences.caldav_change')); ?></button>
+                                <button type="button" class="sig-btn sig-btn-danger" id="calDavForget" style="margin-left:4px;"><?php echo htmlspecialchars(t('system.preferences.caldav_forget')); ?></button>
+                            </div>
+
+                            <div id="calDavForm" style="display:none;">
+                                <div class="sig-details-grid">
+                                    <label><span><?php echo htmlspecialchars(t('system.preferences.caldav_username')); ?></span>
+                                        <input type="text" id="calDavUser" autocomplete="username" maxlength="190"></label>
+                                    <label><span><?php echo htmlspecialchars(t('system.preferences.caldav_password')); ?></span>
+                                        <input type="password" id="calDavPass" autocomplete="current-password"></label>
+                                </div>
+                                <p class="pref-hint" style="color:var(--text-muted,#666);font-size:12px;margin-top:0;"><?php echo htmlspecialchars(t('system.preferences.caldav_password_hint')); ?></p>
+                                <button type="button" class="sig-btn sig-btn-secondary" id="calDavFind"><?php echo htmlspecialchars(t('system.preferences.caldav_find')); ?></button>
+
+                                <div id="calDavPick" style="display:none;margin-top:12px;">
+                                    <div style="font-size:13px;margin-bottom:6px;"><?php echo htmlspecialchars(t('system.preferences.caldav_choose')); ?></div>
+                                    <select id="calDavCal" class="pref-language-select"></select>
+                                    <button type="button" class="sig-btn sig-btn-primary" id="calDavSave" style="margin-left:8px;"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                                </div>
+                            </div>
+                            <p class="pref-hint" id="calDavMsg" style="display:none;margin-top:10px;font-size:12px;"></p>
+                        </div>
+
+                        <?php /* Tasks (#75). Deliberately INSIDE the push panel:
+                                 task events are real appointments, so the choice
+                                 is meaningless until the direct route is chosen,
+                                 and showing it beforehand would offer something
+                                 that quietly does nothing.
+
+                                 Four options in one control, not two switches,
+                                 for the same reason the mode above is one value:
+                                 a task has two datable things and you should be
+                                 able to say "the deadline but not the slot". */ ?>
+                        <div style="margin-top:16px;">
+                            <div style="font-size:13px;margin-bottom:6px;"><?php echo htmlspecialchars(t('system.preferences.taskcal_heading')); ?></div>
+                            <div class="anim-toggle" id="taskCalToggle">
+                                <button class="anim-option" data-taskcal="off"><?php echo htmlspecialchars(t('system.preferences.taskcal_off')); ?></button>
+                                <button class="anim-option" data-taskcal="work"><?php echo htmlspecialchars(t('system.preferences.taskcal_work')); ?></button>
+                                <button class="anim-option" data-taskcal="due"><?php echo htmlspecialchars(t('system.preferences.taskcal_due')); ?></button>
+                                <button class="anim-option" data-taskcal="both"><?php echo htmlspecialchars(t('system.preferences.taskcal_both')); ?></button>
+                            </div>
+                            <p class="pref-hint" style="margin-top:8px;color:var(--text-muted,#666);font-size:12px;">
+                                <?php echo htmlspecialchars(t('system.preferences.taskcal_note')); ?>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div id="workCalPanel" style="display:none;margin-top:14px;">
+                        <?php /* The SAME dialogue the Calendar module opens — QR code,
+                                 editable host for a LAN address, iOS/Android hints and
+                                 all. Two different feeds, one identical act, so one
+                                 component: includes/subscribe_modal.php. */ ?>
+                        <button type="button" class="sig-btn sig-btn-primary" onclick="FreeITSMSubscribe.open('workCal')">
+                            <?php echo htmlspecialchars(t('system.preferences.workcal_show')); ?>
+                        </button>
+
+                        <div style="margin-top:14px;">
+                            <div style="font-size:13px;margin-bottom:6px;"><?php echo htmlspecialchars(t('system.preferences.workcal_detail')); ?></div>
+                            <div class="anim-toggle" id="workCalDetailToggle">
+                                <button class="anim-option" data-workcaldetail="full"><?php echo htmlspecialchars(t('system.preferences.workcal_detail_full')); ?></button>
+                                <button class="anim-option" data-workcaldetail="ref"><?php echo htmlspecialchars(t('system.preferences.workcal_detail_ref')); ?></button>
+                            </div>
+                            <p class="pref-hint" id="workCalDetailLocked" style="display:none;margin-top:8px;color:var(--text-muted,#666);font-size:12px;">
+                                <?php echo htmlspecialchars(t('system.preferences.workcal_detail_locked')); ?>
+                            </p>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div><!-- /#general-tab -->
+
+        <div class="tab-content" id="notifications-tab">
+            <?php
+                // Notification types (discussion #55). Rendered from the service's
+                // own registry so adding a type there adds it here — there is no
+                // second list to keep in step.
+                require_once __DIR__ . '/../../includes/services/notifications.php';
+                $notifPrefs = [];
+                try {
+                    $notifPrefs = NotificationsService::effectivePreferences(connectToDatabase(), (int)$_SESSION['analyst_id']);
+                } catch (Exception $e) {
+                    // Section simply renders empty rather than breaking the page.
+                }
+            ?>
+            <?php if ($notifPrefs): ?>
+            <div class="pref-section">
+                <h3 id="notifications"><?php echo htmlspecialchars(t('system.preferences.notif_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.notif_desc')); ?></p>
+                <div id="notifTypes" style="display:flex;flex-direction:column;gap:10px;margin-top:12px;max-width:520px;">
+                    <?php foreach ($notifPrefs as $key => $on): ?>
+                        <!-- No inline layout: .toggle-group in inbox.css is the shared
+                             switch component and deliberately puts the caption above the
+                             switch (via order:1). Overriding align-items here centred
+                             every row against the rest of the page. -->
+                        <label class="toggle-group">
+                            <span class="toggle-switch">
+                                <input type="checkbox" class="notif-type" data-type="<?php echo htmlspecialchars($key); ?>" <?php echo $on ? 'checked' : ''; ?>>
+                                <span class="toggle-slider"></span>
+                            </span>
+                            <span class="toggle-label"><?php echo htmlspecialchars(t('common.notifications.pref.' . $key)); ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+                <span class="pref-saving-hint" id="notifSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+            <?php endif; ?>
+
+            <!-- Notification chime. Separate from the types above because it is
+                 not about WHICH notifications you get, it is about how you are
+                 told about the ones you already chose. -->
+            <div class="pref-section">
+                <h3 id="sound"><?php echo htmlspecialchars(t('system.preferences.sound_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.sound_desc')); ?></p>
+                <select id="notifSoundSelect" class="pref-language-select">
+                    <?php foreach (['off', 'chime', 'ping', 'knock'] as $soundKey): ?>
+                        <option value="<?php echo htmlspecialchars($soundKey); ?>" <?php echo $prefs['notification_sound'] === $soundKey ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars(t('system.preferences.sound_' . $soundKey)); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <!-- Hidden rather than disabled when Off is chosen: .btn:disabled
+                     is only styled inside lms.css, so a disabled control on this
+                     page looks live and reads as a broken button. -->
+                <button type="button" class="sig-btn sig-btn-secondary" id="notifSoundPreview" style="margin-left:8px;vertical-align:middle;"><?php echo htmlspecialchars(t('system.preferences.sound_play')); ?></button>
+                <span class="pref-saving-hint" id="notifSoundHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+                <p class="pref-hint" style="margin-top:8px;color:var(--text-muted,#666);font-size:12px;"><?php echo htmlspecialchars(t('system.preferences.sound_note')); ?></p>
+            </div>
+
+            <!-- Desktop notifications. Beside the chime because it is the same
+                 kind of choice: how you are told about what reaches the bell. -->
+            <div class="pref-section">
+                <h3 id="desktop"><?php echo htmlspecialchars(t('system.preferences.desktop_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.desktop_desc')); ?></p>
+                <label class="toggle-group">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="desktopNotifToggle" <?php echo $prefs['desktop_notifications'] === 'on' ? 'checked' : ''; ?>>
+                        <span class="toggle-slider"></span>
+                    </span>
+                    <span class="toggle-label"><?php echo htmlspecialchars(t('system.preferences.desktop_label')); ?></span>
+                </label>
+                <button type="button" class="sig-btn sig-btn-secondary" id="desktopNotifTest" style="margin-top:10px;"><?php echo htmlspecialchars(t('system.preferences.desktop_test')); ?></button>
+                <span class="pref-saving-hint" id="desktopNotifHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+                <p class="pref-hint" id="desktopNotifState" style="margin-top:8px;color:var(--text-muted,#666);font-size:12px;"></p>
+            </div>
+
+            <!-- Task assignment by email. -->
+            <div class="pref-section">
+                <h3 id="task-email"><?php echo htmlspecialchars(t('system.preferences.task_email_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.task_email_desc')); ?></p>
+                <label class="toggle-group">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="taskEmailToggle" <?php echo $prefs['task_assigned_email'] === 'on' ? 'checked' : ''; ?>>
+                        <span class="toggle-slider"></span>
+                    </span>
+                    <span class="toggle-label"><?php echo htmlspecialchars(t('system.preferences.task_email_label')); ?></span>
+                </label>
+                <span class="pref-saving-hint" id="taskEmailHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <div class="pref-section">
+                <h3 id="position"><?php echo htmlspecialchars(t('system.preferences.position_heading')); ?></h3>
                 <p><?php echo htmlspecialchars(t('system.preferences.position_desc')); ?></p>
                 <div class="position-grid" id="toastPositionGrid"></div>
             </div>
 
             <div class="pref-section">
-                <h3><?php echo htmlspecialchars(t('system.preferences.animation_heading')); ?></h3>
+                <h3 id="animation"><?php echo htmlspecialchars(t('system.preferences.animation_heading')); ?></h3>
                 <p><?php echo htmlspecialchars(t('system.preferences.animation_desc')); ?></p>
                 <div class="anim-toggle" id="animToggle">
                     <button class="anim-option" data-anim="slide"><?php echo htmlspecialchars(t('system.preferences.anim_slide')); ?></button>
                     <button class="anim-option" data-anim="fade"><?php echo htmlspecialchars(t('system.preferences.anim_fade')); ?></button>
                 </div>
             </div>
+        </div><!-- /#notifications-tab -->
+
+        <div class="tab-content" id="display-tab">
+            <?php
+                // Module order (GH #187). $modules is the waffle's list (the header has
+                // just included it). The list shows the modules this analyst can open;
+                // the FULL order travels too, so a module they cannot open today keeps
+                // its place for when they can (see includes/display_order.php).
+                $moDefault = array_keys($modules);
+                $moSaved   = analystModuleOrderSaved();
+                $moItems   = [];
+                foreach (analystVisibleModules($modules) as $moKey => $moMod) {
+                    // The waffle stores only the drawing; the <svg> around it is added where it is drawn.
+                    $moIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $moMod['icon'] . '</svg>';
+                    $moItems[] = ['key' => $moKey, 'label' => $moMod['name'], 'icon' => $moIcon, 'iconClass' => 'waffle-module-icon ' . $moKey];
+                }
+                $moPayload = [
+                    'all'      => displayOrderMerge($moSaved, $moDefault),
+                    'defaults' => $moDefault,
+                    'items'    => $moItems,
+                    'custom'   => !empty($moSaved),
+                ];
+            ?>
+            <div class="pref-section">
+                <h3 id="module-order"><?php echo htmlspecialchars(t('system.preferences.modorder_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.modorder_desc')); ?></p>
+                <div id="moduleOrderList"></div>
+                <div class="module-order-actions">
+                    <button type="button" class="btn btn-secondary" id="moduleOrderReset"><?php echo htmlspecialchars(t('system.preferences.modorder_reset')); ?></button>
+                    <span class="pref-saving-hint" id="moduleOrderHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+                </div>
+                <p class="module-order-note"><?php echo htmlspecialchars(t('system.preferences.modorder_note')); ?></p>
+                <script>window.MODULE_ORDER = <?php echo json_encode($moPayload, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+            </div>
+
+            <?php
+                // The optional sidebar (#124): on or off, and which of the modules
+                // this analyst can open it holds - listed in their module order,
+                // which is also the order the sidebar uses.
+                $sbPrefs = appSidebarPrefs();
+            ?>
+            <div class="pref-section">
+                <h3 id="app-sidebar"><?php echo htmlspecialchars(t('system.preferences.sidebar_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.sidebar_desc')); ?></p>
+                <label class="toggle-group">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="appSidebarToggle" <?php echo $sbPrefs['on'] ? 'checked' : ''; ?>>
+                        <span class="toggle-slider"></span>
+                    </span>
+                    <span class="toggle-label"><?php echo htmlspecialchars(t('system.preferences.sidebar_label')); ?></span>
+                </label>
+                <div id="appSidebarModules" class="app-sidebar-pick"<?php echo $sbPrefs['on'] ? '' : ' hidden'; ?>>
+                    <?php /* How names show (#124). Icons only is the default - what
+                             the sidebar has always done. */ ?>
+                    <label class="app-sidebar-pick-hint" for="appSidebarNames"><?php echo htmlspecialchars(t('system.preferences.sidebar_names')); ?></label>
+                    <select id="appSidebarNames" class="pref-language-select">
+                        <?php foreach (['icons', 'hover', 'pinned'] as $sbMode): ?>
+                        <option value="<?php echo $sbMode; ?>"<?php echo $sbPrefs['names'] === $sbMode ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.sidebar_names_' . $sbMode)); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php /* The waffle button (#124). Show is the default; hiding
+                             leaves the panel, which the rail's Recent opens. */ ?>
+                    <div class="app-sidebar-pick">
+                        <label class="app-sidebar-pick-hint" for="appSidebarWaffle"><?php echo htmlspecialchars(t('system.preferences.sidebar_waffle')); ?></label>
+                        <select id="appSidebarWaffle" class="pref-language-select">
+                            <option value="show"<?php echo $sbPrefs['waffle'] ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.sidebar_waffle_show')); ?></option>
+                            <option value="hide"<?php echo $sbPrefs['waffle'] ? '' : ' selected'; ?>><?php echo htmlspecialchars(t('system.preferences.sidebar_waffle_hide')); ?></option>
+                        </select>
+                    </div>
+                    <p class="app-sidebar-pick-hint"><?php echo htmlspecialchars(t('system.preferences.sidebar_pick')); ?></p>
+                    <div class="app-sidebar-pick-list">
+                        <?php foreach ($moItems as $sbItem): ?>
+                        <label class="app-sidebar-pick-item">
+                            <input type="checkbox" value="<?php echo htmlspecialchars($sbItem['key']); ?>"
+                                <?php echo ($sbPrefs['modules'] === null || in_array($sbItem['key'], $sbPrefs['modules'], true)) ? 'checked' : ''; ?>>
+                            <span class="<?php echo htmlspecialchars($sbItem['iconClass']); ?>"><?php echo $sbItem['icon']; ?></span>
+                            <span><?php echo htmlspecialchars($sbItem['label']); ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <span class="pref-saving-hint" id="appSidebarHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
 
             <div class="pref-section">
-                <h3><?php echo htmlspecialchars(t('system.preferences.panels_heading')); ?></h3>
+                <h3 id="left-panels"><?php echo htmlspecialchars(t('system.preferences.panels_heading')); ?></h3>
                 <p><?php echo htmlspecialchars(t('system.preferences.panels_desc')); ?></p>
                 <!-- One row per module that has a left panel. Rows are built
                      in JS from SIDEBAR_PANELS so adding a module is a one-line
@@ -254,24 +1035,220 @@ if (isset($_SESSION['analyst_id'])) {
                 <div id="sidebarPanelsList" class="sidebar-panels-list"></div>
             </div>
 
+            <!-- How the ticket list is shown (PR #213): the familiar message list,
+                 or a paginated table with saved views. Per analyst. -->
             <div class="pref-section">
-                <h3><?php echo htmlspecialchars(t('system.preferences.mc_heading')); ?></h3>
+                <h3 id="ticket-list"><?php echo htmlspecialchars(t('system.preferences.ticket_list_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.ticket_list_desc')); ?></p>
+                <select id="ticketListSelect" class="pref-language-select">
+                    <?php foreach (['messages', 'table'] as $layout): ?>
+                    <option value="<?php echo $layout; ?>" <?php echo $prefs['tickets_list_layout'] === $layout ? 'selected' : ''; ?>><?php echo htmlspecialchars(t('system.preferences.ticket_list_' . $layout)); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <!-- Use the ticket workspace (PR #211). Hidden while an administrator
+                 has the workspace off, because then it would change nothing. -->
+            <?php if ($showTicketWorkspace): ?>
+            <div class="pref-section">
+                <h3 id="ticket-workspace"><?php echo htmlspecialchars(t('system.preferences.ticket_workspace_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.ticket_workspace_desc')); ?></p>
+                <label class="toggle-group">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="ticketWorkspacePref" <?php echo ticketWorkspacePersonal($prefs['ticket_workspace']) ? 'checked' : ''; ?>>
+                        <span class="toggle-slider"></span>
+                    </span>
+                    <span class="toggle-label"><?php echo htmlspecialchars(t('system.preferences.ticket_workspace_label')); ?></span>
+                </label>
+            </div>
+            <?php endif; ?>
+
+            <div class="pref-section">
+                <h3 id="multi-select"><?php echo htmlspecialchars(t('system.preferences.multiselect_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.multiselect_desc')); ?></p>
+                <div class="anim-toggle" id="multiSelectPaneToggle">
+                    <button class="anim-option" data-msmode="summary"><?php echo htmlspecialchars(t('system.preferences.multiselect_summary')); ?></button>
+                    <button class="anim-option" data-msmode="keep"><?php echo htmlspecialchars(t('system.preferences.multiselect_keep')); ?></button>
+                    <button class="anim-option" data-msmode="bar"><?php echo htmlspecialchars(t('system.preferences.multiselect_bar')); ?></button>
+                </div>
+                <p class="pref-hint" id="multiSelectPaneHint" style="margin-top:8px;color:var(--text-muted,#666);font-size:12px;"></p>
+            </div>
+
+            <?php
+            // GH #218: the company New ticket pre-selects in the all-companies view. Only
+            // offered to someone who can reach more than one company - nobody else is asked.
+            $ntCompanies = [];
+            try {
+                require_once __DIR__ . '/../../includes/tenancy.php';
+                $conn = $conn ?? connectToDatabase();
+                if (isset($_SESSION['analyst_id']) && isMultiTenant($conn)) {
+                    $__reach = array_map('intval', getAccessibleTenantIds($conn, (int)$_SESSION['analyst_id']));
+                    if (count($__reach) > 1) {
+                        foreach (getAllTenants($conn, true) as $__t) if (in_array((int)$__t['id'], $__reach, true)) $ntCompanies[] = $__t;
+                    }
+                }
+            } catch (Throwable $e) { $ntCompanies = []; }
+            if (count($ntCompanies) > 1): ?>
+            <div class="pref-section">
+                <h3 id="new-ticket-company"><?php echo htmlspecialchars(t('system.preferences.nt_company_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.nt_company_desc')); ?></p>
+                <select id="ntCompanySelect" class="pref-language-select">
+                    <option value=""><?php echo htmlspecialchars(t('system.preferences.nt_company_none')); ?></option>
+                    <?php foreach ($ntCompanies as $__t): ?>
+                        <option value="<?php echo (int)$__t['id']; ?>"<?php echo (string)$prefs['tickets_new_ticket_company'] === (string)$__t['id'] ? ' selected' : ''; ?>><?php echo htmlspecialchars($__t['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span class="pref-saving-hint" id="ntCompanySavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+            <?php endif; ?>
+
+            <div class="pref-section">
+                <h3 id="morning-checks"><?php echo htmlspecialchars(t('system.preferences.mc_heading')); ?></h3>
                 <p><?php echo htmlspecialchars(t('system.preferences.mc_desc')); ?></p>
                 <div class="anim-toggle" id="mcFillToggle">
                     <button class="anim-option" data-fill="plain"><?php echo htmlspecialchars(t('system.preferences.fill_plain')); ?></button>
                     <button class="anim-option" data-fill="gradient"><?php echo htmlspecialchars(t('system.preferences.fill_gradient')); ?></button>
                 </div>
             </div>
-        </div>
-    </div>
+        </div><!-- /#display-tab -->
 
+        <div class="tab-content" id="details-tab">
+            <!-- My details + email signatures (discussion #80, request 3).
+                 Here rather than on an admin screen because a signature is one
+                 person signing their own name — there is deliberately no shared
+                 or install-wide signature to administer. -->
+            <div class="pref-section">
+                <h3 id="my-details"><?php echo htmlspecialchars(t('system.preferences.details_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.details_desc')); ?></p>
+                <div id="detailsManagedNote" class="pref-managed-note" style="display:none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    <span><?php echo htmlspecialchars(t('system.preferences.details_managed_note')); ?></span>
+                </div>
+                <div class="sig-details-grid">
+                    <label><span><?php echo htmlspecialchars(t('system.preferences.details_job_title')); ?></span>
+                        <input type="text" id="myJobTitle" autocomplete="off" maxlength="100"></label>
+                    <label><span><?php echo htmlspecialchars(t('system.preferences.details_department')); ?></span>
+                        <input type="text" id="myDepartment" autocomplete="off" maxlength="100"></label>
+                    <label><span><?php echo htmlspecialchars(t('system.preferences.details_phone')); ?></span>
+                        <input type="text" id="myPhone" autocomplete="off" maxlength="50"></label>
+                    <label><span><?php echo htmlspecialchars(t('system.preferences.details_mobile')); ?></span>
+                        <input type="text" id="myMobile" autocomplete="off" maxlength="50"></label>
+                </div>
+                <button type="button" class="sig-btn sig-btn-primary" id="saveDetailsBtn" onclick="saveMyDetails()"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                <span class="pref-saving-hint" id="detailsSavingHint"><?php echo htmlspecialchars(t('system.preferences.saving')); ?></span>
+            </div>
+
+            <div class="pref-section">
+                <h3 id="signature"><?php echo htmlspecialchars(t('system.preferences.sig_heading')); ?></h3>
+                <p><?php echo htmlspecialchars(t('system.preferences.sig_desc')); ?></p>
+
+                <div id="sigList" class="sig-list"></div>
+
+                <button type="button" class="sig-btn sig-btn-primary" onclick="openSignatureEditor()"><?php echo htmlspecialchars(t('common.add')); ?></button>
+
+                <!-- Editor, shown in place rather than in a modal: it holds a rich
+                     text box and a live preview, and both want room. -->
+                <div id="sigEditor" class="sig-editor" style="display:none;">
+                    <input type="hidden" id="sigId">
+                    <label class="sig-field"><span><?php echo htmlspecialchars(t('system.preferences.sig_name')); ?></span>
+                        <input type="text" id="sigName" autocomplete="off" maxlength="100" placeholder="<?php echo htmlspecialchars(t('system.preferences.sig_name_placeholder')); ?>"></label>
+
+                    <label class="sig-field sig-default-row">
+                        <input type="checkbox" id="sigIsDefault">
+                        <span><?php echo htmlspecialchars(t('system.preferences.sig_is_default')); ?></span>
+                    </label>
+
+                    <textarea id="sigBody"></textarea>
+
+                    <div class="sig-codes" id="sigCodes"></div>
+
+                    <div class="sig-preview-wrap">
+                        <div class="sig-preview-label"><?php echo htmlspecialchars(t('system.preferences.sig_preview')); ?></div>
+                        <div class="sig-preview" id="sigPreview"></div>
+                    </div>
+
+                    <div class="sig-editor-actions">
+                        <button type="button" class="sig-btn sig-btn-secondary" onclick="closeSignatureEditor()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                        <button type="button" class="sig-btn sig-btn-primary" onclick="saveSignature()"><?php echo htmlspecialchars(t('common.save')); ?></button>
+                    </div>
+                </div>
+            </div>
+        </div><!-- /#details-tab -->
+    </div>
+    </div><!-- /.settings-shell -->
+
+    <?php
+        // The shared subscribe dialogue, same one the Calendar module opens.
+        // Rendered only when the install permits subscribe links at all.
+        if ($feedAllowed) {
+            require_once __DIR__ . '/../../includes/subscribe_modal.php';
+            renderSubscribeModal('workCal', [
+                'title'         => t('system.preferences.workcal_heading'),
+                'intro'         => t('system.preferences.workcal_desc'),
+                'insecure'      => t('system.preferences.workcal_insecure'),
+                'address_label' => t('calendar.subscribe.address_label'),
+                'address_hint'  => t('calendar.subscribe.address_hint'),
+                'url_label'     => t('system.preferences.workcal_url'),
+                'copy'          => t('system.preferences.workcal_copy'),
+                'secret_note'   => t('system.preferences.workcal_secret_note'),
+                'ios_label'     => t('calendar.subscribe.ios_label'),
+                'ios_hint'      => t('calendar.subscribe.ios_hint'),
+                'android_label' => t('calendar.subscribe.android_label'),
+                'android_hint'  => t('calendar.subscribe.android_hint'),
+                'reset'         => t('system.preferences.workcal_reset'),
+                'close'         => t('common.close'),
+            ]);
+        }
+    ?>
+
+    <?php /* The analyst's own name and email, for the signature live preview (#80). */ ?>
+    <script>window.__MY_NAME = <?php echo json_encode($_SESSION['analyst_name'] ?? ''); ?>; window.__MY_EMAIL = <?php echo json_encode($_SESSION['analyst_email'] ?? ''); ?>;</script>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <?php echo Money::scriptTag(); ?>
+    <?php
+        // The analyst's own money format, and the install's for "follow" (GH #189).
+        $moneyMine = Money::personalSettings();
+        $moneyMine['formats'] = (object)$moneyMine['formats'];
+        $moneyMine['install'] = Money::installSettings()['format'];
+    ?>
+    <script>window.MONEY_MINE = <?php echo json_encode($moneyMine, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
+    <script src="../../assets/js/money.js?v=1"></script>
+    <script src="../../assets/js/reorder-list.js?v=1"></script>
+    <script src="../../assets/js/qrcode.min.js"></script>
+    <script src="../../assets/js/subscribe.js?v=1"></script>
+    <script src="../../assets/js/tinymce/tinymce.min.js?v=8.10.0"></script>
     <script>
         // Initial preference values pre-fetched server-side. The page
         // hydrates UI controls from these instead of localStorage.
         const INITIAL_PREFS = <?php echo json_encode($prefs); ?>;
 
+        // ===== Tabs =====
+        // Same switcher the module Settings pages use. It also keeps the hash in
+        // step, so a panel can be linked to directly: "Manage signatures" in the
+        // reply box opens #details rather than dropping you on General to hunt.
+        function switchTab(tab) {
+            const panel = document.getElementById(tab + '-tab');
+            if (!panel) return;                       // unknown hash — leave the default open
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            panel.classList.add('active');
+            history.replaceState(null, '', '#' + tab);
+        }
+        if (location.hash.length > 1) {
+            const want = location.hash.slice(1);
+            const section = !document.getElementById(want + '-tab') && document.getElementById(want);
+            const tab = section && section.closest('.tab-content');
+            if (tab) {
+                // A section rather than a tab (e.g. #app-sidebar, linked from the
+                // sidebar itself): open its tab and bring it into view.
+                switchTab(tab.id.replace(/-tab$/, ''));
+                history.replaceState(null, '', '#' + want);
+                section.scrollIntoView({ block: 'start' });
+            } else {
+                switchTab(want);
+            }
+        }
         // Generic save helper — fire-and-forget POST to the per-analyst
         // preference store. Returns a Promise resolving to the API's
         // success flag so call sites can chain UI feedback off it.
@@ -290,6 +1267,7 @@ if (isset($_SESSION['analyst_id'])) {
                     // without a reload.
                     if (key === 'toast_position')  window.TOAST_POSITION  = value;
                     if (key === 'toast_animation') window.TOAST_ANIMATION = value;
+                    if (key === 'notification_sound') window.NOTIFICATION_SOUND = value;
                     return true;
                 }
                 showToast((d && d.error) || window.t('system.preferences.save_failed'), 'error');
@@ -347,6 +1325,422 @@ if (isset($_SESSION['analyst_id'])) {
             });
         }
 
+        // ===== Notification types (notification_types) =====
+        // Saved as ONE json preference rather than a row per type, because the
+        // notification writer reads it on every event and one row keeps that to a
+        // single lookup.
+        const notifBoxes = document.querySelectorAll('.notif-type');
+        const notifHint  = document.getElementById('notifSavingHint');
+        if (notifBoxes.length) {
+            notifBoxes.forEach(box => box.addEventListener('change', async function () {
+                notifHint.classList.add('show');
+                const map = {};
+                notifBoxes.forEach(b => { map[b.dataset.type] = b.checked ? 1 : 0; });
+                await savePref('notification_types', JSON.stringify(map));
+                setTimeout(() => notifHint.classList.remove('show'), 1200);
+            }));
+        }
+
+        // ===== Notification chime (notification_sound) =====
+        // Choosing a sound plays it. You pick one of these by hearing it, and
+        // making somebody select blind and then hunt for a second button to
+        // find out what they chose is a step with no purpose. The Play button
+        // is for hearing the same one again, and it plays what is SELECTED
+        // rather than what is saved so it works before the save returns.
+        const soundSelect  = document.getElementById('notifSoundSelect');
+        const soundHint    = document.getElementById('notifSoundHint');
+        const soundPreview = document.getElementById('notifSoundPreview');
+        function playSelectedSound() {
+            if (typeof window.playNotificationSound === 'function') {
+                window.playNotificationSound(soundSelect.value);
+            }
+        }
+        function paintSoundPreview() {
+            // Nothing to preview when the answer is "no sound", and a Play
+            // button that is silent by design reads as one that is broken.
+            soundPreview.style.display = soundSelect.value === 'off' ? 'none' : '';
+        }
+        if (soundSelect && soundPreview) {
+            paintSoundPreview();
+            soundSelect.addEventListener('change', async function () {
+                paintSoundPreview();
+                playSelectedSound();
+                soundHint.classList.add('show');
+                await savePref('notification_sound', soundSelect.value);
+                setTimeout(() => soundHint.classList.remove('show'), 1200);
+            });
+            soundPreview.addEventListener('click', playSelectedSound);
+        }
+
+        // ===== Ticket list: Messages or Table (tickets_list_layout, PR #213) =====
+        // A failed save puts the dropdown back, so it never shows a choice that
+        // was not kept.
+        const ticketListSelect = document.getElementById('ticketListSelect');
+        let savedTicketList = ticketListSelect.value;
+        ticketListSelect.addEventListener('change', async () => {
+            ticketListSelect.disabled = true;
+            if (await savePref('tickets_list_layout', ticketListSelect.value)) savedTicketList = ticketListSelect.value;
+            else ticketListSelect.value = savedTicketList;
+            ticketListSelect.disabled = false;
+        });
+
+        // ===== How a task opens (tasks_detail_view) =====
+        const taskViewSelect = document.getElementById('taskViewSelect');
+        const taskViewHint   = document.getElementById('taskViewSavingHint');
+        const taskOpenSelect = document.getElementById('taskOpenSelect');   // GH #219
+        if (taskOpenSelect) {
+            taskOpenSelect.addEventListener('change', async function() {
+                const hint = document.getElementById('taskOpenSavingHint');
+                hint.classList.add('show');
+                await savePref('tasks_open_panel', taskOpenSelect.value);
+                setTimeout(() => hint.classList.remove('show'), 1200);
+            });
+        }
+        if (taskViewSelect) {
+            taskViewSelect.addEventListener('change', async function() {
+                taskViewHint.classList.add('show');
+                await savePref('tasks_detail_view', taskViewSelect.value);
+                setTimeout(() => taskViewHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Desktop notifications (desktop_notifications) =====
+        // Switching it on asks the BROWSER for permission - that has to happen
+        // inside the click, which is why it lives here and not in the bell. If the
+        // browser says no, the switch goes back off: a setting that is on but can
+        // never show anything would be a promise the page cannot keep.
+        const desktopToggle = document.getElementById('desktopNotifToggle');
+        const desktopHint   = document.getElementById('desktopNotifHint');
+        const desktopState  = document.getElementById('desktopNotifState');
+        const desktopTest   = document.getElementById('desktopNotifTest');
+        function paintDesktopState() {
+            if (!desktopState) return;
+            let key;
+            if (!('Notification' in window)) key = 'desktop_unsupported';
+            else if (!window.isSecureContext) key = 'desktop_insecure';
+            else if (Notification.permission === 'denied') key = 'desktop_blocked';
+            else if (Notification.permission === 'granted') key = 'desktop_allowed';
+            else key = 'desktop_ask';
+            desktopState.textContent = window.t('system.preferences.' + key);
+            if (desktopTest) desktopTest.hidden = !(desktopToggle.checked && 'Notification' in window && Notification.permission === 'granted');
+        }
+        if (desktopToggle) {
+            paintDesktopState();
+            desktopToggle.addEventListener('change', async function () {
+                if (desktopToggle.checked) {
+                    if (!('Notification' in window) || !window.isSecureContext) {
+                        desktopToggle.checked = false; paintDesktopState(); return;
+                    }
+                    let perm = Notification.permission;
+                    if (perm === 'default') {
+                        try { perm = await Notification.requestPermission(); } catch (e) { perm = 'denied'; }
+                    }
+                    if (perm !== 'granted') {
+                        desktopToggle.checked = false; paintDesktopState(); return;
+                    }
+                }
+                desktopHint.classList.add('show');
+                await savePref('desktop_notifications', desktopToggle.checked ? 'on' : '');
+                window.DESKTOP_NOTIFICATIONS = desktopToggle.checked;
+                paintDesktopState();
+                setTimeout(() => desktopHint.classList.remove('show'), 1200);
+            });
+        }
+        if (desktopTest) {
+            desktopTest.addEventListener('click', function () {
+                try {
+                    const n = new Notification(window.t('system.preferences.desktop_test_title'), {
+                        body: window.t('system.preferences.desktop_test_body'),
+                        icon: (document.querySelector('link[rel="icon"]') || {}).href,
+                        tag: 'freeitsm-test'
+                    });
+                    n.onclick = () => { window.focus(); n.close(); };
+                } catch (e) { paintDesktopState(); }
+            });
+        }
+
+        // ===== Email me when a task is assigned to me (task_assigned_email) =====
+        const taskEmailToggle = document.getElementById('taskEmailToggle');
+        const taskEmailHint   = document.getElementById('taskEmailHint');
+        if (taskEmailToggle) {
+            taskEmailToggle.addEventListener('change', async function () {
+                taskEmailHint.classList.add('show');
+                await savePref('task_assigned_email', taskEmailToggle.checked ? 'on' : '');
+                setTimeout(() => taskEmailHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Subtasks under their card on the board (tasks_hide_done_subtasks) =====
+        const boardSubtasksSelect = document.getElementById('boardSubtasksSelect');
+        const boardSubtasksHint   = document.getElementById('boardSubtasksSavingHint');
+        if (boardSubtasksSelect) {
+            boardSubtasksSelect.addEventListener('change', async function() {
+                boardSubtasksHint.classList.add('show');
+                await savePref('tasks_board_subtasks', boardSubtasksSelect.value);
+                setTimeout(() => boardSubtasksHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== My company for new tickets (tickets_new_ticket_company, GH #218) =====
+        const ntCompanySelect = document.getElementById('ntCompanySelect');
+        const ntCompanyHint   = document.getElementById('ntCompanySavingHint');
+        if (ntCompanySelect) {
+            ntCompanySelect.addEventListener('change', async function() {
+                ntCompanyHint.classList.add('show');
+                await savePref('tickets_new_ticket_company', ntCompanySelect.value);
+                setTimeout(() => ntCompanyHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Empty Work sections on a task (tasks_collapse_empty_work, GH #218) =====
+        const workFoldSelect = document.getElementById('workFoldSelect');
+        const workFoldHint   = document.getElementById('workFoldSavingHint');
+        if (workFoldSelect) {
+            workFoldSelect.addEventListener('change', async function() {
+                workFoldHint.classList.add('show');
+                await savePref('tasks_collapse_empty_work', workFoldSelect.value);
+                setTimeout(() => workFoldHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Closing the search panel (search_panel_close_outside) =====
+        // Stored as 'on' / '' so the value reads the same way as the other
+        // opt-in keys, and so an un-migrated or empty row means "off".
+        const searchDismissToggle = document.getElementById('searchDismissToggle');
+        const searchDismissHint   = document.getElementById('searchDismissSavingHint');
+        if (searchDismissToggle) {
+            searchDismissToggle.addEventListener('change', async function() {
+                searchDismissHint.classList.add('show');
+                await savePref('search_panel_close_outside', searchDismissToggle.checked ? 'on' : '');
+                // Take effect on this page's own globals too, so a module opened
+                // in another tab is the only thing needing a reload.
+                window.SEARCH_PANEL_CLOSE_OUTSIDE = searchDismissToggle.checked;
+                setTimeout(() => searchDismissHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Subtasks on the task calendar (tasks_calendar_subtasks) =====
+        const calSubtaskSelect = document.getElementById('calSubtaskSelect');
+        const calSubtaskHint   = document.getElementById('calSubtaskSavingHint');
+        if (calSubtaskSelect) {
+            calSubtaskSelect.addEventListener('change', async function() {
+                calSubtaskHint.classList.add('show');
+                await savePref('tasks_calendar_subtasks', calSubtaskSelect.value);
+                setTimeout(() => calSubtaskHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Start page (default_landing_page) =====
+        // Saved like any other preference; set_user_preference.php mirrors this
+        // one into a cookie so index.php can read it before anyone has logged in.
+        const landingSelect = document.getElementById('landingSelect');
+        const landingHint   = document.getElementById('landingSavingHint');
+        if (landingSelect) {
+            landingSelect.addEventListener('change', async function() {
+                landingHint.classList.add('show');
+                await savePref('default_landing_page', landingSelect.value);
+                setTimeout(() => landingHint.classList.remove('show'), 1200);
+            });
+        }
+
+        // ===== Display timezone (timezone) =====
+        // Saves per-analyst; takes effect on other pages via Tz::init() +
+        // window.USER_TIMEZONE. No reload needed here (this page shows no dates).
+        const tzSelect = document.getElementById('timezoneSelect');
+        const tzHint   = document.getElementById('tzSavingHint');
+        if (tzSelect) {
+            tzSelect.addEventListener('change', async function() {
+                tzHint.classList.add('show');
+                const ok = await savePref('timezone', tzSelect.value);
+                tzHint.classList.remove('show');
+                if (ok) showToast(window.t('system.preferences.timezone_saved'), 'success');
+            });
+        }
+
+        // ===== Date and time format (date_format / time_format) =====
+        // Per-analyst, overriding System > Date and time formats. '' is a real
+        // value here meaning "follow the install default", so it must be saved
+        // as-is rather than treated as "nothing chosen".
+        [['dateFormatSelect', 'dateFormatSavingHint', 'date_format'],
+         ['timeFormatSelect', 'timeFormatSavingHint', 'time_format']].forEach(function (row) {
+            const sel  = document.getElementById(row[0]);
+            const hint = document.getElementById(row[1]);
+            if (!sel) return;
+            sel.addEventListener('change', async function () {
+                hint.classList.add('show');
+                const ok = await savePref(row[2], sel.value);
+                hint.classList.remove('show');
+                if (ok) showToast(window.t('system.preferences.format_saved'), 'success');
+            });
+        });
+
+        // ===== Sidebar (app_sidebar / app_sidebar_modules, #124) =====
+        // Saved as soon as anything changes and drawn from the next page opened.
+        // The ticked modules are saved as a list; ticking every one saves the
+        // whole list too, so the choice is explicit either way.
+        (function () {
+            const toggle = document.getElementById('appSidebarToggle');
+            const box = document.getElementById('appSidebarModules');
+            const hint = document.getElementById('appSidebarHint');
+            if (!toggle || !box) return;
+            const P = k => window.t('system.preferences.' + k);
+            toggle.addEventListener('change', async () => {
+                box.hidden = !toggle.checked;
+                hint.classList.add('show');
+                const ok = await savePref('app_sidebar', toggle.checked ? '1' : '');
+                hint.classList.remove('show');
+                if (ok) showToast(P(toggle.checked ? 'sidebar_on' : 'sidebar_off'), 'success');
+                else toggle.checked = !toggle.checked;
+            });
+            const names = document.getElementById('appSidebarNames');
+            if (names) names.addEventListener('change', async () => {
+                hint.classList.add('show');
+                const ok = await savePref('app_sidebar_names', names.value);
+                hint.classList.remove('show');
+                if (ok) showToast(P('sidebar_saved'), 'success');
+            });
+            // 'show' is stored as no row at all - the built-in default.
+            const waffle = document.getElementById('appSidebarWaffle');
+            if (waffle) waffle.addEventListener('change', async () => {
+                hint.classList.add('show');
+                const ok = await savePref('app_sidebar_waffle', waffle.value === 'hide' ? 'hide' : '');
+                hint.classList.remove('show');
+                if (ok) showToast(P('sidebar_saved'), 'success');
+            });
+            box.addEventListener('change', async e => {
+                if (!e.target.matches('input[type="checkbox"]')) return;
+                const keys = [...box.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
+                hint.classList.add('show');
+                const ok = await savePref('app_sidebar_modules', JSON.stringify(keys));
+                hint.classList.remove('show');
+                if (ok) showToast(P('sidebar_saved'), 'success');
+                else e.target.checked = !e.target.checked;
+            });
+        })();
+
+        // ===== Module order (module_order, GH #187) =====
+        // Every move saves the FULL order (all modules, including any this analyst
+        // cannot open today, in the slots they already had). A failed save puts the
+        // list back to what was last saved; Reset deletes the preference, so the
+        // default order - including modules added later - applies again.
+        (function () {
+            const box = document.getElementById('moduleOrderList');
+            const D = window.MODULE_ORDER;
+            if (!box || !D || !window.ReorderList) return;
+            const P = k => window.t('system.preferences.' + k);
+            const hint = document.getElementById('moduleOrderHint');
+            const resetBtn = document.getElementById('moduleOrderReset');
+            const visible = new Set(D.items.map(i => i.key));
+            const shown = full => full.filter(k => visible.has(k));
+            let saved = D.all.slice();
+            let custom = D.custom;
+            resetBtn.disabled = !custom;
+
+            /** The visible order written back into the slots the visible modules hold, so hidden ones never move. */
+            function withHidden(visOrder) {
+                let i = 0;
+                return saved.map(k => (visible.has(k) ? visOrder[i++] : k));
+            }
+
+            let queue = Promise.resolve();
+            /** One save at a time; on failure (savePref shows the error) the list returns to the last saved order. */
+            function save(value, next, onOk) {
+                queue = queue.then(async () => {
+                    hint.classList.add('show');
+                    const ok = await savePref('module_order', value);
+                    hint.classList.remove('show');
+                    if (ok) { saved = next; onOk(); }
+                    else rl.setOrder(shown(saved));
+                });
+            }
+
+            const rl = ReorderList.mount(box, {
+                items: shown(saved).map(k => D.items.find(i => i.key === k)),
+                label: P('modorder_label'),
+                onChange: keys => {
+                    const next = withHidden(keys);
+                    save(JSON.stringify(next), next, () => { custom = true; resetBtn.disabled = false; });
+                },
+            });
+
+            resetBtn.addEventListener('click', () => {
+                save('', D.defaults.slice(), () => {
+                    custom = false;
+                    resetBtn.disabled = true;
+                    rl.setOrder(shown(D.defaults));
+                    showToast(P('modorder_reset_done'), 'success');
+                });
+            });
+        })();
+
+        // ===== Money (currency_format / currency_formats, GH #189) =====
+        // Saved as soon as anything changes, like the formats above. '' for
+        // currency_format means "follow System > Currencies".
+        (function () {
+            const mode = document.getElementById('moneyMode');
+            if (!mode || !window.Money) return;
+            const hint   = document.getElementById('moneySavingHint');
+            const allBox = document.getElementById('moneyAll');
+            const excBox = document.getElementById('moneyExc');
+            const addSel = document.getElementById('moneyExcAdd');
+            const P = k => window.t('system.preferences.' + k);
+            const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const mine = window.MONEY_MINE || { format: '', formats: {}, install: '' };
+            const state = { all: mine.format || '', per: Object.assign({}, mine.formats) };
+            const SAMPLE = 1234567.891;
+            const base = () => state.all || mine.install;
+
+            function draw() {
+                mode.value = state.all ? 'own' : '';
+                allBox.hidden = !state.all;
+                if (state.all) allBox.innerHTML = Money.formatPickerHtml(Money.def(), state.all, 'pref-language-select');
+                const codes = Object.keys(state.per).sort();
+                excBox.innerHTML = codes.length ? codes.map(c => '<div class="money-exc" data-exc="' + esc(c) + '">'
+                    + '<div class="money-exc-head"><span class="nm"><code>' + esc(c) + '</code>' + esc(Money.name(c)) + '</span>'
+                    + '<span class="eg">' + esc(Money.format(SAMPLE, c, state.per[c])) + '</span>'
+                    + '<button type="button" data-exc-remove="' + esc(c) + '" title="' + esc(P('money_remove')) + '" aria-label="' + esc(P('money_remove')) + '">&times;</button></div>'
+                    + '<div class="money-picker">' + Money.formatPickerHtml(c, state.per[c], 'pref-language-select') + '</div></div>').join('')
+                    : '<p>' + esc(P('money_exc_none')) + '</p>';
+                // Favourites first, as everywhere; minus the currencies that already have a row.
+                addSel.innerHTML = Money.optionsHtml(Money.favourites()[0]);
+                codes.forEach(c => { const o = addSel.querySelector('option[value="' + c + '"]'); if (o) o.remove(); });
+            }
+
+            // One save at a time, each sending the value as it is WHEN it goes: two
+            // quick changes otherwise race, and the older request can land last.
+            let queue = Promise.resolve();
+            function save(key) {
+                queue = queue.then(async () => {
+                    hint.classList.add('show');
+                    const ok = await savePref(key, key === 'currency_format' ? state.all : JSON.stringify(state.per));
+                    hint.classList.remove('show');
+                    if (ok) showToast(window.t('system.preferences.format_saved'), 'success');
+                });
+            }
+
+            mode.addEventListener('change', () => { state.all = mode.value ? base() : ''; draw(); save('currency_format'); });
+            allBox.addEventListener('change', () => { state.all = Money.readPicker(allBox); draw(); save('currency_format'); });
+            excBox.addEventListener('change', e => {
+                const row = e.target.closest('[data-exc]');
+                if (!row) return;
+                state.per[row.dataset.exc] = Money.readPicker(row.querySelector('.money-picker'));
+                draw(); save('currency_formats');
+            });
+            excBox.addEventListener('click', e => {
+                const b = e.target.closest('[data-exc-remove]');
+                if (!b) return;
+                delete state.per[b.dataset.excRemove];
+                draw(); save('currency_formats');
+            });
+            document.getElementById('moneyExcAddBtn').addEventListener('click', () => {
+                const c = addSel.value;
+                if (!c || state.per[c]) return;
+                state.per[c] = base();
+                draw(); save('currency_formats');
+            });
+            draw();
+        })();
+
         // ===== Generic two-button toggle wiring =====
         // Used for animation style, sidebar modes, MC fill — anything
         // that's a simple set of mutually-exclusive options. Pass the
@@ -375,6 +1769,29 @@ if (isset($_SESSION['analyst_id'])) {
         wireToggle('animToggle',      'anim', 'toast_animation',            INITIAL_PREFS.toast_animation,
                    v => showToast(window.t('system.preferences.anim_preview', { anim: v }), 'info'));
         wireToggle('mcFillToggle',    'fill', 'mc_chart_fill_style',        INITIAL_PREFS.mc_chart_fill_style);
+
+        // Tickets inbox multi-select behaviour. The hint text changes with the
+        // choice — the three modes are hard to tell apart from their names alone.
+        const MULTISELECT_HINTS = {
+            summary: window.t('system.preferences.multiselect_summary_hint'),
+            keep:    window.t('system.preferences.multiselect_keep_hint'),
+            bar:     window.t('system.preferences.multiselect_bar_hint')
+        };
+        function setMultiSelectHint(v) {
+            const el = document.getElementById('multiSelectPaneHint');
+            if (el) el.textContent = MULTISELECT_HINTS[v] || '';
+        }
+        // Use the ticket workspace (ticket_workspace, PR #211). Same rule: a failed
+        // save puts the switch back.
+        document.getElementById('ticketWorkspacePref')?.addEventListener('change', async function () {
+            this.disabled = true;
+            const ok = await savePref('ticket_workspace', this.checked ? '1' : '0');
+            if (!ok) this.checked = !this.checked;
+            this.disabled = false;
+        });
+        setMultiSelectHint(INITIAL_PREFS.tickets_multiselect_pane);
+        wireToggle('multiSelectPaneToggle', 'msmode', 'tickets_multiselect_pane',
+                   INITIAL_PREFS.tickets_multiselect_pane, setMultiSelectHint);
 
         // ===== Left-panel visibility, one toggle per module =====
         // Rows are generated here so the markup stays a single container.
@@ -451,6 +1868,672 @@ if (isset($_SESSION['analyst_id'])) {
                 localStorage.removeItem('toast_animation');
             }
         })();
+
+        // ==================== My details + signatures (#80) ====================
+        // Everything here is the signed-in analyst's own; no endpoint takes an
+        // analyst id, so there is nothing to scope in the browser either.
+
+        let sigEditor = null;      // the TinyMCE instance
+        let sigState  = { loaded: false, signatures: [], codes: {} };
+
+        async function loadSignatures() {
+            try {
+                const resp = await fetch('../../api/myaccount/get_signatures.php');
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'load failed');
+
+                sigState = { loaded: true, signatures: data.signatures || [], codes: data.merge_codes || {} };
+
+                const p = data.profile || {};
+                document.getElementById('myJobTitle').value  = p.job_title  || '';
+                document.getElementById('myDepartment').value = p.department || '';
+                document.getElementById('myPhone').value      = p.phone      || '';
+                document.getElementById('myMobile').value     = p.mobile     || '';
+                // An OIDC provider set to sync 'always' rewrites these on every
+                // sign-in (#155), so they are read-only here. The server refuses
+                // the save too - this only stops anyone typing into them.
+                const isManaged = !!p.sso_synced;
+                ['myJobTitle', 'myDepartment', 'myPhone', 'myMobile'].forEach(function (id) {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.disabled = isManaged;
+                        if (isManaged) {
+                            el.title = window.t ? window.t('system.preferences.details_managed_note') : 'Managed by identity provider';
+                            if (el.parentElement) el.parentElement.classList.add('is-disabled');
+                        } else {
+                            el.removeAttribute('title');
+                            if (el.parentElement) el.parentElement.classList.remove('is-disabled');
+                        }
+                    }
+                });
+                const saveBtn = document.getElementById('saveDetailsBtn');
+                if (saveBtn) saveBtn.style.display = isManaged ? 'none' : '';
+                const managedNote = document.getElementById('detailsManagedNote');
+                if (managedNote) managedNote.style.display = isManaged ? 'flex' : 'none';
+
+                renderSignatureList();
+                renderSignatureCodes();
+            } catch (e) {
+                // ⚠️ Say so rather than rendering an empty list. "You have no
+                // signatures" and "we could not find out" look identical, and the
+                // second one would have somebody rewriting a signature they already
+                // have — see the unloaded-checkbox problem this app has hit twice.
+                sigState.loaded = false;
+                document.getElementById('sigList').innerHTML =
+                    '<div class="sig-empty sig-error">' + escapeHtmlSig(t('system.preferences.sig_load_failed')) + '</div>';
+            }
+        }
+
+        function escapeHtmlSig(s) {
+            const d = document.createElement('div');
+            d.textContent = s == null ? '' : String(s);
+            return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function renderSignatureList() {
+            const box = document.getElementById('sigList');
+            if (!sigState.signatures.length) {
+                box.innerHTML = '<div class="sig-empty">' + escapeHtmlSig(t('system.preferences.sig_empty')) + '</div>';
+                return;
+            }
+            box.innerHTML = sigState.signatures.map(function (s) {
+                const badge = Number(s.is_default) === 1
+                    ? '<span class="sig-default-badge">' + escapeHtmlSig(t('system.preferences.sig_default')) + '</span>' : '';
+                // The rendered form, not the raw one: the point of the list is to see
+                // what actually goes out, merge codes already filled in.
+                return '<div class="sig-card">'
+                     +   '<div class="sig-card-head">'
+                     +     '<strong>' + escapeHtmlSig(s.name) + '</strong>' + badge
+                     +     '<span class="sig-card-actions">'
+                     +       '<button type="button" class="sig-btn sig-btn-secondary" onclick="openSignatureEditor(' + s.id + ')">'
+                     +         escapeHtmlSig(t('common.edit')) + '</button>'
+                     +       '<button type="button" class="sig-btn sig-btn-danger" onclick="deleteSignature(' + s.id + ')">'
+                     +         escapeHtmlSig(t('common.delete')) + '</button>'
+                     +     '</span>'
+                     +   '</div>'
+                     +   '<div class="sig-card-body">' + (s.rendered || '') + '</div>'
+                     + '</div>';
+            }).join('');
+        }
+
+        function renderSignatureCodes() {
+            const box = document.getElementById('sigCodes');
+            if (!box) return;
+            const codes = Object.keys(sigState.codes);
+            box.innerHTML = '<span class="sig-codes-label">' + escapeHtmlSig(t('system.preferences.sig_codes')) + '</span>'
+                + codes.map(function (c) {
+                    return '<button type="button" class="sig-code" title="' + escapeHtmlSig(sigState.codes[c])
+                         + '" onclick="insertSignatureCode(\'' + c + '\')">[' + escapeHtmlSig(c) + ']</button>';
+                  }).join('');
+        }
+
+        function insertSignatureCode(code) {
+            if (sigEditor) sigEditor.execCommand('mceInsertContent', false, '[' + code + ']');
+        }
+
+        function initSignatureEditor() {
+            if (sigEditor || typeof tinymce === 'undefined') return Promise.resolve();
+            const isDark = (document.documentElement.getAttribute('data-theme-mode') || 'light') === 'dark';
+            return tinymce.init({
+                // Plugins and skins load without the page's ?v=, so a browser could pair a new
+                // editor with old cached plugins after an update. TinyMCE's own version stamps them.
+                cache_suffix: '?v=' + tinymce.majorVersion + '.' + tinymce.minorVersion,
+                selector: '#sigBody',
+                license_key: 'gpl',
+                height: 220,
+                menubar: false,
+                skin: isDark ? 'oxide-dark' : 'oxide',
+                content_css: isDark ? 'dark' : 'default',
+                plugins: ['autolink', 'lists', 'link', 'code'],
+                toolbar: 'undo redo | bold italic underline | bullist numlist | link | removeformat | code',
+                content_style: 'body { font-family: Arial, sans-serif; font-size: 14px; } @media (pointer: coarse) { body { font-size: 16px; } }',
+                setup: function (ed) {
+                    sigEditor = ed;
+                    // Live preview, so the effect of a merge code is visible while
+                    // typing rather than only after saving.
+                    ed.on('input change keyup SetContent', function () { refreshSignaturePreview(); });
+                }
+            });
+        }
+
+        // The preview substitutes the analyst's OWN details, which the page already
+        // holds — including anything typed into the details boxes but not yet saved,
+        // so you can see a phone number take effect before committing to it.
+        function refreshSignaturePreview() {
+            const el = document.getElementById('sigPreview');
+            if (!el) return;
+            const values = {
+                my_name:       (window.__MY_NAME || ''),
+                my_email:      (window.__MY_EMAIL || ''),
+                my_job_title:  document.getElementById('myJobTitle').value,
+                my_department: document.getElementById('myDepartment').value,
+                my_phone:      document.getElementById('myPhone').value,
+                my_mobile:     document.getElementById('myMobile').value
+            };
+            let html = sigEditor ? sigEditor.getContent() : '';
+            for (const k in values) {
+                html = html.split('[' + k + ']').join(escapeHtmlSig(values[k]));
+            }
+            // Same rule as the server: a code with nothing behind it is removed, not
+            // left showing at the bottom of every email you send.
+            el.innerHTML = html.replace(/\[my_[a-z_]+\]/g, '');
+        }
+
+        async function openSignatureEditor(id) {
+            await initSignatureEditor();
+            const sig = id ? sigState.signatures.find(function (s) { return Number(s.id) === Number(id); }) : null;
+            document.getElementById('sigId').value = sig ? sig.id : '';
+            document.getElementById('sigName').value = sig ? sig.name : '';
+            document.getElementById('sigIsDefault').checked = sig ? Number(sig.is_default) === 1 : false;
+            if (sigEditor) sigEditor.setContent(sig ? sig.body : '');
+            document.getElementById('sigEditor').style.display = '';
+            refreshSignaturePreview();
+            document.getElementById('sigName').focus();
+        }
+
+        function closeSignatureEditor() {
+            document.getElementById('sigEditor').style.display = 'none';
+        }
+
+        async function saveSignature() {
+            const body = sigEditor ? sigEditor.getContent() : '';
+            const payload = {
+                id: document.getElementById('sigId').value || null,
+                name: document.getElementById('sigName').value.trim(),
+                body: body,
+                is_default: document.getElementById('sigIsDefault').checked
+            };
+            try {
+                const resp = await fetch('../../api/myaccount/save_signature.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (!data.success) { alert(data.error); return; }
+                closeSignatureEditor();
+                await loadSignatures();
+            } catch (e) {
+                alert(t('system.preferences.sig_save_failed'));
+            }
+        }
+
+        async function deleteSignature(id) {
+            if (!confirm(t('system.preferences.sig_delete_confirm'))) return;
+            try {
+                await fetch('../../api/myaccount/delete_signature.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                await loadSignatures();
+            } catch (e) { /* the reload below will show the real state either way */ }
+        }
+
+        async function saveMyDetails() {
+            const hint = document.getElementById('detailsSavingHint');
+            hint.classList.add('visible');
+            try {
+                const resp = await fetch('../../api/myaccount/save_profile.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_title:  document.getElementById('myJobTitle').value,
+                        department: document.getElementById('myDepartment').value,
+                        phone:      document.getElementById('myPhone').value,
+                        mobile:     document.getElementById('myMobile').value
+                    })
+                });
+                const data = await resp.json();
+                if (!data.success) { alert(data.error); return; }
+                // Re-read: the saved details change every signature's rendered form,
+                // and the list is showing the old one until it is reloaded.
+                await loadSignatures();
+            } catch (e) {
+                alert(t('system.preferences.sig_save_failed'));
+            } finally {
+                setTimeout(function () { hint.classList.remove('visible'); }, 900);
+            }
+        }
+
+        // ===== My work calendar (GH #75) =====
+        //
+        // The URL is minted only when the analyst actually turns the option on.
+        // Creating a capability token for everyone who happens to open Preferences
+        // would leave working secret links belonging to people who never asked.
+        //
+        // The dialogue itself is the SAME component the Calendar module opens
+        // (assets/js/subscribe.js) — this page only says which endpoint mints its
+        // URL and what happens either side of it.
+        const WORKCAL_API = '../../api/tickets/get_schedule_feed_url.php';
+        const ENROL_API   = '../../api/tickets/calendar_enrolment.php';
+
+        function paintWorkCal(mode) {
+            const root = document.getElementById('workCalToggle');
+            if (!root) return;                       // switched off install-wide
+            root.querySelectorAll('.anim-option').forEach(b => {
+                b.classList.toggle('active', b.dataset.workcal === mode);
+            });
+            document.getElementById('workCalPanel').style.display     = mode === 'feed' ? '' : 'none';
+            document.getElementById('workCalPushPanel').style.display = mode === 'push' ? '' : 'none';
+        }
+
+        async function loadWorkCalDetail() {
+            const r = await fetch(WORKCAL_API, { credentials: 'same-origin' });
+            const d = await r.json();
+            if (!d.success) return;
+            document.getElementById('workCalDetailLocked').style.display = d.detail_locked ? '' : 'none';
+            document.querySelectorAll('#workCalDetailToggle .anim-option').forEach(b => {
+                b.classList.toggle('active', b.dataset.workcaldetail === d.detail);
+                // The organisation capped the detail: show it as already decided
+                // rather than as a control that silently ignores you.
+                b.disabled = !!d.detail_locked;
+                b.style.opacity = d.detail_locked ? '0.5' : '';
+                b.style.cursor  = d.detail_locked ? 'default' : '';
+            });
+        }
+
+        /** Whether the direct option is on offer, and if not, WHY not. */
+        async function loadWorkCalState() {
+            const d = await (await fetch(ENROL_API, { credentials: 'same-origin' })).json();
+            const pushBtn = document.getElementById('workCalPushBtn');
+            const why     = document.getElementById('workCalPushWhy');
+
+            if (!d.push_available) {
+                // Disabled AND explained. A greyed control with no reason is the
+                // thing people file support tickets about.
+                pushBtn.disabled = true;
+                pushBtn.style.opacity = '0.5';
+                pushBtn.style.cursor  = 'default';
+                why.textContent = window.t('system.preferences.workcal_push_none');
+                why.style.display = '';
+            }
+            workCalState = d;
+
+            // The chooser. Several connections and none chosen yet starts on
+            // "Choose…" rather than quietly on the first: switching on writes
+            // real events, and they should go where the analyst meant.
+            const conns = d.connections || [];
+            const sel   = document.getElementById('workCalConn');
+            sel.innerHTML = '';
+            if (!d.connection_id) {
+                const o = document.createElement('option');
+                o.value = ''; o.textContent = window.t('system.preferences.workcal_conn_choose');
+                sel.appendChild(o);
+            }
+            conns.forEach(c => {
+                const o = document.createElement('option');
+                o.value = String(c.id); o.textContent = c.name;
+                sel.appendChild(o);
+            });
+            sel.value = d.connection_id ? String(d.connection_id) : '';
+            document.getElementById('workCalConnRow').style.display = conns.length > 1 ? '' : 'none';
+
+            paintPushTarget();
+            paintTaskCal(d.task_mode);
+            paintWorkCal(d.mode || 'off');
+            if (d.mode === 'feed') await loadWorkCalDetail();
+            return d;
+        }
+
+        // ── Watchtower "Mine": cards with no owner (#58) ────────────────────
+        (function initWtImpersonal() {
+            const root = document.getElementById('wtImpersonalToggle');
+            if (!root) return;
+
+            const paint = v => root.querySelectorAll('.anim-option').forEach(b =>
+                b.classList.toggle('active', b.dataset.wtimp === (v || 'show')));
+
+            // Read the stored value rather than assuming the default, or somebody
+            // who chose "hide" sees "keep showing" lit and reasonably concludes
+            // their choice was lost.
+            fetch('../../api/system/get_user_preference.php?key=watchtower_impersonal',
+                  { credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(d => paint(d.value || d.preference_value || 'show'))
+                .catch(() => paint('show'));
+
+            root.addEventListener('click', async function (e) {
+                const btn = e.target.closest('.anim-option');
+                if (!btn) return;
+                const previous = root.querySelector('.anim-option.active');
+                paint(btn.dataset.wtimp);
+                try {
+                    const r = await fetch('../../api/system/set_user_preference.php', {
+                        method: 'POST', credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: 'watchtower_impersonal', value: btn.dataset.wtimp })
+                    }).then(r => r.json());
+                    if (!r || !r.success) throw new Error(r && r.error);
+                } catch (err) {
+                    // Back where it was: a control showing a state the server
+                    // refused is a lie about what will happen.
+                    paint(previous ? previous.dataset.wtimp : 'show');
+                    showToast(window.t('system.preferences.save_failed'), 'error');
+                }
+            });
+        })();
+        // ── CalDAV: the analyst's own sign-in and calendar (#133) ───────────
+        let workCalState = null;
+        let calDavPrevMode = 'off';     // what the toggle said before "push" was pressed
+
+        function calDavMsg(text, bad) {
+            const el = document.getElementById('calDavMsg');
+            if (!el) return;
+            el.textContent = text || '';
+            el.style.color = bad ? 'var(--danger-text,#721c24)' : 'var(--text-muted,#666)';
+            el.style.display = text ? '' : 'none';
+        }
+
+        /** Show what is saved, or the form when nothing is. */
+        function paintCalDav(d, forceForm) {
+            const panel = document.getElementById('calDavPanel');
+            if (!panel) return;
+            const c = d.caldav || {};
+            panel.style.display = '';
+            document.getElementById('calDavIntro').textContent =
+                window.t('system.preferences.caldav_intro', { server: c.server_url || '' });
+            const saved = !!c.calendar_url;
+            document.getElementById('calDavCurrent').style.display = (saved && !forceForm) ? '' : 'none';
+            document.getElementById('calDavForm').style.display    = (!saved || forceForm) ? '' : 'none';
+            document.getElementById('calDavCurrentText').textContent = saved
+                ? window.t('system.preferences.caldav_current', { user: c.username || '', name: c.calendar_name || c.calendar_url })
+                : '';
+            const user = document.getElementById('calDavUser');
+            if (!user.value) user.value = c.username || '';
+            document.getElementById('calDavPass').placeholder = c.has_password
+                ? window.t('system.preferences.caldav_password_saved') : '';
+        }
+
+        /** The connection picked on the screen: the chooser, else the only one. */
+        function workCalTarget() {
+            const conns = (workCalState && workCalState.connections) || [];
+            if (conns.length === 1) return conns[0];
+            const id = Number(document.getElementById('workCalConn').value || 0);
+            return conns.find(c => c.id === id) || null;
+        }
+
+        /**
+         * What the push panel says for the picked connection. The one already in
+         * use shows where the work goes; a different one shows what setting it
+         * up needs - a CalDAV sign-in form, fresh, since a sign-in belongs to
+         * one server.
+         */
+        function paintPushTarget() {
+            const d = workCalState;
+            if (!d) return;
+            const c = workCalTarget();
+            const current = !!c && c.id === d.connection_id;
+            const info = document.getElementById('workCalPushInfo');
+            const panel = document.getElementById('calDavPanel');
+            info.textContent = '';
+            if (panel) panel.style.display = 'none';
+            if (!c) {
+                if ((d.connections || []).length > 1) info.textContent = window.t('system.preferences.workcal_conn_needed');
+                return;
+            }
+            if (c.provider === 'caldav') {
+                if (current) {
+                    // The calendar is named rather than addressed: a web address
+                    // means nothing to most people, the calendar's own name does.
+                    info.textContent = (d.caldav && d.caldav.calendar_url)
+                        ? window.t('system.preferences.workcal_push_caldav_where', { name: d.caldav.calendar_name || d.caldav.calendar_url })
+                        : '';
+                    paintCalDav(d);
+                } else {
+                    document.getElementById('calDavUser').value = '';
+                    document.getElementById('calDavPass').value = '';
+                    document.getElementById('calDavPick').style.display = 'none';
+                    paintCalDav({ caldav: { server_url: c.server_url } }, true);
+                }
+            } else if (current && d.address) {
+                info.textContent = window.t('system.preferences.workcal_push_where', { addr: d.address });
+            }
+        }
+
+        async function calDavPost(body) {
+            const target = workCalTarget();
+            if (target) body.connection_id = target.id;
+            const r = await fetch(ENROL_API, {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(body)
+            });
+            return r.json().catch(() => ({ success: false }));
+        }
+
+        (function initCalDav() {
+            if (!document.getElementById('calDavPanel')) return;
+
+            document.getElementById('calDavFind').addEventListener('click', async function () {
+                calDavMsg(window.t('system.preferences.caldav_finding'));
+                this.disabled = true;
+                const d = await calDavPost({
+                    action: 'caldav_discover',
+                    username: document.getElementById('calDavUser').value.trim(),
+                    password: document.getElementById('calDavPass').value
+                });
+                this.disabled = false;
+                const pick = document.getElementById('calDavPick');
+                if (!d.success) { pick.style.display = 'none'; calDavMsg(d.error || window.t('system.preferences.save_failed'), true); return; }
+                if (!(d.calendars || []).length) { pick.style.display = 'none'; calDavMsg(window.t('system.preferences.caldav_none'), true); return; }
+                const sel = document.getElementById('calDavCal');
+                const current = (workCalState && workCalState.caldav && workCalState.caldav.calendar_url) || '';
+                sel.innerHTML = '';
+                d.calendars.forEach(c => {
+                    const o = document.createElement('option');
+                    o.value = c.url; o.textContent = c.name;
+                    if (c.url === current) o.selected = true;
+                    sel.appendChild(o);
+                });
+                pick.style.display = '';
+                calDavMsg('');
+            });
+
+            document.getElementById('calDavSave').addEventListener('click', async function () {
+                const active = document.querySelector('#workCalToggle .anim-option.active');
+                const turnOn = !!(active && active.dataset.workcal === 'push');
+                this.disabled = true;
+                const d = await calDavPost({
+                    action: 'caldav_save',
+                    username: document.getElementById('calDavUser').value.trim(),
+                    password: document.getElementById('calDavPass').value,
+                    calendar_url: document.getElementById('calDavCal').value,
+                    turn_on: turnOn ? '1' : ''
+                });
+                this.disabled = false;
+                if (!d.success) { calDavMsg(d.error || window.t('system.preferences.save_failed'), true); return; }
+                document.getElementById('calDavPass').value = '';
+                document.getElementById('calDavPick').style.display = 'none';
+                // Switching from the subscribe link to this REVOKES the link, the
+                // same as the toggle does: a secret URL that still works after you
+                // moved away from it is not what anybody means.
+                if (turnOn && calDavPrevMode === 'feed') {
+                    await fetch(WORKCAL_API, {
+                        method: 'POST', credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'action=revoke'
+                    });
+                    FreeITSMSubscribe.forget('workCal');
+                }
+                calDavPrevMode = d.mode || calDavPrevMode;
+                await loadWorkCalState();
+                // A first write that failed is said here, where it was caused,
+                // rather than only on an administrator's screen.
+                calDavMsg(d.last_error
+                    ? window.t('system.preferences.caldav_saved_error', { error: d.last_error })
+                    : window.t('system.preferences.caldav_saved', { name: d.calendar_name || '' }), !!d.last_error);
+            });
+
+            document.getElementById('calDavChange').addEventListener('click', function () {
+                if (workCalState) paintCalDav(workCalState, true);
+            });
+
+            document.getElementById('calDavForget').addEventListener('click', async function () {
+                const ok = await showConfirm({
+                    title: window.t('system.preferences.caldav_forget_title'),
+                    message: window.t('system.preferences.caldav_forget_confirm'),
+                    okLabel: window.t('system.preferences.caldav_forget'), okClass: 'danger'
+                });
+                if (!ok) return;
+                const d = await calDavPost({ action: 'caldav_forget' });
+                if (!d.success) { calDavMsg(d.error || window.t('system.preferences.save_failed'), true); return; }
+                document.getElementById('calDavUser').value = '';
+                document.getElementById('calDavPick').style.display = 'none';
+                calDavMsg('');
+                await loadWorkCalState();
+            });
+        })();
+
+        /** Paint the task choice (#75). */
+        function paintTaskCal(taskMode) {
+            const root = document.getElementById('taskCalToggle');
+            if (!root) return;
+            root.querySelectorAll('.anim-option').forEach(b => {
+                b.classList.toggle('active', b.dataset.taskcal === (taskMode || 'off'));
+            });
+        }
+
+        (function initTaskCal() {
+            const root = document.getElementById('taskCalToggle');
+            if (!root) return;
+
+            root.addEventListener('click', async function (e) {
+                const btn = e.target.closest('.anim-option');
+                if (!btn || btn.disabled) return;
+                const previous = root.querySelector('.anim-option.active');
+                const taskMode = btn.dataset.taskcal;
+                paintTaskCal(taskMode);
+
+                // ⚠️ `mode` is sent UNCHANGED alongside. The endpoint takes both
+                // on one POST, and omitting the mode would be read as a request
+                // to change it — which would switch the whole thing off while
+                // the analyst was only choosing what tasks do.
+                const currentMode = (document.querySelector('#workCalToggle .anim-option.active') || {}).dataset;
+                const r = await fetch(ENROL_API, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        mode: (currentMode && currentMode.workcal) || 'push',
+                        task_mode: taskMode
+                    })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!d.success) {
+                    // Back where it was: a control showing a state the server
+                    // refused is a lie about what is happening.
+                    paintTaskCal(previous ? previous.dataset.taskcal : 'off');
+                    showToast(d.error || window.t('system.preferences.taskcal_failed'), 'error');
+                }
+            });
+        })();
+
+        (function initWorkCal() {
+            const root = document.getElementById('workCalToggle');
+            if (!root) return;
+            FreeITSMSubscribe.mount('workCal', WORKCAL_API);
+            loadWorkCalState();
+
+            // Picking another connection. A CalDAV one needs a sign-in first, so
+            // it only shows the form; a Microsoft one moves straight away when
+            // "Add to my calendar" is on - it is the same request as pressing it.
+            document.getElementById('workCalConn').addEventListener('change', function () {
+                paintPushTarget();
+                const c = workCalTarget();
+                const active = root.querySelector('.anim-option.active');
+                if (c && c.provider !== 'caldav' && active && active.dataset.workcal === 'push'
+                    && c.id !== (workCalState && workCalState.connection_id)) {
+                    document.getElementById('workCalPushBtn').click();
+                }
+            });
+
+            root.addEventListener('click', async function (e) {
+                const btn = e.target.closest('.anim-option');
+                if (!btn || btn.disabled) return;
+                const mode = btn.dataset.workcal;
+                const previous = root.querySelector('.anim-option.active');
+                paintWorkCal(mode);
+
+                // The mode is stored server-side, and the server VERIFIES the
+                // mailbox before accepting 'push' — so a refusal here is the
+                // honest answer rather than a switch that appears on and never
+                // does anything.
+                const body = { mode: mode };
+                const target = workCalTarget();
+                if (mode === 'push' && target) body.connection_id = target.id;
+                const r = await fetch(ENROL_API, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams(body)
+                });
+                const d = await r.json();
+                // Several connections and none picked: open the chooser rather
+                // than refusing.
+                if (!d.success && d.needs_connection) {
+                    calDavPrevMode = previous ? previous.dataset.workcal : 'off';
+                    paintPushTarget();
+                    document.getElementById('workCalPushWhy').style.display = 'none';
+                    return;
+                }
+                // CalDAV with nothing saved yet: not a refusal but the next step.
+                // Keep "Add to my calendar" showing and open the sign-in form;
+                // saving it is what switches this on.
+                if (!d.success && d.needs_account && workCalState) {
+                    calDavPrevMode = previous ? previous.dataset.workcal : 'off';
+                    const c = workCalTarget();
+                    if (c && c.id === workCalState.connection_id) paintCalDav(workCalState, true);
+                    else paintPushTarget();
+                    calDavMsg(d.error || window.t('system.preferences.caldav_needs'), false);
+                    document.getElementById('workCalPushWhy').style.display = 'none';
+                    return;
+                }
+                if (!d.success) {
+                    // Put the control back where it was: leaving it on a state the
+                    // server rejected would be a lie about what is happening.
+                    paintWorkCal(previous ? previous.dataset.workcal : 'off');
+                    // And the chooser back to the connection still in use: the
+                    // move did not happen.
+                    if (workCalState) {
+                        document.getElementById('workCalConn').value = workCalState.connection_id ? String(workCalState.connection_id) : '';
+                        paintPushTarget();
+                    }
+                    const why = document.getElementById('workCalPushWhy');
+                    why.textContent = d.bad_address
+                        ? window.t('system.preferences.workcal_push_bad', { addr: d.address })
+                        : (d.no_address ? window.t('system.preferences.workcal_push_noaddr') : (d.error || ''));
+                    why.style.display = '';
+                    return;
+                }
+                document.getElementById('workCalPushWhy').style.display = 'none';
+                // The connection and address may have moved with it.
+                if (mode === 'push') await loadWorkCalState();
+
+                if (mode === 'feed') {
+                    await loadWorkCalDetail();
+                } else {
+                    // Leaving 'feed' REVOKES the link rather than merely hiding it.
+                    // A secret URL that still works after you switched it off is the
+                    // opposite of what "off" means.
+                    await fetch(WORKCAL_API, {
+                        method: 'POST', credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'action=revoke'
+                    });
+                    FreeITSMSubscribe.forget('workCal');
+                }
+            });
+
+            const detail = document.getElementById('workCalDetailToggle');
+            detail.addEventListener('click', async function (e) {
+                const btn = e.target.closest('.anim-option');
+                if (!btn || btn.disabled) return;
+                detail.querySelectorAll('.anim-option').forEach(b => b.classList.toggle('active', b === btn));
+                await savePref('tickets_schedule_feed_detail', btn.dataset.workcaldetail);
+            });
+        })();
+
+        document.addEventListener('DOMContentLoaded', loadSignatures);
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

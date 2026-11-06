@@ -1,0 +1,1445 @@
+{
+    "schema_version": 1,
+    "observed_at": "2026-10-26T09:00:00Z",
+    "scope": [
+        {
+            "kind": "host",
+            "id": "7f7de05e-df10-cb87-2148-86a8a4b36c70",
+            "name": "HV-S01"
+        },
+        {
+            "kind": "host",
+            "id": "19a0b9f0-aee8-25a8-2038-6933bc7e4c9b",
+            "name": "HV-S02"
+        },
+        {
+            "kind": "host",
+            "id": "96f3f23f-c308-2b90-1f8a-43c73691738c",
+            "name": "HV-S03"
+        }
+    ],
+    "collector": {
+        "name": "Invoke-HyperVInventory",
+        "version": "synthetic",
+        "powershell": "5.1",
+        "host": "MGMT-SYNTHETIC"
+    },
+    "unreadable": [],
+    "sections": {
+        "clusters": {
+            "complete": true,
+            "items": []
+        },
+        "hosts": {
+            "complete": true,
+            "items": [
+                {
+                    "id": "7f7de05e-df10-cb87-2148-86a8a4b36c70",
+                    "name": "HV-S01",
+                    "cluster_id": null,
+                    "node_state": null,
+                    "os_version": "Windows Server 2022 Datacenter",
+                    "cpu_count": 64,
+                    "memory_bytes": 549755813888
+                },
+                {
+                    "id": "19a0b9f0-aee8-25a8-2038-6933bc7e4c9b",
+                    "name": "HV-S02",
+                    "cluster_id": null,
+                    "node_state": null,
+                    "os_version": "Windows Server 2022 Datacenter",
+                    "cpu_count": 64,
+                    "memory_bytes": 549755813888
+                },
+                {
+                    "id": "96f3f23f-c308-2b90-1f8a-43c73691738c",
+                    "name": "HV-S03",
+                    "cluster_id": null,
+                    "node_state": null,
+                    "os_version": "Windows Server 2022 Datacenter",
+                    "cpu_count": 64,
+                    "memory_bytes": 549755813888
+                }
+            ]
+        },
+        "cluster_roles": {
+            "complete": true,
+            "items": []
+        },
+        "vms": {
+            "complete": true,
+            "items": [
+                {
+                    "id": "c6e9bb5d-c705-d132-96a6-8391cc5c7f6d",
+                    "name": "VM-00001",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.53.0.115"
+                    ]
+                },
+                {
+                    "id": "944281e9-988d-14ed-35cf-83b7ae17af47",
+                    "name": "VM-00002",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.185.0.148"
+                    ]
+                },
+                {
+                    "id": "66d3fc4e-71b9-8bee-7601-935aca3ae061",
+                    "name": "VM-00003",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.175.0.171"
+                    ]
+                },
+                {
+                    "id": "274449f2-d66c-32bd-1412-3f09e83f3ef9",
+                    "name": "VM-00004",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.94.0.64"
+                    ]
+                },
+                {
+                    "id": "45c419b8-86b8-5458-a999-83e071d22e47",
+                    "name": "VM-00005",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.32.0.37"
+                    ]
+                },
+                {
+                    "id": "4243f495-7ab7-2ccf-81a8-f5f9e6dc709e",
+                    "name": "VM-00006",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.34.0.118"
+                    ]
+                },
+                {
+                    "id": "02c3f8e1-353a-6a3f-4027-38a01ac61f5e",
+                    "name": "VM-00007",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.120.0.53"
+                    ]
+                },
+                {
+                    "id": "2045155d-da00-b447-662d-9a11875ec10d",
+                    "name": "VM-00008",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.39.0.138"
+                    ]
+                },
+                {
+                    "id": "f31d3913-a3fe-1af7-919c-9aec1e4d6548",
+                    "name": "VM-00009",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.87.0.159"
+                    ]
+                },
+                {
+                    "id": "7d16479c-6692-357b-39c2-1cabac19cc55",
+                    "name": "VM-00010",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.148.0.83"
+                    ]
+                },
+                {
+                    "id": "15dd50c2-829b-fd83-eb89-a8a73a21b38f",
+                    "name": "VM-00011",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.134.0.50"
+                    ]
+                },
+                {
+                    "id": "9791d50b-1c3f-e2fd-9a9e-db5cd58213c2",
+                    "name": "VM-00012",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.88.0.187"
+                    ]
+                },
+                {
+                    "id": "3057a18f-918e-2ac1-56ba-950e0bc60fed",
+                    "name": "VM-00013",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.104.0.172"
+                    ]
+                },
+                {
+                    "id": "37ddefbf-a9b4-665e-a421-c3273f5277a9",
+                    "name": "VM-00014",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.97.0.11"
+                    ]
+                },
+                {
+                    "id": "d78a214b-6cc3-692c-e24f-17a016698795",
+                    "name": "VM-00015",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.51.0.140"
+                    ]
+                },
+                {
+                    "id": "9c00a7c8-0361-ad97-fbb6-06b4408edf3c",
+                    "name": "VM-00016",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.3.0.39"
+                    ]
+                },
+                {
+                    "id": "0efa9d71-31cf-9aab-003d-ebf3e62e63d5",
+                    "name": "VM-00017",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.85.0.186"
+                    ]
+                },
+                {
+                    "id": "f74a781d-f14a-abf1-09b5-945c58080f54",
+                    "name": "VM-00018",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.62.0.213"
+                    ]
+                },
+                {
+                    "id": "42c55567-1c2b-4520-36a2-24ad03d80e6d",
+                    "name": "VM-00019",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.224.0.140"
+                    ]
+                },
+                {
+                    "id": "ad1b1258-d70c-fda1-5afd-a99ddad095dc",
+                    "name": "VM-00020",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.145.0.52"
+                    ]
+                },
+                {
+                    "id": "ea2d08bd-c9ac-31ac-3b37-c936cf26fa21",
+                    "name": "VM-00021",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.107.0.231"
+                    ]
+                },
+                {
+                    "id": "f3c8a05a-c1de-cfd2-212e-e5100c34e0db",
+                    "name": "VM-00022",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.131.0.236"
+                    ]
+                },
+                {
+                    "id": "d7e4a7e9-6f15-6d48-ad1c-9d29ef67be62",
+                    "name": "VM-00023",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.29.0.127"
+                    ]
+                },
+                {
+                    "id": "25e5079d-8012-980d-2051-9582c5419a1a",
+                    "name": "VM-00024",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.10.0.134"
+                    ]
+                },
+                {
+                    "id": "de2ed899-c111-bc0a-e227-3be297b63afb",
+                    "name": "VM-00025",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.24.0.225"
+                    ]
+                },
+                {
+                    "id": "f866ec90-0b42-442b-f8d8-bb85c7e6e849",
+                    "name": "VM-00026",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.204.0.68"
+                    ]
+                },
+                {
+                    "id": "f1d70770-ab4f-e956-cb7d-97b7e37ebcc7",
+                    "name": "VM-00027",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.144.0.121"
+                    ]
+                },
+                {
+                    "id": "9c6c07b9-8236-0f62-db13-4fbe30670c1f",
+                    "name": "VM-00028",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.249.0.190"
+                    ]
+                },
+                {
+                    "id": "a48b3f56-46d3-6b51-762d-f73d5ba3a06f",
+                    "name": "VM-00029",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.17.0.79"
+                    ]
+                },
+                {
+                    "id": "1ef7ca4a-ffb8-304f-7d4c-e6842a60367d",
+                    "name": "VM-00030",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.180.0.5"
+                    ]
+                },
+                {
+                    "id": "730fa7ae-cd62-5d44-cb32-402b94d22acf",
+                    "name": "VM-00031",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.242.0.226"
+                    ]
+                },
+                {
+                    "id": "455956a9-cde3-75e8-0459-f52aea9d263e",
+                    "name": "VM-00032",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.14.0.171"
+                    ]
+                },
+                {
+                    "id": "c959a279-3451-6bbb-6cb4-2076d1958d0d",
+                    "name": "VM-00033",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.32.0.160"
+                    ]
+                },
+                {
+                    "id": "8b95e3ca-13d8-3431-0024-df211dcb0a49",
+                    "name": "VM-00034",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.13.0.203"
+                    ]
+                },
+                {
+                    "id": "274c7a3b-8bd0-d476-dad8-8dada228a280",
+                    "name": "VM-00035",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.97.0.86"
+                    ]
+                },
+                {
+                    "id": "f209895f-d3fd-14cf-8d44-416695ab99c7",
+                    "name": "VM-00036",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.153.0.155"
+                    ]
+                },
+                {
+                    "id": "726a0c8b-40f9-e5de-61ef-ee0484619518",
+                    "name": "VM-00037",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.183.0.56"
+                    ]
+                },
+                {
+                    "id": "9bda9ec0-e904-969c-6706-09ad523fd672",
+                    "name": "VM-00038",
+                    "host": "HV-S02",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.180.0.121"
+                    ]
+                },
+                {
+                    "id": "ce217fbd-7881-8c9f-ab3a-0b09991fa69a",
+                    "name": "VM-00039",
+                    "host": "HV-S03",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.192.0.52"
+                    ]
+                },
+                {
+                    "id": "1904b6e5-0862-7c0f-5123-73b3f0978823",
+                    "name": "VM-00040",
+                    "host": "HV-S01",
+                    "state": "Running",
+                    "is_clustered": false,
+                    "cluster_role_id": null,
+                    "possible_owners": [],
+                    "generation": 2,
+                    "cpu_count": 4,
+                    "memory_bytes": 8589934592,
+                    "guest_addresses": [
+                        "10.15.0.16"
+                    ]
+                }
+            ]
+        },
+        "vm_disks": {
+            "complete": true,
+            "items": [
+                {
+                    "vm_id": "c6e9bb5d-c705-d132-96a6-8391cc5c7f6d",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00001\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "944281e9-988d-14ed-35cf-83b7ae17af47",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00002\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "66d3fc4e-71b9-8bee-7601-935aca3ae061",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00003\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "274449f2-d66c-32bd-1412-3f09e83f3ef9",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00004\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "45c419b8-86b8-5458-a999-83e071d22e47",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00005\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "4243f495-7ab7-2ccf-81a8-f5f9e6dc709e",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00006\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "02c3f8e1-353a-6a3f-4027-38a01ac61f5e",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00007\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "2045155d-da00-b447-662d-9a11875ec10d",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00008\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "f31d3913-a3fe-1af7-919c-9aec1e4d6548",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00009\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "7d16479c-6692-357b-39c2-1cabac19cc55",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00010\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "15dd50c2-829b-fd83-eb89-a8a73a21b38f",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00011\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "9791d50b-1c3f-e2fd-9a9e-db5cd58213c2",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00012\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "3057a18f-918e-2ac1-56ba-950e0bc60fed",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00013\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "37ddefbf-a9b4-665e-a421-c3273f5277a9",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00014\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "d78a214b-6cc3-692c-e24f-17a016698795",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00015\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "9c00a7c8-0361-ad97-fbb6-06b4408edf3c",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00016\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "0efa9d71-31cf-9aab-003d-ebf3e62e63d5",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00017\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "f74a781d-f14a-abf1-09b5-945c58080f54",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00018\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "42c55567-1c2b-4520-36a2-24ad03d80e6d",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00019\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "ad1b1258-d70c-fda1-5afd-a99ddad095dc",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00020\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "ea2d08bd-c9ac-31ac-3b37-c936cf26fa21",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00021\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "f3c8a05a-c1de-cfd2-212e-e5100c34e0db",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00022\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "d7e4a7e9-6f15-6d48-ad1c-9d29ef67be62",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00023\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "25e5079d-8012-980d-2051-9582c5419a1a",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00024\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "de2ed899-c111-bc0a-e227-3be297b63afb",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00025\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "f866ec90-0b42-442b-f8d8-bb85c7e6e849",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00026\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "f1d70770-ab4f-e956-cb7d-97b7e37ebcc7",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00027\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "9c6c07b9-8236-0f62-db13-4fbe30670c1f",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00028\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "a48b3f56-46d3-6b51-762d-f73d5ba3a06f",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00029\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "1ef7ca4a-ffb8-304f-7d4c-e6842a60367d",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00030\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "730fa7ae-cd62-5d44-cb32-402b94d22acf",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00031\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "455956a9-cde3-75e8-0459-f52aea9d263e",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00032\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "c959a279-3451-6bbb-6cb4-2076d1958d0d",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00033\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "8b95e3ca-13d8-3431-0024-df211dcb0a49",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00034\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "274c7a3b-8bd0-d476-dad8-8dada228a280",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00035\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "f209895f-d3fd-14cf-8d44-416695ab99c7",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00036\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "726a0c8b-40f9-e5de-61ef-ee0484619518",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00037\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "9bda9ec0-e904-969c-6706-09ad523fd672",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00038\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "ce217fbd-7881-8c9f-ab3a-0b09991fa69a",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00039\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                },
+                {
+                    "vm_id": "1904b6e5-0862-7c0f-5123-73b3f0978823",
+                    "id": "scsi-0-0",
+                    "path": "C:\\ClusterStorage\\Volume1\\VM-00040\\disk0.vhdx",
+                    "size_bytes": 136365211648,
+                    "used_bytes": 42949672960,
+                    "controller": "SCSI 0:0"
+                }
+            ]
+        },
+        "vm_networks": {
+            "complete": true,
+            "items": [
+                {
+                    "vm_id": "c6e9bb5d-c705-d132-96a6-8391cc5c7f6d",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "6F33042059E8",
+                    "ip_addresses": [
+                        "10.53.0.115"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "944281e9-988d-14ed-35cf-83b7ae17af47",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "B460C62D7599",
+                    "ip_addresses": [
+                        "10.185.0.148"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "66d3fc4e-71b9-8bee-7601-935aca3ae061",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "BBB9795B377A",
+                    "ip_addresses": [
+                        "10.175.0.171"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "274449f2-d66c-32bd-1412-3f09e83f3ef9",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "27DCD7147EAE",
+                    "ip_addresses": [
+                        "10.94.0.64"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "45c419b8-86b8-5458-a999-83e071d22e47",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "56181679D57A",
+                    "ip_addresses": [
+                        "10.32.0.37"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "4243f495-7ab7-2ccf-81a8-f5f9e6dc709e",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "31AF706E8B93",
+                    "ip_addresses": [
+                        "10.34.0.118"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "02c3f8e1-353a-6a3f-4027-38a01ac61f5e",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "6F2B3E3A06B8",
+                    "ip_addresses": [
+                        "10.120.0.53"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "2045155d-da00-b447-662d-9a11875ec10d",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "7F8559344B43",
+                    "ip_addresses": [
+                        "10.39.0.138"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "f31d3913-a3fe-1af7-919c-9aec1e4d6548",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "F73170CE8D0E",
+                    "ip_addresses": [
+                        "10.87.0.159"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "7d16479c-6692-357b-39c2-1cabac19cc55",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "C3F133DF5F5A",
+                    "ip_addresses": [
+                        "10.148.0.83"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "15dd50c2-829b-fd83-eb89-a8a73a21b38f",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "601A02F83F8E",
+                    "ip_addresses": [
+                        "10.134.0.50"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "9791d50b-1c3f-e2fd-9a9e-db5cd58213c2",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "7769616ABC35",
+                    "ip_addresses": [
+                        "10.88.0.187"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "3057a18f-918e-2ac1-56ba-950e0bc60fed",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "1C5A830EA150",
+                    "ip_addresses": [
+                        "10.104.0.172"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "37ddefbf-a9b4-665e-a421-c3273f5277a9",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "5B6D2E996A9C",
+                    "ip_addresses": [
+                        "10.97.0.11"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "d78a214b-6cc3-692c-e24f-17a016698795",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "2407E8FDA13B",
+                    "ip_addresses": [
+                        "10.51.0.140"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "9c00a7c8-0361-ad97-fbb6-06b4408edf3c",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "AEBE2289E117",
+                    "ip_addresses": [
+                        "10.3.0.39"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "0efa9d71-31cf-9aab-003d-ebf3e62e63d5",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "E20A47818EF8",
+                    "ip_addresses": [
+                        "10.85.0.186"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "f74a781d-f14a-abf1-09b5-945c58080f54",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "1E4E99699D1C",
+                    "ip_addresses": [
+                        "10.62.0.213"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "42c55567-1c2b-4520-36a2-24ad03d80e6d",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "3527683F157A",
+                    "ip_addresses": [
+                        "10.224.0.140"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "ad1b1258-d70c-fda1-5afd-a99ddad095dc",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "B22F431D2791",
+                    "ip_addresses": [
+                        "10.145.0.52"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "ea2d08bd-c9ac-31ac-3b37-c936cf26fa21",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "F93C2C48A487",
+                    "ip_addresses": [
+                        "10.107.0.231"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "f3c8a05a-c1de-cfd2-212e-e5100c34e0db",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "9490AD855145",
+                    "ip_addresses": [
+                        "10.131.0.236"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "d7e4a7e9-6f15-6d48-ad1c-9d29ef67be62",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "1AA9C595AF10",
+                    "ip_addresses": [
+                        "10.29.0.127"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "25e5079d-8012-980d-2051-9582c5419a1a",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "5CC062A84F26",
+                    "ip_addresses": [
+                        "10.10.0.134"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "de2ed899-c111-bc0a-e227-3be297b63afb",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "364C687C7F9B",
+                    "ip_addresses": [
+                        "10.24.0.225"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "f866ec90-0b42-442b-f8d8-bb85c7e6e849",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "8AF923F84DFD",
+                    "ip_addresses": [
+                        "10.204.0.68"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "f1d70770-ab4f-e956-cb7d-97b7e37ebcc7",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "655DE8E5FB40",
+                    "ip_addresses": [
+                        "10.144.0.121"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "9c6c07b9-8236-0f62-db13-4fbe30670c1f",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "E19EA3F10E92",
+                    "ip_addresses": [
+                        "10.249.0.190"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "a48b3f56-46d3-6b51-762d-f73d5ba3a06f",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "24663644615C",
+                    "ip_addresses": [
+                        "10.17.0.79"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "1ef7ca4a-ffb8-304f-7d4c-e6842a60367d",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "334AFAD92355",
+                    "ip_addresses": [
+                        "10.180.0.5"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "730fa7ae-cd62-5d44-cb32-402b94d22acf",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "19AF84838163",
+                    "ip_addresses": [
+                        "10.242.0.226"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "455956a9-cde3-75e8-0459-f52aea9d263e",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "7B2BF0E4726C",
+                    "ip_addresses": [
+                        "10.14.0.171"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "c959a279-3451-6bbb-6cb4-2076d1958d0d",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "9C9DA1FF5F9C",
+                    "ip_addresses": [
+                        "10.32.0.160"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "8b95e3ca-13d8-3431-0024-df211dcb0a49",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "FCF29A86FDAA",
+                    "ip_addresses": [
+                        "10.13.0.203"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "274c7a3b-8bd0-d476-dad8-8dada228a280",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "A1F65C0F16C1",
+                    "ip_addresses": [
+                        "10.97.0.86"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "f209895f-d3fd-14cf-8d44-416695ab99c7",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "4045EE8805F3",
+                    "ip_addresses": [
+                        "10.153.0.155"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "726a0c8b-40f9-e5de-61ef-ee0484619518",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "854C66C0CF1F",
+                    "ip_addresses": [
+                        "10.183.0.56"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "9bda9ec0-e904-969c-6706-09ad523fd672",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "53AA7A2BA1C2",
+                    "ip_addresses": [
+                        "10.180.0.121"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "ce217fbd-7881-8c9f-ab3a-0b09991fa69a",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "295B8751AE8F",
+                    "ip_addresses": [
+                        "10.192.0.52"
+                    ],
+                    "vlan_id": 20
+                },
+                {
+                    "vm_id": "1904b6e5-0862-7c0f-5123-73b3f0978823",
+                    "id": "nic-0",
+                    "name": "Network Adapter",
+                    "switch_name": "vSwitch-Prod",
+                    "mac_address": "159DAD113497",
+                    "ip_addresses": [
+                        "10.15.0.16"
+                    ],
+                    "vlan_id": 20
+                }
+            ]
+        }
+    }
+}

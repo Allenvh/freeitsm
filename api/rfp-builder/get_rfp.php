@@ -1,4 +1,14 @@
 <?php
+/**
+ * API: one RFP with its contract, chosen supplier, creator and the counts behind each
+ * stage (documents, requirements, conflicts, categories, sections, invited suppliers).
+ *
+ * Also returns its company, shown only when the install has more than one.
+ *
+ * @input  id  the RFP
+ * @output {success, rfp}
+ * @wiki Contracts
+ */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
@@ -10,6 +20,13 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+// The RFP Builder is part of the Contracts module — its PAGES have always checked
+// this, its endpoints never did. Any logged-in analyst could read, edit or delete
+// any RFP by calling the API directly. (Found by debug tool D005.)
+requireModuleAccessJson('contracts');
+// The RFP's company (3.5.0): one in a company this analyst cannot reach is "not found".
+require_once '../../includes/rfp_scope.php';
+rfpGate('rfp', 'id');
 try {
     $id = $_GET['id'] ?? null;
     if (!$id) {
@@ -43,6 +60,10 @@ try {
     if (!$rfp) {
         throw new Exception('RFP not found');
     }
+    // Its company (3.5.0), shown only when the install has more than one.
+    $rfp['multi_company'] = isMultiTenant($conn);
+    $rfp['tenant_id'] = rfpTenantOf($conn, (int)$id);
+    $rfp['company_name'] = ($t = getTenantById($conn, (int)$rfp['tenant_id'])) ? $t['name'] : null;
 
     echo json_encode(['success' => true, 'rfp' => $rfp]);
 } catch (Exception $e) {

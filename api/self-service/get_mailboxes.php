@@ -1,12 +1,15 @@
 <?php
 /**
- * API: Get active mailboxes for self-service ticket creation
+ * API: Get the mailboxes this self-service user may raise a ticket through
  * GET - Returns mailbox id, name, and email address only
+ *
+ * Their own company's plus shared ones on a multi-company install (GH #172) -
+ * see includes/self_service_mailboxes.php.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
-require_once '../../includes/encryption.php';
+require_once '../../includes/self_service_mailboxes.php';
 
 header('Content-Type: application/json');
 
@@ -18,16 +21,9 @@ if (!isset($_SESSION['ss_user_id'])) {
 try {
     $conn = connectToDatabase();
 
-    $stmt = $conn->prepare(
-        "SELECT id, name, target_mailbox FROM target_mailboxes WHERE is_active = 1 ORDER BY name"
-    );
-    $stmt->execute();
-    $mailboxes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // Decrypt the target_mailbox column (it's stored encrypted)
-    foreach ($mailboxes as &$mb) {
-        $mb['target_mailbox'] = decryptValue($mb['target_mailbox']);
-    }
+    $mailboxes = array_map(function ($m) {
+        return ['id' => $m['id'], 'name' => $m['name'], 'target_mailbox' => $m['target_mailbox']];
+    }, array_values(selfServiceMailboxes($conn, (int)$_SESSION['ss_user_id'])));
 
     echo json_encode(['success' => true, 'mailboxes' => $mailboxes]);
 

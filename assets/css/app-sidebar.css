@@ -1,0 +1,193 @@
+/* The optional module sidebar (#124, includes/app_sidebar.php): a rail of
+   module icons down the left of every analyst screen. Only on the page at all
+   when the analyst has turned it on; desktop only. Theme tokens only. */
+
+@media (min-width: 769px) {
+    /* The page moves right to make room. Fixed-position overlays (dialogs, the
+       command palette) still cover the whole window, the rail included. */
+    body:has(.app-sidebar) { padding-left: 54px; box-sizing: border-box; }
+    /* Pinned open with names (#124): the page moves over by the full width.
+       On hover it does NOT - the wider rail lies over the page instead. */
+    body:has(.app-sidebar--pinned) { padding-left: 220px; }
+    /* Waffle button hidden (#124): the rail does its job here. Inside this
+       query on purpose - a phone has no rail, so it always keeps the button.
+       The panel stays; the rail's Recent button still opens it. */
+    body:has(.app-sidebar--nowaffle) .waffle-btn { display: none; }
+
+    .app-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 54px;
+        z-index: 1500;          /* above the page, below dialogs (2000) */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 8px 0;
+        background: var(--surface, #fff);
+        border-right: 1px solid var(--border, #e0e0e0);
+        box-sizing: border-box;
+        overflow: hidden;       /* the names, while the rail is narrow */
+        transition: width 0.15s ease, box-shadow 0.15s ease;
+    }
+    .app-sidebar--pinned { width: 220px; }
+    /* Names on hover: a short delay so passing the pointer over the edge on
+       the way somewhere else does not flash the rail open. Keyboard focus
+       opens it at once. */
+    .app-sidebar--hover:hover { width: 220px; transition-delay: 0.2s; box-shadow: 4px 0 16px var(--shadow, rgba(0,0,0,0.15)); }
+    .app-sidebar--hover:focus-within { width: 220px; box-shadow: 4px 0 16px var(--shadow, rgba(0,0,0,0.15)); }
+    /* TRAP: the rail (z-index 1500) sits above the waffle panel (1000), so a
+       hover rail opened wide would cover the panel's left edge - Recent on the
+       rail opens that panel right beside it. Stay narrow while it is open. */
+    body:has(#wafflePanel.active) .app-sidebar--hover { width: 54px; box-shadow: none; }
+    /* Recent opened from the rail (#124): the waffle panel moves down beside
+       the rail's Recent button instead of hanging under the waffle. */
+    #wafflePanel.waffle-panel--rail { position: fixed; top: auto; bottom: 8px; left: 62px; margin-top: 0; max-height: calc(100vh - 16px); }
+    body:has(.app-sidebar--pinned) #wafflePanel.waffle-panel--rail { left: 228px; }
+
+    .app-sidebar-modules {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        overflow-y: auto;
+        scrollbar-width: none;
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+    }
+    .app-sidebar-modules::-webkit-scrollbar { display: none; }
+
+    /* The scroll arrows (#124): a row each above and below the list, so they
+       never cover a module. A row is only open while its arrow shows - there
+       is more that way (.show, set by the script in app_sidebar.php) - so
+       there is never an empty gap, and it slides open and shut rather than
+       making the list jump. A list that fits has neither. The arrow lines up
+       with the module icons: 6px margin + 6px padding + half a 30px tile = 27px. */
+    .app-sidebar-scroll {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+    }
+    .app-sidebar-arrow {
+        display: flex;
+        flex: 0 0 auto;
+        height: 0;
+        overflow: hidden;
+        align-items: center;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0 0 0 19px;
+        border: none;
+        background: none;
+        color: var(--text-muted, #666);
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .app-sidebar-scroll.ready .app-sidebar-arrow { transition: height 0.2s ease, opacity 0.2s ease; }
+    .app-sidebar-arrow.show { height: 24px; opacity: 1; pointer-events: auto; }
+    .app-sidebar-arrow:hover { color: var(--text, #333); }
+    .app-sidebar-arrow svg { width: 16px; height: 16px; }
+    @media (prefers-reduced-motion: reduce) {
+        .app-sidebar-scroll.ready .app-sidebar-arrow { transition: none; }
+    }
+
+    /* Icon and name sit at the same place narrow or wide - the icon never
+       moves when the rail opens, the name is simply uncovered. */
+    .app-sidebar-link {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        margin: 0 6px;
+        padding: 0 6px;
+        box-sizing: border-box;
+        min-width: 42px;
+        height: 40px;
+        flex-shrink: 0;
+        border-radius: 8px;
+        text-decoration: none;
+    }
+    .app-sidebar-link:hover,
+    .app-sidebar-link:focus-visible { background: var(--surface-hover, #f0f0f0); outline: none; }
+    .app-sidebar-link.current { background: var(--accent-soft, #e8f4fd); }
+    .app-sidebar-link.current::before {
+        content: '';
+        position: absolute;
+        left: -6px;
+        top: 8px;
+        bottom: 8px;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: var(--accent, #0078d4);
+    }
+    /* The waffle's own coloured tiles, a little smaller. */
+    .app-sidebar .waffle-module-icon { width: 30px; height: 30px; margin: 0; border-radius: 7px; }
+    .app-sidebar .waffle-module-icon svg { width: 18px; height: 18px; }
+
+    .app-sidebar-foot {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        padding-top: 8px;
+        margin-top: 8px;
+        border-top: 1px solid var(--border, #e0e0e0);
+        width: 100%;
+    }
+    .app-sidebar-tool {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        margin: 0 6px;
+        padding: 0 11px;
+        box-sizing: border-box;
+        min-width: 42px;
+        height: 34px;
+        font: inherit;
+        text-decoration: none;
+        border: none;
+        border-radius: 8px;
+        background: none;
+        color: var(--text-muted, #666);
+        cursor: pointer;
+    }
+    .app-sidebar-tool:hover,
+    .app-sidebar-tool:focus-visible { background: var(--surface-hover, #f0f0f0); color: var(--text, #333); outline: none; }
+    .app-sidebar-tool svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .app-sidebar .waffle-module-icon { flex-shrink: 0; }
+
+    .app-sidebar-name {
+        font-size: 13px;
+        color: var(--text, #333);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
+    .app-sidebar-link.current .app-sidebar-name { font-weight: 600; }
+    .app-sidebar-tool .app-sidebar-name { color: inherit; }
+
+    /* Files is a desktop of its own, pinned to the window's edges rather than
+       laid out in the page, so its layers move over for the rail by hand. */
+    body:has(.app-sidebar) .fd-desktop,
+    body:has(.app-sidebar) .fd-taskbar,
+    body[data-navbar="auto"]:has(.app-sidebar) .fd-navwrap { left: 54px; }
+    body:has(.app-sidebar) .fd-startmenu { left: 62px; }
+    body:has(.app-sidebar--pinned) .fd-desktop,
+    body:has(.app-sidebar--pinned) .fd-taskbar,
+    body[data-navbar="auto"]:has(.app-sidebar--pinned) .fd-navwrap { left: 220px; }
+    body:has(.app-sidebar--pinned) .fd-startmenu { left: 228px; }
+}
+
+/* A phone keeps its compact menu: no rail, and the page does not move. */
+@media (max-width: 768px) {
+    .app-sidebar { display: none; }
+}

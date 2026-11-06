@@ -1,10 +1,15 @@
 <?php
 /**
- * API Endpoint: Update a single field on an asset (type or status)
+ * API Endpoint: Update a single editable field on an asset.
+ * Thin UI adapter over AssetsService::updateFields — the validation, audit
+ * trail, and warranty-calendar sync live there, shared with the REST API's
+ * PATCH /assets/{id}.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/services/assets.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -13,8 +18,10 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+requireModuleAccessJson('assets');
+
 try {
-    $data = json_decode(file_get_contents('php://input'), true);
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
 
     $asset_id = $data['asset_id'] ?? null;
     $field = $data['field'] ?? '';
@@ -24,77 +31,54 @@ try {
         throw new Exception('Asset ID is required');
     }
 
-    // Whitelist allowed fields to prevent SQL injection
+    // Whitelist the fields this UI action may edit. The service map is broader
+    // (it also covers agent-synced hardware/OS columns); this endpoint keeps its
+    // narrower classification/lifecycle surface, so an unexpected field is still
+    // rejected here rather than silently widened.
+    // ⚠️ hostname / service_tag / manufacturer / model were added in #1143.
+    //
+    // They were read-only because for a COMPUTER they are agent-owned: the
+    // inventory script reports them, so typing one in just gets overwritten on
+    // the next sync, and read-only told the truth about who owns them.
+    //
+    // That reasoning does not survive contact with a television. Nothing will
+    // ever report a webcam's model, so nothing overwrites it — and a typo made
+    // while adding one by hand was uncorrectable. The service already validates
+    // all four (hostname non-blank + unique per company); only this whitelist
+    // stood in the way.
+    //
+    // 🔑 The RISK is renaming, not editing. The agent upserts on `hostname`
+    // (api/external/system-info/submit), so renaming a machine that reports in
+    // makes the next report create a SECOND asset. The UI warns before that
+    // happens — it does not block, because plenty of assets never report.
     $allowedFields = ['asset_type_id', 'asset_status_id', 'location_id',
-                      'purchase_date', 'purchase_cost', 'supplier_id', 'order_number', 'warranty_expiry'];
-    if (!in_array($field, $allowedFields)) {
+                      'purchase_date', 'purchase_cost', 'supplier_id', 'order_number', 'warranty_expiry',
+                      'lease_start', 'lease_expiry', 'cost_centre_id',   // GH #160
+                      'hostname', 'service_tag', 'manufacturer', 'model',
+                      'retired_reason'];   // why a retired asset left - the date comes with its status
+    if (!in_array($field, $allowedFields, true)) {
         throw new Exception('Invalid field');
-    }
-
-    // Convert empty string to null
-    if ($value === '' || $value === null) {
-        $value = null;
     }
 
     $conn = connectToDatabase();
 
-    // Get the current value before updating
-    $oldStmt = $conn->prepare("SELECT $field FROM assets WHERE id = ?");
-    $oldStmt->execute([$asset_id]);
-    $oldRow = $oldStmt->fetch(PDO::FETCH_ASSOC);
-    $oldValue = $oldRow ? $oldRow[$field] : null;
-
-    $sql = "UPDATE assets SET $field = ? WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([$value, $asset_id]);
-
-    // Resolve display names for type/status IDs
-    $oldDisplay = $oldValue;
-    $newDisplay = $value;
-    if ($field === 'asset_type_id') {
-        $nameQuery = "SELECT name FROM asset_types WHERE id = ?";
-        if ($oldValue) { $n = $conn->prepare($nameQuery); $n->execute([$oldValue]); $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $oldDisplay = $r['name']; }
-        if ($value)    { $n = $conn->prepare($nameQuery); $n->execute([$value]);    $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $newDisplay = $r['name']; }
-    } elseif ($field === 'asset_status_id') {
-        $nameQuery = "SELECT name FROM asset_status_types WHERE id = ?";
-        if ($oldValue) { $n = $conn->prepare($nameQuery); $n->execute([$oldValue]); $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $oldDisplay = $r['name']; }
-        if ($value)    { $n = $conn->prepare($nameQuery); $n->execute([$value]);    $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $newDisplay = $r['name']; }
-    } elseif ($field === 'location_id') {
-        $nameQuery = "SELECT name FROM asset_locations WHERE id = ?";
-        if ($oldValue) { $n = $conn->prepare($nameQuery); $n->execute([$oldValue]); $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $oldDisplay = $r['name']; }
-        if ($value)    { $n = $conn->prepare($nameQuery); $n->execute([$value]);    $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $newDisplay = $r['name']; }
-    } elseif ($field === 'supplier_id') {
-        $nameQuery = "SELECT COALESCE(NULLIF(TRIM(trading_name), ''), legal_name) AS name FROM suppliers WHERE id = ?";
-        if ($oldValue) { $n = $conn->prepare($nameQuery); $n->execute([$oldValue]); $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $oldDisplay = $r['name']; }
-        if ($value)    { $n = $conn->prepare($nameQuery); $n->execute([$value]);    $r = $n->fetch(PDO::FETCH_ASSOC); if ($r) $newDisplay = $r['name']; }
+    // Multi-tenancy: refuse to edit an asset in a company this analyst can't
+    // access (no-op on a single-company install). Framed as not-found so it
+    // never reveals another company's asset.
+    if (!analystCanAccessAsset($conn, (int)$_SESSION['analyst_id'], (int)$asset_id)) {
+        throw new Exception('Asset not found');
     }
 
-    // Log the change to asset_history. Store a stable field KEY (not an English
-    // label) so the history view can translate it at render time via
-    // t('asset-management.field.<key>'). Legacy rows hold English labels and are
-    // shown as-is by the renderer.
-    $fieldKeys = [
-        'asset_type_id' => 'type', 'asset_status_id' => 'status', 'location_id' => 'location',
-        'purchase_date' => 'purchase_date', 'purchase_cost' => 'purchase_cost', 'supplier_id' => 'supplier',
-        'order_number' => 'order_number', 'warranty_expiry' => 'warranty_expiry',
-    ];
-    $fieldLabel = $fieldKeys[$field] ?? $field;
-    $auditSql = "INSERT INTO asset_history (asset_id, analyst_id, field_name, old_value, new_value, created_datetime)
-                 VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())";
-    $auditStmt = $conn->prepare($auditSql);
-    $auditStmt->execute([$asset_id, $_SESSION['analyst_id'], $fieldLabel, $oldDisplay, $newDisplay]);
+    $ctx = ActorContext::fromSession($conn);
+    AssetsService::updateFields($conn, $ctx, (int)$asset_id, [$field => $value]);
+    // GH #200 part D: a name, manufacturer or model a person corrects on an asset a tool
+    // reports is protected from being overwritten by that tool (unless switched off).
+    require_once '../../includes/services/asset_protection.php';
+    $protected = AssetProtectionService::afterPersonEdit($conn, $ctx, (int)$asset_id, (string)$field, $value === null ? null : (string)$value);
+    echo json_encode(['success' => true, 'protected' => $protected]);
 
-    // Keep the calendar's warranty events in step when a warranty date changes
-    // (no-op unless the warranty-alert setting includes the calendar).
-    if ($field === 'warranty_expiry') {
-        require_once '../../includes/asset_warranty_calendar.php';
-        try { syncAssetWarrantyCalendar($conn); } catch (Exception $syncEx) { /* non-critical */ }
-    }
-
-    echo json_encode(['success' => true]);
-
+} catch (ServiceError $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
-
-?>

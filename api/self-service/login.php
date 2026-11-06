@@ -1,14 +1,34 @@
 <?php
 /**
  * API: Self-Service Portal Login
- * POST - Authenticates a user by email and password
- * Returns mfa_required: true if TOTP is enabled
+ * POST { identifier | email, password }
+ * Returns mfa_required: true if TOTP is enabled.
+ *
+ * ONE BOX, THREE OUTCOMES
+ * -----------------------
+ * The requester types an email address OR a username, plus a password, and this
+ * decides how to check it — the same shape the analyst login has used since the
+ * directory work landed (login.php), so the two behave alike:
+ *
+ *   a) we know them and they're pinned to a directory → LDAP bind
+ *   b) we know them and they're local                 → password_verify
+ *   c) we don't know them                             → ask the directories, and
+ *                                                       create the account if one
+ *                                                       answers (JIT)
+ *
+ * (c) is the point of the feature: nobody wants to hand-create a portal account
+ * for every new starter, and the people who most need the portal — staff with no
+ * mailbox, who can't be reached by email in the first place — are exactly the
+ * ones an admin is least likely to have pre-created.
+ *
+ * An account pinned to an OIDC provider is refused here, as it has no password
+ * to check; the login page routes those to the SSO button instead.
  */
 session_start();
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/ldap.php';
-require_once '../../includes/ldap_transition.php';
+require_once '../../includes/users.php';   // userSignsInElsewhere()
 
 header('Content-Type: application/json');
 
@@ -50,15 +70,16 @@ try {
     $lookup->execute([$identifier, $identifier]);
     $user = $lookup->fetch(PDO::FETCH_ASSOC) ?: null;
 
-    if ($user && legacyAdMigrationPending($conn,'user_id',(int)$user['id'])) throw new RuntimeException('Legacy account requires migration.');
     $authOk           = false;
     $ldapProviderUsed = null;
     $ldapCandidates   = [];
 
     $assignedProviderId = (int)($user['auth_provider_id'] ?? 0);
 
-    // This fork supports LDAP/OIDC assignments, not upstream CardDAV contacts.
-    if ($user && $assignedProviderId > 0) {
+    // ⚠️ Linked is not the same as "signs in elsewhere": a contact imported
+    // from a CardDAV address book is linked to it and still signs in here with
+    // a FreeITSM password. See userSignsInElsewhere().
+    if ($user && userSignsInElsewhere($conn, $assignedProviderId)) {
         // (a) Pinned. ldapGetProvider() returns null for an OIDC provider, which
         // is how an SSO account is kept off this form.
         $assigned = ldapGetProvider($conn, $assignedProviderId);
@@ -135,25 +156,33 @@ try {
     $displayName = $user['preferred_name']
         ?: ($user['display_name'] ?: ($user['username'] ?: ($user['email'] ?: ('#' . (int)$user['id']))));
 
-    // Check if MFA is enabled
+    // 🔑 TOTP applies to DIRECTORY sign-ins too, exactly as it does on the
+    // analyst side (login.php:299 checks it regardless of how the password was
+    // verified). An earlier version of this skipped it after a successful bind,
+    // reasoning that a directory user could never have set TOTP up here — which
+    // is wrong: ldapResolveUser() CLAIMS an existing unassigned account, so
+    // someone who enabled a second factor as a local user and was later linked
+    // to a directory would have silently stopped being asked for it. Turning
+    // somebody's second factor off without telling them is not a thing to do.
+    // Marked as left (3.5.0) - checked after the password so it reveals nothing to a guesser.
+    if (!requesterIsActive($conn, (int)$user['id'])) {
+        echo json_encode(['success' => false, 'error' => 'Your account is no longer active. Contact the service desk if you think this is a mistake.']);
+        exit;
+    }
+
     if ($user['totp_enabled']) {
-        // Store pending MFA state (don't complete login yet)
         $_SESSION['mfa_pending_ss_user_id'] = (int)$user['id'];
-        $_SESSION['mfa_pending_ss_email'] = $user['email'];
-        $_SESSION['mfa_pending_ss_name'] = $displayName;
-        $_SESSION['mfa_pending_ss_ldap_provider_id'] = $ldapProviderUsed ? (int)$ldapProviderUsed['id'] : null;
+        $_SESSION['mfa_pending_ss_email']   = $user['email'];
+        $_SESSION['mfa_pending_ss_name']    = $displayName;
 
         echo json_encode(['success' => true, 'mfa_required' => true]);
         exit;
     }
 
-    // Rotate for local and directory authentication alike.
-    session_regenerate_id(true);
-    // No MFA - complete login
-    $_SESSION['ss_user_id'] = (int)$user['id'];
-    $_SESSION['ss_user_email'] = $user['email'];
-    $_SESSION['ss_user_name'] = $displayName;
-    $_SESSION['ldap_user_provider_id'] = $ldapProviderUsed ? (int)$ldapProviderUsed['id'] : null;
+    sessionPromoteToAuthenticated();   // rotate the session id — see includes/session_security.php
+    $_SESSION['ss_user_id']    = (int)$user['id'];
+    $_SESSION['ss_user_email'] = $user['email'];   // may be NULL — no mailbox
+    $_SESSION['ss_user_name']  = $displayName;
 
     echo json_encode(['success' => true]);
 

@@ -19,6 +19,10 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// Mints/returns the secret token for the unauthenticated iCal feed, so it must not be
+// reachable by an analyst who cannot use the Calendar. (Found by debug tool D005.)
+requireModuleAccessJson('calendar');
 $analystId = (int)$_SESSION['analyst_id'];
 $reset = ($_SERVER['REQUEST_METHOD'] === 'POST') && (($_POST['action'] ?? '') === 'reset');
 
@@ -39,8 +43,8 @@ try {
         $token = bin2hex(random_bytes(24)); // 48 hex chars
         $stmt = $conn->prepare(
             "INSERT INTO user_preferences (analyst_id, preference_key, preference_value, updated_datetime)
-             VALUES (?, 'calendar_feed_token', ?, NOW())
-             ON DUPLICATE KEY UPDATE preference_value = VALUES(preference_value), updated_datetime = NOW()"
+             VALUES (?, 'calendar_feed_token', ?, UTC_TIMESTAMP())
+             ON DUPLICATE KEY UPDATE preference_value = VALUES(preference_value), updated_datetime = UTC_TIMESTAMP()"
         );
         $stmt->execute([$analystId, $token]);
     }
@@ -48,8 +52,9 @@ try {
     // Build the absolute feed URL from this request's host + this script's folder.
     // Components are returned too so the client can swap the host (e.g. replace
     // "localhost" with the laptop's LAN IP) and rebuild the URL/QR without a round-trip.
-    $https = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off')
-          || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    // requestIsHttps(): the one HTTPS rule (GH #152) - a proxy's X-Forwarded-Proto
+    // only counts when TRUST_PROXY_HTTPS says the proxy is ours.
+    $https = requestIsHttps();
     $scheme    = $https ? 'https' : 'http';
     $host      = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/api/calendar/get_feed_url.php')), '/');
@@ -58,10 +63,10 @@ try {
     // Best-effort: suggest this machine's LAN IP (carry over any :port from the
     // current host) so a localhost install can be reached from a phone. Unreliable
     // on multi-NIC machines, so it's only a default the user can edit.
-    $port = (strpos($host, ':') !== false) ? substr($host, strpos($host, ':')) : '';
+    $port = (str_contains($host, ':')) ? substr($host, strpos($host, ':')) : '';
     $suggestedHost = '';
     $lanIp = @gethostbyname(@gethostname() ?: '');
-    if ($lanIp && filter_var($lanIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && strpos($lanIp, '127.') !== 0) {
+    if ($lanIp && filter_var($lanIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !str_starts_with($lanIp, '127.')) {
         $suggestedHost = $lanIp . $port;
     }
 
@@ -73,6 +78,11 @@ try {
         'suggestedHost' => $suggestedHost,
         'url'           => $scheme . '://' . $host . $path,   // https/http — for copy + Android
         'webcal'        => 'webcal://' . $host . $path,       // for iOS tap/QR subscribe
+        // Drives the shared dialogue's HTTPS warning. Over plain HTTP the token in
+        // this URL — the only thing protecting the feed — crosses the network in
+        // clear on every refresh. This feed always had that exposure; sharing the
+        // dialogue with Preferences (GH #75) is what finally surfaced it.
+        'insecure'      => !$https,
     ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

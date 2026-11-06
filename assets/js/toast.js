@@ -62,14 +62,17 @@
     var currentPosition = null;
     var currentAnimation = null;
 
+    /** Returns the toast corner - window.TOAST_POSITION, then the saved localStorage choice, then 'bottom-right'. */
     function getPosition() {
         return window.TOAST_POSITION || localStorage.getItem('toast_position') || 'bottom-right';
     }
 
+    /** Returns the toast animation style - window.TOAST_ANIMATION, then the saved localStorage choice, then 'slide'. */
     function getAnimation() {
         return window.TOAST_ANIMATION || localStorage.getItem('toast_animation') || 'slide';
     }
 
+    /** Returns the toast container, rebuilding it when the position or animation setting has changed since it was made. */
     function getContainer() {
         var pos = getPosition();
         var anim = getAnimation();
@@ -83,7 +86,13 @@
         return container;
     }
 
-    window.showToast = function(message, type) {
+    // `ms` is optional and defaults to the usual 4 seconds, so every existing
+    // two-argument call behaves exactly as before. It exists because some
+    // messages are not acknowledgements but instructions — "the address book has
+    // a different number, import again to see theirs" cannot be read, understood
+    // and acted on inside four seconds, and a toast that vanishes mid-sentence
+    // is the same as not having shown it.
+    window.showToast = function(message, type, ms) {
         type = type || 'info';
         var c = getContainer();
 
@@ -102,20 +111,25 @@
         var closeEl = document.createElement('button');
         closeEl.className = 'toast-close';
         closeEl.textContent = '\u00D7';
+        /** Removes the toast at once when its close button is clicked. */
         closeEl.onclick = function() { toast.remove(); };
         toast.appendChild(closeEl);
 
         c.appendChild(toast);
 
+        /**
+         * Waits two frames before adding 'show', so the browser paints the hidden state first and the entry transition runs.
+         */
         requestAnimationFrame(function() {
             requestAnimationFrame(function() {
                 toast.classList.add('show');
             });
         });
 
+        /** Hides the toast after `ms` (default 4 seconds), then removes it once the 300ms exit transition has finished. */
         setTimeout(function() {
             toast.classList.remove('show');
             setTimeout(function() { toast.remove(); }, 300);
-        }, 4000);
+        }, (typeof ms === 'number' && ms > 0) ? ms : 4000);
     };
 })();

@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
 
 header('Content-Type: application/json');
 
@@ -13,6 +14,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('assets');
 
 $widget_id = $_GET['widget_id'] ?? '';
 $status_id = $_GET['status_id'] ?? '';
@@ -37,16 +39,29 @@ try {
 
     $prop = $widget['aggregate_property'];
     $params = [];
-    $where = '';
+    $where = ' WHERE 1=1';
 
     // Apply status filter
     if (!empty($status_id) && $widget['is_status_filterable']) {
-        $where = ' WHERE a.asset_status_id = ?';
+        $where .= ' AND a.asset_status_id = ?';
         $params[] = $status_id;
     } elseif (!$widget['is_status_filterable'] && $widget['default_status_id']) {
-        $where = ' WHERE a.asset_status_id = ?';
+        $where .= ' AND a.asset_status_id = ?';
         $params[] = $widget['default_status_id'];
     }
+
+    // Retired assets have left the estate, so a chart leaves them out - unless the
+    // status it is filtered to is itself a retired one ("what have we disposed of?").
+    require_once '../../includes/asset_retirement.php';
+    $filterStatus = (!empty($status_id) && $widget['is_status_filterable']) ? (int)$status_id
+                  : ((!$widget['is_status_filterable'] && $widget['default_status_id']) ? (int)$widget['default_status_id'] : null);
+    if (!assetStatusIsRetired($conn, $filterStatus)) $where .= assetNotRetiredSql($conn, 'a');
+
+    // Multi-tenancy: the dashboard aggregates only the active company's assets
+    // (the Default company also counts NULL-tenant assets). No-op at N=1.
+    [$tenantSql, $tenantParams] = activeTenantFilter($conn, (int)$_SESSION['analyst_id'], 'a');
+    $where .= $tenantSql;
+    $params = array_merge($params, $tenantParams);
 
     // Build aggregation query based on property type
     if ($prop === 'asset_type_id') {
@@ -101,10 +116,14 @@ try {
             exit;
         }
 
-        $sql = "SELECT COALESCE(a.{$prop}, 'Unknown') AS label, COUNT(*) AS value
+        // GH #200 part D: a chart by manufacturer or model counts what each asset is SHOWN
+        // as, so "HP", "HP Inc." and "Hewlett-Packard" are one slice, not three.
+        require_once '../../includes/services/asset_name_map.php';
+        $expr = in_array($prop, AssetNameMapService::FIELDS, true) ? AssetNameMapService::sqlExpr($conn, $prop, "a.{$prop}") : "a.{$prop}";
+        $sql = "SELECT COALESCE({$expr}, 'Unknown') AS label, COUNT(*) AS value
                 FROM assets a
                 {$where}
-                GROUP BY a.{$prop}
+                GROUP BY label
                 ORDER BY value DESC";
     }
 

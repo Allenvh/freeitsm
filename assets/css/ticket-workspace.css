@@ -1,0 +1,134 @@
+/*
+ * The ticket workspace (PR #211, #212). Every rule is scoped to .ticket-workspace
+ * (the reading pane, when it is one) or .ticket-workspace-mode (the page, while
+ * one is showing), so the classic reading pane is untouched until an
+ * administrator switches the workspace on. See assets/js/ticket-workspace.js.
+ */
+
+/* ---- The pane --------------------------------------------------------- */
+
+/* A container, so the layout follows the pane's own width (the folder and list
+   columns can be resized) rather than the window's. */
+.ticket-workspace {
+    --tw-gap: 16px;
+    display: block; min-width: 0; padding: 0; overflow-y: auto; font-size: 14px;
+    container: ticket-workspace / inline-size;
+}
+/* The list and folder columns give the workspace more room while it shows. */
+.ticket-workspace-mode .email-list-container { flex-basis: 240px; min-width: 180px; }
+.ticket-workspace-mode .folder-container { width: 210px; flex: 0 0 210px; }
+/* A closed AI chat drawer must not take width from the workspace. */
+.ticket-workspace-mode .ai-chat-panel:not(.active) { display: none; }
+@media (min-width: 769px) {
+    .ticket-workspace-mode > .header { flex-wrap: wrap; gap: 8px; }
+    .ticket-workspace-mode > .header .header-nav { flex-wrap: wrap; min-width: 0; margin-left: 12px; }
+}
+
+/* ---- Header: subject, summary, toolbar ------------------------------- */
+
+.ticket-workspace .tw-header { padding: 16px 20px 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+.ticket-workspace .email-header { padding: 0 0 12px; border: 0; position: static; }
+.ticket-workspace .email-subject-text { white-space: normal; overflow-wrap: anywhere; font-size: 20px; line-height: 1.35; }
+.ticket-workspace .email-meta { font-size: 12px; }
+.ticket-workspace .email-meta-date { white-space: normal; }
+.ticket-workspace .tw-header .ticket-properties-summary { padding: 0 0 8px; }
+.ticket-workspace .tw-sla-summary { border: 0; padding: 0; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.ticket-workspace .action-toolbar { padding: 8px 0; flex-wrap: wrap; border: 0; overflow: visible; }
+.ticket-workspace .action-toolbar .link-add-wrap { margin-left: auto; position: relative; }
+.ticket-workspace .action-toolbar .link-add-menu { z-index: 40; }
+/* History has its own tab, and the rest of the secondary actions live in More. */
+.ticket-workspace .action-toolbar .pane-secondary { display: none; }
+.ticket-workspace .pane-more-wrap { display: block; position: relative; }
+/* The Make workspace item is in More, so More shows in the reading pane too
+   whenever the install is in "Only tickets turned into a workspace" mode. */
+.workspace-choice-available .pane-more-wrap { display: block; position: relative; }
+/* On a ticket that is a workspace, for analysts who have turned theirs off. */
+.tw-workspace-badge { color: var(--accent); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+
+/* ---- Properties column ----------------------------------------------- */
+
+.ticket-workspace .tw-grid { display: grid; grid-template-columns: minmax(240px, 280px) minmax(0, 1fr); align-items: start; }
+.ticket-workspace .tw-properties { padding: 16px; border-right: 1px solid var(--border); min-width: 0; background: var(--surface); }
+/* The reading pane's collapsible properties panel, always open here. */
+.ticket-workspace .ticket-properties-container { border: 0; margin: 0; background: transparent; }
+.ticket-workspace .ticket-properties-header { padding: 0; cursor: default; display: none; }
+.reading-pane.ticket-workspace .ticket-properties-header,
+.reading-pane.ticket-workspace .ticket-properties-header:hover { background: transparent; border: 0; }
+.ticket-workspace .ticket-properties-title { display: none; }
+.ticket-workspace .ticket-properties-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.ticket-workspace .ticket-properties-container .ticket-properties-panel {
+    display: block !important; position: static; background: transparent; box-shadow: none; border: 0;
+    padding: 0; max-height: none; overflow: visible; opacity: 1; transition: none;
+}
+.ticket-workspace .ticket-toolbar { display: block; padding: 0; background: transparent; }
+/* Classification / Responsibility / Other details. */
+.ticket-workspace .tw-field-group { min-width: 0; padding: 0 0 8px; margin: 0 0 16px; border: 0; border-bottom: 1px solid var(--border); }
+.ticket-workspace .tw-field-group:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
+.ticket-workspace .tw-field-group legend { padding: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--text); }
+.ticket-workspace .toolbar-field { width: 100%; min-width: 0; margin: 0 0 8px; }
+/* The same controls as the reading pane: only their arrangement changes.
+   In particular, do not override the native confidential-field colours. */
+.ticket-workspace .toolbar-select { width: 100%; }
+
+/* ---- Tabs and their panels ------------------------------------------- */
+
+.ticket-workspace .tw-main { min-width: 0; }
+.ticket-workspace .tw-tabs { display: flex; gap: 0; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding: 0 16px; background: var(--surface); }
+.ticket-workspace .tw-tab { min-height: 40px; padding: 8px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; }
+.ticket-workspace .tw-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.ticket-workspace .tw-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.ticket-workspace .tw-panel { min-width: 0; padding: 16px; overflow-wrap: anywhere; }
+.ticket-workspace .tw-panel[hidden] { display: none !important; }
+.ticket-workspace .tw-panel .email-body { padding: 0; overflow: visible; flex: none; }
+.ticket-workspace .tw-panel .email-body:empty,
+.ticket-workspace .pane-strips:empty { display: none; }
+.ticket-workspace .tw-panel .links-strip { margin: 0; }
+/* The Work tab's "nothing here yet" note (watchWorkEmpty). */
+.ticket-workspace .tw-empty { margin: 0; color: var(--text-muted); }
+.ticket-workspace .tw-empty[hidden] { display: none; }
+/* A section's loading / could-not-load notice (setSectionState). */
+.ticket-workspace .tw-state { padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); color: var(--text-muted); }
+.ticket-workspace .tw-state[data-state="error"] { border-inline-start: 3px solid var(--danger, var(--accent)); }
+
+/* ---- Full screen (the ticket popped out) ------------------------------ */
+
+body.ticket-popout .reading-pane.ticket-workspace { padding-right: 0; }
+body.ticket-popout .ticket-workspace .ticket-properties-container { position: static; width: auto; height: auto; overflow: visible; border: 0; }
+
+/* ---- Narrow: one column ----------------------------------------------- */
+
+/* The pane is narrow (whatever the window): the properties go UNDER the tabs and
+   fold away again, as in the reading pane. */
+@container ticket-workspace (max-width: 700px) {
+    .ticket-workspace .tw-grid { grid-template-columns: minmax(0, 1fr); }
+    .ticket-workspace .tw-main { grid-row: 1; }
+    .ticket-workspace .tw-properties { grid-row: 2; border-right: 0; border-bottom: 1px solid var(--border); }
+    .ticket-workspace .ticket-properties-title { display: flex; }
+    .ticket-workspace .ticket-properties-header { cursor: pointer; display: block; }
+    .ticket-workspace .ticket-properties-container.expanded .ticket-properties-header { padding-bottom: 16px; }
+    .ticket-workspace .ticket-properties-container:not(.expanded) .ticket-properties-panel { display: none !important; }
+}
+/* A phone. The toolbar wraps instead of mobile.js's overflow menu, which the
+   workspace does without (relocateSections / buildToolbarOverflow skip it). */
+@media (max-width: 768px) {
+    .ticket-workspace .tw-grid { grid-template-columns: minmax(0, 1fr); }
+    .ticket-workspace .tw-properties { border-right: 0; border-bottom: 1px solid var(--border); }
+    .ticket-workspace .tw-header { padding: 12px 16px 0; }
+    .ticket-workspace .tw-tab { padding: 8px; }
+    .ticket-workspace .action-toolbar { flex-wrap: wrap !important; overflow: visible !important; }
+    .ticket-workspace .action-toolbar .action-btn { display: inline-flex; }
+    .ticket-workspace .action-toolbar .link-add-wrap { margin-left: 0; }
+    .ticket-workspace .email-subject-text { font-size: 18px; }
+}
+
+/* ---- A linked task in the Work tab (PR #212) ---------------------------- */
+
+/* Open separately / Close above the task frame - hidden once the task editor
+   shows its own (see openTask in ticket-workspace.js). */
+.ticket-workspace .tw-task-controls { display: flex; justify-content: flex-end; gap: 4px; flex-wrap: wrap; padding: 0 0 8px; }
+.ticket-workspace .tw-task-controls[hidden] { display: none; }
+.ticket-workspace .tw-task-controls .btn { min-height: 28px; padding: 4px 8px; font-size: 12px; line-height: 18px; background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+.ticket-workspace .tw-task-controls .btn:hover { background: var(--surface-hover); color: var(--text); }
+/* The height is set from the editor's own (the bridge's 'resize' message);
+   650px is only until the first one arrives. */
+.ticket-workspace .tw-task-frame { display: block; width: 100%; height: 650px; min-height: 300px; border: 1px solid var(--border); background: var(--surface); }

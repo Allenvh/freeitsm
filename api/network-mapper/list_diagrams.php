@@ -21,6 +21,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('network-mapper');
 
 try {
     $conn = connectToDatabase();
@@ -61,7 +62,11 @@ try {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
 
-/** Walk back to the root of the chain, then count members. Capped to avoid pathological loops. */
+/**
+ * Walk back to the root of the chain, then count members. Capped to avoid pathological loops.
+ *
+ * @param mixed $leafId  the network_diagrams id of any version in the chain, usually the newest
+ */
 function countVersionsInChain($conn, $leafId) {
     $rootId = $leafId;
     $cursor = $leafId;

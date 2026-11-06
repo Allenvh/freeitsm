@@ -6,6 +6,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -13,6 +17,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('process-mapper');
+requireCapabilityJson(Cap::PROCESS_MAPPER_STEP_TYPES);   // settings tab — see docs/design/rbac.md
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);

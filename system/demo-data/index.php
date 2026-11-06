@@ -6,25 +6,43 @@
 session_start();
 require_once '../../config.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/timezone.php';
+require_once '../../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'demo-data';
+require_once __DIR__ . '/../includes/page_gate.php';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'system'];
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . $path_prefix . 'login.php');
+    header('Location: ' . $path_prefix . 'auth/login.php');
     exit;
 }
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('system.demo.heading')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('system', t('system.demo.heading'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
+        /* System module accent (blue-grey) */
+        body {
+            /* System is the FIRST module whose DARK accent is a LIGHT colour (#90a4ae).
+               inbox.css renders .btn-primary/.add-btn as background:var(--accent) +
+               color:var(--on-accent) — and the global --on-accent stays WHITE in dark.
+               So pinning --accent alone would put white text on a light button. Pin
+               --on-accent too: it flips to near-black in dark. */
+            --accent: var(--sys-accent, #546e7a);
+            --accent-hover: var(--sys-accent-hover, #37474f);
+            --on-accent: var(--sys-on-accent, #fff);
+        }
+
         .demo-container {
             height: calc(100vh - 48px);
             overflow-y: auto;
@@ -38,13 +56,13 @@ if (!isset($_SESSION['analyst_id'])) {
         .demo-header h2 {
             margin: 0;
             font-size: 22px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .demo-header p {
             margin: 5px 0 0 0;
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .warning-card {
@@ -93,40 +111,40 @@ if (!isset($_SESSION['analyst_id'])) {
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin: 0 0 12px 0;
             font-weight: 600;
         }
 
         /* Core card - full width, highlighted */
         .core-card {
-            background: white;
-            border: 2px solid #546e7a;
+            background: var(--surface, #fff);
+            border: 2px solid var(--sys-accent, #546e7a);
             border-radius: 10px;
             padding: 20px 24px;
             margin-bottom: 28px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            box-shadow: 0 2px 8px var(--shadow, rgba(0,0,0,0.06));
         }
 
         .core-card .core-info h3 {
             margin: 0 0 4px 0;
             font-size: 16px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .core-card .core-info p {
             margin: 0;
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .core-card .core-info .core-detail {
             margin: 8px 0 0 0;
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         /* Module grid */
@@ -138,10 +156,10 @@ if (!isset($_SESSION['analyst_id'])) {
         }
 
         .module-card {
-            background: white;
+            background: var(--surface, #fff);
             border-radius: 8px;
             padding: 18px 20px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.08));
             display: flex;
             flex-direction: column;
         }
@@ -149,12 +167,12 @@ if (!isset($_SESSION['analyst_id'])) {
         .module-card h4 {
             margin: 0 0 4px 0;
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .module-card .module-desc {
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin: 0 0 14px 0;
             line-height: 1.4;
             flex: 1;
@@ -168,8 +186,8 @@ if (!isset($_SESSION['analyst_id'])) {
 
         /* Import buttons */
         .import-btn {
-            background: #546e7a;
-            color: white;
+            background: var(--sys-accent, #546e7a);
+            color: var(--sys-on-accent, #fff);
             border: none;
             padding: 8px 18px;
             border-radius: 5px;
@@ -182,11 +200,14 @@ if (!isset($_SESSION['analyst_id'])) {
             gap: 6px;
         }
 
-        .import-btn:hover { background: #37474f; }
-        .import-btn:disabled { background: #bbb; cursor: not-allowed; }
+        .import-btn:hover { background: var(--sys-accent-hover, #37474f); }
+        /* Solid fills below keep white text in BOTH modes — --sys-on-accent is
+           dark in dark mode, which would be unreadable on them. */
+        .import-btn:disabled { background: #bbb; color: #fff; cursor: not-allowed; }
 
         .import-btn.success {
             background: #2e7d32;
+            color: #fff;
             cursor: pointer;
         }
 
@@ -199,7 +220,7 @@ if (!isset($_SESSION['analyst_id'])) {
 
         .record-count {
             font-size: 12px;
-            color: #999;
+            color: var(--text-faint, #999);
         }
 
         .error-text {
@@ -213,7 +234,7 @@ if (!isset($_SESSION['analyst_id'])) {
             width: 14px;
             height: 14px;
             border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: white;
+            border-top-color: currentColor; /* follows the button's text colour */
             border-radius: 50%;
             animation: spin 0.6s linear infinite;
         }
@@ -233,37 +254,63 @@ if (!isset($_SESSION['analyst_id'])) {
         }
 
         .bonus-card {
-            background: white;
+            background: var(--surface, #fff);
             border: 2px dashed #90a4ae;
             border-radius: 10px;
             padding: 20px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.06));
         }
 
         .bonus-card .bonus-info h4 {
             margin: 0 0 4px 0;
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .bonus-card .bonus-info p {
             margin: 0;
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
             line-height: 1.4;
         }
 
         .bonus-card .bonus-info .bonus-detail {
             margin: 8px 0 0 0;
             font-size: 12px;
-            color: #999;
+            color: var(--text-faint, #999);
         }
+
+        .virt-actions { display: flex; flex-direction: column; gap: 8px; margin-left: 20px; flex-shrink: 0; }
+        .import-btn.virt-remove { background: transparent; color: #c62828; border: 1px solid #c62828; }
+        .import-btn.virt-remove:hover { background: rgba(198, 40, 40, 0.08); }
+        @media (max-width: 700px) { #virtSection .bonus-card { flex-direction: column; align-items: stretch; } .virt-actions { margin: 14px 0 0; } }
+
+        /* ---- Dark mode overrides ----------------------------------------
+           The amber warning band, the blue tip band and the red error text are
+           meaning-carrying: hues kept, washes sunk, text lifted. */
+        [data-theme-mode="dark"] .warning-card { background: #3a2e12; border-color: #5a4a1e; }
+        [data-theme-mode="dark"] .warning-card svg { color: #fbbf24; }
+        [data-theme-mode="dark"] .warning-card .warning-text { color: #fcd34d; }
+        [data-theme-mode="dark"] .warning-card .warning-text strong { color: #ffb74d; }
+
+        [data-theme-mode="dark"] .tip-card { background: #16293f; border-color: #2c4a6b; }
+        [data-theme-mode="dark"] .tip-card svg { color: #60a5fa; }
+        [data-theme-mode="dark"] .tip-card .tip-text { color: #93c5fd; }
+        [data-theme-mode="dark"] .tip-card .tip-text strong { color: #bfdbfe; }
+
+        [data-theme-mode="dark"] .import-btn:disabled { background: #4a505a; color: var(--text-faint, #999); }
+        [data-theme-mode="dark"] .import-btn.success { background: #2e7d32; color: #fff; }
+        [data-theme-mode="dark"] .import-btn.success:hover { background: #256428; }
+        [data-theme-mode="dark"] .spinner-inline { border-color: rgba(0,0,0,0.2); border-top-color: currentColor; }
+        [data-theme-mode="dark"] .error-text { color: var(--danger-text, #fca5a5); }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="system" data-mobile-page="demo-data">
     <?php include '../includes/header.php'; ?>
 
     <div class="demo-container">
@@ -283,6 +330,20 @@ if (!isset($_SESSION['analyst_id'])) {
             </div>
         </div>
 
+        <!-- Only shown when the installation holds demo data imported before the
+             rows were tagged (#1297). It cannot be recognised, so a re-import
+             would add a second copy rather than replace the first. -->
+        <div class="warning-card" id="untaggedCard" style="display:none">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="warning-text">
+                <strong><?php echo htmlspecialchars(t('system.demo.untagged_strong')); ?></strong> <?php echo htmlspecialchars(t('system.demo.untagged_text')); ?>
+            </div>
+        </div>
+
         <div class="tip-card">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -299,8 +360,8 @@ if (!isset($_SESSION['analyst_id'])) {
         <div class="core-card" id="core-card">
             <div class="core-info">
                 <h3>Core Data</h3>
-                <p>Analysts, departments, teams, ticket types, origins, and end users. All other modules depend on this.</p>
-                <p class="core-detail">4 analysts (password: demo1234) &bull; 5 departments &bull; 2 teams &bull; 15 end users &bull; 5 ticket types &bull; 4 origins</p>
+                <p>Analysts, departments, teams with roles and module access, ticket types, origins, and end users. All other modules depend on this.</p>
+                <p class="core-detail">4 analysts, none admin (password: demo1234) &bull; 5 departments &bull; 2 teams with matching roles &amp; module access &bull; 15 end users &bull; 5 ticket types &bull; 4 origins</p>
             </div>
             <button class="import-btn import-btn-lg" id="btn-core" onclick="importModule('core', this)"><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
         </div>
@@ -368,6 +429,16 @@ if (!isset($_SESSION['analyst_id'])) {
                 <div class="error-text" id="err-checks" style="display:none"></div>
             </div>
 
+            <div class="module-card" data-module="checklists">
+                <h4>Checklists</h4>
+                <p class="module-desc">5 checklist templates with 29 steps — onboarding, offboarding, server decommissioning, VPN troubleshooting and a firewall change — plus their categories and suggested roles.</p>
+                <div class="module-footer">
+                    <span class="record-count">~44 records</span>
+                    <button class="import-btn" id="btn-checklists" onclick="importModule('checklists', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-checklists" style="display:none"></div>
+            </div>
+
             <div class="module-card" data-module="contracts">
                 <h4>Contracts</h4>
                 <p class="module-desc">3 suppliers, 5 contacts, 3 contracts with SLA terms, plus lookup tables.</p>
@@ -376,6 +447,26 @@ if (!isset($_SESSION['analyst_id'])) {
                     <button class="import-btn" id="btn-contracts" onclick="importModule('contracts', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
                 </div>
                 <div class="error-text" id="err-contracts" style="display:none"></div>
+            </div>
+
+            <div class="module-card" data-module="domains">
+                <h4>Domains</h4>
+                <p class="module-desc">8 domains on the reserved .example ending, graded A to F, with 2 registrar accounts. Monitoring is off on them, so nothing is ever looked up.</p>
+                <div class="module-footer">
+                    <span class="record-count">~10 records</span>
+                    <button class="import-btn" id="btn-domains" onclick="importModule('domains', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-domains" style="display:none"></div>
+            </div>
+
+            <div class="module-card" data-module="cost-centres">
+                <h4>Cost Centres</h4>
+                <p class="module-desc">24 cost centres (nominal codes) in the default company, two levels deep, with one retired. Includes 0010 and N1414 to show codes are kept as text.</p>
+                <div class="module-footer">
+                    <span class="record-count">~24 records</span>
+                    <button class="import-btn" id="btn-cost-centres" onclick="importModule('cost-centres', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-cost-centres" style="display:none"></div>
             </div>
 
             <div class="module-card" data-module="services">
@@ -400,7 +491,7 @@ if (!isset($_SESSION['analyst_id'])) {
 
             <div class="module-card" data-module="forms">
                 <h4>Forms</h4>
-                <p class="module-desc">2 forms (New Starter, Equipment Return) with fields and 3 completed submissions.</p>
+                <p class="module-desc">2 forms with fields: a New starter request on the portal (who is joining, mailbox, private mailbox, DMS and PMS access, equipment) that opens a Starters &amp; leavers case, and an Equipment Return form - with 6 completed submissions.</p>
                 <div class="module-footer">
                     <span class="record-count">~22 records</span>
                     <button class="import-btn" id="btn-forms" onclick="importModule('forms', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
@@ -409,13 +500,23 @@ if (!isset($_SESSION['analyst_id'])) {
             </div>
 
             <div class="module-card" data-module="tasks">
-                <h4>Tasks</h4>
-                <p class="module-desc">12 parent tasks across To Do, In Progress, Done with subtasks, due dates, and comments.</p>
+                <h4>Tasks and Projects</h4>
+                <p class="module-desc">12 parent tasks across To Do, In Progress, Done with subtasks, due dates, and comments, and the tasks behind the Starters &amp; leavers demo cases - plus 9 projects covering every way of running one and every status: a staged office move (team, stakeholder map, scope, RACI, RAID, gates with checklists, budget, change control, benefits, reports), an Agile laptop refresh with sprints and an asset target, a mail migration in trouble, a closed project with its closure report and measured benefits, a proposal waiting for approval, a members-only project, one on hold and one cancelled - 72 project tasks with dependencies, estimates and 40 days of status history for the charts. Import Assets, Changes, Tickets, Contracts, Knowledge and CMDB first and the projects link to their records too.</p>
                 <div class="module-footer">
-                    <span class="record-count">~42 records</span>
+                    <span class="record-count">~875 records</span>
                     <button class="import-btn" id="btn-tasks" onclick="importModule('tasks', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
                 </div>
                 <div class="error-text" id="err-tasks" style="display:none"></div>
+            </div>
+
+            <div class="module-card" data-module="starters">
+                <h4>Starters &amp; leavers</h4>
+                <p class="module-desc">4 templates (Legal starter, chosen by department; Standard starter; Role change; Leaver) whose steps only appear when the New starter request's answers call for them, and 9 cases at every stage: a starter next week with half the work done, one waiting for answers, one who started three days ago with a step overdue, a finished one, a cancelled one, a leaver whose last day was yesterday with a laptop still to recover, and a mover. Import Core, Assets, Checklists, Forms and Tasks first - the cases' steps live in Tasks and their answers in Forms. Re-import this after re-importing Tasks or Forms.</p>
+                <div class="module-footer">
+                    <span class="record-count">~60 records</span>
+                    <button class="import-btn" id="btn-starters" onclick="importModule('starters', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-starters" style="display:none"></div>
             </div>
 
             <div class="module-card" data-module="process-mapper">
@@ -436,6 +537,36 @@ if (!isset($_SESSION['analyst_id'])) {
                     <button class="import-btn" id="btn-cmdb" onclick="importModule('cmdb', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
                 </div>
                 <div class="error-text" id="err-cmdb" style="display:none"></div>
+            </div>
+
+            <div class="module-card" data-module="lms">
+                <h4>Learning (LMS)</h4>
+                <p class="module-desc">2 authored courses &mdash; Cyber Security Essentials (with a 3-question quiz) and Service Desk Induction &mdash; with 6 lessons between them.</p>
+                <div class="module-footer">
+                    <span class="record-count">~22 records</span>
+                    <button class="import-btn" id="btn-lms" onclick="importModule('lms', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-lms" style="display:none"></div>
+            </div>
+
+            <div class="module-card" data-module="workflow">
+                <h4>Workflows</h4>
+                <p class="module-desc">4 example automations: auto-acknowledge new tickets, flag "urgent" subjects, broadcast status-page incidents to chat, and log every binned ticket.</p>
+                <div class="module-footer">
+                    <span class="record-count">~4 records</span>
+                    <button class="import-btn" id="btn-workflow" onclick="importModule('workflow', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-workflow" style="display:none"></div>
+            </div>
+
+            <div class="module-card" data-module="network-mapper">
+                <h4>Network Mapper</h4>
+                <p class="module-desc">A <em>Core Network Topology</em> diagram &mdash; firewall, core router and switch, five servers and three workstations &mdash; built from CMDB objects. <strong>Import CMDB first:</strong> every node points at a real configuration item, so without the CMDB demo this import is refused cleanly rather than half-built.</p>
+                <div class="module-footer">
+                    <span class="record-count">~22 records</span>
+                    <button class="import-btn" id="btn-network-mapper" onclick="importModule('network-mapper', this)" disabled><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                </div>
+                <div class="error-text" id="err-network-mapper" style="display:none"></div>
             </div>
         </div>
 
@@ -466,10 +597,30 @@ if (!isset($_SESSION['analyst_id'])) {
             </div>
             <div class="error-text" id="err-dashboards" style="display:none"></div>
         </div>
+
+        <!-- Virtualisation (GH #199, #201): code-driven, so its own endpoint and a Remove. Needs no Core. -->
+        <div class="bonus-section" id="virtSection" style="display:block">
+            <p class="section-label"><?php echo htmlspecialchars(t('system.demo.virt_label')); ?></p>
+            <div class="bonus-card">
+                <div class="bonus-info">
+                    <h4><?php echo htmlspecialchars(t('system.demo.virt_title')); ?></h4>
+                    <p><?php echo htmlspecialchars(t('system.demo.virt_desc')); ?></p>
+                    <p class="bonus-detail"><?php echo htmlspecialchars(t('system.demo.virt_detail')); ?></p>
+                    <p class="bonus-detail" id="virtCounts" style="display:none"></p>
+                </div>
+                <div class="virt-actions">
+                    <button class="import-btn" id="btn-virt" onclick="virtDemo('import', this)"><?php echo htmlspecialchars(t('system.demo.import')); ?></button>
+                    <button class="import-btn virt-remove" id="btn-virt-remove" onclick="virtDemo('remove', this)" style="display:none"><?php echo htmlspecialchars(t('system.demo.remove')); ?></button>
+                </div>
+            </div>
+            <div class="error-text" id="err-virt" style="display:none"></div>
+        </div>
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <script>
         let coreImported = false;
         let importedModules = {};
@@ -477,9 +628,18 @@ if (!isset($_SESSION['analyst_id'])) {
         const checkSvg = '<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
         async function importModule(module, btn) {
-            if (btn.classList.contains('success')) {
-                if (!(await showConfirm({ title: window.t('system.demo.delete_title'), message: window.t('system.demo.delete_confirm', { module: module }), okLabel: window.t('system.demo.delete_ok'), okClass: 'danger' }))) return;
-            }
+            // Ask EVERY time, not only on a re-import. The confirmation used to be
+            // skipped unless the button already showed success, which meant the
+            // very first import - the one that changes an installation from having
+            // no demo data to having it - was the only one that never asked. (#1297)
+            const reimport = btn.classList.contains('success');
+            const ok = await showConfirm({
+                title: window.t(reimport ? 'system.demo.reimport_title' : 'system.demo.import_title'),
+                message: window.t(reimport ? 'system.demo.reimport_confirm' : 'system.demo.import_confirm', { module: module }),
+                okLabel: window.t('system.demo.import'),
+                okClass: 'danger'
+            });
+            if (!ok) return;
 
             btn.disabled = true;
             const origHtml = btn.innerHTML;
@@ -520,7 +680,7 @@ if (!isset($_SESSION['analyst_id'])) {
         }
 
         function enableModuleButtons() {
-            const modules = ['tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'contracts', 'services', 'software', 'forms', 'tasks', 'process-mapper', 'cmdb'];
+            const modules = ['tickets', 'assets', 'knowledge', 'changes', 'calendar', 'checks', 'checklists', 'contracts', 'domains', 'cost-centres', 'services', 'software', 'forms', 'tasks', 'starters', 'process-mapper', 'cmdb', 'lms', 'workflow', 'network-mapper'];
             modules.forEach(function(m) {
                 const btn = document.getElementById('btn-' + m);
                 if (btn && !btn.classList.contains('success')) {
@@ -548,6 +708,57 @@ if (!isset($_SESSION['analyst_id'])) {
             }
         }
 
+        /* Virtualisation demo: its own endpoint (api/system/demo_virtualisation.php). */
+        function virtShow(c) {
+            const btn = document.getElementById('btn-virt');
+            const rm = document.getElementById('btn-virt-remove');
+            const counts = document.getElementById('virtCounts');
+            const has = c && c.total > 0;
+            btn.className = has ? 'import-btn success' : 'import-btn';
+            btn.innerHTML = has ? checkSvg + ' ' + window.t('system.demo.already_imported') : window.t('system.demo.import');
+            btn.disabled = false;
+            rm.style.display = has ? '' : 'none';
+            rm.disabled = false;
+            rm.textContent = window.t('system.demo.remove');
+            counts.style.display = has ? '' : 'none';
+            if (has) counts.textContent = window.t('system.demo.virt_counts', { hyperv: c.hyperv_vms, proxmox: c.proxmox_vms, vcloud: c.vcloud_vms, vcenter: c.vcenter_vms, cis: c.cis, assets: c.assets });
+        }
+
+        async function virtDemo(action, btn) {
+            const name = window.t('system.demo.virt_label');
+            const reimport = action === 'import' && btn.classList.contains('success');
+            const ok = await showConfirm(action === 'remove'
+                ? { title: window.t('system.demo.remove_title'), message: window.t('system.demo.remove_confirm', { module: name }), okLabel: window.t('system.demo.remove'), okClass: 'danger' }
+                : { title: window.t(reimport ? 'system.demo.reimport_title' : 'system.demo.import_title'),
+                    message: window.t(reimport ? 'system.demo.reimport_confirm' : 'system.demo.import_confirm', { module: name }),
+                    okLabel: window.t('system.demo.import'), okClass: 'danger' });
+            if (!ok) return;
+            const errEl = document.getElementById('err-virt');
+            errEl.style.display = 'none';
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-inline"></span> ' + window.t(action === 'remove' ? 'system.demo.removing' : 'system.demo.importing');
+            try {
+                const body = new FormData();
+                body.append('action', action);
+                const data = await (await fetch('../../api/system/demo_virtualisation.php', { method: 'POST', body: body })).json();
+                if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; }
+                virtShow(data.counts || null);
+                if (!data.success) virtLoad();
+            } catch (error) {
+                errEl.textContent = window.t('system.demo.connection_failed', { message: error.message });
+                errEl.style.display = 'block';
+                virtLoad();
+            }
+        }
+
+        async function virtLoad() {
+            try {
+                const data = await (await fetch('../../api/system/demo_virtualisation.php')).json();
+                if (data.success) virtShow(data.counts);
+            } catch (e) { /* the Import button still works */ }
+        }
+        virtLoad();
+
         // On page load, check if core data and modules already exist
         (async function checkCoreStatus() {
             try {
@@ -560,33 +771,33 @@ if (!isset($_SESSION['analyst_id'])) {
                     btn.innerHTML = checkSvg + ' ' + window.t('system.demo.already_imported');
                     enableModuleButtons();
                 }
-                // Track which modules have data so bonus sections appear
+                if (data.untagged) {
+                    const card = document.getElementById('untaggedCard');
+                    if (card) card.style.display = '';
+                }
+
+                // Every module reports now, not just the five that used to be
+                // listed here, and each reports a count of rows marked as demo
+                // data rather than "this table has rows in it". (#1297)
                 if (data.modules) {
-                    if (data.modules.software) importedModules['software'] = true;
-                    if (data.modules.assets) importedModules['assets'] = true;
-                    if (data.modules.tickets) importedModules['tickets'] = true;
-                    if (data.modules['software-assets']) {
-                        importedModules['software-assets'] = true;
-                        var saBtn = document.getElementById('btn-software-assets');
-                        if (saBtn) {
-                            saBtn.className = 'import-btn success';
-                            saBtn.innerHTML = checkSvg + ' ' + window.t('system.demo.already_imported');
-                            saBtn.disabled = false;
+                    Object.keys(data.modules).forEach(function (module) {
+                        if (!data.modules[module] || module === 'core') return;
+                        importedModules[module] = true;
+                        const modBtn = document.getElementById('btn-' + module);
+                        if (modBtn) {
+                            modBtn.className = modBtn.className.includes('import-btn-lg')
+                                ? 'import-btn import-btn-lg success' : 'import-btn success';
+                            modBtn.innerHTML = checkSvg + ' ' + window.t('system.demo.already_imported');
+                            // Module buttons stay locked until Core is in — don't
+                            // unlock one just because it reports rows.
+                            if (coreImported) modBtn.disabled = false;
                         }
-                    }
-                    if (data.modules.dashboards) {
-                        importedModules['dashboards'] = true;
-                        var dbBtn = document.getElementById('btn-dashboards');
-                        if (dbBtn) {
-                            dbBtn.className = 'import-btn success';
-                            dbBtn.innerHTML = checkSvg + ' ' + window.t('system.demo.already_imported');
-                            dbBtn.disabled = false;
-                        }
-                    }
+                    });
                     checkBonusEligibility();
                 }
             } catch (e) { /* ignore - user can still click Import */ }
         })();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

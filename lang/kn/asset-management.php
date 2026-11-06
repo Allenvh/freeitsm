@@ -87,10 +87,7 @@ return [
 
     // Assign-user modal
     'assign' => [
-        'heading'                => 'ಆಸ್ತಿಗೆ ಬಳಕೆದಾರರನ್ನು ನಿಯೋಜಿಸಿ',
-        'search_label'           => 'ಬಳಕೆದಾರರಿಗಾಗಿ ಹುಡುಕಿ',
         'search_placeholder'     => 'ಹೆಸರು ಅಥವಾ ಇಮೇಲ್ ಮೂಲಕ ಹುಡುಕಿ...',
-        'type_to_search'         => 'ಬಳಕೆದಾರರನ್ನು ಹುಡುಕಲು ಟೈಪ್ ಮಾಡಿ',
         'min_chars'              => 'ಹುಡುಕಲು ಕನಿಷ್ಠ 2 ಅಕ್ಷರಗಳನ್ನು ಟೈಪ್ ಮಾಡಿ',
         'no_users'               => 'ಯಾವುದೇ ಬಳಕೆದಾರರು ಸಿಗಲಿಲ್ಲ',
         'expected_return_label'  => 'ನಿರೀಕ್ಷಿತ ಹಿಂದಿರುಗಿಸುವ ದಿನಾಂಕ (ಐಚ್ಛಿಕ)',
@@ -366,7 +363,6 @@ return [
         'tab_asset_statuses'   => 'ಆಸ್ತಿ ಸ್ಥಿತಿಗಳು',
         'tab_locations'        => 'ಸ್ಥಳಗಳು',
         'tab_suppliers'        => 'ಪೂರೈಕೆದಾರರು',
-        'tab_warranty'         => 'ವಾರಂಟಿ ಎಚ್ಚರಿಕೆಗಳು',
         'tab_vcenter'          => 'vCenter',
         'tab_intune'           => 'InTune',
 

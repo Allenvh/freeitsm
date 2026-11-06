@@ -1,0 +1,33 @@
+# Pretty URLs for the per-provider pages: /system/integrations/jira
+#
+# One shared provider.php rather than a folder per provider, so adding GitHub
+# later costs ZERO files at this layer — the URL works the moment the provider is
+# registered. House style matches api/v1/.htaccess.
+#
+# The substitution is RELATIVE (no RewriteBase) so this works whether the app is
+# served from a subfolder (http://localhost/freeitsm-app/) or a domain root
+# (Docker), exactly like the root .htaccess.
+#
+# NOTE: on a server without mod_rewrite the pretty URL 404s and the page is still
+# reachable at provider.php?provider=jira. That is the same pre-existing gap as
+# /login — the root .htaccess already documents mod_rewrite as effectively
+# required — and it also means IIS (web.config has no <rewrite> section) needs
+# rules adding before these URLs work there.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # A real file or folder always wins, so this can never shadow something
+    # added here later.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # ⚠️ The help rule MUST come first. `^([a-z0-9-]+)/?$` below would not match
+    # /jira/help (two segments) so there is no conflict today — but if the
+    # provider pattern is ever loosened to allow slashes, a help URL would be
+    # swallowed by it and silently render the settings page instead.
+    RewriteRule ^([a-z0-9-]+)/help/?$ help.php?provider=$1 [QSA,L]
+
+    # `/?$` so /jira and /jira/ both work with no DirectorySlash 301 bouncing
+    # between them.
+    RewriteRule ^([a-z0-9-]+)/?$ provider.php?provider=$1 [QSA,L]
+</IfModule>

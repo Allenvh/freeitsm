@@ -20,6 +20,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 $data = json_decode(file_get_contents('php://input'), true);
 $ticketId = (int)($data['ticket_id'] ?? 0);
@@ -30,6 +31,7 @@ if ($ticketId <= 0) {
 
 try {
     $conn = connectToDatabase();
+    requireModuleOnJson($conn, 'csat'); // GH #217: CSAT switched off for the install
     // Multi-tenancy: don't send a CSAT survey for a ticket in a company this
     // analyst can't access.
     if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {

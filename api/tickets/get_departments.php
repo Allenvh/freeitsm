@@ -12,11 +12,16 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireAnyModuleAccessJson(['tickets', 'morning-checks', 'system']);
 
 try {
     $conn = connectToDatabase();
 
-    $sql = "SELECT id, name, description, is_active, display_order, created_datetime
+    require_once '../../includes/ticket_sensitivity.php';
+    // Guarded: this list is read all over Tickets, so it must still load before
+    // Database Verification has added the column (discussion #62).
+    $sensCol = ticketSensitivityReady($conn) ? 'default_sensitivity' : "'normal' AS default_sensitivity";
+    $sql = "SELECT id, name, description, is_active, display_order, $sensCol, created_datetime
             FROM departments
             ORDER BY display_order, name";
 

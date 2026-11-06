@@ -1,0 +1,620 @@
+<?php
+/**
+ * LMS access rules — the learner/manager split (RBAC pilot).
+ *
+ * Two distinct things a person can do with the LMS:
+ *   - TAKE assigned courses. Needs the 'lms' module only. A learner.
+ *   - MANAGE the LMS (author, upload, run groups, assign, see everyone's
+ *     progress). Needs the 'lms.manage' capability (or is_admin). A manager.
+ *
+ * These helpers are the single source of truth for both, used by the pages, the
+ * APIs and the playback gate so the rule can't drift between them.
+ */
+
+require_once __DIR__ . '/rbac.php';
+
+/**
+ * WHO IS TAKING A COURSE.
+ *
+ * The LMS used to know one kind of learner — an analyst — and passed a bare
+ * `int $analystId` everywhere. A course can now be given to a self-service
+ * portal user, who lives in `users` and has no analyst record at all, so the
+ * identity has to carry WHICH TABLE it means. That is this class, and it is why
+ * every function below takes one instead of an int.
+ *
+ * 🔑 A CLASS RATHER THAN TWO NULLABLE INTS. The alternative was
+ * `(?int $analystId, ?int $userId)` with an unwritten "exactly one of these"
+ * rule — the shape the portal password-reset tables were deliberately split to
+ * avoid, for the same reason: nothing enforces it, and the day somebody passes
+ * both, or neither, the LMS shows one person another person's training record.
+ * Here the object cannot be constructed in an invalid state.
+ */
+final class LmsLearner
+{
+    const ANALYST = 'analyst';
+    const USER    = 'user';
+
+    /** @var string self::ANALYST | self::USER — matches lms_progress.learner_type */
+    private $type;
+    /** @var int analysts.id or users.id, per $type */
+    private $id;
+
+    /**
+     * Private: learners are built with analyst() or user().
+     *
+     * @param string $type  'analyst' or 'user' (self::ANALYST or self::USER)
+     * @param int $id  the analysts.id or users.id, matching $type
+     */
+    private function __construct(string $type, int $id)
+    {
+        $this->type = $type;
+        $this->id   = $id;
+    }
+
+    /**
+     * A learner for an analyst id, or null when the id is not positive.
+     *
+     * @param int $id  the analysts.id; 0 or less gives null
+     */
+    public static function analyst(int $id): ?self
+    {
+        return $id > 0 ? new self(self::ANALYST, $id) : null;
+    }
+
+    /**
+     * A learner for a self-service user id, or null when the id is not positive.
+     *
+     * @param int $id  the self-service users.id; 0 or less gives null
+     */
+    public static function user(int $id): ?self
+    {
+        // GH #217: with the LMS switched off for the install there is no portal
+        // learner. Analysts are stopped by requireModuleAccessJson('lms'); portal
+        // users never pass that gate, so every portal path through here is the
+        // one place they can all be stopped - the Training tab, the dashboard
+        // card and the course endpoints alike.
+        if ($id <= 0 || !portalModuleOn('lms')) return null;
+        return new self(self::USER, $id);
+    }
+
+    /**
+     * Whoever is signed in, from either front door.
+     *
+     * 🔴 ONE BROWSER REALLY DOES HOLD BOTH IDENTITIES. The analyst app and the
+     * self-service portal are the same host and share one PHP session, so
+     * anybody who signs into both — which is every administrator who has ever
+     * looked at the portal — has `analyst_id` AND `ss_user_id` sitting side by
+     * side. There is then no such thing as "who is signed in": there are two
+     * answers, and only the REQUEST knows which one is acting.
+     *
+     * ⚠️ THIS USED TO PREFER THE ANALYST UNCONDITIONALLY, and the reasoning was
+     * wrong. Measured: an administrator opened the portal's own Training page
+     * and was shown the ADMINISTRATOR's ten courses, complete with their scores
+     * and their overdue flags, under a heading saying "Courses you have been
+     * asked to complete". Worse than the wrong list — the progress endpoints
+     * resolve the same way, so taking one of those courses from the portal would
+     * have written the attempt onto the analyst's training record while the page
+     * that let them in had gated it as the portal user. Two identities, and the
+     * gate and the writer disagreeing about which one was acting.
+     *
+     * 🔑 So the CONTEXT decides, via fromRequest() below, and this remains the
+     * plain analyst-first reading for the analyst app's own pages.
+     */
+    public static function fromSession(): ?self
+    {
+        if (!empty($_SESSION['analyst_id'])) return self::analyst((int)$_SESSION['analyst_id']);
+        if (!empty($_SESSION['ss_user_id'])) return self::user((int)$_SESSION['ss_user_id']);
+        return null;
+    }
+
+    /**
+     * The learner this REQUEST is acting as.
+     *
+     * The LMS endpoints are shared by the analyst app and the portal, so they
+     * have to be told which front door a call came through: `as=portal` means
+     * the portal, anything else means the analyst app.
+     *
+     * 🔑 THIS CANNOT BE USED TO BECOME SOMEBODY ELSE, which is why a plain query
+     * parameter is safe here. It does not name an identity — it chooses between
+     * the identities ALREADY PROVEN by this session's own cookies. Somebody with
+     * no portal login who passes `as=portal` gets their analyst identity back,
+     * or nothing; they cannot reach a `users` row they have not signed in as.
+     */
+    public static function fromRequest(): ?self
+    {
+        if (self::requestWantsPortal() && !empty($_SESSION['ss_user_id'])) {
+            return self::user((int)$_SESSION['ss_user_id']);
+        }
+        return self::fromSession();
+    }
+
+    /**
+     * Did this request come through the portal? Read from the query string even
+     * on a POST, so one rule covers the JSON-bodied endpoints as well.
+     */
+    private static function requestWantsPortal(): bool
+    {
+        return isset($_GET['as']) && $_GET['as'] === 'portal';
+    }
+
+    /** Whether the learner is an analyst or a self-service user. */
+    public function type(): string { return $this->type; }
+    /** The analysts.id or users.id of the learner, depending on type(). */
+    public function id(): int      { return $this->id; }
+    /** True when the learner is an analyst. */
+    public function isAnalyst(): bool { return $this->type === self::ANALYST; }
+
+    /** 'analyst:12' — for logs and array keys, never for storage. */
+    public function key(): string { return $this->type . ':' . $this->id; }
+}
+
+/** May this analyst manage the LMS? (is_admin bypasses, via analystHasCapability.) */
+function lmsCanManage(PDO $conn, int $analystId): bool {
+    return analystHasCapability($conn, $analystId, Cap::LMS_MANAGE);
+}
+
+/**
+ * Has this course's deadline passed?
+ *
+ * 🔴 A DEADLINE IS A DAY, NOT AN INSTANT — and this used to treat it as one.
+ * `lms_course_assignments.deadline` is filled in by an <input type="date">, so
+ * what lands in the column is midnight: "due 9 September" is stored
+ * `2026-09-09 00:00:00`. Comparing that to `now` as a UTC instant made a course
+ * OVERDUE THE MOMENT ITS DUE DATE BEGAN — somebody told they had until the 9th
+ * opened it on the morning of the 9th and found it already in red. Measured on
+ * a real assignment before this was changed.
+ *
+ * So the comparison is between CALENDAR DAYS, in the installation's own zone
+ * (the same frame naive_now() reads local "now" in): you are overdue once the
+ * day you were given has finished, which is what everybody means by a deadline.
+ * The third kind of stored date — no time, no zone. See
+ * Timezones-and-Time-Handling.
+ *
+ * ⚠️ Rows seeded with a real time of day (the demo data has a few at 17:00) are
+ * treated the same way, which is the kinder reading and keeps one rule.
+ *
+ * 🔑 One function, called by both the learner's view and the manager's Progress
+ * tab, because the two screens disagreeing about whether somebody is late is
+ * worse than either of them being wrong on its own.
+ *
+ * @param ?string $deadline  the assignment deadline as stored (a date, read as a whole local day); null or '' is never overdue
+ * @param string $status  the learner's progress status; 'completed' and 'passed' are never overdue
+ */
+function lmsIsOverdue(?string $deadline, string $status): bool
+{
+    if (empty($deadline)) return false;
+    if (in_array($status, ['completed', 'passed'], true)) return false;
+
+    // 'YYYY-MM-DD' either way, so a string comparison is a date comparison.
+    return substr($deadline, 0, 10) < date('Y-m-d');
+}
+
+/**
+ * Are the shared people groups available on this install?
+ *
+ * ⚠️ Guarded because the assignment query joins `knowledge_user_groups`, and an
+ * install part-way through an upgrade may not have it yet. Without this the
+ * whole My Courses page would be a 500 rather than a page listing the courses
+ * that reach the learner by every OTHER route. Cached per request; the same
+ * habit as tenancyColumnExists() and the try/catch in knowledge/visibility.php.
+ */
+function lmsUserGroupsAvailable(PDO $conn): bool {
+    static $available = null;
+    if ($available !== null) return $available;
+    try {
+        $conn->query("SELECT 1 FROM knowledge_user_groups LIMIT 1");
+        return $available = true;
+    } catch (PDOException) {
+        return $available = false;
+    }
+}
+
+/**
+ * THE ONE PLACE THAT SAYS WHICH ASSIGNMENTS REACH A LEARNER.
+ *
+ * Returns [sql, params] for a WHERE fragment against `lms_course_assignments ca`,
+ * covering all three kinds of target:
+ *
+ *   learning_group  an analyst learning group. ANALYSTS ONLY — a portal user is
+ *                   not in `analysts` and can never match one, which is why the
+ *                   branch is omitted entirely rather than left to return no rows.
+ *   user_group      a shared people group, which holds both kinds of member. The
+ *                   EXPIRY IS APPLIED HERE, at read time, exactly as Knowledge
+ *                   does it: somebody given a fortnight's training access loses
+ *                   it by the clock rather than by anyone remembering.
+ *   all_users       every portal user. Matches any 'user' learner and no analyst
+ *                   — "push it to the portal" means the portal.
+ *
+ * 🔑 Every caller composes this rather than writing its own joins. The old code
+ * spelled the same three-table join out in five places; they agreed then, and
+ * the first person to add a target type would have found out that they don't.
+ *
+ * @param LmsLearner $learner  the person whose assignments are wanted
+ * @return array{0:string,1:array}
+ */
+function lmsAssignmentReachSql(PDO $conn, LmsLearner $learner): array
+{
+    $branches = [];
+    $params   = [];
+
+    if ($learner->isAnalyst()) {
+        $branches[] = "(ca.target_type = 'learning_group' AND EXISTS (
+                            SELECT 1 FROM lms_learning_groups g
+                              JOIN lms_learning_group_members m ON m.group_id = g.id
+                             WHERE g.id = ca.group_id AND g.is_active = 1 AND m.analyst_id = ?))";
+        $params[] = $learner->id();
+    } else {
+        $branches[] = "ca.target_type = 'all_users'";
+    }
+
+    // ONE NAMED PERSON. 'analyst'/'user' put the person's own id in group_id.
+    // Worth having as a target of its own rather than telling somebody to make a
+    // group of one: a group per person is administration nobody keeps up with,
+    // and the groups list stops being readable by the end of the first month.
+    $branches[] = "(ca.target_type = ? AND ca.group_id = ?)";
+    $params[] = $learner->type();
+    $params[] = $learner->id();
+
+    if (lmsUserGroupsAvailable($conn)) {
+        $branches[] = "(ca.target_type = 'user_group' AND EXISTS (
+                            SELECT 1 FROM knowledge_user_groups ug
+                              JOIN knowledge_user_group_members um ON um.group_id = ug.id
+                             WHERE ug.id = ca.group_id AND ug.is_active = 1
+                               AND um.member_type = ? AND um.member_id = ?
+                               AND (um.expires_at IS NULL OR um.expires_at > UTC_TIMESTAMP())))";
+        $params[] = $learner->type();
+        $params[] = $learner->id();
+    }
+
+    return ['(' . implode(' OR ', $branches) . ')', $params];
+}
+
+/**
+ * Is this course assigned to this learner? This is what they are *entitled* to
+ * take, by any of the routes above.
+ *
+ * @param LmsLearner $learner  the person to check
+ * @param int $courseId  the lms_courses id; 0 or less gives false
+ */
+function lmsCourseAssignedTo(PDO $conn, LmsLearner $learner, int $courseId): bool {
+    if ($courseId <= 0) return false;
+    list($reachSql, $reachParams) = lmsAssignmentReachSql($conn, $learner);
+
+    $stmt = $conn->prepare("SELECT 1 FROM lms_course_assignments ca
+                             WHERE ca.course_id = ? AND $reachSql
+                             LIMIT 1");
+    $stmt->execute(array_merge([$courseId], $reachParams));
+    return (bool) $stmt->fetchColumn();
+}
+
+/**
+ * May this learner open/play this course? Managers (and admins) may open any
+ * course — that's how Preview works. Everyone else may open only what's assigned
+ * to them. This is the gate the player and the learner content APIs enforce.
+ *
+ * ⚠️ THE MANAGER BYPASS IS ANALYST-ONLY, and deliberately so. lmsCanManage()
+ * asks an RBAC question about an `analysts` row, and a portal user's id is a
+ * `users` row — passing it in would ask whether analyst #12 is an LMS manager
+ * while holding portal user #12, and answer about the wrong person entirely.
+ * A portal learner has no Preview and no override: assigned, or nothing.
+ *
+ * @param LmsLearner $learner  the person to check; an analyst who manages the LMS may open any course
+ * @param int $courseId  the lms_courses id
+ */
+function lmsCanAccessCourse(PDO $conn, LmsLearner $learner, int $courseId): bool {
+    if ($learner->isAnalyst() && lmsCanManage($conn, $learner->id())) return true;
+    return lmsCourseAssignedTo($conn, $learner, $courseId);
+}
+
+/**
+ * Hard gate for a learner course API: 403 unless the caller may access
+ * $courseId. Resolves the learner from whichever session is present, so one
+ * guard covers both the analyst app and the portal.
+ * Assumes the session check and module gate have already run.
+ *
+ * @param int $courseId  the lms_courses id the request is about
+ */
+function requireLmsCourseAccessJson(PDO $conn, int $courseId): void {
+    $learner = LmsLearner::fromRequest();
+    if (!$learner || !lmsCanAccessCourse($conn, $learner, $courseId)) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'This course has not been assigned to you.']);
+        exit;
+    }
+}
+
+/**
+ * The courses assigned to a learner by any route, each with their own progress —
+ * the data behind My Courses and the portal's Training page. One row per course
+ * even if it reaches them several ways (earliest deadline wins). is_overdue is
+ * computed here so the page and any caller agree.
+ *
+ * 🔑 The three-table join this used to open with is gone. Which assignments
+ * reach somebody is now one question, answered in lmsAssignmentReachSql(), and a
+ * plain EXISTS keeps this query returning ONE ROW PER COURSE — joining through
+ * group membership instead would multiply the row by every group that reaches
+ * it, which the old GROUP BY was quietly there to mop up.
+ *
+ * @param LmsLearner $learner  the person whose assigned courses are listed
+ * @return array<int,array<string,mixed>>
+ */
+function lmsMyCourses(PDO $conn, LmsLearner $learner): array {
+    list($reachSql, $reachParams) = lmsAssignmentReachSql($conn, $learner);
+
+    $sql = "SELECT c.id, c.title, c.description, c.content_type, c.scorm_version,
+                   MIN(ca.deadline) AS deadline,
+                   COALESCE(p.status, 'not_started') AS status,
+                   p.score_raw, p.score_max, p.last_access, p.completion_datetime,
+                   p.bookmark
+            FROM lms_course_assignments ca
+            JOIN lms_courses c ON ca.course_id = c.id AND c.is_active = 1
+            LEFT JOIN lms_progress p ON p.learner_type = ? AND p.learner_id = ? AND p.course_id = c.id
+            WHERE $reachSql
+            GROUP BY c.id, c.title, c.description, c.content_type, c.scorm_version,
+                     p.status, p.score_raw, p.score_max, p.last_access, p.completion_datetime,
+                     p.bookmark
+            ORDER BY (MIN(ca.deadline) IS NULL), MIN(ca.deadline), c.title";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute(array_merge([$learner->type(), $learner->id()], $reachParams));
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    lmsAttachLessonProgress($conn, $rows);
+
+    foreach ($rows as &$row) {
+        $row['is_overdue'] = lmsIsOverdue($row['deadline'] ?? null, (string)$row['status']);
+    }
+    unset($row);
+
+    return $rows;
+}
+
+/**
+ * How far through a course somebody is, as "lesson N of M".
+ *
+ * 🔑 THERE IS NO STORED PERCENTAGE, AND THIS DOES NOT INVENT ONE. The only
+ * position the product records for a native course is `lms_progress.bookmark`,
+ * which the native player writes as the ID of the lesson being read. So the
+ * honest reading is a POSITION IN A LIST - lesson 2 of 3 - and that is what the
+ * page shows beside the bar. A bar on its own would imply a measured percentage
+ * of a course that nothing measures.
+ *
+ * ⚠️ SCORM courses get nothing. They have no `lms_lessons` rows at all (their
+ * content is a package on disk), and their bookmark holds `cmi.core.lesson_location`,
+ * which is whatever the package chose to put there - a page id, a slide name, a
+ * blob. It is not a lesson id and must never be compared to one, which is also
+ * why this ranks in PHP rather than joining `lb.id = p.bookmark` in SQL: that
+ * join would coerce arbitrary text to an integer and quietly match lesson 0.
+ *
+ * A finished course is full whatever the bookmark says, because somebody who
+ * passed and then reopened lesson 1 has not gone backwards.
+ *
+ * Adds `lesson_count` and `lesson_position` to each row, both 0 when unknown.
+ * One extra query for the whole page, not one per course.
+ *
+ * @param array $rows  course rows (id, content_type, status, bookmark), changed in place - lesson_count and lesson_position are added
+ */
+function lmsAttachLessonProgress(PDO $conn, array &$rows): void
+{
+    foreach ($rows as &$r) {
+        $r['lesson_count'] = 0;
+        $r['lesson_position'] = 0;
+    }
+    unset($r);
+    if (!$rows) return;
+
+    // Only native courses have lessons to count.
+    $nativeIds = [];
+    foreach ($rows as $r) {
+        if (($r['content_type'] ?? '') === 'native') $nativeIds[] = (int)$r['id'];
+    }
+    if (!$nativeIds) return;
+
+    $in = implode(',', array_fill(0, count($nativeIds), '?'));
+    // Same order the player walks them in, so "lesson 2" means the same thing
+    // on this page as it does inside the course.
+    $st = $conn->prepare(
+        "SELECT course_id, id FROM lms_lessons
+          WHERE course_id IN ($in)
+       ORDER BY course_id, display_order, id"
+    );
+    $st->execute($nativeIds);
+
+    $byCourse = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $l) {
+        $byCourse[(int)$l['course_id']][] = (int)$l['id'];
+    }
+
+    foreach ($rows as &$r) {
+        $lessons = $byCourse[(int)$r['id']] ?? [];
+        if (!$lessons) continue;
+        $r['lesson_count'] = count($lessons);
+
+        if (in_array($r['status'], ['completed', 'passed'], true)) {
+            $r['lesson_position'] = $r['lesson_count'];
+            continue;
+        }
+        $bookmark = trim((string)($r['bookmark'] ?? ''));
+        if ($bookmark === '' || !ctype_digit($bookmark)) continue;
+        $idx = array_search((int)$bookmark, $lessons, true);
+        if ($idx !== false) $r['lesson_position'] = $idx + 1;
+    }
+    unset($r);
+}
+
+/**
+ * This learner's progress row for a course, created on first sight.
+ *
+ * 🔑 ONE COPY, because there were two and they are the rows that record whether
+ * somebody has done their mandatory training. api/lms/native_progress.php and
+ * api/lms/scorm_data.php each had their own find-or-create, written against
+ * `analyst_id`; two independent INSERTs into a table whose unique key was about
+ * to change is precisely the pair you do not want to leave lying around.
+ *
+ * ⚠️ `analyst_id` IS WRITTEN TOO, for an analyst, and left NULL for a portal
+ * learner. It is legacy (see freeitsm.sql) and nothing reads it — but while the
+ * column still exists it must not go stale, or the next person to write a report
+ * against the obvious-looking column gets a partial answer with no hint that it
+ * is partial. It goes at the next MAJOR, and this line goes with it.
+ *
+ * @param LmsLearner $learner  the person taking the course
+ * @param int $courseId  the lms_courses id
+ */
+function lmsProgressRowFor(PDO $conn, LmsLearner $learner, int $courseId): array
+{
+    $find = $conn->prepare("SELECT * FROM lms_progress
+                             WHERE learner_type = ? AND learner_id = ? AND course_id = ?");
+    $find->execute([$learner->type(), $learner->id(), $courseId]);
+    $row = $find->fetch(PDO::FETCH_ASSOC);
+    if ($row) return $row;
+
+    // INSERT IGNORE, not a bare INSERT: two tabs open on the same course is an
+    // ordinary thing for a learner to do, and the loser of that race would
+    // otherwise throw a duplicate-key error into the middle of a lesson. The
+    // unique key makes the second one a no-op and the re-read below finds the
+    // first one's row.
+    $ins = $conn->prepare(
+        "INSERT IGNORE INTO lms_progress
+            (analyst_id, learner_type, learner_id, course_id, status,
+             first_access, last_access, attempt_count, created_datetime, updated_datetime)
+         VALUES (?, ?, ?, ?, 'incomplete',
+             UTC_TIMESTAMP(), UTC_TIMESTAMP(), 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+    );
+    $ins->execute([
+        $learner->isAnalyst() ? $learner->id() : null,
+        $learner->type(),
+        $learner->id(),
+        $courseId,
+    ]);
+
+    $find->execute([$learner->type(), $learner->id(), $courseId]);
+    return $find->fetch(PDO::FETCH_ASSOC) ?: [];
+}
+
+/**
+ * THE OTHER DIRECTION: every (learner, course) an assignment reaches.
+ *
+ * lmsAssignmentReachSql() answers "what reaches THIS person", which is what a
+ * learner's own page needs. This answers "who does this reach", which is what
+ * the manager's Progress tab and the reminder run need — and it cannot be the
+ * same query, because one starts from a person and the other from an assignment.
+ *
+ * Returns a parenthesised UNION usable as a derived table, with columns:
+ *   learner_type, learner_id, course_id, group_id, target_type, deadline
+ *
+ * 🔑 UNION, not UNION ALL. Somebody reached by two routes — in a people group
+ * AND caught by "everyone on the portal" — is ONE person expected to do ONE
+ * course. Callers still reduce by (learner, course) afterwards, because two
+ * routes can carry two different DEADLINES, and the earliest has to win.
+ *
+ * ⚠️ The people-group branch applies the membership expiry, for the same reason
+ * the learner's own view does: somebody whose access has lapsed is no longer
+ * expected to do the course, and leaving them in would generate chasing emails
+ * for training they can no longer open.
+ */
+function lmsAssignedLearnersSql(PDO $conn): string
+{
+    $selects = [];
+
+    // An analyst learning group.
+    $selects[] = "SELECT 'analyst' AS learner_type, m.analyst_id AS learner_id,
+                         ca.course_id, ca.group_id, ca.target_type, ca.deadline
+                    FROM lms_course_assignments ca
+                    JOIN lms_learning_groups g ON g.id = ca.group_id AND g.is_active = 1
+                    JOIN lms_learning_group_members m ON m.group_id = g.id
+                    JOIN analysts a ON a.id = m.analyst_id AND a.is_active = 1
+                   WHERE ca.target_type = 'learning_group'";
+
+    // A shared people group — both kinds of member.
+    if (lmsUserGroupsAvailable($conn)) {
+        $selects[] = "SELECT um.member_type AS learner_type, um.member_id AS learner_id,
+                             ca.course_id, ca.group_id, ca.target_type, ca.deadline
+                        FROM lms_course_assignments ca
+                        JOIN knowledge_user_groups ug ON ug.id = ca.group_id AND ug.is_active = 1
+                        JOIN knowledge_user_group_members um ON um.group_id = ug.id
+                       WHERE ca.target_type = 'user_group'
+                         AND (um.expires_at IS NULL OR um.expires_at > UTC_TIMESTAMP())";
+    }
+
+    // Every active portal user.
+    $selects[] = "SELECT 'user' AS learner_type, u.id AS learner_id,
+                         ca.course_id, ca.group_id, ca.target_type, ca.deadline
+                    FROM lms_course_assignments ca
+                    JOIN users u ON u.is_active = 1
+                   WHERE ca.target_type = 'all_users'";
+
+    // One named analyst, and one named portal user. The join is what drops an
+    // assignment whose person has since been deactivated or deleted — the row
+    // survives (so the manager can see it and remove it) but nobody is expected
+    // to do the course because of it.
+    $selects[] = "SELECT 'analyst' AS learner_type, a.id AS learner_id,
+                         ca.course_id, ca.group_id, ca.target_type, ca.deadline
+                    FROM lms_course_assignments ca
+                    JOIN analysts a ON a.id = ca.group_id AND a.is_active = 1
+                   WHERE ca.target_type = 'analyst'";
+
+    $selects[] = "SELECT 'user' AS learner_type, u.id AS learner_id,
+                         ca.course_id, ca.group_id, ca.target_type, ca.deadline
+                    FROM lms_course_assignments ca
+                    JOIN users u ON u.id = ca.group_id AND u.is_active = 1
+                   WHERE ca.target_type = 'user'";
+
+    return '(' . implode("\n UNION \n", $selects) . ')';
+}
+
+/**
+ * The kinds of thing a course can be given to, and what `group_id` means in each:
+ *   learning_group  lms_learning_groups.id     (analysts)
+ *   user_group      knowledge_user_groups.id   (analysts and portal users)
+ *   all_users       nothing — group_id is 0
+ *   analyst         analysts.id                — ONE named analyst
+ *   user            users.id                   — ONE named portal user
+ *
+ * Shared by the create and the edit endpoints. It lived in assignments.php until
+ * assignment.php needed the same list, which is the moment a copy becomes a
+ * future disagreement about what a valid target is.
+ */
+const LMS_TARGET_TYPES = ['learning_group', 'user_group', 'all_users', 'analyst', 'user'];
+
+/**
+ * Is this target real? Returns a human-readable problem, or null if it is fine.
+ *
+ * 🔑 Checked on the way IN, on both create and edit. Without it a typo'd id is
+ * accepted happily and the assignment reaches nobody at all — which looks
+ * exactly like the feature not working, and is the worst kind of silence:
+ * the row is there on the screen, and nothing ever happens because of it.
+ *
+ * @param string $targetType  one of LMS_TARGET_TYPES - 'learning_group', 'user_group', 'all_users', 'analyst', 'user'
+ * @param int $groupId  the target's id, whose meaning depends on $targetType (ignored for 'all_users')
+ */
+function lmsAssignmentTargetProblem(PDO $conn, string $targetType, int $groupId): ?string
+{
+    if ($targetType === 'all_users') return null;
+
+    if ($targetType === 'learning_group') {
+        $st = $conn->prepare("SELECT 1 FROM lms_learning_groups WHERE id = ? AND is_active = 1");
+        $st->execute([$groupId]);
+        return $st->fetchColumn() ? null : 'That learning group was not found';
+    }
+
+    if ($targetType === 'user_group') {
+        if (!lmsUserGroupsAvailable($conn)) return 'People groups are not available on this install yet';
+        $st = $conn->prepare("SELECT 1 FROM knowledge_user_groups WHERE id = ? AND is_active = 1");
+        $st->execute([$groupId]);
+        return $st->fetchColumn() ? null : 'That group was not found';
+    }
+
+    if ($targetType === 'analyst') {
+        $st = $conn->prepare("SELECT 1 FROM analysts WHERE id = ? AND is_active = 1");
+        $st->execute([$groupId]);
+        return $st->fetchColumn() ? null : 'That person was not found';
+    }
+
+    if ($targetType === 'user') {
+        $st = $conn->prepare("SELECT 1 FROM users WHERE id = ? AND is_active = 1");
+        $st->execute([$groupId]);
+        return $st->fetchColumn() ? null : 'That person was not found';
+    }
+
+    return 'Unknown target';
+}

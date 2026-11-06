@@ -1,25 +1,35 @@
-<h1 align="center">Thanks for Visiting 👋</h1>
+> **Upgrading this fork:** see [the 4.10 upgrade guide](docs/upstream-4.10-upgrade.md) before starting the new image against an existing database.
 
-<p align="center"><strong>FreeITSM is a one-developer project — your engagement is what keeps it moving.</strong></p>
+<h1 align="center">FreeITSM</h1>
 
-<p align="center">
-⭐ <strong>If you're regularly cloning or using FreeITSM, please <a href="https://github.com/edmozley/freeitsm/stargazers">give the repo a star</a></strong> — it's the single biggest signal that the work is landing<br><br>
-📬 <strong>Got feedback, an idea, or a bug?</strong> Email me directly at <a href="mailto:ed@freeitsm.co.uk">ed@freeitsm.co.uk</a> — I read every message<br><br>
-💬 <strong>Or jump into the community</strong> — <a href="https://github.com/edmozley/freeitsm/discussions">Discussions</a> for questions, ideas and show-and-tell · <a href="https://github.com/edmozley/freeitsm/issues">Issues</a> for bugs and feature requests<br><br>
-🌍 And if you mention <a href="https://freeitsm.co.uk">freeitsm.co.uk</a> on Reddit, Hacker News, Spiceworks, LinkedIn, or anywhere IT pros hang out — it genuinely helps and means a lot
-</p>
+<p align="center"><strong>Free, open-source IT Service Management — self-hosted, AI-included, no per-seat fees. Ever.</strong></p>
 
 <p align="center">
 <a href="https://github.com/edmozley/freeitsm/blob/main/LICENSE"><img src="https://img.shields.io/github/license/edmozley/freeitsm?style=flat-square&color=blue" alt="MIT License"></a>
-<img src="https://img.shields.io/badge/PHP-7.4--8.4-777BB4?style=flat-square&logo=php&logoColor=white" alt="PHP 7.4–8.4">
+<img src="https://img.shields.io/badge/PHP-8.1--8.4-777BB4?style=flat-square&logo=php&logoColor=white" alt="PHP 8.1–8.4">
 <img src="https://img.shields.io/badge/MySQL-8.0%2B-4479A1?style=flat-square&logo=mysql&logoColor=white" alt="MySQL 8.0+">
 <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Ready">
 <a href="https://github.com/edmozley/freeitsm/stargazers"><img src="https://img.shields.io/github/stars/edmozley/freeitsm?style=flat-square&color=gold" alt="GitHub stars"></a>
 </p>
 
-# FreeITSM - Open Source Service Desk Platform
+<p align="center">
+🌍 <a href="https://freeitsm.co.uk">freeitsm.co.uk</a> &nbsp;·&nbsp;
+📖 <a href="https://github.com/edmozley/freeitsm/wiki">Documentation Wiki</a> &nbsp;·&nbsp;
+💬 <a href="https://github.com/edmozley/freeitsm/discussions">Discussions</a> &nbsp;·&nbsp;
+🐛 <a href="https://github.com/edmozley/freeitsm/issues">Issues</a>
+</p>
 
-A comprehensive web-based IT Service Management (ITSM) platform with 17 integrated modules covering a unified attention dashboard, tickets, tasks with Kanban board, assets, knowledge, change management, calendar, morning checks, reporting, software inventory, dynamic forms, contracts, service status, process mapping, LMS with SCORM course player, and system administration. Includes a Chrome/Edge browser extension for Watchtower dashboard monitoring, analyst account management with password reset, forgot password via email, TOTP multi-factor authentication, and IP-based brute force protection.
+---
+
+FreeITSM is a complete web-based ITSM platform: **24 integrated modules** covering tickets, assets, knowledge, changes, problems, tasks, a CMDB, workflows, an LMS and more — plus a **self-service portal** for your end users. It runs on a plain PHP + MySQL stack (WAMP, XAMPP, LAMP, or Docker), so your data stays on your server.
+
+**Why teams pick it:**
+
+- 🆓 **Genuinely free** — MIT licence, no per-seat/per-agent fees, no "Enterprise tier". Everything ships to everyone.
+- 🏠 **Self-hosted** — your tickets, your customers' conversations and your knowledge base live in your database, under your backups and your privacy policy.
+- 🤖 **AI included, not upsold** — reply cleanup, knowledge Q&A, form generation, course authoring, RCA drafting and more, all bring-your-own-key (Anthropic, OpenAI, OpenRouter or Azure OpenAI) - or keep it in-house on your own model server (Ollama, LM Studio, vLLM or any OpenAI-compatible endpoint), with no cloud fallback.
+- 📥 **Every channel becomes a ticket** — email (Microsoft 365, Gmail, IMAP), WhatsApp, Telegram, Slack, Microsoft Teams, Mattermost, an embeddable web chat widget, and a portal that even staff **without a company email address** can use.
+- 🔔 **A notification bell you can actually leave on** — replies, assignments, notes and SLA warnings on your tickets, on every screen. It never tells you about your own actions, groups repeat changes to one ticket into a single entry, and stays silent for bulk updates, so it does not become the thing everyone ignores. It can also **chime** — each person picks their own sound, or none at all, under Preferences, and it only ever sounds for something that arrived while you were sitting there. Entries can be **cleared** as well as marked read: an individual one from the row it sits on, or the lot in one go — and Clear all spares anything you have not read yet unless you tick the box that says otherwise.
 
 ## Screenshots
 
@@ -34,77 +44,13 @@ A comprehensive web-based IT Service Management (ITSM) platform with 17 integrat
 <td align="center"><strong>Changes</strong><br><img src="https://freeitsm.co.uk/images/screenshots/changes_1.png" width="350" alt="Changes"></td>
 <td align="center"><strong>Calendar</strong><br><img src="https://freeitsm.co.uk/images/screenshots/calendar_1.png" width="350" alt="Calendar"></td>
 </tr>
-<tr>
-<td align="center"><strong>Morning Checks</strong><br><img src="https://freeitsm.co.uk/images/screenshots/checks_1.png" width="350" alt="Morning Checks"></td>
-<td align="center"><strong>Software</strong><br><img src="https://freeitsm.co.uk/images/screenshots/software_1.png" width="350" alt="Software"></td>
-<td align="center"><strong>Forms</strong><br><img src="https://freeitsm.co.uk/images/screenshots/forms_1.png" width="350" alt="Forms"></td>
-</tr>
-<tr>
-<td align="center"><strong>Contracts</strong><br><img src="https://freeitsm.co.uk/images/screenshots/contracts_1.png" width="350" alt="Contracts"></td>
-<td align="center"><strong>System Wiki</strong><br><img src="https://freeitsm.co.uk/images/screenshots/wiki_1.png" width="350" alt="System Wiki"></td>
-<td align="center"><strong>Process Mapper</strong><br>Visual flowchart builder with drag-and-drop steps, connector lines, and snap-to-grid canvas</td>
-</tr>
-<tr>
-<td align="center"><strong>LMS</strong><br>Learning Management System with SCORM 1.1/1.2/2004 course player, learning groups, assignments, deadlines, and progress tracking</td>
-<td align="center"></td>
-<td align="center"></td>
-</tr>
 </table>
 
 <p align="center"><a href="https://freeitsm.co.uk/screenshots.html"><strong>View all 57 screenshots →</strong></a></p>
 
-## Table of Contents
-
-- [Screenshots](#screenshots)
-- [Quick Start](#-quick-start)
-  - [Docker (Recommended)](#docker-recommended)
-  - [Manual Installation](#manual-installation)
-  - [Configuration Files](#configuration-files)
-- [Technology Stack](#technology-stack)
-- [ITSM Modules](#itsm-modules)
-- [Directory Structure](#directory-structure)
-- [Shared Components](#shared-components)
-- [Module Details](#module-details)
-  - [Watchtower](#watchtower-watchtower)
-  - [Tickets](#tickets-tickets)
-  - [Assets](#assets-asset-management)
-  - [Knowledge](#knowledge-knowledge)
-  - [Change Management](#change-management-change-management)
-  - [Calendar](#calendar-calendar)
-  - [Morning Checks](#morning-checks-morning-checks)
-  - [Reporting](#reporting-reporting)
-  - [Software](#software-software)
-  - [System](#system-system)
-  - [Forms](#forms-forms)
-  - [Contracts](#contracts-contracts)
-  - [Service Status](#service-status-service-status)
-  - [Self-Service Portal](#self-service-portal-self-service)
-  - [LMS](#lms-lms)
-  - [Process Mapper](#process-mapper-process-mapper)
-  - [Workflows](#workflows-workflow)
-  - [Network Mapper](#network-mapper-network-mapper)
-  - [Tasks](#tasks-tasks)
-- [Browser Extension](#browser-extension)
-- [API Reference](#api-reference)
-- [Database](#database)
-- [Security](#security)
-- [Key Workflows](#key-workflows)
-- [Development Notes](#development-notes)
-- [File Locations Quick Reference](#file-locations-quick-reference)
-
----
-
-## LDAP / Active Directory
-
-This fork uses upstream FreeITSM's native LDAP authentication core alongside local and OpenID Connect sign-in. Configure directories under **System → Authentication / SSO**; employees use the normal login pages. The former custom mirrored-domain/authorization-authority feature is retired.
-
-See [Native LDAP configuration and migration](docs/active-directory.md) before upgrading existing custom AD accounts. The migration preserves user IDs and ticket history, retains archived legacy tables, and imports directories disabled for review. Existing IMAP/SMTP and local deployment changes remain intact.
-
 ## 🚀 Quick Start
 
-### Docker (Recommended)
-
-The fastest way to get FreeITSM running — no PHP, MySQL, or web server setup required.
+The fastest route is Docker — no PHP, MySQL or web server setup required:
 
 ```bash
 git clone https://github.com/edmozley/freeitsm.git
@@ -112,1315 +58,183 @@ cd freeitsm
 docker compose up -d
 ```
 
-Then open [http://localhost:8080/setup/](http://localhost:8080/setup/) to verify the installation and create your admin account.
+Then open [http://localhost:8080/setup/](http://localhost:8080/setup/) to verify the installation and create your admin account. The first sign-in uses **admin** / **freeitsm** and FreeITSM will make you choose a new password before it lets you do anything else.
 
-> Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or Docker Engine (Linux).
+- **Manual install** (WAMP / XAMPP / LAMP): follow the **[Installation guide](https://github.com/edmozley/freeitsm/wiki/Installation)** — prerequisites, database setup, encryption key, and configuration files.
+- **Just upgraded?** Run **System → Database Verification**, then **System → Debug Tools → D019 Page health**: it opens every page and checks, in your browser, that each one's scripts can be read - one unreadable line leaves a page looking loaded with nothing on it working, and the server cannot see it. Database Verification shows when the pages were last checked.
+- **[One scheduled task for every background job](https://github.com/edmozley/freeitsm/wiki/Scheduled-Tasks)**: on a manual install, schedule `php cron/run.php` to run every minute and it starts each background job - SLA warnings, webhooks, repeating tasks, directory imports and the rest - when it is due, including jobs added by later releases. Set when each one runs (every so many minutes, daily at a set time, or off) under **Reporting → System logs → Background jobs**, which also says whether the scheduler is running and shows the exact line to schedule. **The Docker image runs it itself.** An install that cannot have a scheduled task can switch on a fallback that starts due jobs while somebody has FreeITSM open. Built from a design by vsc55.
+- **Upgraded, or moved servers?** **System → Debug Tools → D017** checks your `config.php` against what this version expects and gives you the exact line to add for anything missing. It shows setting names only, never values.
+- **Ticket folder numbers all say 0?** **System → Debug Tools → D018** follows every ticket through the filters behind the inbox's folder numbers, for whichever analyst is affected, and shows the step where the tickets drop away. The usual cause is an analyst in a team that is not linked to any department.
+- **Running in Docker?** FreeITSM checks whether the folders holding your uploaded files are on Docker volumes, and warns you on the System screen if an update would discard them. **System → Debug Tools → D013** shows the detail and what to do about it. Native installs are unaffected and see nothing.
+- **HTTPS in Docker**: **System → Docker** makes a certificate for the name your people type (such as `freeitsm.internal`) and walks you through the rest: the DNS record, installing its authority certificate on your PCs, and restarting the container. HTTPS is then served on port 8443. The authority can only vouch for that one name, so trusting it on your PCs does not let it impersonate any other site.
+- **First login**: `admin` / `freeitsm` — change it immediately via the account menu.
+- **Demo data**: System → Demo Data populates every module with realistic sample data, so you can evaluate with the system feeling alive. Every row it creates is marked as demo data, so re-importing a module replaces only its own sample records and leaves anything you have created alone. A **Virtualisation** set (Hyper-V cluster, Proxmox, Cloud Director and vCenter, built into the CMDB with assets linked to their configuration items) has its own **Remove** button.
+- **An optional sidebar**: anybody who would rather see their modules than open the waffle menu can turn on a rail of module icons down the left of every screen under **Preferences → Display → Sidebar**, and tick which modules it holds. It only offers modules they can open, follows their own module order, has a Recent button (the waffle's own trail) and a shortcut back to its settings, can hide the waffle button, and is off unless they choose it. Not shown on a phone, which keeps its compact menu.
+- **[Switch off the modules you don't use](https://github.com/edmozley/freeitsm/wiki/Switching-Modules-Off)**: under **System → Modules → Availability**, a module switched off disappears for everyone, administrators included - from the menus, from other modules' buttons and links, from the self-service portal, the REST API, workflows and scheduled jobs. Nothing is deleted, switching it back on restores it exactly as it was, and upgrading never switches anything off. Tickets and System are always on. Parts of Tickets switch off on their own too - **CSAT, SLA, time tracking and the duty rota** - and switching SLA back on asks whether to send the warnings it missed or skip them.
+- **Preference templates**: **System → Preference Templates** saves named sets of preferences - timezone, language, the sidebar, module order, notifications and more - taken from somebody's real setup, and gives them to chosen people in one go, or to every new analyst automatically. A one-off copy: everyone can still change their own afterwards. See [Preference templates](https://github.com/edmozley/freeitsm/wiki/Preference-Templates).
+- **Your own module order**: each analyst can put the modules in their own order under **Preferences → Display**; the waffle menu, the home page and Ctrl+K follow it. Administrators can order the Watchtower cards for everybody in **Watchtower → Settings → Cards**.
+- **Any currency**: contracts, licences, domains, leases and projects all offer every currency in use in the world. **System → Currencies** sets up to five favourites at the top of every list, the currency new records start in, and how amounts are written (`£1,234.56`, `1.234,56 €`, `Rp 1.500.000`); each analyst can choose their own format in Preferences. See [Currencies](https://github.com/edmozley/freeitsm/wiki/Currencies).
 
----
+## Modules
 
-### Manual Installation
+| Module | What it does |
+|--------|--------------|
+| [Watchtower](https://github.com/edmozley/freeitsm/wiki/Watchtower) | Unified attention dashboard — one glance shows what needs you across every module. Counts every status you have, under the name and colour you gave it, so renaming or adding one keeps working. Settings turn off cards you don't watch and narrow what each count includes |
+| [Tickets](https://github.com/edmozley/freeitsm/wiki/Tickets) | Outlook-style inbox with email, WhatsApp, Telegram, Slack, Microsoft Teams, Mattermost and web chat channels, SLAs, [a type for every new ticket](https://github.com/edmozley/freeitsm/wiki/Ticket-Types-For-New-Tickets) (a default, plus rules by channel, mailbox, origin, department, subject or requester domain), CSAT (asked in the customer's own chat, with buttons, where they wrote in on one), canned responses, multi-select bulk actions, snooze, collision detection, AI reply cleanup, and a **staff rota** you fill by copying — one shift into a block of cells, a whole day or one person's week onto another, or a whole week at a time — and clear the same way |
+| [Self-Service Portal](https://github.com/edmozley/freeitsm/wiki/Self-Service-Portal) | End-user portal — request catalogue, knowledge, replies, screen recording; works even with no email address. People you create yourself set their own first password from **Forgot your password?**, so you never handle one. Can be set as the page people land on (**System → Branding**), with a per-analyst override |
+| [Tasks](https://github.com/edmozley/freeitsm/wiki/Tasks) | Kanban board, list, calendar and timeline views for internal work, with scheduled start and end times and a record of time spent that totals across subtasks. Tasks can **repeat** &mdash; daily, weekly, monthly or yearly, on chosen weekdays, on a day of the month including the last, or on a named weekday such as the third Monday &mdash; either when you complete the last one or on a fixed schedule, with a **preview** of every date the settings would produce before you commit to them. Optionally, tasks can carry **checklists** from the Checklists module, with Critical steps that must be done before the task completes, and can **need forms** from the Forms module - filled in for that occurrence with a shared draft that two people cannot silently overwrite, linked automatically, checked before the task completes, and carried into the evidence report. A **Work view** brings a task's instructions, **Knowledge procedures** (with the text each occurrence was done against kept for the record), checklists and forms together, with progress and one Complete button |
+| [Projects](https://github.com/edmozley/freeitsm/wiki/Projects) | **IT projects built on your tasks** - a portfolio of projects, each with its own colour, icon and a health ring worked out from its tasks and target date; a plan of phases, stages or sprints you drag tasks between; run as **Simple, Staged (PRINCE2-style) or Agile**, and switch method halfway through without losing anything. Project tasks are ordinary tasks, so they show on the Tasks board for the people doing them. A **Timeline** draws the plan as a Gantt chart - stages as bands, tasks as bars, milestones as diamonds - and you drag them to reschedule; **milestones** (move day, go-live, sign-off) show on the portfolio card and the Calendar, and one that is missed turns the project amber and tells its manager. Assets, tickets, changes, contracts, CMDB items and articles show the projects they belong to, and People pages list the projects a person is part of. **Asset targets** count progress straight from Assets - "312 of 480 laptops replaced" - with a burn-up line, and move the health ring when a rollout slips. **Templates** start a project already planned - an office move, a laptop refresh, a mail migration, a Windows 11 rollout or a service desk improvement come built in - and any project that went well can be saved as one for next time. A lesson becomes a draft Knowledge article, and an issue raises a ticket, in one click. The RAID log tracks **dependencies** and keeps a **decision log** (who decided, when and why), any entry can be **escalated** to the sponsor, and follow-up actions become tasks on the project. Every chart a project manager asks for: a **Gantt** Timeline with **dependencies** and the **critical path**, burn-up and **burndown**, progress by stage and by project, **cumulative flow**, task status breakdown, a risk heat map, milestones across projects, budget against actual and **earned value** (CPI, SPI, EAC). **Ask AI** on a project opens an AI project assistant that coaches a blank project into shape, keeps a running one on track, proposes changes you apply with one click, and remembers your conversation. Work can be given to a **contractor** - a supplier from Contracts and a person there - shown on the plan and the board, kept out of Capacity's load (contractors get a line of their own), listed on the supplier's People page, and optionally emailed to them when given and when due. A Toolbox on each project offers the tools it is not using yet - a Simple project starts with almost nothing and grows - and a **How it fits together** page - an interactive map of every part, and a step-by-step walk through a project - shows a beginner how it all connects. Templates carry dependencies, gate checklists and benefits, and the five built-in ones come with them. A stakeholder map (power / interest) with a communications plan sits on the People tab. Reports can draft themselves each week, fortnight or month, and an approved report can be emailed to the project's people. Project managers get a weekly digest of overdue tasks, and stalled approvals nudge whoever has to decide. A project can be **members-only** for confidential work. The portfolio and the RAID log export to Excel or CSV. Projects link to problems as well as changes, tickets, assets, contracts, CIs and articles. Stage gates have **checklists** (documents, named sign-offs, approved changes, and a go-live starter list) and projects hold **documents**. Projects track their **benefits** - measured from a baseline towards a target, with review reminders that carry on after the project closes - and the AI drafts a **closure report**. Any form can **propose a project** (why, estimated cost, expected benefit), and proposals can wait for an **approver** before they start. Budgets show **spend over time** with a **forecast** of what the project will cost in the end (estimates still to come included), and the overspend tolerance can watch the forecast. Staged projects get **change control**: baselines of the agreed plan with how far it has drifted since, and change requests approved or rejected before the plan moves (approving can move the target finish and add the cost to the budget). Projects have a **priority**, the portfolio sorts and switches to a **roadmap** of every project across the calendar, with a health strip on top; each project has a **burn-up** of progress over time and a chart of where the money goes; and the judgement calls - what a missed date does to health, the working week, the priority words - are settings. Tasks take an **estimate**, shown against the time logged, and a **Capacity** page shows who is over-committed in the weeks ahead - project work and service-desk shifts against the hours they work. Target end dates and stage ends appear on the shared **Calendar** and move when the plan does, and the project manager's bell rings when a project changes health, breaches a tolerance or has a stage ending soon - the same moments are **Workflow** triggers, so a project going red can post to Teams. Report Packs have Projects blocks (status, milestones, top risks) for the board pack, and Watchtower has a Projects card. A stage gate warns about linked changes not yet approved, and a jump in linked tickets after go-live turns a project amber; a project can announce its disruption on Service Status as planned maintenance. A **budget** tracks planned against actual - lines, contracts, cost centres and logged time at dated hourly rates - with a cost tolerance. In the War Room, **Warbot** answers questions about projects - which are off track, what dates are coming up - with commands that work even when the AI provider cannot be reached. An **AI project manager** (optional, your own AI provider) gives a briefing on what needs attention and drafts highlight, exception and checkpoint reports for the project manager to check and approve. Everything is in the REST API too |
+| [Assets](https://github.com/edmozley/freeitsm/wiki/Assets) | Asset register with custody tracking, locations, warranties, [QR labels and an in-app camera scanner for stocktakes](https://github.com/edmozley/freeitsm/wiki/Asset-QR-Labels) - with **labels you design** - lay a label out yourself in a drag-and-drop designer, as you would a slide, with several designs on any size, from Brother and Dymo tape to A4 sheets, printed as a PDF at the label's exact size, your logo large or in the QR, your own fonts, and names in any language and **automatic asset tags** in a format you choose, never reused - **renamed computers recognised by their serial number** instead of arriving as duplicates, a per-person view of who holds what with a printable handover document, [vCenter](https://github.com/edmozley/freeitsm/wiki/Assets), [Proxmox VE](https://github.com/edmozley/freeitsm/wiki/Proxmox-VE), [VMware Cloud Director](https://github.com/edmozley/freeitsm/wiki/VMware-Cloud-Director) and Intune sync - which can [give an unheld laptop to its Intune primary user](https://github.com/edmozley/freeitsm/wiki/Assets#intune-integration), matched by Entra object id - (several Proxmox and Director servers each, read-only), plus **saved table views** &mdash; save the columns, sort and filters under a name, share them with a team or everyone, and set one as the view a table opens with (also on Tasks, Calendar and Change Management), and **[a page that fits each kind of asset](https://github.com/edmozley/freeitsm/wiki/Asset-Type-Layouts)** &mdash; each asset type hides the built-in details and tabs it never uses (no CPU or Devices tab on a monitor) and orders its tabs, without anything stored being touched, and **[inventory freshness](https://github.com/edmozley/freeitsm/wiki/Inventory-Freshness)** &mdash; every software, drive and device list says which tool reported it, how old it is and whether the last collection worked, and a failed collection keeps the last good list instead of wiping it, and **[connected assets](https://github.com/edmozley/freeitsm/wiki/Connected-Assets)** &mdash; what is plugged into what, from both ends, confirmed by a person or observed by a tool, with its history, and **[a review list](https://github.com/edmozley/freeitsm/wiki/Asset-Review)** &mdash; two records that might be one machine are shown to a person rather than guessed at, and can be **merged** with nothing lost, corrected names and models can be **protected** from being overwritten by the agent, and one maker's several spellings can be shown as one name, and **[retired assets](https://github.com/edmozley/freeitsm/wiki/Assets#retired-assets-450)** - kit that has left the estate (disposed, decommissioned, transferred) keeps its record with the date and reason but leaves the lists, counts and alerts, and a device still reporting is recognised but not changed |
+| [Checklists & SOPs](https://github.com/edmozley/freeitsm/wiki/Checklists-and-SOPs) | Standard operating procedures as reusable templates - write onboarding, offboarding or a firewall change once, attach it to any ticket, and tick the steps off. Steps can be marked **mandatory**, ask the analyst for a value (an asset tag, a serial), and suggest which role does them; keyword matching offers the right procedure on a ticket before anybody goes looking. Closing a ticket with mandatory steps outstanding either **warns and records an internal note** or is **refused outright** - your choice, enforced on bulk actions, the REST API and workflow automation too. *Contributed by [Santhosh Srinivasan](https://github.com/srinivasansanthosh)* |
+| [Knowledge](https://github.com/edmozley/freeitsm/wiki/Knowledge) | Rich-text articles organised in [folders](https://github.com/edmozley/freeitsm/wiki/Knowledge-Folders-and-Permissions), with AI chat, vector search, review workflow, per-audience visibility, documents customers can download from the self-service [Help Centre](https://github.com/edmozley/freeitsm/wiki/Portal-Help-Centre#documents-on-an-article) (any one can be held back) and a distraction-free full-screen editor |
+| [Change Management](https://github.com/edmozley/freeitsm/wiki/Change-Management) | ITIL changes with CAB voting, risk matrix ([with a guide to rating likelihood and impact](https://github.com/edmozley/freeitsm/wiki/Change-Management#how-to-rate-the-risk-480) beside the fields, on [your own risk policy](https://github.com/edmozley/freeitsm/wiki/Change-Risk-Policies) - your levels, criteria, results and matrix, four levels or five, versioned so a change keeps the scale it was rated on) and post-implementation review - plus [approvals you can enforce and prove](https://github.com/edmozley/freeitsm/wiki/Change-Management#approvals-and-evidence): every approval tied to exactly what was approved, full history of the plans, an evidence export, approved standard-change templates, and read-only reviewers. A pipeline can [attach evidence over the REST API](https://github.com/edmozley/freeitsm/wiki/REST-API-Changes#-evidence-attachments-3120-194) with a key that can do nothing else, and a retry never stores it twice |
+| [Problem Management](https://github.com/edmozley/freeitsm/wiki/Problem-Management) | Root causes behind recurring incidents, known errors, AI-assisted RCA |
+| [Workflows](https://github.com/edmozley/freeitsm/wiki/Workflows) | Cross-module automation — visual canvas, 138+ triggers, outbound webhooks, AI co-author, and on a multi-company install [a workflow per company or shared by all](https://github.com/edmozley/freeitsm/wiki/Workflows#companies) |
+| [CMDB](https://github.com/edmozley/freeitsm/wiki/CMDB) | Typed configuration items with relationships, impact analysis and AI summaries |
+| [Network Mapper](https://github.com/edmozley/freeitsm/wiki/Network-Mapper) | Architecture diagrams where every node is bound to a real CMDB object |
+| [Calendar](https://github.com/edmozley/freeitsm/wiki/Calendar) | Team calendar with categories, and an iCal feed for your phone |
+| [Morning Checks](https://github.com/edmozley/freeitsm/wiki/Morning-Checks) | Daily infrastructure health checks with optional groups routed to a team or analyst, raise a ticket or task from any check, trend charts and PDF export |
+| [Reporting](https://github.com/edmozley/freeitsm/wiki/Reporting) | System logs, audit trails, an Intune device dashboard with drill-down, and **[Report Packs](https://github.com/edmozley/freeitsm/wiki/Report-Packs)** - designed reports with blocks for tickets, Service Status, software, assets (including those **retired** in the period), projects and **Change Management** |
+| [Software](https://github.com/edmozley/freeitsm/wiki/Software) | Software inventory from an agent script, plus licence management |
+| [Forms](https://github.com/edmozley/freeitsm/wiki/Forms) | Dynamic form builder with AI assist, section headings, **notes, warnings and images**, **tables a person adds rows to**, conditional questions, versioning and submissions reporting. **Half-finished forms can be saved as a draft** and picked back up later, on the analyst side and in the portal. Fields can **sit side by side** on a line and stack to one column on a phone. Say what happens when a form is used — raise a ticket, send an email, call a webhook — separately for when it is submitted, approved or rejected. A catalogue request can **[wait for approval](https://github.com/edmozley/freeitsm/wiki/Catalogue-Request-Approvals)** - from a named person, or from a team where a set number of different members must agree, with the requester never approving their own. **Keep a submission as a PDF** carrying your own logo, the answers and who approved it — one at a time, or tick several and take them as separate files or a single bundle. Group several forms' submissions into a **collection** such as "Staff Survey 2026", and close it when the exercise is over — what closing does is yours to choose, and a submission remembers the collection it was filed under even if the form is later paired elsewhere |
+| [Contracts](https://github.com/edmozley/freeitsm/wiki/Contracts) | Supplier and contract lifecycle, plus an AI-powered RFP Builder, **[contracts with customers](https://github.com/edmozley/freeitsm/wiki/Customer-Contracts)** as well as suppliers (a company, a person, or both &mdash; seen only by analysts who can see that company, unless you choose otherwise), and **equipment covered by a contract** &mdash; link phones, SIMs, routers or hardware to the agreement that covers them, visible from both the contract and the equipment, with an **equipment report** you can print, download as CSV or email |
+| [Domains](https://github.com/edmozley/freeitsm/wiki/Domains) | A register of every domain name you hold, per company: registration and expiry dates filled in from the registry (RDAP, with WHOIS for the rest), a **security grade from A+ to F** with plain-English advice covering locks, DNSSEC, SPF, DKIM, DMARC and certificates, **change detection** for hijacks, optional Certificate Transparency and **look-alike domain** watches, registrar accounts and encrypted auth codes, the **customer** each domain is looked after for (a person, or a supplier or one of its contacts) and its **technical contact** (one of your analysts, or a supplier contact), renewal alerts sent as one digest per person, or raised as a task or ticket, and **connections** to the CMDB items, tickets, runbooks and contract that go with each domain - with **Service Status** told (or raising the incident itself) when a domain or its certificate lapses, certificate renewals on the Calendar and Watchtower, a right-click menu in the register, and **[internal domains](https://github.com/edmozley/freeitsm/wiki/Domains#internal-domains-450)** - an intranet or internal application is never sent outside the network (no public DNS, registry, CT or look-alike scan) and gets a health from this server's own DNS instead of a grade, with the **certificates on the internal websites you list** checked - host and port, your own certificate authority trusted through a trust profile, and only within the networks and ports an administrator permits |
+| [People](https://github.com/edmozley/freeitsm/wiki/People) | **One page per person and per company**, from every module at once, and **[an organisation chart](https://github.com/edmozley/freeitsm/wiki/Organisation-Chart)** of who reports to whom, as a tree or a chart you can export: the tickets someone raised, the equipment they hold, contracts and domains where they are the customer, their courses and the forms they submitted, plus their manager and the people who report to them. **Suppliers and their contacts** have pages too: a supplier's contacts, contracts, the equipment bought from it and every domain it is registrar, customer or technical contact for - shown here and still kept in Contracts, so a supplier's contact never becomes somebody who can sign in. Each section appears only to analysts who can open the module it comes from, and only for companies they can see. Find anyone from ⌘K |
+| [Starters & leavers](https://github.com/edmozley/freeitsm/wiki/Starters-and-Leavers) | **Everything that has to happen when someone joins, moves or leaves**, from one case. A template sets out the steps - order the laptop, create the account, collect the badge - each given to a team or analyst and due a number of days before or after the first or last day; opening a case turns them into tasks in Tasks, so the work is on each team's board and progress is read straight back. Kit is issued and recovered through Assets (Recover can retire it), a leaver is switched off in Users in one click. **Your own questions** come from Forms: a manager can request a starter in the portal and the case opens itself, picking the template from the answers ("Department is Dispute Resolution" → *Legal starter*), adding only the steps the answers call for (DMS access, a private mailbox, a laptop) and filling each step's wording from them, with every answer one click from the clipboard. Documents attach to the case, and the person's People page lists their cases. Opening and closing a case are Workflow triggers, so HR can be emailed or a chat channel told without any code. Built entirely from the modules you already use |
+| [Files](https://github.com/edmozley/freeitsm/wiki/Files) | **Secure file and folder sharing on a desktop that works like Windows** - desktop icons, a taskbar with live previews of minimised windows, a start menu, and Explorer windows with a folder tree, icons and details views, a filter box, right-click menus, cut/copy/paste and drag and drop. **Shortcuts** to files, folders and **Knowledge articles** - an article shortcut opens a preview window with a button through to Knowledge, and only people who can read the article see it. Search and the filter box take `*` and `?` wildcards (`*.png`). Upload files of any size (they go up in pieces, past PHP's limits), keep every version with its SHA-256 fingerprint, and download with resume. **Private until shared**: permissions on folders for people and teams at five levels (View, Download, Upload, Modify, Full control), inherited down the tree unless a folder stops inheriting, and a folder you cannot see does not exist for you. **Every action is audited** - opening a folder, downloading, uploading, renaming, moving, permission changes and refusals - with who, when and from where. **Open files without downloading them** - PDFs (Mozilla pdf.js), Word documents, spreadsheets, images, video and text - and **browse inside zip files**, opening anything in them. View-only people can look but not take a copy, and a per-folder **watermark** stamps the viewer's name, the time and their IP address across whatever they open. Files are stored as dated, randomly named `.bin` files the web server never serves. Each person picks their desktop colour and whether the top bar shows; the corner logo is the company's own (System -> Companies) or the organisation's. Phones get a plain list instead of a desktop |
+| [Service Status](https://github.com/edmozley/freeitsm/wiki/Service-Status) | Service health dashboard driven by incident tracking, plus **internal notes and external updates** on an incident &mdash; publish a timeline to the self-service portal while keeping troubleshooting private |
+| [War Room](https://github.com/edmozley/freeitsm/wiki/War-Room) | Chat on your own server for when Teams, Slack or the internet are down — channels, direct messages, search, attachments, and an AI situation report that drafts the update to the business |
+| [LMS](https://github.com/edmozley/freeitsm/wiki/LMS) | Author courses in-app (with AI) or upload SCORM; assign to learning groups, take them, and track progress by course, group, analyst or status; [competency tests](https://github.com/edmozley/freeitsm/wiki/LMS-Competency-Tests) for job candidates |
+| [Process Mapper](https://github.com/edmozley/freeitsm/wiki/Process-Mapper) | Flowchart builder with swimlanes, custom step types and Mermaid export |
+| [System](https://github.com/edmozley/freeitsm/wiki/System) | Administration — analysts (with [leavers handled properly](https://github.com/edmozley/freeitsm/wiki/Analysts-Leaving): hand their open work on, then deactivate, anonymise or delete), teams, roles, encryption, database verify, demo data, and your finance department's cost centres |
 
-#### Prerequisites
-- **Web Server**: WAMP, XAMPP, LAMP, or any PHP-capable web server
-- **PHP**: 7.4 or higher (tested up to 8.4)
-- **Database**: MySQL 8.0 or higher (included with WAMP/XAMPP)
-- **Extensions**: PHP PDO, pdo_mysql, curl, openssl, mbstring
-- **Database credentials file**: A `db_config.php` file stored **outside your web root** (e.g. `C:\wamp64\db_config.php`) — see step 2 below. The path is configured in `config.php`.
+A **System Wiki** module also auto-documents the codebase from within the app, and a [browser extension](https://github.com/edmozley/freeitsm/wiki/Browser-Extension) puts the Watchtower badge count in your Chrome/Edge toolbar.
 
-> **⚠️ Note for early adopters:** If you downloaded FreeITSM before 18 February 2026, the project required Microsoft SQL Server Express and ODBC drivers — sorry about that! The original choice of SQL Server made sense at the time (it was the database I was most familiar with), but it created a painful setup experience: downloading SQL Server Express, installing ODBC drivers, enabling Mixed Mode Authentication, and troubleshooting driver compatibility issues. That's a lot of friction for an open-source project that's supposed to be easy to get running.
->
-> FreeITSM now runs on **MySQL**, which comes pre-installed with WAMP, XAMPP, and most web hosting stacks. No extra downloads, no driver headaches. If you've already set up with SQL Server, you'll need to migrate your data to MySQL and update your `db_config.php` — but for new installations, it's just clone and go.
+## Highlights
 
-#### Installation
+- **[REST API](https://github.com/edmozley/freeitsm/wiki/REST-API)** — 200+ key-authenticated endpoints with granular per-key permissions, a live OpenAPI spec, and interactive in-app docs with code samples in seven languages.
+- **[Report inventory from your own tools](https://github.com/edmozley/freeitsm/wiki/REST-API-Assets#-reporting-inventory-from-your-own-tool-3120-194)** (3.12.0) — an RMM, Lansweeper or a CMDB export can report the software, volumes and network adapters it sees on an asset. Each tool's rows sit beside the agent's and Intune's, labelled with their source, and never touch another source's rows or make an old scan look like a fresh check-in. Older scans never overwrite newer ones, retries are safe, and a report with one bad section still applies the rest. Contributed by [@Dr4inder](https://github.com/Dr4inder) ([#197](https://github.com/edmozley/freeitsm/pull/197)).
+- **[Provision analysts from your identity source](https://github.com/edmozley/freeitsm/wiki/REST-API-Analysts)** (3.5.0) — an HR feed or the OIDC provider that decides who is staff can create analysts through the REST API, keep their details in step, set their modules, companies, capabilities and admin flag, and deactivate them when they leave. New analysts start with no access at all, only administrator keys for all companies can make changes, and the last administrator can never be removed. Designed by [@Kraleemil](https://github.com/Kraleemil) ([#174](https://github.com/edmozley/freeitsm/pull/174)).
+- **[Teams and access from your identity provider's groups](https://github.com/edmozley/freeitsm/wiki/Single-Sign-On#groups-from-the-identity-provider-350)** (3.5.0) — single sign-on can read the groups the identity provider sends: an analyst group decides who may be an analyst (as LDAP's does), an administrator group who is an admin, and each group can put people in a FreeITSM team - all chosen from dropdowns of the groups the provider has actually sent, and re-checked at every sign-in so access follows the identity provider.
+- **A link back to your own site** (3.5.0) — **System → Branding** can put a small *Back to the intranet* link at the top of the self-service portal, the analyst screens or both, for people who reach FreeITSM from another site.
+- **[MCP server](https://github.com/edmozley/freeitsm/wiki/MCP-Server)** — connect an AI assistant such as Claude Code: read-only tools for projects, incidents, service status, changes, assets and more, each limited to what the key's analyst may see.
+- **[Single Sign-On](https://github.com/edmozley/freeitsm/wiki/Single-Sign-On) & [LDAP / Active Directory](https://github.com/edmozley/freeitsm/wiki/LDAP-and-Active-Directory)** — OIDC providers side by side (Keycloak, Entra, Okta, …), or bind straight to your on-prem directory with group-gated just-in-time provisioning. Local login always remains as break-glass.
+- **[CardDAV contact sync](https://github.com/edmozley/freeitsm/wiki/CardDAV-Contact-Sync)** — bring your customers in from the address book you already keep them in (Baikal, Nextcloud, ownCloud, or anything else built on sabre/dav), scoped to whichever groups or tags you tick rather than the whole book. Imports are read-only unless you say otherwise; switch **write changes back** on and a correction an analyst makes during the call — job title, department, office, phone, mobile — updates the contact card too, so nobody has to remember to fix it twice. Write-back edits only the detail that changed and leaves the rest of the card untouched, and refuses rather than overwrites if somebody has changed the same detail in the address book since. Someone who is not in the address book yet can be added to it from their record with one button (a separate switch, also off by default), which checks for an existing card with their email first and makes sure the next import will pick them up. Customers can correct their own details the same way from the self-service portal if you allow it (off by default, under **System → Portal profile**); their change is saved only once the address book has accepted it.
+- **[Security](https://github.com/edmozley/freeitsm/wiki/Security)** — AES-256-GCM encryption at rest for secrets, TOTP MFA whose attempt limit is held on the account rather than in the browser session (so it cannot be reset by signing in again), brute-force protection, role-based permissions down to individual settings tabs, and audit trails throughout. Independently audited in August 2026; both rounds and the findings still open are [documented in full](https://github.com/edmozley/freeitsm/wiki/Security-Hardening-2026-08). Attachments arriving by email, portal or chat are checked against an allow-list and stored under a name FreeITSM chooses, so an uploaded file can never be executed; **System → Security** sets which file types you accept — leave it empty for everything FreeITSM considers safe, or name just the types you want, noting that you can only narrow the list and never widen it to something executable — and whether a type you don't accept is kept as a download-only copy or not kept at all. Either way the ticket records what happened.
+- **[Attach documents to anything](https://github.com/edmozley/freeitsm/wiki/Attached-Documents)** — contracts, assets, knowledge articles, problems, changes and **individual notes on a ticket** can all carry documents. Drag a file in, **or paste a link to one held in SharePoint, Google Drive or whatever document system you already use** — a link is a first-class document, so there is no pressure to move anything. The same document can be attached to several records, so one warranty covering eleven laptops is stored once rather than eleven times, and an ⓘ shows everywhere it lives. **Who can see a document is decided entirely by what it is attached to**: if you can see the contract you can read its documents, and if you cannot, it does not appear in the list, in search, in ⌘K, or at its own web address — including as it changes, because the question is asked when you ask it rather than written down at upload. The text inside PDFs and Office files is read in the background so ⌘K finds the contract that *mentions* a clause, not just the one named after it ([Apache Tika](https://tika.apache.org/) needed for PDFs and scans).
+- **Import assets from a spreadsheet** — point it at a CSV and it suggests where each column goes, shows the first few values beside each one, and fills both the built-in details and your own custom fields. **Nothing is written until you have previewed it**: the Import button stays off until a preview has run, and the preview does every check while writing nothing. You declare which columns identify a row, so importing the same file again *updates* what is there instead of creating everything twice — and a row matching more than one existing asset is set aside rather than guessed at. Rows that cannot be imported are **kept**, showing what your file actually said and what was wrong with it, so you can fix the spreadsheet rather than work out what went missing.
+- **Know whether an asset is still reporting** — every asset now shows **First seen** and **Last seen**, in your own timezone and with how long ago that was, and a machine that has gone quiet for more than a week is flagged in amber. **Last seen** is a sortable column in the asset table, so one click brings the machines that stopped reporting to the top, and the Watchtower dashboard's *"not seen in 7+ days"* count is a link straight to that list — it used to tell you how many and leave you to find them. Equipment that no agent will ever report says **Never reported** rather than showing a blank, so "stopped" and "never started" never look the same.
+- **Give a laptop to an analyst, not just to a user** — equipment held by the desk itself, a spare machine, the loan phone, a test handset, had nowhere to live: an asset could only ever be assigned to one of the people you support. That is not a small gap, because analysts are not users — on most installs the people running the service desk have no user record at all, so most of your own team could not be recorded as holding anything. The assign dialog now has a **User / Analyst** switch that changes which directory it searches, and the holder shown on the asset carries a small **Analyst** tag so you can always tell which kind of person has it. Everything else is unchanged: the same expected return date, the same handover history, the same audit trail.
+- **Leases, not just warranties** &mdash; an asset now carries a **Lease ends** date beside its warranty date, and a date that has passed or is within 30 days is flagged on the asset itself, beside the date rather than as a banner, so you can see which one is the problem. **Assets &rarr; Settings &rarr; Warranty** gains a matching block for leases, with its own warning window and its own choice of where they appear: a figure on the **Watchtower** dashboard, entries in the **Calendar** under their own Lease category, both, or nowhere at all. The default window is 60 days rather than the 30 used for warranties, because returning or renewing leased equipment takes arranging. Turning either kind off removes only its own calendar entries and never touches the other, or anything you put in the calendar yourself.
+- **Lease agreements and what is due back** (3.5.0) &mdash; **Assets &rarr; Leases** keeps each lease agreement with its leasing company, agreement number, cost centre, notice period, documents and an optional contract, split into **schedules** for kit leased at different times with their own dates and cost. Put assets on a schedule and their lease dates follow it; keep one laptop longer and it gets its own dates without touching the rest. Each asset's **outcome** (on lease, extended, returned, bought out - your own list) is recorded, **Due back** lists everything still out whose lease ends soon with who holds it and where (and exports it), and the Calendar can show the last day to give notice.
+- **Serial numbers for the drives inside a machine** — the inventory agent has always collected the model, **serial number**, capacity, media type and interface of every physical disk, and FreeITSM now records and shows them under **Storage**, beneath the volumes. That is the number a warranty claim needs when a drive fails, and the one an auditor asks for when a machine is disposed of. Nothing to install: existing agent deployments start reporting drives after the next database verification. Windows also reports mounted virtual disks as though they were hardware, so any drive can be **hidden** — and the dialog offers to hide the rest like it across the whole estate in one go, which turns six hundred pointless rows into one decision.
+- **Assets that know which company they belong to** &mdash; on a multi-company install, an asset's **Key info** now shows its **Company**, and changing it moves the asset. Anything that exists only in the old company is cleared and the message says what: its location, and a type or status the new company does not have. The move is refused, with the reason, when the new company already has an asset with the same name or asset tag, or when the asset is held by someone from a different company. **Adding an asset asks which company it is for** whenever you can reach more than one, and in the *All companies* view it has no default, so a new asset can no longer land in whichever company you happened to pick last. The type, status and location lists follow the company you choose. **Locations can be shared across companies**: tick *Shared with every company* on a location such as a data centre that several clients' kit sits in, and every company can pick it alongside its own. Only someone with access to every company can share, change or delete a shared location, and it cannot be unshared while other companies' assets are still there.
+- **Custom asset fields** — assets arrive on their own from the inventory script, Intune and vCenter, and anything that cannot report for itself is **added by hand from the asset list**. The built-in asset details describe a computer, because that is what the inventory agent reports. Custom fields are how you record everything else: printers, monitors, headsets, televisions, anything. Define a field once — text, a number with a unit, a date, yes/no, a list to pick from, or a link to a person or another asset — then choose which asset types record it. **A field is defined once and reused**, so "serial number" on a headset is the same field as on a television and one search finds both. Fields can also be added to **individual assets**: if three of your ten meeting-room televisions are being trialled as smart TVs, those three carry an IP address and the other seven do not — not blank, absent. Adding a field takes effect immediately with no database change and nothing already recorded is touched, and a field is retired rather than deleted, so everything ever recorded against it survives and comes straight back if you reinstate it. On a multi-company install a company can add fields of its own alongside the shared ones. The REST API returns them as `fields` and accepts them on create and update, saved together with the rest of the change.
+- **[Multi-tenancy](https://github.com/edmozley/freeitsm/wiki/Multi-Tenancy)** — host multiple client companies in one install (built for MSPs), each walled off from the others. Invisible until you add a second company.
+- **Cost centres, kept in step with your finance system** — **System → Cost Centres** holds the codes your finance department charges things to, for each company, with a parent for each to build your hierarchy. **Codes are text**, so `0010` stays `0010` and `N1414` works too, and capitals are ignored when matching. Bring the whole list in from an **Excel workbook or CSV** (semicolon-separated and German headings included): **Preview** shows exactly what will change, and one bad row means nothing is imported. Export as `.xlsx`, whose codes Excel cannot strip the zeros from. Or let your accounting system call **`POST /api/v1/cost-centres/sync`** every night: matched on code, only the fields sent are changed, and anything dropped from the list can be made inactive. **Inactive** means not offered for anything new, never deleted. **Charge assets, contracts and people** to a cost centre (3.5.0) - their own company's active ones - with a Cost centre column in Assets → Table, a cost centre column in the asset import (by code) and in the API; a cost centre cannot be deleted while anything is charged to it. ([#160](https://github.com/edmozley/freeitsm/issues/160))
+- **Photo Album, just for fun** — **System → Photo Album** turns your webcam picture into ASCII art, live as you move: **Braille** (eight dots per character, for a startlingly good likeness), **Classic** characters or **Blocks**, on a green, amber, paper or full-colour screen, with detail, contrast and sharpen sliders. No AI — plain arithmetic in your browser — and **the photo never leaves it**: only the art is kept, in an album that is yours alone. Copy it as text or download it as `.txt` or `.png`.
+- **[Zabbix alerts become incidents](https://github.com/edmozley/freeitsm/wiki/Zabbix-Integration)** — point Zabbix at FreeITSM (System → Integrations → Zabbix gives you the webhook to paste in) and a monitoring problem opens an incident by itself, at the priority its severity maps to and linked to the server in the CMDB; repeats are added to the same ticket and the recovery resolves it. Contributed by Carl Steynvaard of Open Resilience.
+- **[Domains: subdomains and recorded certificates](https://github.com/edmozley/freeitsm/wiki/Domains#subdomains)** — a subdomain (students.example.org) is linked to the domain it belongs to: it renews with its parent and inherits its DMARC, while its own email and certificates are checked. Certificates the checks cannot reach - an internal server, a VPN appliance, a SAML signing certificate - can be recorded on a domain with their provider, type and expiry, and get the same alerts, calendar entries and Watchtower count.
+- **[Microsoft Teams channel alerts](https://github.com/edmozley/freeitsm/wiki/Microsoft-Teams-Alerts)** — System → Integrations → Microsoft Teams: paste a channel's Workflows address and tick what it should hear about (urgent tickets, SLA warnings and breaches, the tickets for its teams, status page incidents, approvals waiting); each arrives as a card with a button straight to the ticket. Every alert is an ordinary workflow, with its history and retries. Contributed by Carl Steynvaard of Open Resilience.
+- **[3CX: see who is calling, and keep every call](https://github.com/edmozley/freeitsm/wiki/3CX-Integration)** — upload the template System → Integrations → 3CX gives you and 3CX shows the caller's name and opens their ticket while the phone rings; when the call ends it is noted on that ticket, written by the analyst who took it, or opens a ticket if they have none. Phone numbers on tickets and people get a Call button that dials through 3CX (or any softphone). Contributed by Carl Steynvaard of Open Resilience.
+- **[Webhooks](https://github.com/edmozley/freeitsm/wiki/Webhooks)** — push any event to Slack, Teams, Discord or any endpoint, with HMAC signing, retries and a delivery dashboard - and your choice, on System → Webhooks, of how many tries each gets, how long each waits for the endpoint, and whether a send cut off part-way is retried or left for Replay.
+- **Service status with history** — every tracked service carries a day-by-day availability strip, an uptime percentage over 7/30/90/365 days, and the incidents behind it. Worked out from your existing incidents, so it covers outages that already happened. Which impact levels count as downtime is set per level; planned maintenance is excluded by default.
+- **[Import people from Active Directory](https://github.com/edmozley/freeitsm/wiki/Directory-Sync)** — bring your whole directory in, so people exist before they ever sign in. That matters because the staff who hold equipment are largely the staff who never log in. Name, job title, department, office, phone, employee number and the reporting line all come across. **Preview runs the same job and changes nothing**, nobody is ever deleted, and a safety brake stops an import that suddenly finds far fewer people than last time — because a mistyped starting point looks exactly like everybody leaving at once. **Browse the directory and tick what you want** rather than typing a distinguished name — the tree shows a head count per branch, so you can see that ticking *Staff* brings in 32 people before running anything, and ticking a branch takes anything added to it later too, with individual parts untickable to leave contractors or service accounts out. A **Field mapping** tab pairs each FreeITSM field with its directory attribute and will read one real person to show you the value each row would actually import, alongside every attribute that person carries — so a mistyped attribute name is caught before an import, rather than as an empty column somebody notices weeks later.
+- **[Import people from Microsoft Entra ID](https://github.com/edmozley/freeitsm/wiki/Importing-People-from-Entra-ID)** — people, groups, nested membership and reporting lines through Microsoft Graph, read-only, with a Preview first, so a new starter exists before they first sign in
+- **People, not just logins** — a person record carries job title, department, office, phone, employee number and who they report to, and you can see and edit all of it from either **Assets → Users** or **Tickets → Users**, so which details you get does not depend on which module you came in through. Both are a directory you can add to, edit and mark leavers in. Where somebody was imported from a directory those details are read-only, and the screen says why rather than accepting a change the next sync would undo. Somebody who leaves is never deleted: they stay on every ticket, asset and handover document, and if they are still holding equipment the screen tells you. People can keep their own job title, office, phone and mobile up to date under **My Account** in the self-service portal, and **System → Portal profile** decides which of those four they may change; department, employee number and manager are never theirs to set. Groundwork for [importing people from a directory](https://github.com/edmozley/freeitsm/wiki/Directory-Sync), and useful on its own without one.
+- **Training reminders, off until you switch them on** — email the people whose training is nearly due, or already late, with the days set under **LMS → Settings → Reminders**: a week before and again the day before, say, plus a chase every week once the deadline has passed. Somebody who has finished the course is never chased, and nobody is ever reminded twice about the same deadline — though moving a deadline legitimately reminds again. It is **off by default and says why**: the first cron run after an upgrade is exactly when a helpful default would email several hundred people about training assigned months ago. Before you turn it on, the screen tells you **how many reminders would go out right now**, and how many people have no email address to reach — worked out by the same code that does the sending, so the number you are shown is the number that will go. Reminders can run from a daily scheduled task, or, if you have not set one up, whenever somebody opens the LMS — which makes the feature work out of the box, and the screen is honest that a fallback is not a schedule.
+- **[Competency tests](https://github.com/edmozley/freeitsm/wiki/LMS-Competency-Tests) for the people you are hiring** — under **LMS → Tests**, describe the role you are recruiting for, add the skills it needs one at a time with a difficulty (beginner, intermediate, advanced), a number of questions and a format: **multiple choice** (one right answer of four) or **graded** in the style of the old ITIL intermediate exams, where four defensible answers are worth 5, 3, 1 and 0 marks. The AI drafts the questions into a **question bank**; nothing reaches a candidate until a person has approved it, and a new test takes approved questions from the bank before it asks the AI for more. Search the bank to build a test by hand, edit a question, or hide one for good. Each candidate gets a **private, single-use link** — no account — with a server-kept timer, answers that save as they go and answer order shuffled per person; their paper is **frozen when it is sent**, so every candidate sits an identical test and later edits never change a result. Results show a score per skill, every answer against the marks, and your notes. Candidates are personal data, so the whole feature has its own permission and finished results are deleted after 180 days unless you choose otherwise.
+- **Push training to the people who use your service desk, not just the people who run it** — the LMS could only ever assign a course to a group of analysts. A course can now go to a **group of people** (analysts and portal users together), or to **everyone on the self-service portal** in one go — mandatory security awareness for the whole company, from the same screen you already assign staff training from. Portal users get a **Training** tab of their own, showing what they have been asked to do, how far through they are and when it is due, and they take the course in the portal itself — the same player, the same knowledge checks, the same marking. Their results appear beside everyone else's on the **Progress** tab, so "who still has not done the phishing course" is one question with one answer rather than two systems to reconcile. **The Training tab only appears for somebody who actually has a course**, so an install that never uses it never grows a tab that leads nowhere.
+- **Make the self-service portal look like yours, not like the app** — a new **System → Self-service portal** screen. Give the portal its **own logo**, for a desk that trades under another name or a main logo drawn for a dark app header that looks wrong on a light portal page. Set the **header and accent colours** independently of the analyst side. Add a **subtle background pattern** — dots, a grid, diagonals or topography — if a flat page feels too plain; they are deliberately faint, and doing nothing leaves the portal exactly as it was. A live preview sits beside the settings so you can see the result without saving first.
+- **People can close their own ticket** — for the commonest wasted ticket on any desk: *it started working*, *I sorted it myself*, *I raised this twice*. Without it the requester either replies asking somebody to close it, which costs an analyst a round trip to do nothing, or says nothing at all and the ticket sits open until it is chased. They can add a reason, which is recorded on the ticket so the desk knows what actually happened. The history says plainly that the requester closed it, rather than attributing it to whichever analyst happened to be assigned — the audit trail can now record that nobody on the desk did something.
+- **People can see the equipment assigned to them** — a **My equipment** page in the portal, so somebody can read a serial number off the screen instead of raising a ticket to ask what it is. Off by default and switched on from the same Self-service portal screen, because what equipment somebody holds is not a thing every organisation wants to publish.
+- **The portal remembers how each person likes to read it** — the knowledge base comes in **Cards**, **List**, **Tree** or **Table**, chosen from the toolbar and remembered for that person, with the same four names the analyst side uses so nobody has to learn two vocabularies for one idea. Training runs full width, and a completed course now says *when* it was completed rather than only that it was. And **light or dark now sticks**: choosing dark in the portal used to be forgotten by the next page for anybody who was also signed in as an analyst, because the analyst theme quietly won — which meant the people most likely to notice were the ones least likely to be believed about it.
+- **Groups of people, with an end date** — put analysts and portal users together in a named group under **Tickets → Users → Groups**, and give the group access to something rather than naming six people. Each membership can carry a **last day**: three engineers on site for a fortnight go in with an end date, and they drop out of the group by themselves when it passes — the access is taken away by the clock rather than by somebody remembering. An expired membership is still listed, marked as expired, so you can see who *had* access and until when; and the group counts current members and lapsed ones separately, because one number would hide the difference. Knowledge folders already grant access to a group, which until now was a kind of permission nothing in FreeITSM could create. **Anyone with Tickets can see the groups; only an administrator can change one**, since adding somebody to a group that opens a folder is itself a grant.
+- **[Email send log](https://github.com/edmozley/freeitsm/wiki/Email-Send-Log)** — every email FreeITSM tries to send is recorded, whether it worked or not, in an **Outbound** tab beside the existing inbound mailbox activity. All eight sending routes are covered — analyst replies, ticket templates, workflow actions, SLA alerts, portal and system mail, password resets, and shared knowledge articles and change records — with the recipient, which part of FreeITSM sent it, and the provider's own words when it failed. A failed automated email used to be visible only in a log file on the server, which meant the first sign of one was usually somebody saying they never got a reply.
+- **Email templates that can link back to the ticket** — automatic emails carry a **`[ticket_url]`** merge code that resolves to the requester's own view of their ticket, so a confirmation email can say *track it here* instead of leaving somebody to go and find it. The body is edited in a small formatting toolbar rather than by hand-writing HTML, with a **Preview** tab that fills in every merge code with sample values so you see the email as it will arrive. Because these emails are usually sent by the overnight mail collector — when there is no browser request to work an address out from — the templates screen carries the **public web address** the links are built on, and says so plainly if a template uses `[ticket_url]` while nothing is set.
+- **Automatic replies can be limited to particular senders** — scope any email template to an address or a whole domain, so external senders stop receiving an internal-sounding auto-reply. **Which template applies is decided by how specific it is, never by the order they are listed in**: a template naming `someone@a.com` beats one naming `a.com`, and both beat one that goes to everyone — so there is no ordering to get wrong, and dragging rows cannot change what gets sent. A new template applies to **everyone** until you narrow it, which means an installation always has a catch-all unless one is deliberately removed. Type an address into **Check what a sender would get** and FreeITSM names the template that would go back and why, using the same code that will choose it for real. And if every template for an event has been restricted, the screen says so — while any email that is not sent because nobody matched is recorded as **Not sent**, with the reason, in the mailbox's send log, so the question *"why did this customer never hear back?"* has an answer long after everybody has forgotten the setup screen.
+- **Tell the analyst, not just the customer, when a ticket is assigned** — the assignment email has always gone to the person who raised the ticket (*"assigned to Sam, we will update you soon"*), which is what they need to hear. There is now a second, separate event, **Assigned to an analyst**, that emails the analyst the work has just landed with — with its own wording and a link straight into the inbox rather than the customer's portal view. Neither affects the other: configure one, both or neither. It is deliberately **not** sent when you assign a ticket to yourself, because an email describing what you did three seconds ago is how a notification gets switched off. The templates screen now says **who each template is sent to** — requester or assigned analyst — beside which senders it covers, so the two questions the *Sends to* column answers are no longer one. ⚠️ Note that **`[analyst_name]` is the ticket's owner where one is set**, which on most desks is a different person from the assignee; templates addressed to an analyst want **`[assigned_analyst_name]`**, and the editor now says so.
+- **Scheduled tickets in your real Outlook calendar** — connect FreeITSM to Microsoft 365 once, under **System → Calendar sync**, and each analyst can have their scheduled tickets written into their own mailbox as genuine appointments: they **mark you as busy**, reach your phone, and update the instant you change something rather than whenever a calendar app next refreshes. Reassign a ticket and it moves out of one person's calendar and into the other's; close, bin or unschedule it and it goes. Setup borrows the Azure app registration you already configured for mail, so there is **no per-analyst sign-in, no consent screen and no tokens to maintain** — and a Test button that answers "do the credentials work" and "can this mailbox be reached" separately, so a problem points at its own fix. Each analyst turns it on for themselves and **nobody can turn it on for them**; switching on back-fills what is already scheduled, and switching off takes back everything FreeITSM put there. A calendar problem can never stop you scheduling a ticket — if Microsoft is unreachable the save still succeeds and the failure is reported on your own settings.
+- **The same, on your own calendar server** — not on Microsoft 365? Choose **A CalDAV server** under **System → Calendar sync** and enter its address, and scheduled tickets and tasks go into calendars on Nextcloud, Baïkal, Radicale, SOGo, iCloud, Fastmail or any other CalDAV server, as real appointments that work both ways: move one in your calendar app and the ticket follows on the next scheduled check. A CalDAV server has no way for one account to write into everybody's calendar, so **each analyst signs in with their own account** under Preferences, presses **Find**, and picks the calendar their work should go into (an app password is the better choice where the server offers one). The list only offers calendars that account can already write to, on the server you entered, so nobody can point FreeITSM anywhere else. A reminder or note you add to one of these appointments stays put when the ticket changes, because FreeITSM only rewrites the time, the title, the description and the link. **Microsoft 365 and CalDAV can run side by side**, with as many connections of each as you need, and each analyst picks which one their work goes to; changing or deleting a connection takes back only that connection's appointments, and tells you how many before it does.
+- **Your scheduled work, in the calendar you actually use** — schedule a ticket with a start time and a duration (or mark it as an all-day job), see it on the tickets calendar in **Mine** or **Everyone** with a colour per analyst, and take it with you: **Preferences → My work calendar** gives you a private subscription link that works with Google Calendar, Apple Calendar, Outlook, Thunderbird or anything else that speaks iCalendar. No Microsoft account required and nothing to configure — scan the QR code with your phone and it is there. The link is a secret URL rather than a login, so it is yours alone, can be **reset at any moment** to revoke every copy, and can be limited to **ticket numbers without subjects** if you would rather your day's shape travelled but not its detail; an administrator can also switch subscription links off across the whole system. FreeITSM warns you plainly if the system is not using HTTPS, because the link is unprotected in transit until it is.
+- **Analysts keep their own email signatures** — written under **Preferences**, with formatting and merge codes for your own details, and **more than one is allowed**: a formal signature for customers, a short one for colleagues, one per language if you answer in several. Exactly one is the **Default**, which is what gets used automatically — so anyone who only wants a single signature never sees a choice, and picking a different one stays deliberate rather than a decision on every reply. Signatures are **per analyst and nothing else**: there is no shared or install-wide signature to administer, and nobody can see or change anybody else's. A **My details** section adds job title, department, phone and mobile to your account so a signature has something to merge, and a code you have no value for is removed rather than left showing at the bottom of your emails. Open a reply and your default signature is already in the editor with a blank line above it — **placed there visibly rather than added when you press Send**, so you can change or remove it for one email and what you see is what the customer gets. A **Signature** button beside Templates swaps it for another or takes it out.
+- **Mailboxes say where their tickets came from, and tell you when something is off** — each mailbox carries a **Default ticket origin**, so tickets it opens are recorded as having come from Email, or from Monitoring, or from whatever you call it. It is set per mailbox rather than once for all email, because a helpdesk address and an alerting address both arrive as email and are not the same source. Each mailbox also carries an **!** next to its name that lists everything quietly wrong with it — no origin set, reading the wrong inbox, never checked for mail, no folder chosen for imported mail, an IMAP mailbox that cannot send replies — because a mailbox can be connected, green and collecting mail and still not be doing what you assume. Any warning can be **dismissed** where it is something you meant, which clears the mark but keeps the item listed with a Restore beside it; errors cannot be dismissed, since reading the wrong inbox is a fault rather than a preference.
+- **Cloud platforms you can actually record** — the inventory agent finds what is installed on your machines, which is no help at all for Xero, Canva, Figma or anything else that lives in a browser. **Software → Add application** lets you enter one by hand, with a publisher, the web address you administer it at, and notes. That is worth more than it sounds: a licence in FreeITSM has to belong to an application, so until now there was nowhere to record what a cloud subscription costs, how many seats it has or when it renews. Now there is. Manual entries are marked as added by hand and are the only ones you can edit — an agent-discovered application is a report of what is on somebody's machine, and editing it would only be overwritten at the next inventory run. If the agent later finds one of your manual entries genuinely installed somewhere, **it attaches the machines without touching a word you wrote**. Seats and installs are shown as separate columns, because a cloud platform is installed nowhere and a nought in that column should not be read as "nobody uses this".
+- **Software renewals now show up where you are looking** — a contract about to expire has always appeared on the Watchtower dashboard, and an asset warranty has always been able to write itself into the calendar. Software licences did neither, so a large renewal was visible only to somebody who happened to open the Licences page that week. There is now a **Software card on Watchtower** counting renewals due in 30 and 90 days and notice periods running out — the same three windows the Contracts card uses, so you can read them against each other — and **Software → Settings → Renewals** decides whether renewals appear on that dashboard, in the calendar, in both, or nowhere. The calendar entries come in pairs: the renewal date itself, and the **notice deadline** worked out from the notice period, which is the one that actually costs you if you miss it.
+- **One board across every company** — if you support several schools, charities or clients from one service desk, the company switcher in the header now has an **All companies** option. Every ticket you are allowed to see appears in one list, each row wearing the company it belongs to, and anything that arrived by email or the portal without being routed yet is marked **Unrouted** so it stands out rather than hiding under Default. It grants nothing new: "all" means every company you could already reach one at a time, so an analyst who supports two of your three entities sees exactly those two. **Each entity stays separate where it matters.** Open a ticket and its type, origin, category and resolution list are the ones belonging to *that* company, not the one you happened to be in — so a status or category one school has and another doesn't can never be applied to the wrong ticket. Replies still go out from the mailbox the ticket arrived at. And raising a ticket from the combined view asks which company it is for, because that decides its ticket number, its mailbox and the SLA it will be measured against. **Emptying the trash is the one thing that deliberately does not follow the combined view** — it always applies to a single company, because "delete everything in the bin" across three entities at once is not what anyone means by it.
+- **Categories that make your reports add up** — a ticket type says *what kind of thing* this is; a **category** says what it is *about*. Build the list under **Tickets → Settings → Categories**: "Hardware", "Access requests", "Printing issues", with sub-categories underneath where you want them, up to three levels and no level compulsory. A category can be tied to one ticket type, so "User onboarding" is only offered on a service request, or left free to appear on all of them. **A ticket carries one category, deliberately** — every count in FreeITSM is one ticket, one slice, so a pie chart of your categories still adds up to the number of tickets you actually had. There are two more fields alongside it, each switched on separately. **Category at close** asks the same question again when the ticket is finished, which is how you find out that twelve of your thirty-seven "printer problems" were really the network — the person raising the ticket is guessing, the analyst who fixed it knows. And a **resolution code** records *how* it ended rather than what it was about: "Fixed remotely", "Training given", "No fault found". Ten sensible ones are there from the start and you can change them all. **All three start switched off**, so nothing changes on your ticket screen until you have built your list and turned them on, and each can be set differently for each company on a multi-company install. Requesters can be offered a short, plain-English version of the list in the portal while analysts see the whole tree, and any of the three can be charted on your ticket dashboard, rolled up to the top level. Retire a category rather than deleting it and the tickets that already carry it keep their label for ever.
+- **Custom ticket fields** — make up the extra details a kind of ticket needs and stop chasing them in replies: a start date, username and "remote worker?" on a new starter, a cost code on a purchase request. **Tickets → Settings → Custom fields** creates each one as text (one line or several), a number with an optional unit, a date / time / date and time, yes / no, a dropdown of your own options, a web address or an email address, and links it to some ticket types or to all of them. Each field decides for itself whether it must be filled in **when the ticket is logged** — on the New ticket form, through the REST API and, if the requester is asked, on the portal — **before the ticket is closed**, following the Mandatory fields rule's warn / warn and email / refuse setting, or both. Tick **Ask the requester on the portal** and it appears on the portal's New ticket form, where a ticket type picker shows up once choosing a type changes what is asked; fields only your team should fill in are never shown there. Answers sit in the ticket's properties panel beside the built-in fields, save as they change, and land in the ticket history. Changing a ticket's type hides the answers its new type does not have and never deletes them, so changing it back brings them back; retiring a field keeps every answer. On a multi-company install a field made while working in a client company belongs to that company. The REST API returns and accepts them as `custom_fields`.
+- **Fields that must be filled in before a ticket closes** — a resolution code nobody picked makes your monthly report wrong without anyone noticing. **Tickets → Settings → Mandatory fields** lists the ticket's fields — priority, category, category at close, resolution code, owner, requester and the rest — each with a tick for *must be filled in before closing*. Then choose what happens when somebody closes a ticket with one empty: **warn** and let them close anyway, **warn and email** the people you name (a service delivery manager, say) with the ticket and the fields that were empty, or **refuse the close** until they are filled in. A separate switch writes an internal note on the ticket saying which fields were empty and who closed it. The rule applies on the ticket screen, in bulk actions, through the REST API and in workflows, and a value filled in by the same change that closes the ticket counts. A field that is switched off for a company is never required, and merging tickets never triggers it. Nothing is ticked until you choose.
+- **Ticket numbers you choose the shape of** — the reference on a ticket is the thing people read out on the phone and write on a form, so **Tickets → Settings → Ticket numbering** lets you decide what it looks like: keep the random `CKQ-418-73926` FreeITSM has always used, or count up as `INC-2026-00042`, with the year, month, a short code for the ticket type or the company, and as many digits as you like. On a multi-company install each company carries its own **ticket code** (set in **System &rarr; Companies**, or worked out from the name), and the numbering screen refuses per-company counting until every company has one that is unmistakably its own. **The digits are a minimum, never a limit** — an install that outgrows six of them gets a seventh rather than an error. You can count in one sequence, or give each ticket type or each company its own, and start again every year or month. A live preview shows the next few numbers as you type, and a format that cannot work — counting per type without saying which type — is refused rather than saved. **Existing tickets keep their numbers, and every reference FreeITSM has ever issued goes on working**, because email replies are matched by looking the number up rather than by recognising its shape. If you have just moved from another system and want the old references tidied away, **Renumber existing tickets** rewrites them all, oldest first — the old numbers are remembered for ever, so a reply quoting one still lands on the right ticket, exactly as it does when tickets are merged, and a retired number is never given to anybody else. It previews before it writes, and the Renumber button stays off until you have looked at the preview.
+- **Raise a ticket for someone in a few keystrokes** — search the requester by name or email and pick them, with their company shown so similar names are easy to tell apart. Anyone genuinely new can still be added inline without leaving the form.
+- **Folders that add up** — the folder list breaks every group down by status, so you can see at a glance that there are 41 tickets in progress before you open anything. **All Tickets** expands the same way as departments and analysts do, giving a status count across the whole desk, and dragging a ticket onto a status sets it.
+- **Just my tickets, or no closed ones** &mdash; a filter button beside Search narrows the folders and the list together to **Mine** (tickets assigned to you) and can **hide closed** tickets, whichever way the folders are grouped, and every folder count follows it. While a filter is on, the button carries a dot and a label sits beside the list title, so nobody wonders where half their tickets went. Grouped by analyst, your own folder is pinned to the top as **My tickets**, so on a desk of twenty analysts you are not scrolling to find yourself. Search has its own **Include closed tickets** switch, on by default. All of it is saved per analyst. Asked for in [#149](https://github.com/edmozley/freeitsm/issues/149).
+- **Assign a ticket to a team, not just a person** &mdash; the service desk rarely knows who in Infrastructure handles what, so a ticket can go to the **team** and whoever picks it up assigns themselves. Team and analyst are separate, independent facts and both are optional: setting one never touches the other, and clearing the analyst leaves the team, so a ticket falls back into its queue rather than into the void. Everyone in the receiving team gets a bell notification, the folder list can be grouped by team as well as by department or analyst, and a team can be set from the reading pane, from the right-click menu, in bulk across a selection, or by a workflow that raises a ticket straight into a queue. It is **invisible unless your install has teams** &mdash; no picker, no grouping, nothing to switch off. Asked for in [discussion #125](https://github.com/edmozley/freeitsm/discussions/125).
+- **A reading pane that stays readable on a ten-year-old ticket** &mdash; email threads grow by re-quoting themselves, so the thing you opened the ticket to read ends up buried under a metre of chain, disclaimers and banners. Three things keep it legible, and **none of them removes anything**: a message taller than a limit you set is clipped with a **Show more** control (the newest is always shown in full, and what you expand stays expanded on that device); beyond a set number of recent messages the rest fold behind one **{n} older messages** line; and a message that has **arrived before** &mdash; a resend, a bounce carrying the original back, a distribution list delivering twice &mdash; is folded away with a line saying which earlier message it matches and when, catching a resend that differs by a single appended line as well as an exact copy. Everything is in the page the entire time, one tap from view, because a wrong judgement about what is noise should cost a click and never a fact. Eight settings under **Tickets &rarr; Settings &rarr; General** turn each part on or off and set the thresholds, so a desk that wants none of it can have none of it. Requested in [discussion #104](https://github.com/edmozley/freeitsm/discussions/104).
+- **Optional AI help with a long ticket** &mdash; two things, both **off until you switch them on**, because unlike everything else here they use your own AI provider and cost money per use. A **maintained summary** sits at the top of a ticket saying where it stands, what was asked, what has been done and who owes the next move; it always shows when it was written, how much it read, and **how many messages have arrived since**, so it can never quietly describe a ticket as it was five messages ago. **Every version is kept** &mdash; a refresh writes a new one rather than overwriting the last, because a later reading really can be worse than an earlier one and that loss would otherwise be silent. And **&quot;Read it&quot;** briefs you on a ticket you have never seen &mdash; what happened, what is unresolved, what it would do next &mdash; required to separate what the ticket *says* from what it is inferring. It is **kept once written**, so opening it again is instant and free rather than a minute&#39;s wait and a second charge &mdash; with a **Read again** button, and every earlier briefing still there. Neither ever replaces the conversation: the ticket sits underneath, in full, exactly as before. Configured under **Tickets &rarr; Settings &rarr; General**, sharing the one AI provider the Tickets module already uses. **System &rarr; AI thinking** decides, per feature, whether a model may *think at length* before answering &mdash; measured here at **54.7 seconds against 6.9** for the same job, with the fast answer the better of the two, so it is off unless you ask for it.
+- **Ticket list you can tune** — show priority, status and the assigned agent on each row in the inbox, each independently, as a left-edge colour bar, a corner block, a pill with the word, a dot, or initials. It is a per-analyst preference with an install-wide default, set at **Tickets → Settings → Row display** with a live preview.
+- **Command palette** — press **⌘K / Ctrl-K** anywhere to jump to any module, search across tickets, changes, problems, knowledge, contracts, assets and CMDB items by name or reference, or run a quick action, all from the keyboard. Results respect your module access and active company.
+- **A task in the large window, as one page or as tabs** — a task carries a lot now: its fields, the people involved, tags, a description, repeats, links, subtasks, time recorded, comments and any attached documents. A button in the panel header switches the large window between the **two columns** it has always used and a strip of **tabs** — Details, Subtasks, Time, Comments, Links, Documents — and remembers which you prefer, per analyst, exactly like the side-panel/large-window choice beside it. Columns stay the default, because one long page is better when you want the whole task at once. Tabs holding a list **carry a count**, so three subtasks behind a tab are never indistinguishable from none, and a tab with nothing in it is not drawn.
+- **Desktop notifications and task emails** &mdash; in **Preferences &rarr; Notifications**, each analyst can have new items from the bell appear as notifications on their computer (in Edge on Windows, Windows notifications) while FreeITSM is open in a tab, and can ask for an **email whenever a task is assigned to them**, written in their own language.
+- **The ticket menu on a phone** &mdash; a long press on a ticket opens everything the desktop right-click offers, as a full-screen panel; choices with a further level, such as Set priority, slide across to their options.
+- **Subtasks you can see and arrange** &mdash; on the board, a task's subtasks hang under its card like branches of a tree, each one a click away; a personal setting in **Preferences** tidies them away once they are all complete. Inside the task, subtasks are **dragged into order** by a handle and carry **Start** and **Due** dates as columns you edit in place. Checklists on a task or subtask, and the steps inside each, can be dragged into order the same way.
+- **More than one person on a task** — a task still has **one owner**, who is accountable for it, and anybody else working on it is listed as **Involved**. The task then appears in *their* **My Tasks** as well, marked so they can still tell at a glance what is theirs to answer for and what they are helping with; pointing the analyst filter at somebody else asks the same question about them. Their initials sit beside the owner's on the board card, and on the task itself they are chips you add from a picker that offers only people who can actually reach that task's company. Adding somebody **needs no special permission** — it is everyday work, like tagging a task. Optionally, under **Tasks → Settings → Involved**, each person can **tick off their own part**, so you can see who has finished and who has not; the ticks are progress and never a gate — **the owner still closes the task**, with a warning you can dismiss if people are outstanding, because otherwise one person leaving would make a task permanently uncloseable. Switching that setting off hides the ticks rather than deleting them. Deliberately **top-level tasks only**: a subtask already carries an assignee of its own, which is how you say *these four are each doing a piece*. Being on a task means hearing what happens to it: **Preferences → Notifications** carries a switch for each moment on its own — assigned to you, added, taken off, a comment, a status change, a due-date change, completed — and everything about the task itself reaches the owner **and** everyone involved, with each person's own switches deciding what they see. **Nothing ever tells you about your own actions.** Those three moments are new **workflow triggers** as well, so they can drive automations rather than only notifications. Everything the REST API promised before is unmoved — `assigned_analyst` is still one person, and a new `collaborators` list sits beside it with `involved_analyst_id` and `collaborator_id` filters. From [discussion #89](https://github.com/edmozley/freeitsm/discussions/89).
+- **Move a task to another company** &mdash; a task raised against the wrong client used to mean deleting it and typing it again, losing its comments, its time entries and its history along with the mistake. Right-click a task and **Move to company**, from the board, the table or the timeline. **Subtasks go with it**, in one move, because a parent and its children have always belonged to the same company and splitting them would leave a parent with a child nobody else can see &mdash; for the same reason a subtask cannot be moved on its own. A task linked to a ticket, change or contract will not move away from what it is linked to; it says which link is in the way so you can decide what to do about it. Invisible on a single-company install.
+- **A trail of where you have been** — the waffle menu you use to leave a module now has a **Recent** tab you come back through, and it is an outline rather than a list. Records are grouped under the module you were in when you opened them, the way headings and body text sit in a word processor: read three tickets and they are three lines under one **Tickets** heading; step out to Knowledge for an article and that gets a heading of its own; come back to tickets and a **second** Tickets heading opens rather than the first one quietly growing. That repetition is the point — it shows you the shape of an afternoon's work and, more usefully, *why* those three tickets were open together. It lists **things, not screens**: `APPSVR01` and `TICKET-000110`, never "Assets". Headings collapse, the newest is the one left open, and a search box along the bottom filters your own trail — not the whole system, which is what ⌘K is for. It is **per analyst rather than per browser**, so it survives signing out and follows you to another machine, and it needs no looking after: nothing to open, close or tidy, capped and aged out on its own. Everything is re-checked against your permissions **each time you open it**, so a record you can no longer see is simply gone, and a deleted one takes its heading with it rather than leaving a dead row. Covers tickets, tasks, problems, changes, assets, CMDB items, knowledge articles and contracts. Grew out of [discussion #124](https://github.com/edmozley/freeitsm/discussions/124), which asked for browser-style tabs inside the app — this is the answer to what those were *for*, in a shape that also works on a phone.
+- **Dates written the way you want them** — nine ways of writing a date (`25 Aug 2026`, `25/08/2026`, `25.08.2026`, `25-08-2026`, `2026-08-25` and more) and the 24-hour or 12-hour clock, chosen under **System → Date and time formats** for the whole install and overridable by **any analyst** in their own Preferences. Deliberately not tied to the interface language: a German speaker at a British company may well want German wording and British dates, and two people in the same office genuinely disagree about this. Month names still follow the language, so `25 Aug 2026` reads `25 Mär 2026` in German in March. It changes only how a date is written — not the timezone it is shown in, not what is stored, and not service level targets, reports or exports.
+- **Branding** — set your organisation&#39;s logo once and it appears across the app, and [design the login screen](https://github.com/edmozley/freeitsm/wiki/Login-Screen-Designer) itself: background, layout, logo, headline, banner and footer strips, from presets or your own colours.
+- **Internationalisation** — [24 languages](https://github.com/edmozley/freeitsm/wiki/Internationalisation) with per-analyst locale, plus [per-analyst timezones](https://github.com/edmozley/freeitsm/wiki/Timezones-and-Time-Handling), [theming and dark mode](https://github.com/edmozley/freeitsm/wiki/Theming-and-Dark-Mode), and a [mobile-friendly](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly) core flow — the [ticket inbox](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Tickets), [Assets](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Assets), the [Calendar](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Calendar), the [Knowledge Base](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Knowledge), [Service Status](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Service-Status), [Watchtower](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Watchtower), [Problem Management](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Problem-Management), [Change Management](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Change-Management), [Software](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Software), [Tasks](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Tasks), [Forms](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Forms), [Contracts](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Contracts), [Domains](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Domains), the [LMS](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-LMS), the [CMDB](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-CMDB), the [Process Mapper](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Process-Mapper), the [Network Mapper](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Network-Mapper), [Workflows](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Workflow), [System administration](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-System), [Reporting](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Reporting), the [System Wiki](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-System-Wiki), the [self-service portal](https://github.com/edmozley/freeitsm/wiki/Mobile-Friendly-Self-Service) and the War Room are built to work properly on a phone, without changing anything on the desktop. On the Network Mapper you can press and hold to place a box from the CMDB, move one, or delete it; on the Process Mapper a phone reads a map rather than builds one, and connectors stay a desktop job on both.
 
-> **Tip:** After completing these steps, navigate to `/setup/` to verify everything is configured correctly.
+## Documentation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/edmozley/freeitsm.git
-   cd freeitsm
-   ```
+Everything lives in the **[Documentation Wiki](https://github.com/edmozley/freeitsm/wiki)**:
 
-2. **Configure database credentials**
-   - Copy `db_config.sample.php` to a secure location **outside your web root**:
-     ```
-     C:\wamp64\db_config.php  (recommended)
-     ```
-   - Edit the copied file with your MySQL credentials:
-     ```php
-     define('DB_SERVER', 'localhost');
-     define('DB_NAME', 'freeitsm');
-     define('DB_USERNAME', 'your_username');
-     define('DB_PASSWORD', 'your_password');
-     ```
-   - Update `config.php` line 10 if you chose a different location
+| Guide | Covers |
+|-------|--------|
+| [Installation](https://github.com/edmozley/freeitsm/wiki/Installation) | Docker and manual setup, prerequisites, configuration files |
+| [Architecture](https://github.com/edmozley/freeitsm/wiki/Architecture) | Technology stack, directory layout, shared components, database conventions |
+| [Security](https://github.com/edmozley/freeitsm/wiki/Security) | Authentication, authorisation layers, encryption, going-live checklist |
+| [REST API](https://github.com/edmozley/freeitsm/wiki/REST-API) | How the public API works, plus per-module endpoint guides |
+| [API Reference](https://github.com/edmozley/freeitsm/wiki/API-Reference) | The internal session-based endpoints behind the UI |
 
-3. **Create the database**
-   - Create a new database named `freeitsm` in MySQL
-   - Run `database/freeitsm.sql` to create tables, or use the Setup page's DB Verify to auto-create them
+There are also long-form **[deep-dive articles](https://freeitsm.co.uk/deep-dive/)** on the website covering individual features, and a **[detailed update history](https://freeitsm.co.uk/updates.php)**.
 
-4. **Set up encryption key** (for sensitive settings)
-   ```bash
-   mkdir C:\wamp64\encryption_keys
-   # Generate a random 256-bit key (64 hex characters)
-   php -r "echo bin2hex(random_bytes(32));" > C:\wamp64\encryption_keys\sdtickets.key
-   ```
+### Versions and releases
 
-5. **Configure web server**
-   - Point your web server to the application root
-   - Ensure PHP extensions are enabled: `pdo_mysql`, `curl`, `openssl`, `mbstring`
-   - Restart your web server
+FreeITSM uses [semantic versioning](https://semver.org), read in terms of what an upgrade asks of you: a **patch** needs nothing, a **minor** adds features and keeps working with your existing configuration and data, and a **major** is reserved for the cases that can break a working install. How that is decided, when releases are cut, and what can honestly be rolled back are all written down in **[RELEASING.md](RELEASING.md)**.
 
-6. **Verify setup**
-   - Navigate to `http://your-server/setup/` to run the setup verification checks
-   - Confirms config files, database connection, PHP extensions, and security settings
-   - **Delete the `/setup` folder** once your system is in production
+The version you are running is shown on the **System** screen and stamped on the first line of every **Debug Tools** report. Released versions, with notes for each, are on the **[releases page](https://github.com/edmozley/freeitsm/releases)**.
 
-7. **First login**
-   - Navigate to `http://your-server/login.php`
-   - A default admin account is created by the SQL script:
-     - **Username:** `admin`
-     - **Password:** `freeitsm`
-   - **Change this password immediately** after first login via the account menu
+New code sometimes brings new tables or columns with it, applied from **System → Verify database**. If you upgrade by hand that is one click, but anything unattended — a container coming up on a new image tag, a scripted deploy, a machine updating itself overnight — cannot click it. For those, run it from the command line instead:
 
-8. **Import demo data** (optional)
-   - Navigate to **System → Demo Data** to populate modules with realistic sample data
-   - Import **Core** first (creates analysts, departments, teams, and end users), then choose which modules to populate
-   - Includes tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, service status, software licences, forms, tasks, and process-mapper flowcharts
-   - Demo analysts use password `demo1234`
-   - Designed for fresh installations only — each module can be imported once
-
-### Configuration Files
-
-| File | Location | Purpose | Commit to Git? |
-|------|----------|---------|----------------|
-| `config.php` | Web root | Main config (references external DB config) | ✅ Yes |
-| `db_config.php` | **Outside web root** | Database credentials | ❌ **NO** |
-| `db_config.sample.php` | Web root | Template for db_config.php | ✅ Yes |
-
----
-
-## Quick Start for AI Assistants
-
-> **Before making changes**: This README provides essential context about the codebase structure. Read relevant sections before modifying code.
-
-## Technology Stack
-
-| Component | Technology |
-|-----------|------------|
-| Backend | PHP 7.4–8.4 |
-| Database | MySQL 8.0+ (PDO MySQL) |
-| Frontend | Vanilla JavaScript, HTML5, CSS3 (no frameworks) |
-| Rich Text Editor | TinyMCE 6+ |
-| Email Integration | Microsoft Graph API + Gmail API (OAuth 2.0) |
-| Encryption | AES-256-GCM (sensitive data at rest) |
-| Web Server | Apache (WAMP/XAMPP/LAMP) or any PHP-capable server |
-
----
-
-## ITSM Modules
-
-The platform is organised into 16 modules, accessible from a landing page (`index.php`) and a shared waffle menu for cross-module navigation.
-
-| Module | Folder | Colour | Description |
-|--------|--------|--------|-------------|
-| **Watchtower** | `watchtower/` | Slate `#1e293b` | Unified attention dashboard showing actionable items across all modules |
-| **Tickets** | `tickets/` | Blue `#0078d4` | Outlook-style ticket inbox with email integration, departments, teams, and audit trails |
-| **Assets** | `asset-management/` | Green `#107c10` | IT asset tracking, user assignments, and vCenter VM inventory |
-| **Knowledge** | `knowledge/` | Purple `#8764b8` | Rich-text knowledge base articles with AI chat and vector search |
-| **Changes** | `change-management/` | Teal `#00897b` | ITIL change management with risk matrix, audit trail, comments, and post-implementation review |
-| **Calendar** | `calendar/` | Orange `#ef6c00` | Event calendar with categories and scheduling |
-| **Checks** | `morning-checks/` | Cyan `#00acc1` | Daily infrastructure health checks with configurable status options (label + colour + requires-notes), 30-day trend charts and PDF export |
-| **Reporting** | `reporting/` | Brown `#ca5010` | System logs, audit trails, and analytics |
-| **Software** | `software/` | Indigo `#5c6bc0` | Software inventory and deployment tracking |
-| **Forms** | `forms/` | Teal `#00897b` | Dynamic form builder with sidebar list, tabbed editor (Fields/Preview), filler, and submission reporting |
-| **Contracts** | `contracts/` | Amber `#f59e0b` | Supplier and contract lifecycle management with terms, financials, and notice tracking |
-| **Service Status** | `service-status/` | Emerald `#10b981` | Real-time service health dashboard with incident tracking |
-| **Wiki** | `system-wiki/` | Red `#c62828` | Auto-generated codebase documentation browser |
-| **LMS** | `lms/` | Blue `#2563eb` | Learning Management System with SCORM 1.1/1.2/2004 course player, learning groups, assignments, deadlines, and progress tracking |
-| **Processes** | `process-mapper/` | Indigo `#6366f1` | Visual flowchart builder with dot-grid canvas, snap-to-grid, connectors, and slide-in detail panel |
-| **Workflows** | `workflow/` | Amber `#f59e0b` | Cross-module automation engine — triggers, conditions, actions. Stage 1: engine foundation + form-based editor |
-| **System** | `system/` | Blue-grey `#546e7a` | Encryption key management, security settings, and module access control |
-
----
-
-## Multi-Tenancy (in development)
-
-FreeITSM can host **multiple client companies in one install** — aimed at MSPs (managed service providers) supporting many clients from a single deployment, with each client's tickets walled off from the others.
-
-**Opt-in and invisible at N=1.** Every install starts with a single silent **Default** company that owns everything. While there is only one company, *nothing changes* — no company switcher, no domain mapping, no triage queue, no settings split; the app behaves exactly as a single-company helpdesk. The multi-tenant machinery only wakes up when you create a **second** company (System → Companies).
-
-**What's built today** (the feature is **dormant until you add a second company**, so single-company installs are unaffected):
-
-- **Company model & switcher** — a per-analyst company context in the header; cross-company access is permission-gated.
-- **Tickets scoped by company** — the ticket list and folder counts show only the active company's tickets.
-- **Email routing** — each mailbox is either *pinned* to a company (its mail always goes there) or a *shared intake* that routes by the sender's domain; an exact sender address can be mapped too (for personal/webmail clients). Anything unmatched lands safely in a **triage queue** — nothing is ever lost. A read-only **routing test** and per-company "how email reaches this company" summary help you configure it.
-- **Per-company settings** — settings are *global defaults a company can tailor* (add its own / hide an inherited one). Built for **ticket types** and **ticket origins**; statuses, priorities, teams and mailboxes stay global by design.
-- **Move ticket to another company** — a misrouted ticket isn't stuck: a **Company** picker in the reading pane re-homes it (access-gated both ways, audit-logged), and a **soft wrong-company warning** flags when the requester's domain points at a different company, with a one-click move.
-
-**Status:** active development. Deeper cross-company isolation on the remaining ticket endpoints (search, ticket detail, dashboards) and per-company **departments / SLAs / self-service** are still being rolled out, so a real multi-company go-live isn't recommended yet. Single-company use is unaffected and production-safe.
-
-> ⚠️ **After updating, run Database Verify** (System → Database Verify) before creating tickets. This release adds a `tenant_id` column used by ticket creation; Database Verify creates it (idempotently). This is the usual post-update step, but its scope now includes core ticket creation.
-
-See the [Multi-Tenancy wiki](https://github.com/edmozley/freeitsm/wiki/Multi-Tenancy) for the full design, the email-routing model, and the rationale for which settings are/aren't per-company.
-
----
-
-## Directory Structure
-
-```
-sdtickets/
-├── config.php                        # Database credentials & global settings
-├── index.php                         # Landing page (module selection grid)
-├── login.php                         # Authentication page
-├── logout.php                        # Logout handlers
-├── analyst_logout.php
-├── admin_settings.php                # Legacy admin panel (tickets settings)
-├── check_email.php                   # Scheduled email import (all mailboxes)
-├── oauth_callback.php                # Microsoft OAuth 2.0 callback
-├── google_oauth_callback.php         # Google OAuth 2.0 callback
-├── forgot-password.php               # Password reset request page
-├── reset-password.php                # Password reset (with token from email)
-│
-├── includes/                         # Shared PHP components
-│   ├── functions.php                 # Database connection helper
-│   ├── waffle-menu.php               # Cross-module navigation menu + user account menu
-│   ├── encryption.php                # AES-256-GCM encryption/decryption
-│   ├── totp.php                      # Pure PHP TOTP (RFC 6238) for MFA
-│   ├── gmail.php                     # Gmail API helper (send, read, refresh tokens)
-│   ├── template_email.php            # Automated email templates for ticket events
-│   └── module-colors.php             # Module colour definitions
-│
-├── assets/                           # Static assets
-│   ├── css/
-│   │   ├── inbox.css                 # Core layout & shared styles
-│   │   ├── knowledge.css             # Knowledge base styles
-│   │   ├── calendar.css              # Calendar widget styles
-│   │   ├── rota.css                  # Staff rota styles
-│   │   ├── change-management.css     # Change management styles
-│   │   └── itsm_calendar.css         # ITSM calendar styles
-│   ├── js/
-│   │   ├── inbox.js                  # Ticket interface logic
-│   │   ├── knowledge.js              # Knowledge base logic
-│   │   ├── calendar.js               # Calendar logic
-│   │   ├── rota.js                   # Staff rota logic
-│   │   ├── change-management.js      # Change management logic
-│   │   ├── change-calendar.js        # Change management calendar logic
-│   │   ├── itsm_calendar.js          # ITSM calendar logic
-│   │   ├── qrcode.min.js             # Client-side QR code generator (for MFA setup)
-│   │   └── tinymce/                  # Rich text editor library
-│   └── images/
-│       └── CompanyLogo.png           # Company logo (replace with your own)
-│
-├── tickets/                          # Ticket Management Module
-│   ├── index.php                     # Three-panel inbox interface
-│   ├── users.php                     # User directory & their tickets
-│   ├── calendar.php                  # Ticket scheduling calendar
-│   ├── rota.php                      # Staff rota weekly grid
-│   ├── settings/                     # Departments, types, origins, mailboxes, analysts, teams, rota shifts
-│   ├── includes/                     # Module header
-│   └── attachments/                  # Email attachment storage
-│
-├── asset-management/                 # Asset Management Module
-│   ├── index.php                     # Asset list & user assignments
-│   ├── dashboard/
-│   │   └── index.php                 # Per-analyst widget dashboard with Chart.js
-│   ├── servers/
-│   │   └── index.php                 # vCenter VM inventory with detail modal
-│   ├── settings/
-│   │   └── index.php                 # vCenter connection settings
-│   └── includes/
-│
-├── knowledge/                        # Knowledge Base Module
-│   ├── index.php                     # Article list & editor
-│   ├── review/                       # Article review workflow
-│   │   └── index.php
-│   ├── settings/                     # Email, AI, and embedding settings
-│   └── includes/
-│
-├── change-management/                # Change Management Module
-│   ├── index.php                     # Change request list & detail
-│   ├── calendar.php                  # Calendar view of scheduled changes
-│   ├── approvals.php                 # Pending approvals view
-│   ├── settings/                     # Module settings (field visibility)
-│   └── includes/
-│
-├── calendar/                         # Calendar Module
-│   ├── index.php                     # Full calendar view with events
-│   ├── settings/                     # Event categories
-│   └── includes/
-│
-├── morning-checks/                   # Morning Checks Module
-│   ├── index.php                     # Daily check interface with PDF export
-│   ├── settings/                     # Settings page (check definitions, drag-and-drop reorder)
-│   ├── create_tables.sql             # Database schema
-│   └── includes/
-│
-├── reporting/                        # Reporting Module
-│   ├── index.php                     # Reporting landing page (area selection)
-│   ├── logs/
-│   │   └── index.php                 # System logs (logins, email imports)
-│   ├── tickets/
-│   │   └── index.php                 # Ticket dashboards (coming soon)
-│   └── includes/
-│
-├── software/                         # Software Module
-│   ├── index.php                     # Software inventory dashboard
-│   ├── dashboard/
-│   │   ├── index.php                 # Software dashboard (Chart.js widgets with drill-down)
-│   │   └── library.php               # Widget library management
-│   ├── licences/
-│   │   └── index.php                 # Licence management (CRUD, search, CSV export)
-│   ├── settings/
-│   │   └── index.php                 # API key management
-│   └── includes/
-│
-├── system/                           # System Module
-│   ├── index.php                     # System landing page (area selection)
-│   ├── encryption/
-│   │   └── index.php                 # Encryption key management
-│   ├── modules/
-│   │   └── index.php                 # Analyst module access control
-│   └── includes/
-│
-├── forms/                            # Forms Module
-│   ├── index.php                     # Forms dashboard (full-width sortable table)
-│   ├── edit/                         # Form editor — title, fields, AI Assist, versioning
-│   ├── settings/                     # Layout + AI provider/model/key settings
-│   ├── fill.php                      # Form filler (A4-style with company logo)
-│   ├── submissions.php               # Submission table, detail modal, CSV export
-│   ├── create_tables.sql             # Database schema
-│   └── includes/
-│
-├── lms/                              # LMS Module
-│   ├── index.php                     # Dashboard with courses, groups, assignments, progress
-│   ├── player.php                    # SCORM player with iframe + API bridge
-│   ├── content/                      # Uploaded SCORM packages (one folder per course)
-│   └── includes/
-│
-├── process-mapper/                   # Process Mapper Module
-│   ├── index.php                     # Visual flowchart editor
-│   └── includes/
-│
-├── network-mapper/                   # Network Mapper Module
-│   ├── index.php                     # Diagrams landing page
-│   ├── diagram.php                   # Per-diagram editor shell
-│   └── includes/
-│
-├── setup/                            # Setup verification (delete after going live)
-│   └── index.php                     # Diagnostic checks page
-│
-├── api/                              # REST API endpoints (~140 total)
-│   ├── tickets/                      # ~48 endpoints
-│   ├── assets/                       # 8 endpoints (inc. vCenter sync)
-│   ├── knowledge/                    # 16 endpoints (inc. AI chat)
-│   ├── change-management/            # 15 endpoints
-│   ├── calendar/                     # 7 endpoints
-│   ├── morning-checks/               # 7 endpoints
-│   ├── reporting/                    # 2 endpoints
-│   ├── software/                     # 5 endpoints
-│   ├── forms/                        # 7 endpoints
-│   ├── settings/                     # 2 endpoints
-│   ├── system/                       # 4 endpoints (encryption, module access)
-│   ├── myaccount/                    # 6 endpoints (password, MFA setup/verify/disable)
-│   ├── auth/                         # 2 endpoints (password reset request/confirm)
-│   ├── lms/                          # 9 endpoints (courses, groups, assignments, progress, SCORM data)
-│   ├── process-mapper/               # 4 endpoints (list, get, save, delete)
-│   ├── network-mapper/               # 7 endpoints (list/get/create/save/delete diagrams + versions)
-│   ├── external/                     # External API (software inventory)
-│   └── watchtower/                   # Watchtower API (session + extension endpoints)
-│
-├── browser-extension/                # Chrome/Edge Watchtower extension (Manifest V3)
-│   ├── manifest.json
-│   ├── background.js                 # Service worker (polling + badge)
-│   ├── popup.html/js/css             # Extension popup UI
-│   ├── options.html/js               # Settings page
-│   └── icons/                        # Extension icons
-│
-└── database/                         # SQL schema scripts
-    ├── create_teams_tables.sql
-    ├── create_users_assets_table.sql
-    └── add_knowledge_embeddings.sql
+```bash
+php scripts/db_verify_cli.php            # report what would change, change nothing
+php scripts/db_verify_cli.php --apply    # apply it
 ```
 
----
+Preview is deliberately the default: this applies the same changes the button does, which includes dropping columns whose data has already been migrated elsewhere, so **take a backup first**. The script refuses to run over HTTP.
 
-## Shared Components
+Every release is also published as a Docker image, so you can run a known version rather than building from whatever source you happen to have. In `docker-compose.yml`, replace `build: .` with:
 
-### Waffle Menu & User Account Menu (`includes/waffle-menu.php`)
-A cross-module navigation component inspired by Microsoft 365's app launcher. Appears in every module's header, allowing quick switching between all modules. Each module is registered here with its name, path, icon, and colour gradient. Respects `$_SESSION['allowed_modules']` to filter visible modules per analyst.
-
-Also contains the **user account menu** — an initials avatar circle in the top-right of every page. Clicking opens a dropdown with:
-- **Change Password** — modal to update password (validates current password, minimum 8 characters)
-- **Multi-Factor Authentication** — modal to set up or disable TOTP-based MFA (generates QR code for authenticator apps)
-- **Logout** — with confirmation prompt
-
-To add a new module, add an entry to the `$modules` array and corresponding CSS classes.
-
-### TOTP Library (`includes/totp.php`)
-Pure PHP implementation of RFC 6238 (TOTP) and RFC 4226 (HOTP) for multi-factor authentication. No external dependencies — uses PHP's built-in `hash_hmac()` and `random_bytes()`.
-
-- **Secret generation**: 20 random bytes → Base32 encoded (32-character string)
-- **Code generation**: HMAC-SHA1 with 30-second time steps, dynamic truncation → 6-digit code
-- **Verification**: Checks ±1 time window (90-second tolerance) using `hash_equals()` for timing-safe comparison
-- **URI format**: `otpauth://totp/FreeITSM:{username}?secret={base32}&issuer=FreeITSM`
-
-TOTP secrets are encrypted at rest using AES-256-GCM via `encryptValue()` before being stored in the `analysts.totp_secret` column.
-
-### Encryption (`includes/encryption.php`)
-AES-256-GCM authenticated encryption for sensitive database values.
-
-- **Key file**: `C:\wamp64\encryption_keys\sdtickets.key` (outside web root)
-- **Format**: Encrypted values stored as `ENC:` + base64(IV + auth tag + ciphertext)
-- **Migration**: Values without the `ENC:` prefix pass through unchanged, allowing gradual rollout
-- **Encrypted settings**: Defined in `ENCRYPTED_SETTING_KEYS` and `ENCRYPTED_MAILBOX_COLUMNS` constants
-
-```php
-// Encrypt before saving to DB
-$encrypted = encryptValue($plaintext);
-
-// Decrypt after reading from DB
-$plaintext = decryptValue($encrypted);
-
-// Decrypt all sensitive columns in a mailbox row
-$mailbox = decryptMailboxRow($mailbox);
+```yaml
+image: ghcr.io/edmozley/freeitsm:1.0.0
 ```
 
-Currently encrypted in `system_settings`:
-- `vcenter_server`, `vcenter_user`, `vcenter_password`
-- `knowledge_ai_api_key`, `knowledge_openai_api_key`
-- `intune_tenant_id`, `intune_client_id`, `intune_client_secret`
+`:1.0` follows the newest 1.0.x, `:1` the newest 1.x, and `:latest` the newest release. Pin the full number in production - rolling back is then a matter of changing it and running `docker compose up -d`. Images are built for both x86-64 and ARM, so a Raspberry Pi or an Apple Silicon Mac works too.
 
-Of those, the true secrets (`vcenter_password`, `knowledge_ai_api_key`, `knowledge_openai_api_key`, `intune_client_secret`) are also listed in `MASKED_SETTING_KEYS` — `api/settings/get_system_settings.php` returns them as `****<last4>` rather than plaintext, and `api/settings/save_system_settings.php` treats blank or asterisk-prefixed submissions as "leave unchanged" so the encrypted value is preserved when the user saves the form without re-typing the secret.
+**Technology stack:** PHP 8.1–8.4 (8.3 or 8.4 recommended) · MySQL 8.0+ · vanilla JavaScript (no frameworks) · TinyMCE · Apache, or nginx using the [config it ships with](https://github.com/edmozley/freeitsm/wiki/Running-on-nginx).
 
-Currently encrypted in `target_mailboxes`:
-- `azure_tenant_id`, `azure_client_id`, `azure_client_secret`
-- `oauth_redirect_uri`, `imap_server`, `target_mailbox`
+## 👋 From the maintainer
 
-### Functions (`includes/functions.php`)
-Contains `connectToDatabase()` which returns a PDO MySQL connection using the credentials from `db_config.php`. Also contains `getAnalystAllowedModules()` which loads module access permissions for an analyst.
+FreeITSM is a one-developer project — your engagement is what keeps it moving:
 
-### i18n (`includes/i18n.php`, `assets/js/i18n.js`, `lang/`)
-Native multi-language support with a `t('namespace.path.to.key')` call pattern in both PHP and JavaScript. The infrastructure ships with a growing set of fully-converted modules: **Tickets, Tasks, Process Mapper, Workflows, Knowledge, Change Management, Asset Management, Calendar, Service Status and CMDB** are each translated across all 21 supported locales (every user-facing string in their PHP pages and JavaScript). Remaining modules render in English until converted; conversion is mechanical (extract strings to `lang/en/<module>.php`, wire the page, then add the per-locale files).
+- ⭐ **If you use FreeITSM, please [star the repo](https://github.com/edmozley/freeitsm/stargazers)** — it's the single biggest signal that the work is landing.
+- 📬 **Feedback, ideas, bugs?** Email me directly at [ed@freeitsm.co.uk](mailto:ed@freeitsm.co.uk) — I read every message — or use [Discussions](https://github.com/edmozley/freeitsm/discussions) and [Issues](https://github.com/edmozley/freeitsm/issues).
+- 🔒 **Found a security problem?** Please report it privately rather than in an issue — see **[SECURITY.md](SECURITY.md)**. Every FreeITSM install is self-hosted, so operators need a chance to upgrade before anything is public.
+- 🌍 Mentioning [freeitsm.co.uk](https://freeitsm.co.uk) on Reddit, Hacker News, Spiceworks or LinkedIn genuinely helps and means a lot.
 
-**Folder structure**: `lang/<locale>/<namespace>.php` returns a nested PHP array of translations. The first dot-separated segment of a `t()` key maps to the filename; everything after walks the nested array.
+Contributions are welcome — the first external pull request was merged in 2026 and more are encouraged.
 
-```
-lang/
-  en/common.php             → t('common.save')           → "Save"
-  en/process-mapper.php     → t('process-mapper.toolbar.process') → "Process"
-  fr/common.php             → t('common.save')           → "Enregistrer"
-  fr/process-mapper.php     → t('process-mapper.toolbar.process') → "Étape"
-```
+## License
 
-**Supported locales** (21): `en`, `af`, `fr`, `de`, `es`, `pt-BR`, `nl`, `it`, `pl`, `ru`, `uk`, `id`, `hi`, `bn`, `ta`, `te`, `mr`, `kn`, `ml`, `gu`, `pa`. Adding a language is a code change &mdash; add to `I18n::SUPPORTED_LOCALES` and create the `lang/<code>/` folder. Locale codes follow BCP 47 (matches HTML `lang` attribute), with the hyphen form used for region-subtagged locales (`pt-BR`).
-
-**Fallback is per key, not per file**. If `lang/de/tickets.php` has 80% of keys translated, you get those 80% in German and the missing 20% in English. Files that simply don't exist for a locale are treated as empty. Last-resort behaviour: return the key itself so unfilled strings are visible during development.
-
-**Interpolation**: `t('common.welcome', ['name' => 'Ed'])` substitutes `{name}` in the translation. Unknown placeholders are left as-is.
-
-**JS bridge**: pages declare which namespaces they need (`$translationNamespaces = ['common', 'process-mapper']`), and the PHP page emits `window.translations = {...}` with English fallback already merged in per key. JS calls `t('common.save')` using the same key form as PHP.
-
-**Locale resolution** (in priority order): logged-in analyst's `interface_language` user preference → browser `Accept-Language` header (best supported match, primary subtag fallback) → `'en'`. Selectable in `System &rarr; Preferences` &mdash; on change, persists to `user_preferences` and reloads the page so PHP re-renders.
-
-**Security**: namespace identifiers are regex-validated to prevent path traversal via the `t()` argument; locale codes are validated against the supported list before being used as a directory name; JSON encoding of the JS bridge uses `JSON_HEX_*` flags to prevent script-tag injection from translation values.
-
-**Adding translations to a module**: include `includes/i18n.php`, call `I18n::initFromSession()`, set `$translationNamespaces` for the JS bridge, set `<html lang>` to `I18n::getLocale()`, and replace literal strings in PHP with `<?php echo htmlspecialchars(t('namespace.key')); ?>` and in JS with `t('namespace.key')`.
-
-### Theming / palettes (`includes/theme.php`, `assets/css/theme.css`)
-Colour theming is built on a **palette token layer**, so "light", "dark" and any future named palette (e.g. an "English Summer") are all just sets of CSS custom properties &mdash; there is no special-cased dark mode. A palette is applied via `<html data-theme="<id>">`, rendered server-side before CSS loads (no flash). Palettes are registered in `Theme::THEMES` (id + label) with a matching `[data-theme="<id>"]` block in `assets/css/theme.css`; the `:root` / `[data-theme="default"]` block is the conventional FreeITSM look.
-
-**Per-module palettes.** A page declares `$theme_module = '<module>'` and resolves its palette via `Theme::active($theme_module)`. Resolution order is **per-module preference (`theme_<module>`) → global preference (`theme`) → built-in default**, so a user can run one palette everywhere or pick a different one per module. The palette picker lives in the account menu (top-right) and saves to `user_preferences` via the generic `api/system/set_user_preference.php` endpoint, then reloads.
-
-**Module opt-in / rollout is one module at a time.** A module supports theming once its CSS consumes the tokens (`var(--text, #333)`, `var(--surface, #fff)`, …) instead of hardcoded colours. Because the default token values equal the current colours and every `var()` carries a fallback, converting a module leaves light mode pixel-identical and is safe even on pages/stylesheets that don't load `theme.css`. Core tokens: `--app-bg`, `--surface`/`--surface-2`/`--surface-3`/`--surface-hover`, `--text`/`--text-muted`/`--text-dim`/`--text-faint`, `--border`/`--border-soft`, `--accent`/`--accent-hover`/`--accent-soft`/`--on-accent`, `--shadow`. **Tickets** is the first themed module.
-
-### Module Header Pattern
-Each module has its own `includes/header.php` that:
-1. Checks session authentication (redirects to login if not logged in)
-2. Sets `$current_module` for waffle menu highlighting
-3. Renders the header bar with the module's colour gradient
-4. Includes the waffle menu button, nav tabs, and user account avatar menu
-
----
-
-## Module Details
-
-### Watchtower (`watchtower/`)
-Unified attention dashboard — a single pane of glass showing actionable items across all modules.
-
-- **Attention cards**: Eight module-themed cards showing only items that need attention
-- **Morning Checks**: Completion status, failed/warning checks
-- **Tickets**: Open counts, urgent/high priority, unassigned tickets
-- **Changes**: Upcoming changes, pending approvals, in-progress changes
-- **Calendar**: Today's events, weekly event count
-- **Service Status**: Active incidents, degraded services
-- **Contracts**: Expiring contracts (30/90 day), upcoming notice periods
-- **Knowledge**: Recently published articles, overdue reviews
-- **Assets**: Total count, assets not seen in 7+ days, and (when enabled in Asset Settings → Warranty alerts) a red card for assets whose warranty has expired or is expiring soon
-- **Features**: Color-coded status dots (green/amber/red), auto-refresh every 5 minutes, click-through to each module
-
-### Tickets (`tickets/`)
-The primary module. Three-panel Outlook-style interface.
-
-- **Left panel**: Folder tree with a **By Department / By Analyst** toggle at the top — switch between grouping tickets by department + status (default) or by assigned analyst + status. The choice is persisted per-analyst via `user_preferences` so each analyst keeps their own preferred view across sessions. The Unassigned folder is contextual: in Department view it lists tickets with no department; in Analyst view it lists tickets with no assignee — making it easy to see what needs picking up
-- **Middle panel**: Ticket list (searchable)
-- **Right panel**: Reading pane with full email thread
-- **Features**: Create tickets, reply/forward emails, attachments, internal notes, audit trail, team-based filtering, scheduling
-- **Time tracking**: Log time spent on a ticket directly in the reading pane. Inline form (minutes + optional description) appends entries to a list showing who logged what and when, with a running total at the top. Each entry is soft-deletable (only by the analyst who logged it) so deleted rows stay in the audit history. Backed by a dedicated `ticket_time_entries` table (analyst + ticket + minutes + entry datetime + notes + `is_active` for soft delete)
-- **SLAs**: business-hours-aware Service Level Agreements with per-priority response and resolution targets, configurable business calendars (timezone + weekly hours + holidays), pause statuses, mid-ticket-priority-change behaviour, and admin-controlled enforcement cutoff date (so existing tickets can be grandfathered in on first activation). Compute-on-read engine reads the ticket audit log + the per-priority calendar &mdash; no stored counters, no drift. **Breach notifications** are fully configurable per department: define a default rule plus per-dept overrides, choose any combination of recipients (assignee / department team members / specific analyst / custom email addresses), and pick separate triggers for warning (approaching breach) and breach (actual). A cron worker (`cron/sla_breach_check.php`, run every 5 minutes via Windows Task Scheduler or Linux cron &mdash; see [`docs/sla-cron-setup.md`](docs/sla-cron-setup.md)) walks open SLA tickets, fires emails through the ticket's originating mailbox, and de-dupes so each (ticket, target, trigger) fires at most once. See [`docs/sla.md`](docs/sla.md) for the full design
-- **WhatsApp channel**: Customers can chat with an analyst over WhatsApp — each inbound message becomes (or threads into an open) ticket tagged with a **WhatsApp** origin, and analysts reply from an inline composer in the reading pane. Provider-agnostic (`includes/messaging/`): works with **Twilio** (recommended first build — has a sandbox you can test end-to-end with no Meta verification) or the **Meta WhatsApp Cloud API**. Inbound arrives at a public webhook (`api/messaging/webhook.php`), authenticated by the provider signature (**direct** mode) or a shared secret (**relay** mode). Reuses the email pipeline end to end (same thread, same multi-tenancy routing/isolation — a channel is *pinned* to a company or a *shared intake* routed by sender number, else triage). The provider **24-hour service window** is enforced in the composer, with **pre-approved templates** to re-open a conversation after it closes (defined under Settings → Messaging; sent via a picker in the reading pane). Two AI helpers: **summarise** the conversation into a note and **suggest** a reply. Inbound **images and files** are downloaded and attached to the ticket, and an open WhatsApp ticket **auto-refreshes every 15 seconds** so new messages appear without reloading. Managed under **Tickets → Settings → Messaging**. Self-hosted/local installs receive inbound via a tunnel (e.g. `ngrok http 80`), since providers can only reach a public HTTPS URL. See [`WhatsApp` on the wiki](https://github.com/edmozley/freeitsm/wiki/WhatsApp)
-- **AI Reply Cleanup**: When typing a reply, click the **✨ Cleanup** button to have Claude rewrite the rough draft as a properly formatted email — adds a "Dear [Name]," greeting from the requester, fixes grammar, applies the configured tone, and signs off "Kind regards,". The prompt is locked down so it won't invent technical details, fabricate apologies, or pad the content beyond what was written. Streams live into the editor; an Undo link appears for 30 seconds in case Claude butchers the rewrite. Configured under **Tickets → Settings → Reply Cleanup** with its own Anthropic API key (separate from RFP AI / Knowledge AI) so usage shows up as its own line on the Anthropic billing dashboard. Choose the model (Haiku 4.5 default, Sonnet 4.6, Opus 4.7) and tone (Friendly / Formal / Brief).
-- **Drag-and-drop triage**: Drag any ticket from the list onto a folder to update it. In **Department view**: drop on a department folder to reassign, drop on a department + status subfolder to update both, drop on Unassigned to clear the department. In **Analyst view**: drop on an analyst folder to assign that analyst as the owner (sets both `assigned_analyst_id` and `owner_id` so the right-pane Owner field stays in sync), drop on an analyst + status subfolder to update both, drop on Unassigned to clear the analyst. Hovering a collapsed folder during a drag auto-expands it (Outlook-style spring-loaded folders) so any nested status is reachable
-- **User management**: The Users page (`tickets/users.php`) lists every end user with their ticket history. Analysts can **Add** a new user (email required, display name / preferred name optional, password optional &mdash; leaving it blank creates a passwordless account the user can later claim via the self-service portal's register flow), **Edit** an existing user, or **Delete** one. Delete is FK-safe: refused with a clear message if the user is the requester on any tickets or has any asset assignments, so audit history can never silently break
-- **CSAT surveys**: 1&ndash;5 customer satisfaction survey emailed on ticket closure (auto mode) or on-demand via a *Request feedback* button (manual mode). User clicks the tokenised one-shot URL, lands on a no-login page with a star or emoji picker plus optional comment, response is recorded against the closing analyst. Dedicated CSAT analytics page (`tickets/csat/`) with KPI tiles (avg rating, response count, response rate), score distribution, per-analyst leaderboard, and recent responses with comments. Configurable under **Tickets &rarr; Settings &rarr; CSAT** (off / auto / manual, scale = stars or emojis, one-per-ticket toggle). Survey email content comes from **Tickets &rarr; Settings &rarr; Email templates** with a new `csat_request` event trigger and `[csat_link]` merge code
-- **Settings**: Departments, ticket types, origins, mailboxes (Microsoft 365 + Google Workspace), messaging channels (WhatsApp), email templates, analysts, teams
-- **Mailbox authentication (Microsoft 365)**: Two modes per mailbox. **Delegated** (interactive sign-in) — you sign in once *as the mailbox account*; the app reads `/me`. **App-only** (client credentials) — no sign-in; the app reads the target mailbox directly via Graph `/users/{address}` using its own client ID + secret (requires Azure **Application** permissions Mail.ReadWrite + Mail.Send with admin consent). App-only is ideal when the target mailbox isn't an analyst's own account. **"Reading from the right inbox" safeguards** apply to delegated mode: on sign-in the app records the **full set of addresses the mailbox owns** (primary SMTP, UPN and all aliases, via Graph `proxyAddresses`) and checks the configured target against that set on every read/send — so an **alias** is accepted while a genuinely different mailbox is blocked with a clear message. Changing a mailbox's target address invalidates the stored sign-in so a stale token can't keep reading the old inbox. The settings list shows a plain-language status per mailbox (*Reading from X ✓* / *Wrong account ⚠* / *Unverified* / *App-only*)
-- **Mailbox whitelist**: Per-mailbox domain and email address whitelisting — non-whitelisted senders are rejected
-- **Email actions**: Configurable per-mailbox actions for rejected emails (delete, move to Deleted Items, mark as read) and imported emails (delete, move to folder) with folder verification
-- **Email templates**: Automated email responses triggered by ticket events (new ticket from email, ticket assigned, ticket closed) with merge codes for ticket reference, requester name/first name, analyst name, and more. The editor has an **Edit / Preview** tab so you can see the rendered email (with sample merge values) — HTML bodies are supported, so you can include styled buttons
-- **Ask AI**: Button in ticket detail view opens a slide-in chat panel that searches the knowledge base for relevant articles using ticket context
-- **Staff rota**: Weekly grid showing analyst shift patterns, WFH/office location, and on-call status with per-day entry management and configurable shift definitions
-- **Activity log**: Searchable, paginated log of imported and rejected emails per mailbox with clickable processing log details
-- **Dashboard** (`dashboard/`): Per-analyst customisable dashboard with Chart.js widgets
-  - Widget library with 15 pre-built charts (bar, pie, doughnut, line) covering status, priority, department, type, analyst, origin, first time fix, and time-series
-  - Time-series widgets with configurable grouping: day, month, or year
-  - Multi-series: stacked bar charts broken down by status or priority, and created-vs-closed comparison line charts
-  - Configurable date range filter (last 7/30 days, this month, last 3/6/12 months, this year, all time)
-  - Department filter: scope any widget to specific departments
-  - Each analyst picks widgets for their own dashboard
-  - Status filtering on supported widgets
-  - Inline editing: cog icon on each widget opens a modal to edit properties without leaving the dashboard
-  - Drag-and-drop reordering
-- **Help guide** (`help.php`): Interactive guide covering inbox navigation, ticket lifecycle, comments and attachments, dashboard widgets, calendar, rota, and settings
-
-### Assets (`asset-management/`)
-IT asset management with vCenter integration.
-
-- **Assets tab**: Searchable asset list with user assignments (many-to-many)
-- **Check-in / check-out**: assigning a user records a check-out (with an optional expected return date shown as "Due back"); removing them records a check-in. A **Custody** button on the asset opens the full check-out/check-in trail (who held it, when, due-back date, which analyst actioned it), stored in `asset_checkout_log`
-- **Location, procurement & warranty**: each asset can be placed in the location hierarchy and carry purchase date, cost, supplier, order number and warranty expiry — all editable inline on the detail panel and shown in the table; every change is logged to asset history. **Supplier is normalised** — it's a dropdown of suppliers from the shared registry, chosen in Asset Settings → Suppliers (see below)
-- **Table view** (`table.php`): Full-screen spreadsheet-style alternative to the split-pane Assets tab. Excel-style per-column tickbox filters (drop down from any header, shows the distinct values in the current view and counts), click-to-sort on every column, global search across visible columns, and a Columns drawer to show/hide and drag-reorder. Layout (visible columns, column order, sort) persists per analyst via `user_preferences`. Exports the current view to CSV and to landscape A4 PDF (selectable text, via jsPDF + autotable — same approach as the morning-checks export). Click any row to jump to that asset's detail in the split-pane view
-- **Servers tab** (`servers/`): Virtual machine inventory synced from VMware vCenter REST API
-  - Displays VM name, OS, IP, host, cluster, CPU, memory, disk
-  - Clickable rows show full detail modal with raw JSON from vCenter
-  - Stores all API response data in `raw_data` column
-- **Dashboard** (`dashboard/`): Per-analyst customisable dashboard with Chart.js widgets
-  - Widget library with 13 pre-built charts (bar, pie, doughnut) covering OS, manufacturer, model, memory, GPU, TPM, BitLocker, etc.
-  - Each analyst picks widgets for their own dashboard
-  - Status filtering on supported widgets
-  - Drag-and-drop reordering
-- **Settings**: vCenter server URL, username, and password (encrypted); Microsoft InTune tenant ID, client ID, client secret, and verify-SSL toggle (sensitive values encrypted); Sync button kicks off a Microsoft Graph-based InTune device import as a background worker, showing a progress bar
-- **Warranty alerts** (Settings → Warranty alerts): choose where to surface assets whose warranty has expired or is expiring within a configurable number of days — a red card on the Watchtower dashboard, events on the Calendar (auto-synced into a "Warranty" category), both, or off. Calendar events are regenerated whenever a warranty date changes or the setting is saved, so they stay in step without a cron job
-- **Suppliers** (Settings → Suppliers): the asset supplier is normalised against the shared `suppliers` registry (the same one the Contracts module uses) via a `supplies_assets` flag. The tab searches the registry and toggles which suppliers are *available for assets*, and can quick-add a new supplier by name (creating a minimal registry row you can flesh out later in Contracts). Only flagged, active suppliers appear in the asset supplier dropdown
-- **Locations** (Settings → Locations): build an arbitrary-depth physical location hierarchy (adjacency-list tree in `asset_locations`) — nest as deep or shallow as you like and each branch is independent (e.g. `UK › London › Office 1` alongside a flat `Datacentre`). Add a sub-location from any node, rename, re-parent (with cycle protection), collapse/expand branches, and delete (blocked while a location still has children)
-- **InTune integration**: Pulls all managed devices from Microsoft InTune (via Microsoft Graph `/deviceManagement/managedDevices`) into `intune_devices` and links them to `assets` by hostname (auto-creates stub assets for unknown hostnames). Asset detail panel shows an extra **InTune** tab when a device matches
-- **Device Manager** (`api/external/device-manager/submit/`): Enumerates Windows Device Manager devices (category, name, driver manufacturer, driver version, status) and displays them grouped by class on the asset detail screen
-- **PowerShell inventory agent** (`scripts/Invoke-AssetInventory.ps1`): Collects hardware, disks, network, GPU, TPM, BitLocker, device manager, and installed software from Windows machines and posts to the system-info and device-manager APIs
-- **System-info API** (`api/external/system-info/submit/`): External endpoint that ingests asset inventory data, syncs disk and network adapter tables, and processes software inventory
-- **Help guide** (`help.php`): Interactive guide covering asset overview, detail screen, inventory script deployment, collected data, server management, and dashboard widgets
-
-### Knowledge (`knowledge/`)
-Rich-text knowledge base with AI integration.
-
-- TinyMCE editor for article creation
-- Tag-based organisation and full-text search
-- AI chat (Ask AI) — the assistant provider/model is configurable via the shared AI panel (**Anthropic, OpenAI, or OpenRouter**); searches articles via vector similarity
-- OpenAI embeddings for semantic search
-- Email sharing capability
-- Article review workflow
-- Article versioning — save as new version to archive previous content with full version history
-- Article archiving with recycle bin (soft delete, restore, configurable auto-purge)
-- **Help guide** (`help.php`): Interactive guide covering article creation, review workflow, Ask AI, search and navigation, sharing and export, with scroll-spy sidebar navigation
-
-### Change Management (`change-management/`)
-Change request tracking and approval workflows with ITIL-aligned processes.
-- Calendar view with month/week/day views for visualising scheduled changes
-- **Table view** (`table.php`): full-screen Excel-style grid of all changes (ref, title, type, status, priority, risk, assignee, work dates and more) with column show/hide + drag-reorder (persisted per analyst), click-to-sort, search, per-column tickbox filters, and CSV export. Inline-editable for the low-risk list fields — type, priority, impact and assignee — each saved field-at-a-time via `update_field.php` (one column, one audit-trail entry); status and the detailed fields (description, plans, risk, CAB) stay in the full change form, which you reach by clicking a row
-- Status-based filtering (Draft, Pending Approval, Approved, In Progress, Completed, Failed, Cancelled)
-- Click-through from calendar to change detail view
-- Approvals page showing changes pending approval (filter by All, Assigned to me, Requested by me, My CAB reviews)
-- CAB (Change Advisory Board) multi-member approval with required/optional reviewers, configurable threshold (all or majority), and auto-status transitions on vote
-- CAB review panel in detail view with colour-coded vote cards and inline voting for pending members
-- Risk assessment matrix with 5x5 colour-coded grid, auto-calculated risk score and level
-- Post-implementation review fields for completed/failed changes
-- Activity timeline combining comments and audit trail with inline commenting
-- Settings page with configurable form field visibility (show/hide fields per section)
-- **Help guide** (`help.php`): Interactive guide covering change types, lifecycle, recording changes, CAB review, risk assessment, and post-implementation review
-
-### Problem Management (`problem-management/`)
-ITIL Problem Management — track the root cause behind one or more incidents.
-- A **Problem** carries a root cause, a workaround and a **known-error** flag, with a settings-managed lifecycle (New → Investigating → Root Cause Identified → Known Error → Resolved → Closed) and priorities
-- **Incident linking** from either side: a **Problem** strip in the ticket reading pane (link an existing problem, or raise a new one from the incident) and a *Link incident* action on the problem; the linked incidents are listed on the problem. Same-company enforced on multi-company installs
-- **Change linking**: connect the Change that permanently fixes the problem, so the whole chain — incidents → problem → change — is visible (uses the shared `change_relations` table)
-- **Notes**: a free-text journal on each problem recording who wrote each note and when, alongside the structured change History
-- **AI** (bring-your-own `problem_ai` key): *Draft root cause* proposes a root cause + workaround from the linked incidents; *Detect problems* scans recent open incidents for recurring patterns and proposes problems to create
-- **Company-scoped** like tickets (`problems.tenant_id`, access-gated); entirely invisible on a single-company install
-- List / detail / editor SPA, settings (statuses, priorities, Problem AI) and a help guide
-
-### Calendar (`calendar/`)
-Event calendar with configurable categories.
-
-- Month, week, and day views
-- Drag-and-drop to move events between days in month view
-- Category colour coding and filtering
-- Events visible in adjacent-month cells for context
-- **Subscribe on your phone** (`api/calendar/feed.php`): the sidebar offers a read-only iCalendar (`.ics`) subscription feed — scan the QR code or copy the link to add the team calendar to Apple Calendar, Google Calendar or Outlook, where it stays up to date automatically. Authenticated by a per-analyst capability token (revocable via "Reset link"); the device must be able to reach the server URL
-- **Table view** (`calendar/table/`): full-screen Excel-style grid of every event with inline cell editing (title, category, start/end, all-day, location), column show/hide + drag-reorder (persisted per analyst), click-to-sort, search, per-column tickbox filters, and CSV export — the same table experience as the Asset Management and Tasks modules
-- **Help guide** (`help.php`): Interactive guide covering calendar views, event creation, categories, settings configuration, and scheduling tips for IT teams
-
-### Morning Checks (`morning-checks/`)
-Daily infrastructure health check recording.
-
-- Define checks with Red/Amber/Green (RAG) status options
-- Record daily results per check item
-- 30-day trend charts — click any bar to jump to that day's checks
-- Settings page with tabbed layout, modal popups for add/edit, and drag-and-drop reordering
-- PDF export with selectable text, company logo, and coloured status values
-- **Raise ticket from a check**: amber and red rows show a "+ Raise ticket" button that opens a modal pre-filled with the check name, status, date and notes. The analyst picks priority, assignee, department and type, and a ticket is created with the current analyst as the requester
-- **Help guide** (`help.php`): Interactive guide covering daily checks, status types, trend chart, PDF export, and settings configuration
-
-### Reporting (`reporting/`)
-System logs and audit trails.
-
-- Login attempt tracking (success/failure with IP and user agent)
-- Email import logs
-- System event logs
-- Searchable and sortable tables
-- **Intune Dashboard** (`reporting/intune/`): Curated dashboard of Microsoft Intune device aggregations — KPI strip (total devices, compliant %, encrypted %, stale 30+ days, recently enrolled) plus eight Chart.js widgets covering compliance breakdown, OS distribution, owner type (corporate vs personal), top manufacturers, top OS versions, last-sync window distribution, 90-day enrolment trend, and encryption-by-OS stacked bar. Single API call returns all aggregates; threshold-based KPI tone (green/red) flags compliance and encryption issues at a glance. Shows the timestamp of the most recent Intune sync job in the toolbar. **Drill-down**: click any chart slice/bar/point or any KPI card to open a modal listing the matching devices with name, user, OS, compliance pill, encryption, and last sync. Paginated (25 rows per page) with Prev/Next; **Export CSV** button on the modal footer downloads every matching row (UTF-8 BOM for Excel).
-- **Help guide** (`help.php`): Interactive guide covering ticket reports, system logs, data interpretation, filters, and reporting best practices
-
-### Software (`software/`)
-Software inventory tracking across the estate.
-
-- External API endpoint for automated inventory submission
-- Per-machine software mapping
-- **Dashboard** (`software/dashboard/`): Customisable Chart.js widget dashboard
-  - Widget types: version distribution per application, top installed applications, publisher distribution
-  - Chart types: bar, pie, doughnut
-  - Click any chart segment to drill down and see machines/details in a modal
-  - Cog icon for inline widget editing, drag-and-drop reordering
-  - Widget library for creating, editing, duplicating, and deleting widgets
-- **Licences** (`software/licences/`): Software licence management database
-  - Record licences against applications in the software inventory
-  - Licence types: Per User, Per Device, Site, Concurrent, Subscription, Other
-  - Track renewal dates with colour-coded warnings (overdue/approaching/ok)
-  - Store licence keys, costs, portal URLs, vendor contacts, and notes
-  - Searchable and sortable table with status badges (Active/Expired/Cancelled)
-  - CSV export of all licence data
-- **Help guide** (`help.php`): Interactive guide covering software inventory, dashboard widgets, licence management, data collection, and settings
-
-### System (`system/`)
-System administration and configuration.
-
-- **Help** (`system/help/`): In-app, step-by-step guides for every System area — a landing grid (driven by the same `system/includes/areas.php` registry as the System landing) plus a dedicated page per area, including a flagship **Single Sign-On** guide that walks through both single-company and multi-company (MSP) setup. The Companies page links to the SSO guide via a banner. Pages share one layout (`_init`/`_top`/`_bottom`) with left-nav + scroll-spy.
-- **Orphaned tickets** (`system/orphaned-tickets/`): Finds tickets whose `department_id` points at a department that no longer exists — these are hidden from every team-filtered queue (neither "no department" nor in anyone's departments), so they vanish from the inbox. Lists them and lets an admin reassign them to a real department (or "No department"), individually or in bulk. Endpoints: `api/system/get_orphaned_tickets.php`, `api/system/assign_ticket_department.php` (writes a `ticket_audit` entry per change).
-- **Topology** (`system/topology/`): A read-only, collapsible company-rooted tree of the whole configuration — each company with its mailboxes (pinned, with signed-in/active badges), domains & senders, sign-in providers, analysts with access, requester count and ticket totals, plus a "Global / shared" node (shared mailboxes, global SSO providers, all-access analysts). Health hints flag a company with no sendable mailbox and mailboxes that aren't signed in; deep-links out to the relevant editors. Aggregation endpoint: `api/system/get_topology.php`.
-- **Landing page** (`system/index.php`): A searchable grid of cards, one per system area — the single way in to everything below. Unlike other modules, System has too many areas to fit the header navbar, so navigation lives entirely in these cards; the header "System" title links back here from any sub-page. A search box filters the cards live by title, description, and hidden keyword synonyms (e.g. typing *oidc*, *saml* or *idp* surfaces the Single Sign-On card). The areas come from one registry (`system/includes/areas.php`) that drives both the cards and the search, and stays fully i18n (titles/descriptions/keywords are translation keys).
-- **Encryption** (`system/encryption/`): Guided interface for managing the AES-256-GCM encryption key
-  - Shows key status (configured/missing/invalid) with colour-coded status card
-  - One-click key generation — writes directly to `c:\wamp64\encryption_keys\sdtickets.key`
-  - Instructions on key placement, backup importance, and what data is encrypted
-  - No regenerate button to prevent accidental key destruction
-- **Module Access** (`system/modules/`): Control which modules each analyst can see
-  - Toggle matrix: analysts as rows, modules as columns
-  - "All Access" toggle per analyst (default state — backward compatible)
-  - System module cannot be disabled (always accessible)
-  - Auto-saves on toggle with debounced API calls and toast notifications
-  - Permissions enforced on homepage cards and waffle menu navigation
-- **Branding** (`system/branding/`): Organisation-wide logo and default header/footer text used by Network Mapper diagrams (and future PDF/PNG exporters)
-  - Logo upload supports PNG, JPG, or SVG (2 MB cap, extension + mime whitelist); SVG recommended for crisp print/export; old logos are torn down before the new file is saved
-  - Six header/footer slots (header left/centre/right, footer left/centre/right) accept free text mixed with template tokens — `{{logo}}`, `{{title}}`, `{{author}}`, `{{version}}`, `{{modified}}` — resolved client-side at render time
-  - Sensible defaults preloaded on a fresh install (logo top-left, title top-centre, author + version + modified along the bottom); per-page "Reset to defaults" button
-  - Stored as seven `system_settings` key/value rows (`branding_logo_path`, `branding_header_left`, …, `branding_footer_right`) so no new table is needed; uploads land in `system/uploads/branding/` (gitignored)
-  - Logo path is sanity-checked against disk on every read — a stale DB row pointing at a deleted file surfaces as "no logo" rather than 404ing every diagram open
-- **Toast Notifications** (`assets/js/toast.js`): Global notification system used across all modules
-  - Four types: success (green), error (red), warning (amber), info (blue) — each with icon and colour bar
-  - 9 configurable screen positions via visual grid picker in System Settings → General
-  - Position preference saved per-browser in localStorage
-  - Slide-in animations, auto-dismiss after 4 seconds, manual close button
-- **Preferences** (`system/preferences/`): Per-analyst settings that follow the analyst across browsers (persisted in `user_preferences`)
-  - Interface language, notification (toast) position + animation, and the Morning Checks trend-chart fill style
-  - **Left panels**: per-module control of whether a module's left panel stays pinned open (*Always visible*) or collapses to a thin 16px strip that expands on hover (*Show on hover*, freeing space for the main content). Covers every module that has a left panel — Knowledge, Process Mapper, Contracts, Calendar, Tasks, CMDB, Change Management, Asset Management and System Wiki — each stored as `<module>_sidebar_mode`. Modules with their own settings page also expose the same toggle on a **Left panel** tab there; the module header applies the choice on every page
-- **Database Verify** (`system/db-verify/`): checks every table/column exists and auto-creates anything missing, then adds known foreign keys. Strictly **non-destructive** — it never deletes data. When a foreign key can't be added because orphaned child rows exist (e.g. attachments left behind when their email was deleted), the result row explains it in plain English and offers a one-click **Fix** button that — after a confirm — deletes only the provably-orphaned rows (parent gone) via a whitelisted endpoint (`api/system/fix_orphans.php`, which also removes the orphaned attachment files), then re-runs verification so the FK adds cleanly
-- **Demo Data** (`system/demo-data/`): One-click import of realistic sample data across all modules
-  - Populates tickets, assets, knowledge articles, changes, calendar events, morning checks, contracts, services, software, forms, tasks, process-mapper flowcharts, analysts, and end users
-  - Process Mapper demo data is **auto-laid-out**: the JSON omits step coordinates and a server-side layered-DAG layout pass assigns x/y on import
-  - Designed for fresh installations — makes the system feel alive for evaluation and testing
-- **Debug Tools** (`system/debug-tools/`): Library of self-contained diagnostics for troubleshooting failed flows
-  - **Searchable landing** (same live-filter card pattern as the System landing): a registry (`system/debug-tools/includes/tools.php`) drives a grid of cards — each with an ID badge (D001, D002…), icon, category tag and short description — that filters on every keypress. Each card opens that tool's **own page** at `system/debug-tools/<slug>/index.php` (e.g. `d001/`), where the "when to run" description, full checks list, runtime, side-effects and the Run/Copy UI live. A per-tool page is two lines (set the slug, include the shared `includes/tool-page.php` renderer); adding a tool is a registry entry + that two-line page + the API script.
-  - Each diagnostic is a single PHP file under `api/system/debug-tools/` that emits a plain-text section-delimited report — designed so the user can click **Run**, click **Copy**, and paste the entire report back to support without back-and-forth
-  - Defensive by design: every section is wrapped so one failure doesn't kill the rest, and each diagnostic carries its own expected-state data so it works even when `db_verify.php`, `config.php`, the import script, or the JSON files are missing or broken
-  - **D001 — Demo Core Data Import**: 9-section report covering environment (PHP, OS, extensions, limits), config files (`config.php`, `db_config.php`, DB constants), required files, `core.json` parse + record counts, DB connection (server version, charset), per-table schema sanity (expected vs actual columns, row counts, redacted sample row), transactional write probe (sentinel insert per table inside a rolled-back transaction), and a live import attempt that captures the real response + any PHP warnings + post-import row counts. Adding more diagnostics is just `Dnnn_short_name.php` + a registry entry in `includes/tools.php` + a two-line `<slug>/index.php`.
-  - **D002 — Delete Ticket (with full SQL trace)**: for when a ticket won't delete because of a foreign-key error (e.g. `1451 Cannot delete or update a parent row` on `email_attachments`). The card carries a **text input** (a diagnostic can now declare an `input` and the value is passed through to the report) — enter the ticket reference and it resolves the ticket, audits every table the delete touches (existence, key columns, each foreign key and its `ON DELETE` rule), counts the child rows that will go, then performs the delete inside a transaction echoing **every** `DELETE` statement, its parameters and rows affected, COMMITs, verifies nothing is left and removes the orphaned attachment files. **Destructive** — on success the ticket and all its data are permanently deleted; on any error the transaction rolls back.
-  - **D003 — Self-Service SSO check (by email)**: enter a requester's email and it traces the whole self-service single-sign-on path end to end and prints a plain-English verdict with any blockers. Read-only and **secret-free** — client secrets, TOTP secrets and password hashes are reported only as present/absent, the IdP `subject` is masked. Sections: schema readiness (self-service login + SSO tables/columns + multi-tenant routing tables + key constraints), global SSO config (`sso_enabled` / `local_login_enabled`, global vs company-owned provider counts), tenancy mode (single vs multi-company), email→company routing (exact sender override, domain mapping, freemail detection), the user account (exists / passwordless / TOTP / provider pin / linked identities), the **predicted login outcome** (local / sso / choose — mirrors `resolve_login.php`), provider health with a **live OIDC discovery test** (issuer match + authorization/token/jwks/end-session endpoints reachable, without using the secret), and the exact redirect URI to register in the IdP.
-  - **D004 — Local login check (password / hash)**: diagnoses why a username/email + password sign-in fails, built for the "I bulk-imported accounts with password hashes but they can't log in" case. A **multi-field POST** tool (the debug framework now supports text/password/select inputs submitted via POST so the password never lands in a URL/log): pick the account type (analyst / self-service user), enter the username/email, and *optionally* the password. It runs **hash forensics** — detects bcrypt/argon vs an imported MD5 / SHA-1 / SHA-256 / phpass / Django / LDAP hash that `password_verify()` can never read (so login always fails until re-hashed) — checks account state (inactive / locked / expired / SSO-pinned / TOTP / active IP bans), checks (for MFA users) whether the **encryption key** can decrypt that account's TOTP secret (a wrong/missing key fails login at the 6-digit step *after* a correct password — password hashes aren't encrypted, so the key never affects password-only login), and if you supply the password it runs `password_verify()` and, on failure against a raw digest, **identifies the exact wrong-hash-type import** (e.g. "the stored hash equals MD5(the supplied password)") with the fix. Safe to share: the password is never echoed and the stored hash is never printed (only its format / cost / length).
-
-- **Shared AI provider config** (`includes/ai_settings_panel.php` + `includes/ai_provider.php` + `includes/ai_settings.php` + `api/system/ai/`): one reusable building block for per-module AI configuration. Renders a provider/model/key panel (**Anthropic, OpenAI, or OpenRouter** — one OpenRouter key reaches hundreds of models, shown in a live searchable list with per-1M-token pricing), persists per-namespace settings in `system_settings` (`<ns>_provider/_model/_api_key/_verify_ssl`, key encrypted at rest), and routes chat through one provider-agnostic client (`aiProviderChat()`). A namespace allowlist registry is the security boundary for the shared endpoints. Modules opt in by registering a namespace and dropping `renderAiSettingsPanel('<ns>')` on their settings page — currently live on **Knowledge, CMDB, Workflow, Forms and Tickets reply-cleanup**. For the streaming modules (Forms, Tickets), Anthropic keeps live token-by-token streaming while OpenRouter/OpenAI return in one shot. The RFP Builder is a deliberate follow-up (its large streaming generations need a true OpenRouter SSE path before switching), so it is left on its proven Anthropic/OpenAI streaming for now. OpenRouter also supports multiple keys with per-key spend limits, so per-module granular billing is preserved under a single account.
-
-### Forms (`forms/`)
-Dynamic form builder and submission system with a full-width dashboard + dedicated edit page.
-
-- **Forms dashboard** (`index.php`): Full-width sortable table of all forms (one row per form chain, showing the current version). Columns: Title, Version pill, Status, Fields count, Submissions count, Last modified (relative time), Modified by, Actions. Search filter, click any row to edit, per-row icons for Fill / Submissions / Delete.
-- **Form editor** (`edit/index.php`): Pretty URL `/forms/edit/?id=X` (or `/forms/edit/` for new). Title + description, drag-drop field list, live preview, sticky-footer Save / Cancel, top-toolbar Properties drawer + Versions dropdown + Save as new version. Field types: text, textarea, email (validated), number (numeric-only), single checkbox (yes/no), multi-checkbox group, radio group, dropdown.
-- **AI Assist** (in `edit/index.php`): Top-toolbar button opens a modal where the analyst describes the form (or, when editing an existing form, the change they want) in plain English. A streaming Claude call generates a proposal which is shown for review with a per-field diff before the analyst clicks Apply — nothing touches the editor without consent. Per-module billing: configurable provider/model/key under Forms → Settings → AI.
-- **Versioning** (`edit/index.php`): Save updates the current version in place; *Save as new version* clones the form forward into a new chain entry. Versions dropdown lists every snapshot; older versions are read-only.
-- **Filler** (`fill.php`): A4-style form rendering with company logo (alignment configurable). Per-type validation (email format, numeric only, required-empty for multi-select, etc.).
-- **Submissions** (`submissions.php`): Table view of all submissions. Click rows for detail modal. Date range filtering. CSV export with UTF-8 BOM for Excel compatibility.
-- **Settings**: Gear icon in sidebar opens settings modal. Configurable logo alignment (left, centre, right) applied to both preview and fill-in views.
-- **Field types**: `text`, `textarea`, `checkbox`, `dropdown`
-- **Help Guide** (`help.php`): Full-page guide with left-pane navigation, scroll-spy, and 7 sections covering the form builder, field types, filling in forms, submissions, CSV export, settings, and quick tips.
-
-### Contracts (`contracts/`)
-Supplier and contract lifecycle management with configurable rich text terms.
-
-- **Dashboard** (`index.php`): Left sidebar with overview stats (contracts, active, expiring, suppliers, contacts), quick links, and universal search across contracts, suppliers, and contacts. Main area shows the full contracts table.
-- **Add/Edit** (`edit.php`): Sectioned form with contract details, dates, financial, documents, and terms & data protection fields. Below the main form, a "Contract Terms Detail" section displays configurable TinyMCE rich text tabs for detailed contract terms (e.g. Special terms, KPIs, SLAs).
-- **View** (`view.php`): Read-only detail view with all fields organised into sections. Contract terms content displayed in read-only tabs. Header buttons to **Create Task** and **Add to Calendar** open inline modals that prefill sensible defaults from the contract (title, description, due date = notice date or end date, assignee = contract owner) and link the new item back to the contract via `contract_id`. Below the contract details, **Related Tasks** and **Related Calendar Events** sections list everything currently linked to the contract.
-- **Suppliers** (`suppliers/`): Supplier register with legal/trading names, registration details, address, type/status, questionnaire tracking, and comments.
-- **Contacts** (`contacts/`): Supplier contacts with name, job title, email, direct dial, and switchboard fields.
-- **Settings** (`settings/`): Tabbed management of supplier types, supplier statuses, contract statuses, payment schedules, and contract term tabs.
-- **Help** (`help.php`): Guided help page with left-pane navigation, scroll-spy, and 7 sections covering contract management, rich text terms, suppliers, contacts, settings configuration, and best practice tips.
-- **RFP Builder** (`rfp-builder/`): AI-powered procurement requirements builder. Upload departmental feedback documents (one per dept), AI extracts every requirement / pain point / challenge, then a single AI consolidation pass deduplicates across departments, proposes 8-20 RFP categories, assigns priorities, and flags genuine contradictions. Manual editing tools (edit / split / merge / add custom / conflict resolve) refine the consolidated set. Lock to gate Phase 4 generation: introduction + scope + response instructions framing plus per-category sections, all streamed live (claude.ai-style SSE) with live progress trackers, TinyMCE editing, version history with restore, Pass 4 restyle that re-applies the style guide without changing meaning, and a print-friendly preview page for PDF export. Phase 5 supplier scoring with click-to-light 0-5 score boxes (red→green gradient), per-category running averages, full-screen radar chart, and multi-analyst rollup. Cross-supplier compare page with big-number cards, multi-supplier radar overlay, and category winners table marking the leader and gap. Coverage heatmap (category × department), AI activity panel + full filterable audit trail, and an in-app help guide.
-
-### Service Status (`service-status/`)
-Service health dashboard with incident-driven status tracking.
-
-- **Dashboard** (`index.php`): Grid view of all active services showing worst current impact from open incidents. Below, a list of active and recently resolved incidents. Create/edit incidents via modal with multi-service impact selector.
-- **Settings** (`settings/`): Manage the list of services (name, description, display order, active status).
-- **Help** (`help.php`): Guided help page with left-pane navigation, scroll-spy, and 6 sections covering the status dashboard, status levels, managing services and incidents, incident history, settings, and communication tips.
-
-### Self-Service Portal (`self-service/`)
-End-user portal allowing ticket requesters to register, log in, and interact with the service desk directly.
-
-- **Registration & Login**: Users register with email, name, and password. If a user already exists in the system (e.g. created via email processing) but has no password, they can claim their account by registering with their email. Separate authentication from the analyst login using `$_SESSION['ss_user_id']`. Supports MFA (TOTP) login challenge.
-- **Dashboard** (`index.php`): Personalised overview showing ticket summary cards (Open, In Progress, On Hold, Total), a recent tickets table, and a live system status panel pulled from the Service Status module.
-- **New Ticket** (`new-ticket.php`): Submit a new support ticket with mailbox selection, subject, priority, description, and drag-and-drop file attachments.
-- **Screen recordings**: One-click HTML5 screen capture via `getDisplayMedia()` + `MediaRecorder` from the new-ticket form &mdash; no plugins, no third-party tools, no Loom install. Users pick whether to include microphone audio (off by default), record for up to 5 minutes with a live countdown, preview the result, then attach it to their ticket. Browser produces MP4/H.264 directly on modern Chrome/Edge 134+ and falls back to WebM/VP9 elsewhere &mdash; both play natively in the analyst's reading pane. Files land on disk under `recordings/{ticket_id}/` (never as DB blobs) and stream via a range-aware endpoint, so the analyst's `<video>` can seek without downloading the whole file. iOS Safari has no `getDisplayMedia` support, so the Record button is hidden on those browsers.
-- **Ticket Detail** (`ticket.php`): View full ticket conversation thread and non-internal notes. Internal analyst notes are hidden from the portal. Any screen recordings the user attached appear as inline `<video controls>` cards above the conversation.
-- **User Avatar Menu**: Initials circle in the header with dropdown for account management, MFA setup, password change, and logout.
-- **My Account**: Users can set a preferred name (e.g. "Ed" instead of "Ed Mozley") and change their password.
-- **Multi-Factor Authentication**: TOTP-based MFA using the same core libraries (`includes/totp.php`, `includes/encryption.php`) as the analyst system. Users can enable/disable MFA from their account menu.
-
-### LMS (`lms/`)
-Learning Management System with SCORM course player and progress tracking.
-
-- **Course Management**: Upload SCORM 1.1, 1.2, and 2004 ZIP packages. Manifest is auto-parsed to detect version and launch URL.
-- **SCORM Player** (`player.php`): Full-viewport iframe with dual JavaScript API bridge — exposes both `window.API` (SCORM 1.x) and `window.API_1484_11` (SCORM 2004) so courses find whichever they look for.
-- **Progress Tracking**: Per-user status (not started, incomplete, completed, passed, failed), scores, bookmarks, suspend data, and resume support. All CMI data stored as key/value pairs.
-- **Learning Groups**: Create groups of analysts with many-to-many membership. Assign courses to groups with optional deadlines.
-- **Admin Dashboard**: Four tabs — Courses, Groups, Assignments, Progress. Progress tab shows every assigned analyst's completion status with overdue highlighting. Filterable by course, group, or status.
-- **Learner Data Viewer**: View button per learner showing quiz responses with correct/incorrect badges, objectives, scores, suspend data with syntax-highlighted JSON, and all raw CMI elements.
-
-### Process Mapper (`process-mapper/`)
-Visual flowchart builder for documenting processes and workflows.
-
-- **Dot-grid canvas** with 20px snap-to-grid on all movements
-- **User-definable step types** (`process-mapper/settings/`): the toolbar, the detail-panel **Type** dropdown and the right-click *Create new* submenu are all rendered from the `process_step_types` lookup table. Each type is a name, a shape picked from 12 built-in geometries (rectangle, rounded, pill, circle, diamond, parallelogram, trapezoid, hexagon, document, cylinder, cloud, subroutine) and a colour that seeds new steps of that type. Ships with four built-in types — Process, Decision, Terminal, Document — protected from deletion but freely renamable/recolourable; custom types can be added, edited, reordered and deactivated (deactivated types stay in the detail-panel dropdown with a `*` suffix so existing steps' stored type is still selectable, but drop out of the toolbar + context menu). The Settings page (the module's first) has a 12-shape visual picker and a colour input; the four API endpoints (`get` / `save` / `delete` / `reorder_step_types.php`) mirror the Tasks-module lookup pattern. Canvas steps now carry `data-shape="<shape>"` (was `data-type`); shape geometry comes from shared `[data-shape="..."]` rules in `process-mapper.css` so steps and Settings-page previews use the same primitives.
-- **Connectors**: Drag from edge handles to draw arrows between steps. Optional text labels on connectors (double-click to edit).
-- **Right-click to branch off a step**: Right-clicking any step opens a context menu with a *Create new* submenu listing every active step type from Settings. Picking one drops a new step of that type just to the right of the clicked step, already connected from it, with the detail panel open and the cursor in the label box — the fastest way to build a flow out left-to-right. The new step inherits whichever swimlane / group it lands in, the placement nudges downward to avoid overlapping an existing step, and the submenu flips leftward when there isn't room on the right. Right-clicking a step no longer starts a drag.
-- **Multi-select**: Ctrl+click to toggle, rubber-band drag to select a region, Ctrl+A to select all
-- **Arrow key nudge**: Move selected steps by one grid unit with cursor keys
-- **Slide-in detail panel**: Click a step to edit label, type, colour, description, and view/edit its connectors
-- **Save/load**: Full persistence with sidebar listing all saved processes
-- **Autosave**: Optional toolbar toggle that debounces a save ~2s after the last edit. Live Word-style status indicator beside the toggle cycles through `✓ Saved` / `Unsaved` / `Saving…` / `⚠ Save failed — retry`. Toggle state persists per-analyst via `user_preferences` (key: `process_mapper_autosave`). The manual Save button still works regardless of toggle state.
-- **Groups**: Optional labelled coloured rectangles that sit behind steps. Click `Group` in the toolbar to drop one at the canvas centre, drag to move, drag the corner handle to resize, double-click to rename. Groups **own their contents** via a nullable `group_id` on `process_steps`: drop a step inside a group → step gets the group's id; drag the group → contained steps move with it; resize the group so a step falls outside → that step's `group_id` clears on mouseup; delete the group → contained steps survive untouched but lose their `group_id`. When groups overlap, the smallest (by area) wins for ownership — useful when you want to highlight a sub-flow inside a broader group. Persisted in the `process_groups` table (id, process_id, label, color, color2, x, y, width, height); step membership is captured by `process_steps.group_id` and round-trips through `save.php` via a `groupIdMap[oldRef -> realId]` so newly-created groups in the same save are referenced correctly by their member steps.
-- **Gradient fills** on both steps and groups. Detail panel's Colour input grows a `Gradient` checkbox plus a second-colour picker; when on, the shape renders as `linear-gradient(135deg, color, color2)` for a subtle diagonal fade. Stored as a separate `color2` column (nullable — null = solid as before). The default second colour seeded into the picker when you tick the box is a 40-unit darker shade of the primary colour so the gradient looks sensible out of the gate, but you can change it to anything.
-- **Swimlanes**: Horizontal bands stacked top-to-bottom across the canvas, with a left-edge label header showing the lane name (vertically). Steps gain a nullable `lane_id` that auto-assigns based on where the step ends up after each drag. Drag a lane's header up/down to reorder — all steps in every affected lane reflow to stay anchored to their lane's band. Drag the bottom edge of a lane to resize it — lanes below shift, and steps in them follow. Per-lane gradient fills supported via the same `color2` mechanic as steps and groups. Delete a lane: it disappears, the lanes below shift up to close the gap, and steps that belonged to it have their `lane_id` cleared but keep their position so nothing is lost. Persisted in the `process_lanes` table (id, process_id, label, color, color2, display_order, height); lane id flows through `save.php` as a temp-to-real mapping so newly-created lanes in the same save are referenced correctly by step `lane_id`.
-- **Rich step right-click menu**: Right-click any step for a dense menu of editing shortcuts grouped into four sections. **Edit label / Add note / Link to URL…** — quick rename, drop a sticky-note annotation tethered to the step, and prompt-set a URL link that adds a chain-link badge in the step's top-right corner (click to open in a new tab; gracefully validated to `http(s)://` only). **Create new… / Change to… / Connect to… / Reverse connection… / Delete all connections** — type submenus (driven by `process_step_types`), click-to-connect mode, plus connector tools: *Reverse connection* opens a submenu listing each incident connector by the other end's label with an arrow showing direction (greyed when the step has no connections); *Delete all connections* asks for confirmation and removes every incident edge. **Cut / Copy / Paste / Duplicate / Copy formatting / Apply formatting** — full clipboard semantics: Cut visually fades the source via `.pm-step.is-cut` and removes it only on Paste; Copy persists so it can be pasted repeatedly; Paste drops the new step at the original right-click cursor position; Duplicate offsets by 40px; Copy / Apply formatting paints colour + gradient between steps (paint-job clipboard, distinct from the step clipboard). **Delete…** — confirms then removes the step and its connectors. Cut is reversible via Escape (un-fades, clears the clipboard). Menu items are dynamically enabled/disabled and shown/hidden via `showContextMenu()` based on current state (no connections → disabled; nothing copied → no Apply; clipboard empty → no Paste).
-- **URL link per step**: A `url` column on `process_steps` (VARCHAR(500) NULL) stores an optional link. The right-click *Link to URL…* item or the detail-panel *Link* input sets it; the canvas step gains a small chain-link badge in its top-right corner; clicking the badge opens in a new tab (`target="_blank" rel="noopener noreferrer"`) without triggering a step drag. The `.is-exporting` chrome-hider strips the badge from PNG / PDF exports.
-- **Sticky-note annotations** (`process_annotations`): independent free-form notes that sit above steps on the canvas (z-index 4). Drop one via the step's right-click *Add note* item; drag to reposition, resize via the bottom-right handle, double-click to focus the text area; selection slides in a dedicated detail panel with text / colour / position / size. Persisted alongside steps in the same save transaction. Schema: `id, process_id, text, x, y, width, height, color (default #fff59d sticky yellow), color2`. Stickies don't participate in connectors or lane/group ownership — they're pure visual annotation.
-- **Export to PNG / PDF / Mermaid**: Toolbar `Export` button opens a modal with three format tiles. **PNG** and **PDF** capture the current diagram via `html2canvas` (vendored, same as Network Mapper #257) at 2× resolution for crisp print/slide output; PDF is wrapped via `jsPDF` onto an A4 page with portrait/landscape auto-picked by the diagram's aspect ratio and proportional fit-to-page with a 24pt margin. The capture rect is the bounding box of all steps + groups (with 40px padding); when swimlanes are present the rect extends to `x=0, y=0` so lane headers and the top of the first lane aren't cropped. An `.is-exporting` class hides edit-time chrome during capture — edge handles, selection rings, the rubber-band box, the empty-state placeholder, the dot-grid background — so the export is what you'd want to share, not what you're editing. Files name themselves after the process title slug (e.g. *Incident triage* → `incident-triage.png`). **Mermaid** generates [Mermaid](https://mermaid.js.org/) flowchart markup ready to paste into any Markdown editor that supports it (GitHub READMEs, GitHub/GitLab wikis, Notion, Confluence, Obsidian, Mermaid Live Editor). Lanes become `subgraph` blocks with `flowchart LR` direction so they stack vertically like horizontal swimlanes. Each step's **shape** (not its type name) decides the Mermaid syntax — so custom user-defined types map cleanly via their chosen shape: rectangle → `["label"]`, rounded → `("label")`, pill → `(["label"])`, circle → `(("label"))`, cylinder → `[("label")]`, subroutine → `[["label"]]`, diamond → `{"label"}`, hexagon → `{{"label"}}`, parallelogram → `[/"label"/]`, trapezoid → `[/"label"\]`. Mermaid has no document or cloud primitive in classic syntax, so document collapses onto parallelogram and cloud onto circle as the closest visual matches. Connectors become `-->` arrows (with `-->|"label"|` if they have labels) and Mermaid resolves IDs across subgraph boundaries so cross-lane connectors just work. Hand-placed positions, colours, gradients, and groups don't survive Mermaid — it auto-layouts. PNG/PDF preserve everything visible.
-
-### Workflows (`workflow/`)
-Cross-module automation engine — triggers that fire when something happens in another module (a ticket is created, a form is submitted, a task completes), conditions that decide whether to act, and actions that run in order. The strategic Priority 1 from the competitive-gaps roadmap: the single feature whose absence is most likely to lose a deal vs Halo / ServiceNow.
-
-> **Status: Stages 1, 2 & 3 — engine foundation + visual canvas + AI co-author.** Schema (`workflows` + `workflow_executions`), engine class (`workflow/includes/engine.php`) with trigger/operator/action catalogues + `dispatch(event, payload)` + `manualFire(workflowId, payload)`, **Process Mapper-style canvas editor** (dot-grid, snap-to-grid, draggable nodes for trigger / condition / action with distinctive shapes — pill / diamond / rounded rectangle, auto-routed SVG connectors), slide-in detail panel that swaps body based on selection (workflow / trigger / condition / action), list landing page with active/inactive status pills, "Test fire" button for synthetic-payload runs, recent-executions panel, and an **AI co-author** that turns a plain-English description into a structured workflow proposal applied to the canvas in one click (reuses the CMDB AI API key + model). v1 action handler is `log_message` so the engine is exercisable end-to-end without host modules wired up yet — the AI co-author leans on it as a stand-in for unimplemented actions like "send email" with the message documenting the intent. Real action handlers (set ticket status, send email, create task, Graph API actions) + real trigger wiring from host modules + dry-run + Watchtower integration + starter recipes all planned for subsequent commits.
-
-- **A workflow has three parts**: a **trigger** (event-name string like `ticket.created` from the catalogue exposed by the engine), zero or more **conditions** ({field, op, value} objects evaluated against the event payload via dot-notation — `ticket.priority_id equals 1`), and one or more **actions** ({type, args} objects run in order). Conditions use AND semantics; if any fails the run is logged as `skipped`. Actions failing log as `failed` and abort the rest of the chain.
-- **Engine contract**: `WorkflowEngine::dispatch($event, $payload)` is the only call host modules need to make — it finds active workflows for the event, evaluates conditions, executes actions, and writes a row to `workflow_executions` for every run (with a JSON `step_log` capturing every condition/action's result, the `trigger_payload` snapshot, the timing, and any error message). Engine failures are swallowed and logged to PHP error_log so a buggy workflow can never break the host module's request.
-- **Catalogues live in the engine** (`availableTriggers()`, `availableOperators()`, `availableActions()`, `availableFields($trigger)`) so the editor never drifts out of sync. Adding a trigger = one entry in the catalogue + a single `dispatch()` call from the host module's save flow. Adding an action = one entry in `availableActions()` + one private handler method.
-- **All seven triggers fire from their host modules.** `ticket.created` (`api/tickets/create_ticket.php`), `ticket.status_changed` / `ticket.priority_changed` / `ticket.assigned` (`api/tickets/assign_ticket.php`), `form.submitted` (`api/forms/submit_form.php`, after the submission commits — payload includes a `submission.fields` map of every answer keyed by label, plus the first email-type answer as `submission.email`), `task.completed` (`api/tasks/save.php`, only on the transition *into* a closed status), and `change.approved` (fired from both `api/change-management/submit_cab_vote.php` when a CAB vote crosses the approval threshold and `api/change-management/save.php` when a manual status edit moves the change to Approved). Each dispatch is wrapped in a host-side try/catch on top of the engine's own internal swallowing so a workflow can never break the host module's request.
-- **Editor**: form-based v1 — name + description + trigger dropdown + dynamic conditions list (field dropdown populated from the engine's per-trigger field hints, operator dropdown, value input that disables for `is_empty` / `is_not_empty`) + dynamic actions list (type dropdown + args JSON input) + active toggle. Right sidebar shows the last 20 executions with status pills and timestamps so you can verify each test fire. **Test fire** button manually dispatches the workflow with an empty payload so you can exercise the engine without waiting on a real event — the run is logged as a normal execution but doesn't increment the workflow's `run_count` counter so the production metrics stay clean.
-- **Infinite-loop protection**: because workflow actions mutate host data that re-dispatches events, a workflow could trigger itself — directly (A fires an event that re-runs A), via a cycle (A → B → A), or via fan-out. Execution is synchronous within one request, so the engine guards every run with three request-scoped counters: an **active-workflow stack** (a workflow already running in the current chain is refused re-entry — catches every cycle), a **chain-depth ceiling** (`MAX_CHAIN_DEPTH`, backstop for deep acyclic cascades), and a **per-request run ceiling** (`MAX_RUNS_PER_REQUEST`, backstop for fan-out). A blocked run is recorded as an `aborted` execution row with the reason, so the block is visible in the audit rather than failing silently.
-- **JSON in TEXT columns** for `conditions` and `actions` (not normalised tables) so the rule shape can evolve — new operators, new action kinds, new arg shapes — without a schema migration each time.
-- **Execution audit**: every run writes to `workflow_executions` with a full step-by-step log, the trigger payload snapshot, start/finish timestamps, status and any error. Future Watchtower integration will surface failed runs as attention cards.
-
-### Network Mapper (`network-mapper/`)
-Visual layer over the CMDB for drawing network and architecture diagrams. Diagrams are not standalone artwork — every node is a binding to a real CMDB object, so the diagram stays in sync with what the rest of the platform knows.
-
-> **Status (Phase 1 complete — chunks A + B + C + D)**: working editor end-to-end. Drag a class tile onto the canvas → pick which CMDB object to bind it to → node is placed (snapped to 20px grid), draggable to move, Delete to remove. Planned objects render with dashed border + amber tint matching the CMDB browse styling. Connectors drawable between any two nodes via edge handles, with arrowheads, optional labels, and select/delete. Select a node → detail panel slides in beside the canvas → **Add related objects** pulls CMDB neighbours (outgoing/incoming relationships + property references) into a modal where you tick which to add; selected objects are placed in a ring around the source and connectors are auto-drawn with `cmdb_relationship_id` populated so the line traces back to a real CMDB relationship. Autosave, manual save, save-as-new-version, read-only handling for historical versions all in place.
-
-- **Versioning from day one**: each diagram is a row in a `network_diagrams` chain linked by `parent_diagram_id`. The leaf (no children) is the editable "current" version; older nodes are read-only history. Saving as a new version clones the leaf forward and stamps the old leaf as historical. No branching in v1 — a parent can have at most one child, so a chain is strictly linear. The editor enforces this on the frontend (Save and Save-as-new-version disabled on non-leaves, amber read-only banner shown) and the backend (`save_diagram.php` refuses to write to a non-leaf; `create_version.php` refuses to fork an already-forked parent). A **Versions dropdown** in the editor toolbar lists every version in the chain (newest first) with author + date + Current / Read-only / Viewing pills — click any to jump straight there.
-- **Page size guide**: optional dashed cyan outline rendered on the canvas at the chosen paper size — **A4 / A3 / A2 / Letter / Tabloid** × portrait or landscape, plus Off (default). Picked via a Page dropdown in the editor toolbar, persisted per-diagram (`network_diagrams.paper_size` + `paper_orientation`), carried forward on save-as-new-version. Lets analysts compose diagrams inside the printable area before sharing/exporting so nothing gets cropped. Outline renders inside the SVG layer with a soft white fill (lets the dot-grid bleed through to distinguish on-page vs off-page) and a corner label naming the chosen paper. Drives the export bounds — see PNG/PDF export below.
-- **PNG / PDF export**: two toolbar buttons (`PNG`, `PDF`) snapshot the diagram for sharing or printing. Capture is WYSIWYG with the page outline: if a paper size is set, the export clips exactly to the page rectangle so what you see inside the outline is what comes out; if no paper size is set, it crops to the bounding box of placed nodes plus 40px padding. Branding header/footer, page outline, connectors, node icons, and labels all render in the output exactly as they appear on screen. PNG is exported at 2× the diagram's native resolution (via html2canvas's `scale: 2`) so the result is crisp on retina screens and when zoomed during a presentation; PDF uses jsPDF with the actual paper size + orientation (A4/A3/A2/Letter/Tabloid, portrait or landscape) so the file opens at the right physical dimensions for print. Implementation flow: stash the current zoom/scroll/selection, reset zoom to 1× so the rasteriser captures at native resolution, add an `.is-exporting` class that hides edit-time chrome (selection rings, edge handles, the empty-state placeholder), call `html2canvas(elCanvasInner, { x, y, width, height, scale: 2, backgroundColor: '#fff' })`, then restore everything. Filename slugifies the diagram title + version label so a "Production Network" v2 exports as `production-network-v2.png`. Libraries vendored locally at `assets/js/vendor/` (html2canvas 1.4.1 + jsPDF 2.5.2) so the feature works offline and doesn't depend on a CDN at print time.
-- **Header / footer overlay**: optional six-slot branding strip rendered along the top and bottom of the page outline (left / centre / right, header + footer). Each slot is free text mixed with template tokens — `{{logo}}` (the org-wide company logo uploaded at System → Branding), `{{title}}`, `{{author}}`, `{{version}}`, `{{modified}}` — resolved client-side at render time. Org-wide defaults configured at System → Branding apply to every diagram by default; a **Branding** toolbar button opens a modal where any individual diagram can override one or more slots (Word/Google Docs style). Modal placeholders show the org default for each slot so the user sees what they're overriding. **Reset** clears all overrides and re-inherits the org defaults. Per-diagram overrides live on six nullable `VARCHAR(200)` columns on `network_diagrams` (NULL = inherit, '' = explicit blank, anything else = override); carried forward on save-as-new-version. Gated on the page outline being on — without paper bounds the strip has no anchor point. Tokens are HTML-escaped at render; the logo renders as an `<img>` with max-height 28px so it sits neatly inside the strip.
-- **Landing page** (`network-mapper/`): grid of cards, one per chain, each showing title, version pill (with chain length when > 1 version), description preview, node + connector counts, author, and updated timestamp. Filter-by-title search. **+ New diagram** modal collects title, description, and an initial version label (default `v1`).
-- **Editor** (`network-mapper/diagram.php?id=X`): title bar with a version pill that turns amber for historical versions, metadata row (author / created / updated), left-side **CMDB class palette** (one tile per class with its icon + name + object count, drag onto the canvas to start placing), main canvas with dot-grid background, and an action bar with autosave toggle, status indicator, **Save as new version** button, and **Save** button (also bound to Ctrl+S). Autosave mirrors Process Mapper's pattern: `markDirty()` / 2s debounced `scheduleAutosave()` / status indicator cycling through `Unsaved` / `Saving…` / `✓ Saved` / `⚠ Save failed — retry` / `Autosave off`, toggle state persisted in `user_preferences` (key `network_mapper_autosave`). Autosave defers mid-drag (same fix as Process Mapper #228 — `save()` reloads the diagram, which would destroy an in-progress drag). `beforeunload` fires the browser's leave-prompt if there are unsaved changes. **Save as new version** auto-saves first if dirty (since `create_version.php` clones from the persisted state), then opens a modal pre-filled with the current diagram's metadata and a suggested incremented label (trailing integer in the version label bumps automatically — `v3` → `v4`).
-- **Drag-to-canvas → bind → place** (chunk C): drag a class tile onto the canvas, drop opens a CMDB object picker scoped to that class — preloads the class's full object list, type-ahead filters server-side (200ms debounced), arrow keys to navigate + Enter to pick, already-placed objects auto-hide so you can't double-place. After pick, the node renders at the drop coordinates (snapped to the 20px grid, offset so the icon centres on the cursor). **Placed nodes** show the class icon (from the chunk-B icon library) above a 12px label with the object name (truncated to 2 lines). **Planned objects** render with a dashed amber border + soft `#fffbeb` background + italic amber label + a small PLANNED pill, matching the CMDB browse/detail styling — turns the canvas into a visual as-is/to-be map. **Click** selects (cyan border + soft cyan glow), click on empty canvas clears. **Drag** moves the selected node (snapped to grid), `markDirty()` only runs if the node actually moved so a click-without-drag selects but doesn't dirty. **Delete** key removes the selected node and cascades down any incident connectors so `save_diagram.php` doesn't reject the payload. **Save → reload**: every successful save re-fetches the diagram so temp ids (negative numbers used for unsaved nodes) resolve into real auto-increment ids — vital before any connector references a node. Current selection is preserved across the reload by matching on `cmdb_object_id` rather than node id. Read-only versions accept selection but reject drop / drag / delete (the backend would refuse anyway).
-- **Connectors** (chunk D part 1): hover or select a node → 4 cyan edge handles appear at the top/right/bottom/left of the icon. Mousedown on a handle starts a connect drag — a dashed cyan temp line tracks the cursor; mouseup on another node creates a connector and selects it. Connectors render as SVG paths with arrowheads (cyan when selected, slate otherwise) in an SVG layer behind the nodes. Endpoint geometry snaps to the side of each icon's bounding box that faces the other node, so lines stay sensible after dragging either end around. **Click** a connector to select (wider hit-area underneath the visible stroke so they're easy to grab), **Delete** removes it, **double-click** opens an inline cyan-bordered text input at the midpoint where you type a label (Enter saves, Esc cancels, blur saves, empty clears) which renders mid-line on a white pill. Self-loops and duplicate connectors (same direction between the same pair) are silently refused. Connectors between two brand-new (unsaved) nodes save in a single round-trip — both `tempId` and the connector's `from_node_id`/`to_node_id` (which carry the same negative tempIds) are sent in the same payload, and `save_diagram.php`'s `nodeIdMap` resolves the refs server-side.
-- **Detail panel + Add related objects** (chunk D part 2): selecting any placed node slides a 320px panel in beside the canvas showing the node's name, class, planned status, a deep-link back to the CMDB object page, and every CMDB property that has a value (lazy-loaded from `get_object.php` on selection, hides empty properties, type-aware rendering — boolean as Yes/No, dropdown as a coloured pill matching the option's colour, object_ref as a pink pill linking into CMDB, dates locale-formatted, URLs auto-linked in text fields). The panel's **Add related objects** button opens a modal that calls a new endpoint (`api/network-mapper/get_related_objects.php`) which gathers everything CMDB knows about that object across three buckets — **outgoing relationships** (this depends on X / hosts X), **incoming relationships** (X is hosted by this), and **property references** (other objects that point at this one via an `object_ref` property). Rows render grouped by bucket with the related object's icon + name + class + relationship verb. Objects already on the canvas show a grey "on canvas" badge and a disabled checkbox so they can't be double-placed. Ticking rows enables the **Add N objects** button; confirm bulk-adds them: deduplicated by `cmdb_object_id`, new nodes laid out in a ring around the source node (radius scales with count so big pull-ins don't crowd, angles distributed evenly starting at 12 o'clock), with one connector per ticked path. Direction respects relationship kind (outgoing = src→other; incoming + property-ref = other→src), and `cmdb_relationship_id` is populated for relationship-derived connectors so the line traces back to a real CMDB row. Property-ref connectors leave `cmdb_relationship_id` NULL but carry the property name as their label. The flow turns "CMDB has a TON of info" into **guided graph exploration** — you start from one node and pull in neighbours on demand instead of dumping everything onto the canvas at once. Read-only versions show the panel but the Add button is disabled with a tooltip explaining why.
-- **Icon library** (~65 icons): `assets/js/network-mapper-icons.js` ships a `window.NM_ICONS` map + `window.NM_ICON_META` (label + category per icon) + `window.NM_ICON_CATEGORIES` (display order/labels) + `nmRenderIcon(key, size, extra)` helper. Twelve categories: Compute & Servers (server / server-rack / server-blade / server-tower / mainframe / vm / function / workstation), Databases (database / database-cluster / database-cache), Storage (storage / storage-san / storage-tape / backup), Networking (network / router / switch / firewall / load-balancer / proxy / vpn / gateway / wireless-ap / modem / cdn / dns), Security (shield / lock / key / ids / siem), Cloud (cloud / cloud-private / cloud-public / cloud-hybrid / region), Containers (container / container-pod / kubernetes / registry), Applications & Data (application / service / website / api / microservice / queue / cache / dashboard), Endpoints (laptop / mobile / tablet / iot / printer), Monitoring & Ops (monitor / alert / log), People & Org (person / team / org), Files & Generic (document / folder / globe / mail / calendar / box). Feather-style 24×24 viewBox, stroke 1.8, currentColor so they tint with any container. Unknown keys fall back to box. The full set is also seeded into `cmdb_icons` so CMDB Classes settings can pick from the wider library when defining new classes. Multiple variants per concept (3 server styles, 3 database styles, 4 cloud styles, etc.) so users can visually distinguish two objects of the same class on a diagram — e.g. "Production MS SQL" as `database-cluster` vs "Reporting Oracle" as `database` via the per-node icon override.
-- **Per-node icon override**: any node on a diagram can override its class's default icon with any of the ~65 keys above. UI lives in the node detail panel — Icon row shows the current icon + a Change button → opens the icon picker modal (12 category-grouped sections, type-ahead filter that matches both the icon key and its label). Picking the class's own default icon stores NULL rather than a redundant override, so the data stays clean. Reset button appears next to Change when an override is active. `network_diagram_nodes.icon_override` is a free-text VARCHAR(100) so any icon key works, not just seeded ones.
-- **Schema** (3 tables, all prefixed `network_`): `network_diagrams` (chain root via self-FK `parent_diagram_id` with `ON DELETE SET NULL` so deleting a version doesn't cascade through history), `network_diagram_nodes` (FK to `cmdb_objects` for binding, plus position `x/y`, `size` enum `small/medium/large`, and optional `icon_override` for per-node visual swap), `network_diagram_connectors` (from/to node ids with optional `cmdb_relationship_id` if the line corresponds to a real CMDB relationship, plus free-text `label` and `line_style`). FKs cascade nodes + connectors on diagram delete; node delete cascades its incident connectors.
-- **APIs** (`api/network-mapper/`): `list_diagrams.php` (leaf versions only — filters with `WHERE id NOT IN (SELECT parent_diagram_id…)`), `list_versions.php` (root-to-leaf chain ordered oldest first), `get_diagram.php` (single version hydrated with CMDB object name/class/icon/`is_planned` per node), `create_diagram.php`, `create_version.php` (clones forward, refuses to fork an already-forked parent), `save_diagram.php` (transactional with temp→real node id mapping for connector refs; refuses to save non-leaf versions; only updates metadata fields the caller explicitly sends), `delete_diagram.php` (single version delete — older versions in the chain preserved via the `SET NULL` parent_diagram_id behaviour), `get_related_objects.php` (walks `cmdb_object_relationships` outgoing + incoming and `cmdb_object_properties.value_object_id` to return all CMDB neighbours of a given object for the Add-related-objects flow — one row per (object, path) so an object reachable via two paths surfaces as two tickable rows).
-
-### Tasks (`tasks/`)
-Kanban-style task management with board, list, calendar, and timeline views for tracking internal work.
-
-- **Board view**: Kanban board with one column per status — columns (and their colour) are driven by Settings → Statuses, so custom statuses get their own column — with drag-and-drop card movement and drag-to-reorder columns (dragging a column header rewrites the status display order)
-- **Card quick actions**: Right-click any board card for a context menu — assign analyst, assign team, change status, change priority, or create a subtask — without opening the card
-- **Configurable card fields**: Settings → Card toggles which extras show on each board card — priority, assignee, team, start date, due date, description excerpt (first 250 chars), subtask progress, and linked-item indicator — so tasks can be scanned without opening them
-- **Tags**: Multi-value labels for cross-cutting themes (e.g. Security, ISO, Environment), managed in Settings → Tags. Per-install display options control where they appear — card chips, sidebar filter, search matching, calendar/timeline — and whether analysts may create new tags inline while editing a task
-- **List view**: Sortable table with all task fields
-- **Search**: As-you-type search box filters the board and list by task title and description (all words must match), with no server round-trip
-- **Calendar view** (`tasks/calendar/`): Month grid of tasks coloured by status. How a multi-day task (one with a start date earlier than its due date) is drawn is configurable in Settings → Calendar — **Deadline chip** (a single chip on the due date), **Spanning bar** (one continuous bar across the range, wrapping at week rows), or **Every day** (a chip in every day cell of the range)
-- **Timeline view** (`tasks/timeline/`): Gantt-style horizontal bars from each task's start date to its due date, grouped by assignee, status, or flat, with a today marker and day-width zoom
-- **Start & due dates**: Tasks have an optional `start_date` plus the existing `due_date`; together they define the span shown on the calendar and timeline
-- **Quick create**: Inline task creation from each board column
-- **Detail panel**: Slide-in panel with inline editing, auto-save, and TinyMCE rich text description. Calendar/timeline tasks deep-link to the board with the panel open (`?task=N`)
-- **Subtasks**: Two-level hierarchy with checkbox toggling and progress display on parent cards
-- **Linking**: Link tasks to tickets or changes via searchable dropdowns
-- **Team assignment**: Assign tasks to analysts and teams, filter every view by team/analyst/personal
-- **Comments**: Threaded comments on each task
-- **Watchtower integration**: Overdue and due-today counts shown on attention dashboard
-- **Help guide** (`tasks/help.php`): A built-in scroll-spy guide covering the board, list, calendar, timeline, the task panel, tags and settings, reachable from the Help link in the module header
-- **Multilingual**: The whole module (PHP pages and JavaScript) runs through the shared i18n system — `lang/<locale>/tasks.php` for all 20 supported locales; the active language follows the analyst's interface-language preference, with per-key fallback to English
-
-### CMDB (`cmdb/`)
-Configuration Management Database — model your IT estate as a graph of typed objects (servers, databases, applications, etc.) with a strict containment hierarchy and a separate user-defined relationships layer. See [`docs/cmdb.md`](docs/cmdb.md) for the full design and roadmap.
-
-- **Browse page** (`cmdb/`): class sidebar with object counts → table of objects in the selected class with name, parent, child count, last updated. Search box filters by name. **+ New** creates an object and opens it for editing.
-- **Object detail page** (`cmdb/object.php?id=X`): name editable inline (click and type, save on Enter/blur), class + parent breadcrumb, and three sections — **Properties** (dynamic form built from the class's property definitions, with type-aware inline editors: text input / number / date picker / Yes-No select / dropdown / object-reference picker with autocomplete), **Hierarchy** (parent + children list with clickable navigation), **Relationships** (outgoing and incoming columns side-by-side, each link clickable to navigate, X button to remove, + Add relationship modal with verb picker and global object autocomplete). Object references are rendered as pink pills you can click to drill through. Delete cascades to all descendants (with a clear confirmation showing how many will go).
-- **Settings page** with three tabs:
-  - **Classes**: define types of things (e.g. Server, Database). Each class has its own auto-generated immutable `class_key` plus an editable display name. Click the property-count badge on any class to manage its properties (label, immutable key, type — text/number/date/boolean/dropdown/object_ref, target class for object references, required flag, dropdown options, display order). Property keys are immutable so renaming a label never breaks references.
-  - **Relationship Types**: define the verbs that link objects (e.g. *depends on* ↔ *is depended on by*). Three defaults seeded on first run.
-  - **AI Integration**: provider/key/model + custom-instructions textarea + Test connection button, mirroring the established per-feature Anthropic key pattern (separate from RFP AI / Knowledge AI / Reply Cleanup for granular billing visibility).
-- **AI Suggest Properties** (in the Properties manager): two-stage wizard — Claude asks 3-5 clarifying questions about the analyst's specific environment (e.g. for *Database*: "What kind — SQL Server / Postgres / Mongo?"), then suggests 6-12 tailored properties with rationale. Object-reference suggestions automatically create the missing target class on the fly (e.g. suggesting "Owner → Person" auto-creates a Person class if one doesn't exist).
-- **Tickets ↔ CMDB linking**: tickets get an **Affected CMDB Objects** section in the reading pane — type to search across every CMDB object, click to link, X to unlink. Each linked object renders as a clickable info card showing class + parent context. The CMDB object detail page reciprocally gets an **Activity panel** with two buckets — open tickets (live) and recent closed tickets (capped at 20, total count shown) — each rendered as a card with status pill in the lookup colour, priority, assignee, department, and last-updated/closed date. Clicking any ticket card deep-links to that ticket via `?ticket_id=X`. The AI summary prompt now also pulls open + closed ticket counts so the synthesis can mention things like *"currently has 2 open tickets including a P1 backup failure"* — turning the CMDB into a live operational map rather than a static inventory.
-- **Planned objects**: nullable boolean `is_planned` flag on `cmdb_objects` lets you record future-state architecture in the same CMDB as your real estate without forking the data. Toggle in the New Object modal and on the object detail page header. Planned objects render with a dashed border + amber **PLANNED** pill across every surface that shows the object (browse table, detail header, search picker results). Toggle off when the object goes live — single column flip, no migration. The AI summary prompt is taught to surface planned status near the start of the synthesis and frame the sentence in future tense ("will host…", "is proposed to…") so the reader knows immediately the object isn't yet in service. Designed to support the upcoming Network Mapper module where some diagrammed nodes will represent to-be architecture rather than as-is reality.
-- **Data model** (8 tables, all prefixed `cmdb_`): icons (curated lookup), classes, class_properties, class_property_options, objects, object_properties, relationship_types, object_relationships. Strict cascade-delete on parent_id (per the design's *ontological dependency* parent semantics). Cycle prevention on parent assignment.
-
----
-
-## Browser Extension
-
-A Chrome/Edge browser extension that shows your Watchtower dashboard summary in a popup with a badge count for items needing attention.
-
-### Setup
-
-1. **Generate an API key**: Go to **Software > Settings > API Keys**, enter a label (e.g. "Chrome extension"), and click **Generate**. Copy the key.
-2. **Install the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `browser-extension/` folder from this repository.
-3. **Configure**: Click the extension icon, then **Settings**. Enter your FreeITSM server URL and paste the API key. Click **Test** to verify, then **Save**.
-
-### Features
-
-- **Badge count**: Shows the number of items needing attention (urgent tickets, unapproved changes, active incidents, etc.)
-- **Popup dashboard**: Compact 8-module summary matching the full Watchtower view
-- **Configurable polling**: 1 to 30 minute refresh intervals
-- **Rate limited API**: 60 requests per minute per key (configurable in system settings)
-- **Works in Chrome and Edge** (Manifest V3)
-
----
-
-## API Reference
-
-All endpoints live under `api/` and return JSON. Every endpoint requires an active session (`$_SESSION['analyst_id']`).
-
-### Standard Pattern
-```php
-session_start();
-require_once '../../config.php';
-require_once '../../includes/functions.php';
-
-header('Content-Type: application/json');
-
-if (!isset($_SESSION['analyst_id'])) {
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
-    exit;
-}
-```
-
-### Tickets (`api/tickets/`) ~54 endpoints
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `get_emails.php` | GET | List tickets with latest email (filtered by dept/status) |
-| `get_email_detail.php` | GET | Full email content and ticket info |
-| `create_ticket.php` | POST | Create manual ticket (stamps the chosen send-from `mailbox_id` on the initial email) |
-| `get_sendable_mailboxes.php` | GET | Mailboxes the active company can send replies from (pinned + shared, active + signed-in) — powers the New Ticket mailbox picker |
-| `delete_ticket.php` | POST | Move a ticket to the trash (soft-delete — restorable) |
-| `restore_ticket.php` | POST | Restore a ticket from the trash |
-| `permanently_delete_ticket.php` | POST | Permanently delete a trashed ticket + all its data (irreversible) |
-| `assign_ticket.php` | POST | Assign ticket to analyst |
-| `update_ticket_owner.php` | POST | Set ticket owner |
-| `schedule_ticket.php` | POST | Set work_start_datetime |
-| `search_tickets.php` | POST | Search by ticket#, email, or subject |
-| `send_email.php` | POST | Send email via Microsoft Graph API |
-| `get_ticket_attachments.php` | GET | List attachments for a ticket |
-| `get_attachment.php` | GET | Download attachment file |
-| `check_mailbox_email.php` | POST | Import emails for a mailbox |
-| `get_departments.php` | GET | List all departments |
-| `get_my_departments.php` | GET | List analyst's team-filtered departments |
-| `save_department.php` | POST | Create/update department |
-| `get_analysts.php` | GET | List all analysts |
-| `save_analyst.php` | POST | Create/update analyst |
-| `get_teams.php` | GET | List teams |
-| `save_team.php` | POST | Create/update team |
-| `get_mailboxes.php` | GET | List mailbox configurations |
-| `save_mailbox.php` | POST | Create/update mailbox |
-| `get_mailbox_whitelist.php` | GET | Get whitelist entries for a mailbox |
-| `save_mailbox_whitelist.php` | POST | Replace whitelist entries for a mailbox |
-| `get_mailbox_activity.php` | GET | Paginated activity log for a mailbox |
-| `verify_mailbox_folder.php` | POST | Verify a mail folder exists via Graph API |
-| `get_email_templates.php` | GET | List email templates |
-| `save_email_template.php` | POST | Create/update an email template |
-| `delete_email_template.php` | POST | Delete an email template |
-| `get_notes.php` | GET | Get notes for a ticket |
-| `save_note.php` | POST | Add internal note |
-| `get_ticket_audit.php` | GET | Get change history |
-| `get_ticket_counts.php` | GET | Counts by department/status |
-| `get_rota_shifts.php` | GET | List rota shift definitions |
-| `save_rota_shift.php` | POST | Create/update rota shift |
-| `delete_rota_shift.php` | POST | Delete rota shift |
-| `get_rota.php` | GET | Get rota entries for a week |
-| `save_rota_entry.php` | POST | Create/update rota entry |
-| `delete_rota_entry.php` | POST | Delete rota entry |
-| `get_ticket_dashboard.php` | GET | Get analyst's dashboard widgets |
-| `get_ticket_widget_data.php` | GET | Aggregated data for a widget chart |
-| `get_ticket_widget_library.php` | GET | List all widget definitions |
-| `add_ticket_dashboard_widget.php` | POST | Add widget to dashboard |
-| `remove_ticket_dashboard_widget.php` | POST | Remove widget from dashboard |
-| `save_ticket_dashboard_widget.php` | POST | Create/update widget definition |
-| `reorder_ticket_dashboard_widgets.php` | POST | Reorder dashboard widgets |
-| `delete_ticket_dashboard_widget.php` | POST | Soft-delete a widget |
-| *...and more* | | |
-
-### Assets (`api/assets/`)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `get_assets.php` | GET | List assets with user counts |
-| `get_asset_users.php` | GET | Users assigned to an asset |
-| `assign_asset_user.php` | POST | Assign user to asset |
-| `unassign_asset_user.php` | POST | Remove user from asset |
-| `get_servers.php` | GET | List VMs and ESXi hosts from servers table |
-| `get_vcenter.php` | POST | Sync VMs from vCenter REST API |
-| `debug_vcenter.php` | GET | Dump raw vCenter API responses |
-| `get_software.php` | GET | Software inventory for a server |
-
-### Knowledge (`api/knowledge/`)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `knowledge_articles.php` | GET | List articles (with search) |
-| `knowledge_article.php` | GET | Get single article |
-| `knowledge_save.php` | POST | Create/update article (auto-generates embedding) |
-| `knowledge_delete.php` | POST | Delete article |
-| `knowledge_tags.php` | GET | List available tags |
-| `ai_chat.php` | POST | AI-powered Q&A over knowledge base |
-| `generate_embedding.php` | POST | Generate OpenAI embedding for article |
-| `get_email_settings.php` | GET | Get email & AI settings (keys masked) |
-| `save_email_settings.php` | POST | Save email & AI settings (keys encrypted) |
-| *...and more* | | |
-
-### Forms (`api/forms/`)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `get_forms.php` | GET | List all forms with field/submission counts |
-| `get_form.php` | GET | Single form with fields (for builder & filler) |
-| `save_form.php` | POST | Create/update form with fields |
-| `delete_form.php` | POST | Delete form and all submissions |
-| `submit_form.php` | POST | Submit a filled-in form |
-| `ai_generate.php` | POST | Streaming SSE endpoint — generates a form definition from a plain-English description |
-| `get_submissions.php` | GET | Submissions for a form (with field data) |
-| `delete_submission.php` | POST | Delete a submission |
-| `get_settings.php` | GET | Get forms module settings (logo alignment) |
-| `save_settings.php` | POST | Save forms module settings |
-
-### Settings (`api/settings/`)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `get_system_settings.php` | GET | Get all settings (auto-decrypts sensitive keys) |
-| `save_system_settings.php` | POST | Save settings (auto-encrypts sensitive keys) |
-
-### My Account (`api/myaccount/`)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `change_password.php` | POST | Validate current password, update to new (min 8 chars) |
-| `get_mfa_status.php` | GET | Return `{ mfa_enabled: bool }` for current analyst |
-| `setup_mfa.php` | POST | Generate TOTP secret, return secret + otpauth URI for QR |
-| `verify_mfa.php` | POST | Verify OTP against pending secret, encrypt and enable MFA |
-| `disable_mfa.php` | POST | Verify password and disable MFA for current analyst |
-| `verify_login_otp.php` | POST | Verify OTP during login MFA challenge, complete login |
-
-### Other Module APIs
-
-- `api/change-management/` — 15 endpoints for change CRUD, attachments, calendar, approvals, CAB workflow, and settings
-- `api/calendar/` — 7 endpoints for events and categories
-- `api/morning-checks/` — 8 endpoints for check definitions, results, charts, and reorder
-- `api/reporting/` — 2 endpoints for system logs
-- `api/software/` — 5 endpoints for software inventory and licence management
-- `api/service-status/` — 7 endpoints for services CRUD, incident management, and dashboard aggregation
-- `api/watchtower/` — 1 endpoint for unified attention dashboard aggregation across all modules
-- `api/system/` — 4 endpoints for encryption status and module access management
-- `api/external/software-inventory/submit/` — External API for automated software inventory collection
-- `api/external/system-info/submit/` — External API for full asset inventory ingestion (hardware, disks, network, software)
-
----
-
-## Database
-
-### Connection
-PDO MySQL connecting to MySQL 8.0+. Connection handled by `includes/functions.php`:
-
-```php
-$conn = connectToDatabase();
-$stmt = $conn->prepare("SELECT * FROM table WHERE id = ?");
-$stmt->execute([$id]);
-$result = $stmt->fetch(PDO::FETCH_ASSOC);
-```
-
-### Identity Pattern
-MySQL `AUTO_INCREMENT` for auto-increment. Use `$conn->lastInsertId()` to retrieve new IDs after INSERT:
-
-```php
-$stmt = $conn->prepare("INSERT INTO table (col) VALUES (?)");
-$stmt->execute([$value]);
-$newId = (int)$conn->lastInsertId();
-```
-
-### Core Tables
-
-#### analysts
-```sql
-id, username, password_hash, full_name, email, is_active, totp_secret, totp_enabled,
-created_datetime, last_modified_datetime, last_login_datetime
-```
-- `totp_secret`: AES-256-GCM encrypted TOTP secret (NULL when MFA not set up)
-- `totp_enabled`: Boolean flag indicating whether MFA is active for this analyst
-
-#### tickets
-```sql
-id, ticket_number (YYYYMMDD-XXXX), subject, status, priority, department_id, ticket_type_id,
-ticket_origin_id, assigned_analyst_id, owner_id, requester_name, requester_email,
-first_time_fix, it_training_provided, work_start_datetime, created_datetime, updated_datetime
-```
-
-#### emails
-```sql
-id, ticket_id, exchange_message_id (NOT NULL), from_address, from_name, to_recipients (JSON),
-cc_recipients (JSON), received_datetime, subject, body_content, body_type, has_attachments,
-importance, is_read, is_initial, direction (Incoming/Outgoing/Manual)
-```
-
-#### system_settings
-```sql
-setting_key, setting_value, updated_datetime
-```
-Key-value store for all configuration. Sensitive values are encrypted with AES-256-GCM.
-
-#### target_mailboxes
-```sql
-id, name, target_mailbox*, azure_tenant_id*, azure_client_id*, azure_client_secret*,
-oauth_redirect_uri*, oauth_scopes, imap_server*, imap_port, imap_encryption,
-email_folder, max_emails_per_check, mark_as_read,
-token_data (JSON), is_active, created_datetime, last_checked_datetime
-```
-\* *Encrypted at rest with AES-256-GCM*
-
-#### mailbox_email_whitelist
-```sql
-id, mailbox_id, entry_type ('domain'|'email'), entry_value, created_datetime
-```
-Per-mailbox sender whitelist. If no entries exist, all senders are allowed.
-
-#### mailbox_activity_log
-```sql
-id, mailbox_id, action ('imported'|'rejected'), from_address, from_name,
-subject, reason, ticket_id, created_datetime
-```
-Records every email imported or rejected during mailbox processing.
-
-#### ticket_email_templates
-```sql
-id, name, event_trigger, subject_template, body_template, is_active, display_order,
-created_datetime, updated_datetime
-```
-Automated email templates triggered by ticket events (`new_ticket_email`, `ticket_assigned`, `ticket_closed`). Subject and body support merge codes like `[ticket_reference]`, `[analyst_name]`, etc.
-
-### Asset Tables
-
-#### servers
-```sql
-id, vm_name, guest_os, ip_address, host, cluster, cpu_count, memory_mb, disk_gb,
-power_state, raw_data (LONGTEXT - full vCenter JSON), source, last_synced
-```
-
-### Forms Tables
-
-#### forms
-```sql
-id, title, description, is_active, created_by, created_date, modified_date
-```
-
-#### form_fields
-```sql
-id, form_id (FK CASCADE), field_type, label, options (JSON), is_required, sort_order
-```
-
-#### form_submissions
-```sql
-id, form_id (FK), submitted_by (FK analysts), submitted_date
-```
-
-#### form_submission_data
-```sql
-id, submission_id (FK CASCADE), field_id (FK), field_value
-```
-
-### Morning Checks Tables
-
-#### morningChecks_Checks
-```sql
-id, check_name, is_active, display_order
-```
-
-#### morningChecks_Results
-```sql
-id, check_id (FK), check_date, status (Green/Amber/Red), notes, analyst_id
-```
-
-### Team Tables
-
-#### teams, analyst_teams, department_teams
-Many-to-many relationships for team-based access control. Analysts only see tickets in departments linked to their teams. Analysts with no team assignments see everything (admin behaviour).
-
-### Module Access Tables
-
-#### analyst_modules
-```sql
-id, analyst_id (FK analysts ON DELETE CASCADE), module_key
-```
-Controls which modules an analyst can access. No rows = full access to all modules (backward compatible). When rows exist, analyst only sees those modules on homepage and in waffle menu. The `system` module is always included and cannot be disabled.
-
----
-
-## Security
-
-### Implemented
-- AES-256-GCM encryption for sensitive settings, mailbox credentials, and TOTP secrets with key stored outside web root
-- Bcrypt password hashing (`PASSWORD_DEFAULT`)
-- TOTP multi-factor authentication (RFC 6238) — optional per analyst, enforced at login
-- Single sign-on via OpenID Connect (OIDC) — multiple identity providers (Keycloak, Microsoft Entra, Okta, Google Workspace, Authentik, etc.) configurable side by side, alongside local login (see *Single Sign-On* below)
-- Session-based authentication on all pages and API endpoints
-- PDO prepared statements throughout (SQL injection prevention)
-- Output encoding with `htmlspecialchars()` (XSS prevention)
-- Client-side escaping via DOM `textContent` → `innerHTML` pattern
-- OAuth 2.0 for Microsoft 365 and Google Workspace email integration
-- Forgot password flow with secure email reset links (1-hour expiry, single-use tokens)
-- IP-based brute force protection: escalating bans for IPs attempting logins against non-existent or locked accounts (configurable thresholds, 24-hour bans)
-- Team-based access control for ticket visibility
-- Module-level access control per analyst (configurable via System module)
-- Audit logging for all ticket changes
-- Login attempt logging with IP and user agent
-- Credential masking in UI (`****` + last 4 characters)
-- Password required to disable MFA (prevents unauthorized deactivation)
-- Trusted device: users can opt in to skip OTP on trusted browsers for a configurable number of days (cookie-based with SHA-256 hashed tokens stored server-side)
-- Password expiry policy: configurable maximum password age (30–365 days) with forced password change on next login when expired
-- Account lockout: configurable max failed login attempts before temporary account lock with configurable lockout duration
-
-### Password Hashing
-- **Algorithm**: Bcrypt via PHP's `password_hash()` with `PASSWORD_DEFAULT`
-- **One-way**: Passwords cannot be reversed from the stored hash — authentication uses `password_verify()` to re-hash the input and compare
-- **Per-hash salt**: Every call to `password_hash()` generates a unique random salt, so the same password produces a different hash each time
-- **Cost factor**: Bcrypt uses configurable work rounds (currently 2^12 = 4,096 iterations) making brute-force attacks extremely slow
-- **Default admin account**: The SQL script includes a pre-computed hash for the initial `admin` / `freeitsm` account. Once the password is changed, a new unique hash is generated. The `db_verify.php` endpoint also seeds this account at runtime (with a fresh hash) if no analysts exist
-
-### Encryption Details
-- **Algorithm**: AES-256-GCM (authenticated encryption — provides confidentiality + integrity)
-- **Key**: 256-bit random key stored at `C:\wamp64\encryption_keys\sdtickets.key`
-- **Nonce**: 96-bit random IV per encryption (same value encrypted twice produces different ciphertext)
-- **Auth tag**: 128-bit — detects any tampering with encrypted data
-- **Prefix**: `ENC:` allows coexistence of encrypted and plaintext values during migration
-
-### Single Sign-On (SSO / OIDC)
-- **Generic OpenID Connect** — one implementation works for any compliant identity provider (Keycloak, Microsoft Entra/Azure AD, Okta, Auth0, Google Workspace, Authentik, …). Configuration is driven by the provider's discovery document (`/.well-known/openid-configuration`), so the admin only supplies a display name, issuer URL, client ID and client secret.
-- **Multiple providers at once** — each provider is a row in `auth_providers` with its own enable switch, so different cohorts of users can be migrated to different IdPs in parallel (e.g. a phased rollout or side-by-side pilots).
-- **Configured under System → Single Sign-On** — add/edit providers (with a discovery *Test* button), copy the redirect URI to register in the IdP, and set two global break-glass switches: a master *Enable single sign-on* kill switch and *Allow local login*. Existing analysts are assigned to a provider via a *Sign-in method* dropdown in Tickets → Settings → Analysts (this is how pre-existing users are migrated to SSO; brand-new users can be auto-created by JIT instead).
-- **Login flow** — the login page leads with an **email-first** router (type your email → routed to your provider automatically, or fall back to the local form), with provider buttons as a shortcut. The sign-in itself is Authorization Code + PKCE (S256), with `state` (CSRF) and `nonce` (replay) protection. The ID token's signature is validated against the provider's JWKS using the vendored `firebase/php-jwt` library; issuer, audience, nonce and expiry are all checked.
-- **Account mapping** — an IdP identity is matched to an analyst by a stored identity link (`provider`+`subject`) or by email. **Just-in-time provisioning** (per-provider toggle) can auto-create the analyst on first login, granting a configurable set of default modules (blank = full access). **Strict isolation**: an analyst may only sign in via the provider they're assigned to, so an SSO login can never silently take over another account.
-- **Email verification** — an explicit `email_verified: false` from the IdP is always refused. Providers that omit the claim entirely (e.g. Okta's org authorization server, which never sends it; Keycloak/Entra do) are accepted by default, so sign-in works out of the box. A per-provider **Require a verified-email claim** toggle (off by default) lets admins demand an explicit `email_verified: true` for IdPs where users can self-register with unverified addresses.
-- **Break-glass** — when SSO is active the page leads with email-first + provider buttons and the local username/password form is tucked behind a "Sign in with a local account" link. Turning *Allow local login* off hides that link too (SSO-only experience), but local auth is never hard-disabled: `?local=1` and the master kill switch always restore it, so no one can be locked out if an IdP is down or misconfigured.
-- **Single logout** — signing out of FreeITSM also ends the session at the identity provider (via its `end_session_endpoint`). SSO users skip the local TOTP/MFA step — the identity provider owns MFA.
-- **Self-service portal SSO** — the same providers also serve the requester portal (`self-service/login.php`). Its login page gets the identical email-first router + provider buttons + local break-glass, and the one OIDC callback is portal-aware (a `portal=self-service` flag carried through the flow) so it resolves against the requester `users` table, sets the self-service session, and lands the user in the portal. Requester identities are linked in `user_sso_identities` (the mirror of `analyst_sso_identities`); a requester is pinned to a provider via `users.auth_provider_id`. Because requesters self-onboard (a ticket-created contact starts passwordless and unassigned), a requester matched by **verified email** who is still unassigned is **auto-claimed** onto the provider on first SSO sign-in — and JIT provisioning (the provider's *auto-create* toggle) creates a brand-new requester. Analysts and requesters are separate identity spaces, so the same email resolves independently on each portal.
-- **Multi-tenant portal SSO (MSP installs)** — a provider can be **owned by a client company** (`auth_providers.tenant_id`; NULL = global/MSP-internal, e.g. analyst sign-in). On a multi-tenant install (N>1) the portal login is **email-first only** — no provider buttons up front (they'd leak every client's IdP) — and routes **email domain → company → that company's enabled IdP(s)**, reusing the same domain/sender mapping as inbound email routing. A company with **0** IdPs falls to local password, **1** routes straight through, **2+** shows a **tenant-scoped picker** (e.g. a client mid-migration between Entra and Okta); the per-user pin makes that picker a once-only first-login step. The analyst login only ever shows global providers. **Invisible at N=1** — single-company installs keep the buttons-up-front behaviour. This routes per company using each provider's own credentials; the credential-free "MSP multi-tenant app + consent" onboarding (one MSP-owned app clients consent to, keyed on the token's tenant claim) is a further layer, designed in `docs/design/`.
-- **Client secrets** are encrypted at rest (AES-256-GCM) and never returned to the browser.
-
----
-
-## Key Workflows
-
-### Email Import
-1. `check_email.php` runs (scheduled or manual trigger)
-2. For each active mailbox: refreshes OAuth token, calls Graph API, imports new emails
-3. Creates/matches tickets based on subject/requester
-4. Downloads attachments, logs results
-
-### Email Threading & Reply Flow
-
-The ticketing system handles email correspondence as a flat thread — each email in a ticket is stored and displayed as its own standalone entry, newest first, with no nesting or indentation.
-
-#### The Problem with Email Threads
-When a user replies to an email, their email client (Gmail, Outlook, etc.) automatically appends the entire previous conversation as a quoted block below their new content. If you simply store the full email body, each reply contains every previous message nested inside it, creating an ever-growing blob of duplicated content. Displaying these naively produces deeply indented, confusing threads with coloured borders and boxes-within-boxes.
-
-#### The Solution: Server-Side Assembly + Clean Storage
-
-The reply flow separates what the **recipient sees** from what gets **saved to the database**:
-
-1. **Reply editor is empty** — when an analyst clicks Reply, TinyMCE opens with a blank editor. No quoted thread, no markers, just a clean box for typing.
-
-2. **Server assembles the full email** — when the analyst clicks Send, only their typed content is sent to the server. The server (`api/tickets/send_email.php`) then:
-   - Fetches all previous emails for the ticket from the database
-   - Builds a quoted thread (each email as "On [date], [name] wrote:" + blockquote)
-   - Inserts a visible reply marker: **— Please reply above this line —**
-   - Constructs the full email: analyst's reply + marker + quoted thread
-   - Sends this assembled email to the recipient via Microsoft Graph API
-
-3. **Only the analyst's content is saved** — the database stores just what the analyst typed, not the full assembled email. This prevents thread duplication in the DB.
-
-#### Reply Marker
-The visible text `— Please reply above this line —` serves as the primary anchor for stripping. It is:
-- Plain Unicode text (em dashes + words) that survives every email client's HTML processing
-- Wrapped in a `<div>` with `data-reply-marker="true"` as a secondary signal
-- Displayed to the recipient as a subtle grey line between the analyst's reply and the quoted thread
-
-#### Inbound Email Stripping
-When a user replies back, their email contains the full thread (their reply + our marker + quoted history). The stripping functions extract **only the user's new content** by looking for these anchors in order:
-
-1. **Our visible marker text** — `— Please reply above this line —` (primary, works with all email clients)
-2. **Our `data-reply-marker` div** — backup if the HTML attribute survives
-3. **Legacy SDREF marker** — `[*** SDREF:XXX-000-00000 REPLY ABOVE THIS LINE ***]` for older emails
-4. **Generic blockquote fallback** — takes content before the first `<blockquote>` tag
-5. **Attribution line cleanup** — removes trailing "On [date], [name] wrote:" lines that email clients add before quoted blocks
-
-Stripping happens at two points:
-- **Import time** (`check_mailbox_email.php` → `stripInboundThread()`) — cleans the body before saving to DB
-- **Display time** (`get_ticket_thread.php` → `stripQuotedThread()`) — safety net for legacy emails already in the DB
-
-#### Thread Display
-The correspondence thread in the reading pane renders emails as a flat list:
-- Newest email at the top, oldest at the bottom
-- Each email separated by a thin horizontal line
-- Direction badge (Received/Sent) with sender name, email address, and timestamp
-- CSS overrides (`!important`) to kill any inline styles, blockquote indentation, or coloured borders from email HTML that leak through stripping
-
-#### Files Involved
-
-| File | Role |
-|------|------|
-| `assets/js/inbox.js` | Reply/forward modals (empty editor), `sendEmail()` passes `type` param, `loadCorrespondenceThread()` renders flat thread |
-| `api/tickets/send_email.php` | `buildFullEmailBody()` assembles full email for recipient, saves only analyst content to DB |
-| `api/tickets/get_ticket_thread.php` | `stripQuotedThread()` strips quoted content at display time |
-| `api/tickets/check_mailbox_email.php` | `stripInboundThread()` strips quoted content at import time |
-| `assets/css/inbox.css` | Flat thread styles, inline HTML overrides |
-
-### MFA Login Flow
-MFA is optional and per-analyst. Analysts with MFA disabled log in with just username and password as normal. When an analyst enables MFA, subsequent logins require a second verification step:
-
-1. Analyst enters username and password on `login.php`
-2. Password verified → MFA pending state stored in session (`mfa_pending_analyst_id` etc.) — **`analyst_id` is NOT set yet**
-3. Login page renders OTP form (shield icon, 6-digit input, auto-submit)
-4. Analyst enters code from authenticator app → JS calls `api/myaccount/verify_login_otp.php`
-5. Server decrypts stored TOTP secret, verifies code (±1 time window)
-6. On success: `$_SESSION['analyst_id']` is set, pending state cleared, redirected to `index.php`
-
-The "Cancel and return to login" link clears the pending state so a different analyst (who may not have MFA) can log in on the same browser.
-
-### Team-Based Filtering
-1. Analyst's team memberships stored in session at login
-2. API endpoints filter by team-accessible departments
-3. No teams assigned = see everything (admin)
-
-### vCenter VM Sync
-1. Settings page stores vCenter credentials (encrypted)
-2. `api/assets/get_vcenter.php` authenticates with vCenter REST API
-3. Fetches hosts, clusters, VMs with guest identity and filesystems
-4. Builds host/cluster maps by querying VMs per host/cluster
-5. Stores everything including raw JSON in `servers` table
-
-### Form Submission
-1. Admin designs form in the unified form builder (`index.php`) — sidebar lists all forms, editor has tabbed Fields/Preview panels
-2. Users fill in form at `fill.php?id=X` (A4-style layout with company logo)
-3. Submissions viewable in table format with CSV export
-
----
-
-## Development Notes
-
-### Module Page Pattern
-Every module page follows this structure:
-
-```php
-<?php
-session_start();
-require_once '../config.php';
-$current_page = 'module_name';
-$path_prefix = '../';
-?>
-<!DOCTYPE html>
-<html>
-<head>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <!-- Module-specific styles in <style> block -->
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
-    <div class="main-container module-container">
-        <!-- Module content -->
-    </div>
-    <script>
-        const API_BASE = '../api/module_name/';
-        // Module JavaScript
-    </script>
-</body>
-</html>
-```
-
-### Adding a New Module
-1. Create module folder with `index.php` and `includes/header.php`
-2. Create API folder under `api/`
-3. Register in `includes/waffle-menu.php` (add to `$modules` array + CSS colours)
-4. Add card to `index.php` landing page (icon, colour, link)
-5. Create SQL schema file if needed
-
-### Important: exchange_message_id
-The `emails.exchange_message_id` column does NOT allow NULL. Manual tickets must use a placeholder: `'manual-' . time() . '-' . uniqid()`.
-
----
-
-## File Locations Quick Reference
-
-| Need to... | Look in... |
-|------------|------------|
-| Add a new module | Module folder + `api/` + `includes/waffle-menu.php` + `index.php` |
-| Change database connection | `config.php`, `includes/functions.php` |
-| Add an encrypted setting | `includes/encryption.php` → `ENCRYPTED_SETTING_KEYS` or `ENCRYPTED_MAILBOX_COLUMNS` |
-| Modify cross-module navigation | `includes/waffle-menu.php` |
-| Change the landing page | `index.php` |
-| Modify ticket inbox | `tickets/index.php`, `assets/js/inbox.js` |
-| Configure vCenter | `asset-management/settings/`, `api/assets/get_vcenter.php` |
-| Manage knowledge AI | `knowledge/settings/`, `api/knowledge/ai_chat.php` |
-| Design forms | `forms/index.php`, `api/forms/save_form.php` |
-| View form submissions | `forms/submissions.php`, `api/forms/get_submissions.php` |
-| Manage encryption key | `system/encryption/`, `api/system/check_encryption.php` |
-| Configure module access | `system/modules/`, `api/system/save_analyst_modules.php` |
-| Account menu (avatar/password/MFA) | `includes/waffle-menu.php` → `renderHeaderRight()`, `api/myaccount/` |
-| MFA login challenge | `login.php`, `api/myaccount/verify_login_otp.php` |
-| TOTP implementation | `includes/totp.php` |
-
----
-
-*Last updated: February 2026*
+[MIT](LICENSE) — free for commercial and personal use.

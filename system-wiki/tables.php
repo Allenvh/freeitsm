@@ -4,8 +4,14 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/timezone.php';
+require_once '../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('wiki');
 
 $current_page = 'tables';
 $path_prefix = '../';
@@ -13,15 +19,21 @@ $path_prefix = '../';
 $translationNamespaces = ['common', 'system-wiki'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('system-wiki.tables.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('wiki', t('system-wiki.tables.page_title'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
     <style>
+        body { --accent: var(--wiki-accent, #c62828); }
+
         .wiki-tables {
             height: calc(100vh - 48px);
             overflow-y: auto;
@@ -35,18 +47,18 @@ $translationNamespaces = ['common', 'system-wiki'];
         .page-title {
             font-size: 20px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 16px;
         }
         .page-subtitle {
             font-size: 13px;
-            color: #888;
+            color: var(--text-dim, #888);
             margin-bottom: 20px;
         }
         .tables-card {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 4px var(--shadow, rgba(0,0,0,0.06));
             overflow: hidden;
         }
         .tables-table {
@@ -57,20 +69,21 @@ $translationNamespaces = ['common', 'system-wiki'];
         .tables-table th {
             text-align: left;
             padding: 10px 16px;
-            background: #f9f9f9;
-            color: #666;
+            background: var(--surface-3, #f9f9f9);
+            color: var(--text-muted, #666);
             font-weight: 600;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             cursor: pointer;
             user-select: none;
         }
-        .tables-table th:hover { background: #f0f0f0; }
+        .tables-table th:hover { background: var(--surface-hover, #f0f0f0); }
         .tables-table td {
             padding: 8px 16px;
-            border-bottom: 1px solid #f5f5f5;
+            color: var(--text, #333);
+            border-bottom: 1px solid var(--border-soft, #f5f5f5);
         }
-        .tables-table tr:hover td { background: #fafafa; }
-        .tables-table a { color: #c62828; text-decoration: none; font-weight: 500; }
+        .tables-table tr:hover td { background: var(--surface-hover, #fafafa); }
+        .tables-table a { color: var(--wiki-accent, #c62828); text-decoration: none; font-weight: 500; }
         .tables-table a:hover { text-decoration: underline; }
         .op-count {
             display: inline-block;
@@ -81,16 +94,26 @@ $translationNamespaces = ['common', 'system-wiki'];
             font-size: 11px;
             font-weight: 600;
         }
+        /* op-count colours are DATA (SQL-operation coded), left hardcoded */
         .op-count.sel { background: #e3f2fd; color: #1565c0; }
         .op-count.ins { background: #e8f5e9; color: #2e7d32; }
         .op-count.upd { background: #fff3e0; color: #e65100; }
         .op-count.del { background: #fce4ec; color: #c62828; }
         .op-count.join { background: #f3e5f5; color: #7b1fa2; }
         .op-count.zero { background: transparent; color: #ddd; }
-        .no-data { text-align: center; padding: 40px; color: #aaa; }
+        .no-data { text-align: center; padding: 40px; color: var(--text-faint, #aaa); }
+
+        /* Dark-mode overrides for pale washes that would glow */
+        [data-theme-mode="dark"] .wiki-tables { background: var(--app-bg, #f5f7fa); }
+        [data-theme-mode="dark"] .op-count.zero { color: #555; }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> block, or a rule at
+         equal specificity loses on document order (Techniques §9).
+         WARNING: includes/header.php emits a <style> INSIDE the BODY, which is
+         later still (§24) - the hover-rail rules there need !important. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="wiki" data-mobile-page="wiki-tables">
     <?php include 'includes/header.php'; ?>
 
     <div class="wiki-tables">
@@ -164,8 +187,9 @@ $translationNamespaces = ['common', 'system-wiki'];
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

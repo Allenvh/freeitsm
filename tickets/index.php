@@ -6,9 +6,44 @@
 session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
+require_once '../includes/ticket_display.php';   // message collapsing (#104)
+require_once '../includes/ticket_ai.php';        // AI summary + "read this for me" (#104)
 require_once '../includes/i18n.php';
 require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
+require_once '../includes/ticket_snooze.php';
+require_once '../includes/inbox_display.php';   // what each row shows, per analyst
+require_once '../includes/ticket_workspace.php';
+require_once '../includes/ticket_list.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('tickets');
+
+// Which other modules' parts this pane may offer: false when the analyst has no
+// access OR the module is switched off for the install (GH #217). The context
+// menu below and inbox.js (window.TICKETS_MODULE_ON) both read this one answer.
+$ticketsModuleOn = [];
+foreach (['problems', 'changes', 'assets', 'cmdb', 'tasks', 'checklists', 'knowledge'] as $__m) {
+    try {
+        $ticketsModuleOn[$__m] = analystCanAccessModule(connectToDatabase(), (int)($_SESSION['analyst_id'] ?? 0), $__m);
+    } catch (Throwable $e) {
+        $ticketsModuleOn[$__m] = true;   // the endpoints still refuse; the button just fails
+    }
+}
+// And the Tickets features with their own switch (slice 2) - availability only:
+// who may use them is unchanged.
+foreach (array_keys(TICKET_FEATURES) as $__f) {
+    $ticketsModuleOn[$__f] = portalModuleOn($__f);
+}
+// The ticket workspace (PR #211): the install mode and this analyst's own switch,
+// handed to assets/js/ticket-workspace.js as window.TICKET_WORKSPACE. can_write
+// decides whether More -> Make workspace is offered; Tickets has no Read only
+// level yet, so today it is true for everyone who can open this page.
+$workspaceConfig = ticketWorkspaceConfig(connectToDatabase(), (int)$_SESSION['analyst_id']);
+$workspaceConfig['can_write'] = analystCanWriteModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'tickets');
+// Messages or Table (PR #213) - how the LIST is shown, independent of the workspace.
+$ticketListLayout = ticketListLayout(connectToDatabase(), (int)$_SESSION['analyst_id']);
 
 $current_page = 'inbox';
 // Module id for per-module theme/palette resolution (account-menu picker).
@@ -21,17 +56,54 @@ $translationNamespaces = ['common', 'tickets'];
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active($theme_module)); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode($theme_module)); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('tickets.title')); ?> - <?php echo htmlspecialchars(t('tickets.nav.inbox')); ?></title>
-    <link rel="stylesheet" href="../assets/css/theme.css?v=4">
-    <link rel="stylesheet" href="../assets/css/inbox.css?v=35">
-    <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <script src="../assets/js/tinymce/tinymce.min.js"></script>
+    <title><?php echo htmlspecialchars(pageTitle('tickets', t('tickets.nav.inbox'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../checklists/ticket_checklist.css?v=4">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=85">
+    <link rel="stylesheet" href="../assets/css/float-window.css?v=1">
+    <link rel="stylesheet" href="../assets/css/ticket-fields.css?v=1">
+    <link rel="stylesheet" href="../assets/css/reading-pane.css?v=4">
+    <link rel="stylesheet" href="../assets/css/ticket-workspace.css?v=4">
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=198">
+    <link rel="stylesheet" href="../assets/css/data-table.css?v=7">
+    <link rel="stylesheet" href="../assets/css/tickets-table.css?v=4">
+<?php
+// Note images open in the Files viewer (GH #226), so it needs its own strings -
+// the window buttons, the zoom tools and Download - but not the rest of Files'.
+$jsTranslations = I18n::exportForJs($translationNamespaces);
+$filesStrings = I18n::exportForJs(['files'])['files'] ?? [];
+$jsTranslations['files'] = array_intersect_key($filesStrings, array_flip(['wm', 'viewer', 'loading']))
+    + ['ex' => ['download' => $filesStrings['ex']['download'] ?? 'Download']];
+?>
+    <script>window.translations = <?php echo json_encode($jsTranslations, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+    <?php echo Tz::scriptTag(); ?>
+    <?php
+    /* The install's snooze wake hour, so the flyout can label "Tomorrow" with the
+       actual time it means. The server resolves the preset either way — this is
+       for the label only, and a failed lookup just falls back to 09:00. */
+    $snoozeWakeHour = 9;
+    try { $snoozeWakeHour = snoozeWakeHour(connectToDatabase()); } catch (Exception $e) {}
+    ?>
+    <script>window.TICKETS_LIST_LAYOUT = <?php echo json_encode($ticketListLayout); ?>;</script>
+    <script>window.SNOOZE_WAKE_HOUR = <?php echo (int)$snoozeWakeHour; ?>;</script>
+    <script>window.TICKET_WORKSPACE = <?php echo json_encode($workspaceConfig); ?>;</script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/record-preview.css?v=1">
+    <script src="../assets/js/record-preview.js?v=1"></script>
+    <script src="../assets/js/tinymce/tinymce.min.js?v=8.10.0"></script>
 </head>
-<body>
+<body class="inbox-page<?php echo $workspaceConfig['mode'] === 'selected' ? ' workspace-choice-available' : ''; ?>">
     <?php include 'includes/header.php'; ?>
+    <?php require_once __DIR__ . '/../includes/action_row.php';
+          // GH #225: Back shows only in full screen (inbox.js applyPopoutChrome).
+          renderActionRow(t('tickets.nav.inbox'), [
+                  ['label' => t('tickets.reading_pane.popout_back'), 'title' => t('tickets.reading_pane.popout_back_title'),
+                   'onclick' => 'toggleTicketPopout()', 'id' => 'popoutBackBtn', 'hidden' => true],
+                  actionRowNew('openNewTicketModal()', t('tickets.list.new_ticket_btn'))],
+              ['extra' => '<button type="button" id="ticketTableBack" class="action-row-btn" hidden onclick="TicketTable.backToList()" title="' . htmlspecialchars(t('tickets.queue.back_title')) . '">' . htmlspecialchars(t('tickets.queue.back')) . '</button>' . ticketListSelector($ticketListLayout), 'title_id' => 'inboxActionTitle']); ?>
 
     <div class="main-container">
         <!-- Folder Navigation -->
@@ -40,6 +112,12 @@ $translationNamespaces = ['common', 'tickets'];
                 <h2><?php echo htmlspecialchars(t('tickets.folders.title')); ?></h2>
                 <div class="folder-group-toggle" role="group" aria-label="<?php echo htmlspecialchars(t('tickets.folders.group_label')); ?>">
                     <button type="button" class="folder-group-btn active" data-group="department" onclick="setFolderGrouping('department')"><?php echo htmlspecialchars(t('tickets.folders.group_department')); ?></button>
+                    <?php /* #1566. Hidden until the install actually has teams — a
+                             fresh install has none, so that is the default rather
+                             than an edge case. JS reveals it once the team list
+                             loads, which keeps this out of the way of every
+                             install that never uses teams. */ ?>
+                    <button type="button" class="folder-group-btn" id="folderGroupTeamBtn" data-group="team" hidden onclick="setFolderGrouping('team')"><?php echo htmlspecialchars(t('tickets.folders.group_team')); ?></button>
                     <button type="button" class="folder-group-btn" data-group="analyst" onclick="setFolderGrouping('analyst')"><?php echo htmlspecialchars(t('tickets.folders.group_analyst')); ?></button>
                 </div>
             </div>
@@ -53,23 +131,82 @@ $translationNamespaces = ['common', 'tickets'];
         <!-- Email List -->
         <div class="email-list-container">
             <div class="email-list-header">
-                <h3 id="emailListTitle"><?php echo htmlspecialchars(t('tickets.list.all_tickets')); ?></h3>
+                <div class="email-list-title-wrap">
+                    <h3 id="emailListTitle"><?php echo htmlspecialchars(t('tickets.list.all_tickets')); ?></h3>
+                    <?php /* #149. Filled by JS while a view filter is on - a filter
+                             you cannot see is one you forget, and then half your
+                             tickets have "vanished". Clicking a chip opens the filter. */ ?>
+                    <span class="view-filter-chips" id="viewFilterChips"></span>
+                </div>
                 <div class="email-list-actions">
-                    <button class="icon-btn icon-btn-new" onclick="openNewTicketModal()" title="<?php echo htmlspecialchars(t('tickets.list.new_ticket_btn')); ?>" aria-label="<?php echo htmlspecialchars(t('tickets.list.new_ticket_btn')); ?>">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    </button>
+                    <?php /* New ticket is in the action row above the panes (#185). */ ?>
                     <button class="icon-btn" onclick="openSearchModal()" title="<?php echo htmlspecialchars(t('tickets.list.search_btn')); ?>" aria-label="<?php echo htmlspecialchars(t('tickets.list.search_btn')); ?>">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </button>
+                    <?php /* The view filter (#149): "My tickets" and "Hide closed".
+                             A FILTER, not a folder - it narrows whichever tree you
+                             are grouped by, rather than building a second copy of
+                             it under "My tickets". Saved per analyst. */ ?>
+                    <div class="view-filter-wrap">
+                        <button class="icon-btn" id="viewFilterBtn" onclick="toggleViewFilterMenu(event)" title="<?php echo htmlspecialchars(t('tickets.list.filter_btn')); ?>" aria-label="<?php echo htmlspecialchars(t('tickets.list.filter_btn')); ?>" aria-haspopup="true" aria-expanded="false">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                        </button>
+                        <div class="view-filter-menu" id="viewFilterMenu" role="dialog" aria-label="<?php echo htmlspecialchars(t('tickets.list.filter_btn')); ?>">
+                            <?php if ($workspaceConfig['mode'] !== 'off'): ?>
+                            <label class="view-filter-row">
+                                <span><?php echo htmlspecialchars(t('tickets.workspace.preference')); ?></span>
+                                <span class="toggle-switch">
+                                    <input type="checkbox" id="ticketWorkspacePreference" <?php echo $workspaceConfig['personal'] ? 'checked' : ''; ?> onchange="TicketWorkspace.requestPersonal(this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </span>
+                            </label>
+                            <?php endif; ?>
+                            <?php /* HIDDEN, not disabled, in Analyst grouping: there
+                                     "My tickets" is a folder, and a greyed-out
+                                     control you cannot click reads as broken (Ed). */ ?>
+                            <div id="viewFilterShowSection">
+                                <div class="view-filter-label"><?php echo htmlspecialchars(t('tickets.list.filter_show')); ?></div>
+                                <div class="folder-group-toggle view-filter-show" role="group">
+                                    <button type="button" class="folder-group-btn" data-mine="0" onclick="setViewFilter('mine', false)"><?php echo htmlspecialchars(t('tickets.list.filter_all')); ?></button>
+                                    <button type="button" class="folder-group-btn" data-mine="1" onclick="setViewFilter('mine', true)"><?php echo htmlspecialchars(t('tickets.list.filter_mine')); ?></button>
+                                </div>
+                            </div>
+                            <label class="view-filter-row">
+                                <span><?php echo htmlspecialchars(t('tickets.list.filter_hide_closed')); ?></span>
+                                <span class="toggle-switch">
+                                    <input type="checkbox" id="viewFilterHideClosed" onchange="setViewFilter('hide_closed', this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
                     <button class="icon-btn" onclick="refreshCurrentView()" title="<?php echo htmlspecialchars(t('tickets.list.refresh_btn')); ?>" aria-label="<?php echo htmlspecialchars(t('tickets.list.refresh_btn')); ?>">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                     </button>
                 </div>
             </div>
+            <?php /* Multi-select (#910): the "bar" pane mode puts the count and the
+                     bulk actions here, directly above the rows they affect. Hidden
+                     until more than one ticket is selected AND that mode is chosen —
+                     the other two modes never show it. */ ?>
+            <div class="selection-bar" id="selectionBar" style="display: none;"></div>
+            <div id="ticketTableContainer" hidden>
+                <label class="ticket-content-search"><input type="checkbox" id="ticketTableContent"> <?php echo htmlspecialchars(t('tickets.queue.search_content')); ?></label>
+                <?php
+                $dtSearchPlaceholder=t('tickets.queue.search');
+                $dtShowCsv=ticketListCanExport(connectToDatabase(), (int)$_SESSION['analyst_id']);
+                $dtCsvTitle=t('tickets.queue.export_title');
+                include '../includes/data-table-skeleton.php';
+                ?>
+            </div>
             <div class="email-list" id="emailList">
                 <div class="reading-pane-empty"><?php echo htmlspecialchars(t('tickets.list.select_folder')); ?></div>
             </div>
         </div>
+
+        <div id="ticketTableSplitter" class="ticket-table-splitter" role="separator" tabindex="0" hidden
+             aria-orientation="vertical" aria-controls="ticketTableContainer readingPane"
+             aria-label="<?php echo htmlspecialchars(t('tickets.queue.resize')); ?>"></div>
 
         <!-- Reading Pane -->
         <div class="reading-pane" id="readingPane">
@@ -84,9 +221,54 @@ $translationNamespaces = ['common', 'tickets'];
         <div class="modal-content">
             <div class="modal-header"><?php echo htmlspecialchars(t('tickets.note_modal.title')); ?></div>
             <div class="modal-body">
-                <div class="form-group">
+                <div class="form-group note-editor-group">
                     <label class="form-label"><?php echo htmlspecialchars(t('tickets.note_modal.note_label')); ?></label>
-                    <textarea class="form-textarea" id="noteText" placeholder="<?php echo htmlspecialchars(t('tickets.note_modal.placeholder')); ?>"></textarea>
+                    <?php /* Not a textarea since GH #224: a screenshot pasted here lands at the
+                             cursor. Still plain text - assets/js/note-images.js. Keeps the
+                             form-textarea class so the phone sheet (mobile.css) still fills
+                             the screen with it. */ ?>
+                    <div class="form-textarea note-editor" id="noteText" contenteditable="true" role="textbox" aria-multiline="true"
+                         aria-label="<?php echo htmlspecialchars(t('tickets.note_modal.note_label')); ?>"
+                         data-placeholder="<?php echo htmlspecialchars(t('tickets.note_modal.placeholder')); ?>"></div>
+                    <div class="form-hint note-editor-hint"><?php echo htmlspecialchars(t('tickets.note_modal.paste_hint')); ?></div>
+                </div>
+                <?php /* Notes have ALWAYS supported being shared with the requester — the
+                         column, the API and the portal all handle it — but the inbox
+                         hardcoded is_internal:true, so there was no way to actually do
+                         it. That mattered little until requesters could exist with no
+                         mailbox: for them a shared note is the ONLY way to reach them,
+                         and the reply screen tells analysts to use one. */ ?>
+                <div class="form-group">
+                    <?php /* Caption, then the switch beneath it, then the hint (Ed) - the shared
+                             .toggle-label layout the settings modals use. */ ?>
+                    <label class="toggle-label">
+                        <span><?php echo htmlspecialchars(t('tickets.note_modal.share_label')); ?></span>
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="noteShared">
+                            <span class="toggle-slider"></span>
+                        </span>
+                    </label>
+                    <div class="form-hint" id="noteSharedHint" style="font-size:12px;color:#666;margin-top:6px;">
+                        <?php echo htmlspecialchars(t('tickets.note_modal.share_hint')); ?>
+                    </div>
+                </div>
+                <?php /* Attachments (discussion #69). The files are held in the BROWSER
+                         until the note is saved — a new note has no id to attach to, and
+                         uploading first would leave orphaned files on disk every time
+                         somebody changed their mind and closed this box.
+
+
+                         Files work on a SHARED note too since discussion #103: the
+                         portal serves them through api/self-service/get_document.php.
+                         Before that it could not, so this row used to hide itself
+                         whenever Share was ticked. */ ?>
+                <div class="form-group" id="noteAttachGroup">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.note_modal.files_label')); ?></label>
+                    <input type="file" id="noteFileInput" multiple style="display:none;">
+                    <div>
+                        <button type="button" class="btn btn-secondary" id="noteAttachBtn" onclick="document.getElementById('noteFileInput').click()"><?php echo htmlspecialchars(t('tickets.note_modal.attach_btn')); ?></button>
+                    </div>
+                    <div id="noteFileList" class="note-file-list"></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -100,23 +282,35 @@ $translationNamespaces = ['common', 'tickets'];
     <div class="modal" id="emailModal">
         <div class="modal-content">
             <div class="modal-body">
-                <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div class="form-group">
-                        <label class="form-label"><?php echo htmlspecialchars(t('tickets.reply_modal.to')); ?></label>
+                <?php /* Collision warning (#934). A line of text, never a block: two
+                         analysts may legitimately both need to write, so this tells
+                         you and gets out of the way. Filled live by the presence
+                         poll, so it can appear (or clear) while you are drafting. */ ?>
+                <div class="composer-collision" id="composerCollisionWarning" hidden></div>
+                <?php /* Laid out to give the message the room (Ed, 2.10.0): To / Cc with
+                         their labels BESIDE the boxes, no "Message" label, and the editor
+                         straight underneath. Templates and Signature live in the footer,
+                         bottom left - see there. */ ?>
+                <div class="form-row reply-addr-row">
+                    <div class="form-group reply-addr">
+                        <label class="form-label" for="emailTo"><?php echo htmlspecialchars(t('tickets.reply_modal.to')); ?></label>
                         <input type="text" class="form-input" id="emailTo" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.reply_modal.to_placeholder')); ?>">
                     </div>
-                    <div class="form-group">
-                        <label class="form-label"><?php echo htmlspecialchars(t('tickets.reply_modal.cc')); ?></label>
+                    <div class="form-group reply-addr">
+                        <label class="form-label" for="emailCc"><?php echo htmlspecialchars(t('tickets.reply_modal.cc')); ?></label>
                         <input type="text" class="form-input" id="emailCc" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.reply_modal.cc_placeholder')); ?>">
                     </div>
                 </div>
                 <input type="hidden" id="emailSubject">
-                <div class="form-group">
-                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.reply_modal.message')); ?></label>
+                <?php /* ⚠️ Keep #emailBody in a form-group of its own: mobile.css finds the
+                         editor's block with .form-group:has(#emailBody) to stretch it to fill
+                         the sheet on a phone. */ ?>
+                <div class="form-group reply-body-group">
                     <textarea id="emailBody"></textarea>
                 </div>
+                <?php /* No "Attachments" label (Ed, 2.10.0): the drop zone says what it is
+                         ("Drag files here or browse"), and the line it took goes to the editor. */ ?>
                 <div class="form-group">
-                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.reply_modal.attachments')); ?></label>
                     <div class="attachment-dropzone" id="attachmentDropzone">
                         <input type="file" id="attachmentInput" multiple style="display: none;">
                         <div class="dropzone-content">
@@ -131,6 +325,28 @@ $translationNamespaces = ['common', 'tickets'];
                 ✨ <?php echo htmlspecialchars(t('tickets.reply_modal.cleaned_up')); ?> — <a href="#" id="replyCleanupUndoLink" style="color: #0078d4;"><?php echo htmlspecialchars(t('tickets.reply_modal.undo')); ?></a> <span id="replyCleanupUndoTimer" style="color: #999;"></span>
             </div>
             <div class="modal-footer">
+                <?php /* Templates and Signature, bottom LEFT (Ed, 2.10.0) - moved off the
+                         top of the editor so the message gets that height. Their menus
+                         open UPWARDS from here (.reply-footer-tools in inbox.css). The ids
+                         and handlers are unchanged, so inbox.js needed nothing. */ ?>
+                <div class="reply-footer-tools">
+                    <div class="reply-tpl-wrap">
+                        <button type="button" class="btn btn-secondary reply-tpl-btn" id="replyTemplatesBtn" onclick="toggleReplyTemplateMenu(event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+                            <?php echo htmlspecialchars(t('tickets.reply_modal.templates')); ?>
+                            <span class="reply-tpl-caret">▴</span>
+                        </button>
+                        <div class="reply-tpl-menu" id="replyTemplateMenu" style="display: none;"></div>
+                    </div>
+                    <div class="reply-tpl-wrap">
+                        <button type="button" class="btn btn-secondary reply-tpl-btn" id="signatureBtn" onclick="toggleSignatureMenu(event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17c3.5 0 3.5-10 7-10s3.5 10 7 10c1.5 0 2.5-.7 4-2"/><line x1="3" y1="21" x2="21" y2="21"/></svg>
+                            <?php echo htmlspecialchars(t("tickets.reply_modal.signature")); ?>
+                            <span class="reply-tpl-caret">▴</span>
+                        </button>
+                        <div class="reply-tpl-menu" id="signatureMenu" style="display: none;"></div>
+                    </div>
+                </div>
                 <button class="btn btn-secondary" onclick="closeEmailModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
                 <button class="btn btn-cleanup" id="replyCleanupBtn" onclick="cleanupReplyDraft()" style="display:none;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M12 3l1.9 5.8L20 10l-5 4.5L16.5 21 12 17.8 7.5 21 9 14.5 4 10l6.1-1.2z"/></svg>
@@ -141,19 +357,182 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
     </div>
 
+    <?php /* Split a ticket (#914). The message list is fetched from the server rather
+             than counted in JS, so what the dialog promises and what the split does
+             are computed by the same function. */ ?>
+    <?php /* Change a ticket's subject (#930). Opened from the right-click menu. */ ?>
+    <div class="modal" id="subjectModal">
+        <div class="modal-content" style="max-width: 560px;">
+            <div class="modal-header"><?php echo htmlspecialchars(t('tickets.subject.title')); ?></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="subjectInput"><?php echo htmlspecialchars(t('tickets.subject.label')); ?></label>
+                    <input type="text" class="form-input" id="subjectInput" maxlength="255" autocomplete="off"
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();saveSubject();}">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSubjectModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" id="subjectSaveBtn" onclick="saveSubject()"><?php echo htmlspecialchars(t('tickets.subject.save')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="splitModal">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header"><?php echo htmlspecialchars(t('tickets.split.title')); ?></div>
+            <div class="modal-body">
+                <p style="margin:0 0 14px;color:var(--text-muted,#666);font-size:13px;"><?php echo htmlspecialchars(t('tickets.split.pick_intro')); ?></p>
+
+                <div class="form-group">
+                    <div class="split-pick-bar">
+                        <span id="splitSelCount" class="split-sel-count"></span>
+                        <span class="split-pick-actions">
+                            <a href="#" onclick="splitSelectNewer(event)"><?php echo htmlspecialchars(t('tickets.split.select_newer')); ?></a>
+                            <a href="#" onclick="splitSelectAll(event)"><?php echo htmlspecialchars(t('tickets.split.select_all')); ?></a>
+                            <a href="#" onclick="splitClearSel(event)"><?php echo htmlspecialchars(t('tickets.split.select_clear')); ?></a>
+                        </span>
+                    </div>
+                    <div id="splitPreviewList" class="split-preview split-pick"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="splitSubject"><?php echo htmlspecialchars(t('tickets.split.subject')); ?></label>
+                    <input type="text" class="form-input" id="splitSubject" maxlength="255" autocomplete="off">
+                    <small style="color:var(--text-muted,#666);"><?php echo htmlspecialchars(t('tickets.split.subject_help')); ?></small>
+                </div>
+
+                <div class="info-box" id="splitWarning" style="display:none;margin-top:6px;padding:10px 13px;border-radius:6px;background:var(--warning-bg,#fff4e5);border-left:4px solid var(--warning-border,#ffd9a8);color:var(--warning-text,#8a5300);font-size:12.5px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSplitModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" id="splitConfirmBtn" onclick="confirmSplit()"><?php echo htmlspecialchars(t('tickets.split.confirm')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <?php /* Merge tickets (#912). Two stages in one modal: choose what survives and
+             confirm what will happen, then — once merged — watch the AI briefing
+             stream in and decide whether to keep it. The second stage only appears
+             after the merge has actually succeeded, so there is never a summary on
+             screen for a merge that did not happen. */ ?>
+    <div class="modal" id="mergeModal">
+        <div class="modal-content" style="max-width: 660px;">
+            <div class="modal-header" id="mergeModalTitle"><?php echo htmlspecialchars(t('tickets.merge.title')); ?></div>
+            <div class="modal-body">
+
+                <div id="mergeStageChoose">
+                    <p style="margin:0 0 14px;color:var(--text-muted,#666);font-size:13px;" id="mergeIntro"></p>
+                    <div class="form-group">
+                        <label class="form-label" id="mergePickLabel"><?php echo htmlspecialchars(t('tickets.merge.pick_survivor')); ?></label>
+                        <div id="mergeCandidates" class="merge-candidates"></div>
+                    </div>
+                    <div class="info-box" id="mergeEffect" style="margin-top:14px;padding:11px 13px;border-radius:6px;background:var(--accent-soft,#eff6ff);border-left:4px solid var(--accent,#0078d4);font-size:12.5px;"></div>
+                </div>
+
+                <div id="mergeStageSummary" style="display:none;">
+                    <div id="mergeResultLine" style="font-size:13px;margin-bottom:12px;"></div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <?php echo htmlspecialchars(t('tickets.merge.ai_heading')); ?>
+                            <span class="merge-ai-badge"><?php echo htmlspecialchars(t('tickets.merge.ai_badge')); ?></span>
+                        </label>
+                    <?php /* Liveness that does NOT depend on tokens arriving: only
+                             Anthropic streams token-by-token, so on OpenAI/OpenRouter
+                             the box would sit empty for the whole call. */ ?>
+                    <div class="merge-ai-progress" id="mergeSummaryProgress" style="display:none;"></div>
+                        <textarea id="mergeSummaryText" rows="12" class="form-textarea" style="width:100%;font-family:inherit;"></textarea>
+                        <small style="color:var(--text-muted,#666);"><?php echo htmlspecialchars(t('tickets.merge.ai_editable')); ?></small>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer" id="mergeFooterChoose">
+                <button class="btn btn-secondary" onclick="closeMergeModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" id="mergeConfirmBtn" onclick="confirmMerge()"><?php echo htmlspecialchars(t('tickets.merge.confirm')); ?></button>
+            </div>
+            <div class="modal-footer" id="mergeFooterSummary" style="display:none;">
+                <button class="btn btn-secondary" onclick="discardMergeSummary()"><?php echo htmlspecialchars(t('tickets.merge.discard_summary')); ?></button>
+                <button class="btn btn-primary" id="mergeSaveSummaryBtn" onclick="saveMergeSummary()"><?php echo htmlspecialchars(t('tickets.merge.save_summary')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <?php /* Naming a personal template saved straight from the draft. Deliberately a
+             tiny modal and not a settings screen — the moment worth capturing is the one
+             just after you finish typing something you know you will type again. */ ?>
+    <div class="modal" id="saveReplyTemplateModal">
+        <div class="modal-content" style="max-width: 460px;">
+            <div class="modal-header"><?php echo htmlspecialchars(t('tickets.reply_modal.save_template_title')); ?></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.reply_modal.save_template_name')); ?></label>
+                    <input type="text" class="form-input" id="saveReplyTemplateName" maxlength="100" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('tickets.reply_modal.save_template_placeholder')); ?>">
+                    <div class="form-hint" style="font-size:12px;color:var(--text-muted,#666);margin-top:6px;">
+                        <?php echo htmlspecialchars(t('tickets.reply_modal.save_template_hint')); ?>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSaveReplyTemplateModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" onclick="savePersonalReplyTemplate()"><?php echo htmlspecialchars(t('common.save')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <!-- New Ticket Modal -->
     <div class="modal" id="newTicketModal">
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.title')); ?></div>
             <div class="modal-body">
-                <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div class="form-group">
-                        <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_name')); ?> *</label>
-                        <input type="text" class="form-input" id="newTicketFromName" placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.name_placeholder')); ?>" required>
+                <!-- Requester picker (discussion #54). One field replacing the old
+                     name + email pair: the email was already the identity, and the
+                     name box silently did nothing whenever the person existed. -->
+                <div class="form-group">
+                    <label class="form-label" for="reqSearch"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester')); ?> *</label>
+
+                    <!-- Chosen state. Replaces the input rather than sitting beside
+                         it, so there is never a stale search term next to a choice. -->
+                    <div class="req-chosen" id="reqChosen" hidden>
+                        <span class="req-chosen-avatar" id="reqChosenAvatar"></span>
+                        <span class="req-chosen-text">
+                            <span class="req-chosen-name" id="reqChosenName"></span>
+                            <span class="req-chosen-email" id="reqChosenEmail"></span>
+                        </span>
+                        <span class="req-chosen-company" id="reqChosenCompany" hidden></span>
+                        <button type="button" class="req-chosen-clear" id="reqChosenClear"
+                                aria-label="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_clear')); ?>">&times;</button>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_email')); ?> *</label>
-                        <input type="email" class="form-input" id="newTicketFromEmail" placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.email_placeholder')); ?>" required>
+
+                    <div class="req-picker" id="reqPicker">
+                        <input type="text" class="form-input req-input" id="reqSearch" autocomplete="off"
+                               role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="reqResults"
+                               placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_placeholder')); ?>">
+                        <button type="button" class="req-browse" id="reqBrowse"
+                                title="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_browse')); ?>"
+                                aria-label="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_browse')); ?>">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                        </button>
+                        <div class="req-results" id="reqResults" role="listbox" hidden></div>
+                    </div>
+
+                    <!-- The "someone new" path. Revealed by choosing the last row of
+                         the list, never shown speculatively. -->
+                    <div class="req-new" id="reqNew" hidden>
+                        <div class="req-new-head"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_new_head')); ?></div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div>
+                                <label class="form-label" for="newTicketFromName"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_name')); ?> *</label>
+                                <input type="text" class="form-input" id="newTicketFromName" placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.name_placeholder')); ?>">
+                            </div>
+                            <div>
+                                <label class="form-label" for="newTicketFromEmail"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_email')); ?> *</label>
+                                <input type="email" class="form-input" id="newTicketFromEmail" placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.email_placeholder')); ?>">
+                            </div>
+                        </div>
+                        <button type="button" class="req-new-cancel" id="reqNewCancel"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_new_cancel')); ?></button>
                     </div>
                 </div>
                 <div class="form-group">
@@ -168,7 +547,24 @@ $translationNamespaces = ['common', 'tickets'];
                     <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.subject')); ?> *</label>
                     <input type="text" class="form-input" id="newTicketSubject" placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.subject_placeholder')); ?>" required>
                 </div>
-                <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                <?php /* The consolidated view (#1554). Hidden unless the analyst
+                         is looking at every company at once — in a single-company
+                         context the answer is already known and asking again is
+                         a question with one possible answer. Shown there, it is
+                         REQUIRED: "which school is this for?" has no sensible
+                         default when the board holds three of them, and the
+                         company decides the ticket number, the mailbox and the
+                         SLA the ticket will live under. */ ?>
+                <div class="form-row" id="newTicketCompanyRow" hidden style="margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.company')); ?></label>
+                        <select class="form-select" id="newTicketCompany" required onchange="onNewTicketCompanyChange()">
+                            <option value=""><?php echo htmlspecialchars(t('tickets.new_ticket_modal.select_company')); ?></option>
+                        </select>
+                        <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.company_hint')); ?></small>
+                    </div>
+                </div>
+                <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px;">
                     <div class="form-group">
                         <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.department')); ?></label>
                         <select class="form-select" id="newTicketDepartment">
@@ -177,19 +573,29 @@ $translationNamespaces = ['common', 'tickets'];
                     </div>
                     <div class="form-group">
                         <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.type')); ?></label>
-                        <select class="form-select" id="newTicketType">
+                        <select class="form-select" id="newTicketType" onchange="loadNewTicketCustomFields()">
                             <option value=""><?php echo htmlspecialchars(t('tickets.new_ticket_modal.select_placeholder')); ?></option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.priority')); ?></label>
-                        <select class="form-select" id="newTicketPriority">
-                            <option value="Normal"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.priority_normal')); ?></option>
-                            <option value="Low"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.priority_low')); ?></option>
-                            <option value="High"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.priority_high')); ?></option>
+                        <!-- Populated from the configured priorities in openNewTicketModal() (#40) -->
+                        <select class="form-select" id="newTicketPriority"></select>
+                    </div>
+                    <!-- Normal / Confidential (discussion #62). A department or mailbox set to
+                         confidential makes it Confidential anyway; this can only add to that. -->
+                    <div class="form-group" title="<?php echo htmlspecialchars(t('tickets.reading_pane.sensitivity_help')); ?>">
+                        <label class="form-label"><?php echo htmlspecialchars(t('tickets.reading_pane.field_sensitivity')); ?></label>
+                        <select class="form-select" id="newTicketSensitivity">
+                            <option value="normal"><?php echo htmlspecialchars(t('tickets.reading_pane.sensitivity_normal')); ?></option>
+                            <option value="confidential"><?php echo htmlspecialchars(t('tickets.reading_pane.sensitivity_confidential')); ?></option>
                         </select>
                     </div>
                 </div>
+                <?php /* Custom fields (#179) for the chosen type, filled in by
+                         loadNewTicketCustomFields(). Empty - and taking no room -
+                         when the type has none. */ ?>
+                <div class="tf-form-grid" id="newTicketCustomFields"></div>
                 <div class="form-group">
                     <label class="form-label"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.description')); ?></label>
                     <textarea class="form-textarea" id="newTicketBody" rows="8" placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.description_placeholder')); ?>"></textarea>
@@ -198,6 +604,23 @@ $translationNamespaces = ['common', 'tickets'];
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeNewTicketModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
                 <button class="btn btn-primary" onclick="createNewTicket()"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.create_btn')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Browse requesters. The escape hatch behind the magnifier, for when you
+         want to look down a list rather than type — not the main route, which is
+         why it is a second surface you only meet by asking for it. -->
+    <div class="modal" id="reqBrowseModal">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header"><?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_browse_title')); ?></div>
+            <div class="modal-body">
+                <input type="text" class="form-input" id="reqBrowseSearch" autocomplete="off"
+                       placeholder="<?php echo htmlspecialchars(t('tickets.new_ticket_modal.requester_placeholder')); ?>">
+                <div class="req-browse-list" id="reqBrowseList"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeReqBrowse()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
             </div>
         </div>
     </div>
@@ -222,6 +645,23 @@ $translationNamespaces = ['common', 'tickets'];
                     <label><?php echo htmlspecialchars(t('tickets.search_modal.subject')); ?></label>
                     <input type="text" id="searchSubject" placeholder="<?php echo htmlspecialchars(t('tickets.search_modal.subject_ph')); ?>">
                 </div>
+                <?php // Content search asks the search corpus rather than LIKE-ing a column,
+                      // so it reaches message bodies and notes. Its own field because it
+                      // returns a different shape of result — snippets, and which part matched. ?>
+                <div class="search-field">
+                    <label><?php echo htmlspecialchars(t('tickets.search_modal.content')); ?></label>
+                    <input type="text" id="searchContent" placeholder="<?php echo htmlspecialchars(t('tickets.search_modal.content_ph')); ?>">
+                    <div class="search-field-hint"><?php echo htmlspecialchars(t('tickets.search_modal.content_hint')); ?></div>
+                </div>
+                <?php /* #149. ON by default and independent of the inbox's "Hide
+                         closed": a search is usually a hunt for an old ticket. */ ?>
+                <label class="view-filter-row search-include-closed">
+                    <span><?php echo htmlspecialchars(t('tickets.search_modal.include_closed')); ?></span>
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="searchIncludeClosed" checked onchange="saveSearchIncludeClosed(this.checked)">
+                        <span class="toggle-slider"></span>
+                    </span>
+                </label>
                 <div class="search-actions">
                     <button class="btn btn-primary" onclick="performSearch()"><?php echo htmlspecialchars(t('tickets.search_modal.search_btn')); ?></button>
                     <button class="btn btn-secondary" onclick="clearSearch()"><?php echo htmlspecialchars(t('tickets.search_modal.clear_btn')); ?></button>
@@ -243,9 +683,36 @@ $translationNamespaces = ['common', 'tickets'];
                     <label class="form-label"><?php echo htmlspecialchars(t('tickets.schedule_modal.date')); ?> *</label>
                     <input type="date" class="form-input" id="scheduleDate" required>
                 </div>
+                <!-- All day first, because ticking it takes the two fields below
+                     away — a control that removes others belongs above them, not
+                     under the things it is about to hide. -->
                 <div class="form-group">
+                    <label class="toggle-group">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="scheduleAllDay" onchange="syncScheduleAllDay()">
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <span class="toggle-label"><?php echo htmlspecialchars(t('tickets.schedule_modal.all_day')); ?></span>
+                    </label>
+                </div>
+                <div class="form-group" id="scheduleTimeGroup">
                     <label class="form-label"><?php echo htmlspecialchars(t('tickets.schedule_modal.start_time')); ?> *</label>
                     <input type="time" class="form-input" id="scheduleTime" required>
+                </div>
+                <!-- A DURATION, not an end time. You schedule in "this'll take an
+                     hour", not "it finishes at 15:30" — and an end that precedes its
+                     start cannot be expressed, so there is no such error to catch,
+                     word, or translate. The stored value is still an end datetime
+                     (see freeitsm.sql); this is only how it is asked for. -->
+                <div class="form-group" id="scheduleDurationGroup">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.schedule_modal.duration')); ?></label>
+                    <select class="form-input" id="scheduleDuration">
+                        <option value="15"><?php echo htmlspecialchars(t('tickets.schedule_modal.dur_15m')); ?></option>
+                        <option value="30"><?php echo htmlspecialchars(t('tickets.schedule_modal.dur_30m')); ?></option>
+                        <option value="60" selected><?php echo htmlspecialchars(t('tickets.schedule_modal.dur_1h')); ?></option>
+                        <option value="120"><?php echo htmlspecialchars(t('tickets.schedule_modal.dur_2h')); ?></option>
+                        <option value="240"><?php echo htmlspecialchars(t('tickets.schedule_modal.dur_4h')); ?></option>
+                    </select>
                 </div>
                 <div class="schedule-current" id="scheduleCurrent" style="display: none;">
                     <p><?php echo htmlspecialchars(t('tickets.schedule_modal.currently_scheduled')); ?> <span id="currentSchedule"></span></p>
@@ -259,21 +726,110 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
     </div>
 
+    <!-- Snooze until a specific time (#933). Reached from the last row of the
+         Snooze flyout; the presets cover the common cases without it. -->
+    <div class="modal" id="snoozeModal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header"><?php echo htmlspecialchars(t('tickets.snooze.modal_title')); ?> <span id="snoozeTicketRef"></span></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.snooze.date')); ?> *</label>
+                    <input type="date" class="form-input" id="snoozeDate" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.snooze.time')); ?> *</label>
+                    <input type="time" class="form-input" id="snoozeTime" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.snooze.reason')); ?></label>
+                    <input type="text" class="form-input" id="snoozeReason" maxlength="255"
+                           placeholder="<?php echo htmlspecialchars(t('tickets.snooze.reason_ph')); ?>">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('tickets.snooze.reason_help')); ?></small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSnoozeModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" id="snoozeSaveBtn" onclick="saveCustomSnooze()"><?php echo htmlspecialchars(t('tickets.snooze.confirm')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <!-- Right-click context menu for email rows. Positioned in JS at cursor. -->
     <div class="ticket-context-menu" id="ticketContextMenu" role="menu">
         <div class="ticket-context-menu-header" id="ticketContextMenuHeader"></div>
+        <?php /* Only shown when several tickets are selected — merging one ticket is
+                 not a thing, and an always-visible disabled item is just clutter. */ ?>
+        <button class="ticket-context-menu-item" type="button" id="ctxMergeItem" style="display:none;" onclick="openMergeModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            <span id="ctxMergeLabel"><?php echo htmlspecialchars(t('tickets.context.merge')); ?></span>
+        </button>
+        <?php /* Single-ticket only — renaming a whole selection to one subject is
+                 not a thing, so it's hidden when the menu acts on a selection. */ ?>
+        <button class="ticket-context-menu-item" type="button" id="ctxSubjectItem" onclick="openSubjectModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.change_subject')); ?></span>
+        </button>
+        <?php if ($ticketsModuleOn['cmdb']): ?>
         <button class="ticket-context-menu-item" type="button" onclick="openContextLinkCmdb()">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             <span><?php echo htmlspecialchars(t('tickets.context.link_cmdb')); ?></span>
         </button>
+        <?php endif; ?>
+        <?php if ($ticketsModuleOn['problems']): ?>
         <button class="ticket-context-menu-item" type="button" onclick="openContextLinkProblem()">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             <span><?php echo htmlspecialchars(t('tickets.context.link_problem')); ?></span>
         </button>
+        <?php endif; ?>
+        <?php if ($ticketsModuleOn['changes']): ?>
+        <button class="ticket-context-menu-item" type="button" onclick="openContextLinkChange()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.link_change')); ?></span>
+        </button>
+        <?php endif; ?>
+        <button class="ticket-context-menu-item" type="button" onclick="openContextLinkTicket()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.link_ticket')); ?></span>
+        </button>
+        <?php if ($ticketsModuleOn['tasks']): ?>
+        <button class="ticket-context-menu-item" type="button" onclick="openContextLinkTask()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.link_task')); ?></span>
+        </button>
+        <?php endif; ?>
+        <?php /* Snooze (#933). A parent with the presets as a flyout, so the common
+                 case ("tomorrow morning") is one hover and one click, and the custom
+                 date lives behind the last row rather than in front of everything. */ ?>
+        <div class="ticket-context-menu-item ticket-context-menu-parent" id="ctxSnoozeParent" role="menuitem" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.snooze')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxSnoozeSubmenu" role="menu">
+                <!-- Populated by openTicketContextMenu() — the labels carry the real
+                     dates ("Tomorrow · Wed 09:00"), computed in the analyst's zone. -->
+            </div>
+        </div>
+        <?php /* Only shown when the target is actually asleep — a permanently visible
+                 "Wake" that usually does nothing is clutter, and the same reasoning
+                 hides Merge for a single ticket. */ ?>
+        <button class="ticket-context-menu-item" type="button" id="ctxWakeItem" style="display:none;" onclick="wakeFromContext()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.wake')); ?></span>
+        </button>
+        <?php /* Schedule work. Sits beside Snooze/Wake because all three answer
+                 "when", and single-ticket only for the same reason Change subject
+                 is: scheduling a selection would put every ticket in it at the
+                 same minute, drawing N overlapping blocks on the calendar. */ ?>
+        <button class="ticket-context-menu-item" type="button" id="ctxScheduleItem" onclick="openContextSchedule()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.schedule')); ?></span>
+        </button>
+        <?php if ($ticketsModuleOn['time-tracking']): /* GH #217 */ ?>
         <button class="ticket-context-menu-item" type="button" onclick="openContextRecordTime()">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             <span><?php echo htmlspecialchars(t('tickets.context.record_time')); ?></span>
         </button>
+        <?php endif; ?>
         <!-- Status submenu parent. Hover/focus to reveal the flyout populated
              at menu-open time from the active ticket_statuses. -->
         <div class="ticket-context-menu-item ticket-context-menu-parent" role="menuitem" tabindex="0">
@@ -323,6 +879,17 @@ $translationNamespaces = ['common', 'tickets'];
             <span><?php echo htmlspecialchars(t('tickets.context.assign_to')); ?></span>
             <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
             <div class="ticket-context-submenu" id="ctxAssigneeSubmenu" role="menu">
+                <!-- Populated by openTicketContextMenu(). -->
+            </div>
+        </div>
+        <!-- Assign-to-team submenu parent (#1566). Sits next to Assign to because
+             they are the pair: which queue owns it, and who is doing it. Hidden
+             entirely on an install with no teams, which is every fresh one. -->
+        <div class="ticket-context-menu-item ticket-context-menu-parent" id="ctxTeamParent" role="menuitem" tabindex="0" style="display:none;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span><?php echo htmlspecialchars(t('tickets.context.assign_team')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxTeamSubmenu" role="menu">
                 <!-- Populated by openTicketContextMenu(). -->
             </div>
         </div>
@@ -388,6 +955,114 @@ $translationNamespaces = ['common', 'tickets'];
         </div>
     </div>
 
+    <!-- Link-to-change modal (used by the right-click menu and the reading-pane button) -->
+    <div class="modal" id="linkChangeModal">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header">Link <span id="linkChangeTicketRef"></span> to a change</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <input type="text" class="form-input" id="linkChangeSearch" placeholder="Search changes by reference or title…" autocomplete="off" oninput="linkChangeSearchDebounced()">
+                </div>
+                <div class="lp-list" id="linkChangeList"><div class="lp-empty">Loading…</div></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeLinkChangeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link-to-task modal: PHONE ONLY, behind the long-press menu. On desktop the
+         menu opens the ticket's inline strip picker instead; on a phone that strip
+         lives in the hidden Links sheet, so the picker opened out of sight. -->
+    <div class="modal" id="linkTaskModal">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header" id="linkTaskTitle"></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <input type="text" class="form-input" id="linkTaskSearch" placeholder="<?php echo htmlspecialchars(t('tickets.tasks.search_placeholder')); ?>" autocomplete="off" oninput="linkTaskSearchDebounced()">
+                </div>
+                <div class="lp-list" id="linkTaskList"><div class="lp-empty">…</div></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeLinkTaskModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link-to-ticket modal (#38): pick a relationship type, then search the target ticket -->
+    <div class="modal" id="linkTicketModal">
+        <div class="modal-content" style="max-width: 620px;">
+            <div class="modal-header">Link <span id="linkTicketRef"></span> to another ticket</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13px;">
+                        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ticketLinkRelation" value="related" checked> Related to</label>
+                        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ticketLinkRelation" value="duplicate_of"> Duplicate of</label>
+                        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ticketLinkRelation" value="parent_of"> Parent of</label>
+                        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ticketLinkRelation" value="child_of"> Child of</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <input type="text" class="form-input" id="linkTicketSearch" placeholder="Search tickets by number or subject…" autocomplete="off" oninput="linkTicketSearchDebounced()">
+                </div>
+                <div class="lp-list" id="linkTicketList"><div class="lp-empty">Loading…</div></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeLinkTicketModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Escalate to an external issue tracker (#950).
+         ⚠️ The preview is not decoration. Raising an issue is a one-way door into
+         a system we do not control — it cannot be unsent, and anyone with access
+         to that tracker can read it. So the exact text is shown before the
+         analyst commits, and internal notes are never part of it. -->
+    <div class="modal" id="escalateTrackerModal">
+        <div class="modal-content" style="max-width: 720px;">
+            <div class="modal-header">
+                <?php echo htmlspecialchars(t('tickets.tracker.modal_title')); ?>
+                <span id="escTicketRef"></span>
+            </div>
+            <div class="modal-body">
+                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                    <div class="form-group" style="flex:1 1 220px;">
+                        <label class="form-label" for="escConnection"><?php echo htmlspecialchars(t('tickets.tracker.tracker_label')); ?></label>
+                        <select class="form-input" id="escConnection"></select>
+                    </div>
+                    <div class="form-group" style="flex:0 1 140px;">
+                        <label class="form-label" for="escProject"><?php echo htmlspecialchars(t('tickets.tracker.project_label')); ?></label>
+                        <input type="text" class="form-input" id="escProject" placeholder="OPS" autocomplete="off">
+                    </div>
+                    <div class="form-group" style="flex:0 1 140px;">
+                        <label class="form-label" for="escIssueType"><?php echo htmlspecialchars(t('tickets.tracker.type_label')); ?></label>
+                        <input type="text" class="form-input" id="escIssueType" value="Bug" autocomplete="off">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="escSummary"><?php echo htmlspecialchars(t('tickets.tracker.summary_label')); ?></label>
+                    <input type="text" class="form-input" id="escSummary" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label"><?php echo htmlspecialchars(t('tickets.tracker.preview_label')); ?></label>
+                    <pre id="escPreview" style="max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;
+                        background:var(--surface-2);border:1px solid var(--border);border-radius:6px;
+                        padding:12px;font-size:12.5px;line-height:1.55;color:var(--text);margin:0;"></pre>
+                    <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+                        <?php echo htmlspecialchars(t('tickets.tracker.preview_hint')); ?>
+                    </div>
+                    <?php /* Files leaving the building. Hidden when the ticket has
+                             none, so the usual case gains no clutter. */ ?>
+                    <div id="escAttachments" style="display:none;margin-top:10px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEscalateTrackerModal()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                <button class="btn btn-primary" id="escalateGoBtn" onclick="submitEscalateTracker()"><?php echo htmlspecialchars(t('tickets.tracker.escalate')); ?></button>
+            </div>
+        </div>
+    </div>
+
     <!-- Context menu — Record Time modal -->
     <div class="modal" id="ctxTimeModal">
         <div class="modal-content" style="max-width: 480px;">
@@ -416,31 +1091,99 @@ $translationNamespaces = ['common', 'tickets'];
     </div>
     <script>
         window.API_BASE = '../api/tickets/';
+        window.CASE_REPORT_URL = <?php echo json_encode(BASE_URL . 'tickets/case-report.php'); ?>;
+        window.MYACCOUNT_API = '../api/myaccount/';   // signatures (#80)
+        window.PREFS_URL = '../system/preferences/';
         window.CURRENT_ANALYST_ID = <?php echo (int)($_SESSION['analyst_id'] ?? 0); ?>;
+        // The "Write up" button posts to the Knowledge module and saves an
+        // article, so it is hidden from anyone who could only be refused. The
+        // endpoint enforces this too — this flag only stops us offering a
+        // button that cannot work.
+        window.KB_WRITEUP_ENABLED = <?php echo analystCanAccessModule(connectToDatabase(), (int)($_SESSION['analyst_id'] ?? 0), 'knowledge') ? 'true' : 'false'; ?>;
+        // Domains on a ticket (3.0.0): Domains' data, so only for analysts who can open it.
+        window.TICKETS_SHOW_DOMAINS = <?php echo analystCanAccessModule(connectToDatabase(), (int)($_SESSION['analyst_id'] ?? 0), 'domains') ? 'true' : 'false'; ?>;
+        window.TICKETS_SHOW_PROJECTS = <?php echo analystCanAccessModule(connectToDatabase(), (int)($_SESSION['analyst_id'] ?? 0), 'projects') ? 'true' : 'false'; ?>;
+        // The other modules this pane offers parts of (GH #217) - see $ticketsModuleOn.
+        window.TICKETS_MODULE_ON = <?php echo json_encode($ticketsModuleOn); ?>;
+        window.KB_BASE = '../api/knowledge/';
+        // What this analyst's ticket rows show (discussion #61). Resolved
+        // server-side — their own choice over the install default — and already
+        // validated against the registry in includes/inbox_display.php, so the
+        // renderer receives only values it knows. Emitted rather than fetched so
+        // the first paint is already correct instead of reflowing a moment later.
+        // How long messages collapse (discussion #104). One object, read from
+        // includes/ticket_display.php so the browser cannot disagree with the
+        // server about what the settings say.
+        window.MESSAGE_COLLAPSE = <?php echo json_encode(ticketDisplaySettings(connectToDatabase())); ?>;
+        // The two AI reading aids (#104, ideas 7 and 12). BOTH DEFAULT TO OFF:
+        // unlike everything else here they spend money with somebody's API key,
+        // so nothing appears until an administrator asks for it. Emitted rather
+        // than fetched so a disabled install never even renders the buttons.
+        window.TICKET_AI = <?php echo json_encode(ticketAiSettings(connectToDatabase())); ?>;
+        window.INBOX_ROW_DISPLAY = <?php echo json_encode(inboxDisplayForAnalyst(connectToDatabase(), (int)($_SESSION['analyst_id'] ?? 0))); ?>;
     </script>
-    <script src="../assets/js/inbox.js?v=49"></script>
+    <!-- Must load BEFORE inbox.js: it cleans every untrusted message body. -->
+    <script src="../assets/js/safe-html.js?v=4"></script>
+    <!-- Must also load BEFORE inbox.js: parseUTCDate / tzOpts / ymdInZone and the
+         fmt* date formatters. inbox.js used to carry its own copies of the first
+         three because this page was the one that never loaded tz.js. -->
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/schedule.js?v=1"></script>
+    <script src="../checklists/search_scoring.js?v=1"></script>
+    <script src="../checklists/ticket_view.js?v=13"></script>
+    <script src="../assets/js/ticket-fields.js?v=2"></script>
+    <script src="../assets/js/ticket-workspace.js?v=4"></script>
+    <script src="../assets/js/data-table.js?v=9"></script>
+    <!-- Note images open in the Files viewer, in a floating window (GH #226). -->
+    <script src="../assets/js/float-window.js?v=1"></script>
+    <script src="../assets/js/files-icons.js?v=2"></script>
+    <script src="../assets/js/files-viewer.js?v=8"></script>
+    <script src="../assets/js/note-images.js?v=1"></script>
+    <script src="../assets/js/inbox.js?v=185"></script>
+    <script src="../assets/js/tickets-table.js?v=5"></script>
+    <script src="../assets/js/mobile.js?v=85"></script>
     <script>
-    // Auto-check mailboxes every 60 seconds
+    // Auto-check mailboxes every 60 seconds - and refresh the inbox whenever
+    // ANYTHING new has arrived, however it came in.
     (function() {
         const POLL_INTERVAL = 60000;
         const btn = document.getElementById('mailCheckBtn');
         let polling = false;
+        let lastMarker = null;   // newest message id this inbox has seen; null until the first look
+
+        /* TRAP: "new mail from the check this page just ran" is not "something
+           new arrived". Chat messages (WhatsApp, Telegram, Slack, Teams,
+           Mattermost) reach the server by webhook, and mail collected by another
+           analyst's inbox is not reported to this page - so for both, an open
+           inbox showed nothing until someone pressed refresh. The marker is the
+           newest message id on any ticket this analyst can see
+           (api/tickets/get_inbox_activity.php); when it moves, refresh. */
+        async function newestMarker() {
+            try {
+                const r = await fetch('../api/tickets/get_inbox_activity.php');
+                const d = await r.json();
+                return d.success ? d.marker : null;
+            } catch (e) { return null; }
+        }
 
         // Show the icon on the inbox page
         if (btn) btn.style.display = '';
 
-        async function checkMailboxes() {
+        // auto: the timed poll, which the server skips when this mailbox was
+        // checked moments ago by somebody else's inbox (GH #183). Clicking the
+        // mail icon always checks.
+        async function checkMailboxes(auto) {
             if (polling) return;
             polling = true;
             if (btn) btn.classList.add('checking');
 
             try {
-                // Get active authenticated mailboxes
+                // Get active authenticated mailboxes. No mailboxes (or no right
+                // to list them) is not a reason to stop: chat messages still need
+                // the activity check below.
                 const mbRes = await fetch('../api/tickets/get_mailboxes.php');
                 const mbData = await mbRes.json();
-                if (!mbData.success) { polling = false; if (btn) btn.classList.remove('checking'); return; }
-
-                const active = mbData.mailboxes.filter(m => m.is_authenticated && m.is_active);
+                const active = mbData.success ? mbData.mailboxes.filter(m => m.is_authenticated && m.is_active) : [];
                 let totalNew = 0;
 
                 for (const mb of active) {
@@ -448,17 +1191,21 @@ $translationNamespaces = ['common', 'tickets'];
                         const res = await fetch('../api/tickets/check_mailbox_email.php', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ mailbox_id: mb.id })
+                            body: JSON.stringify({ mailbox_id: mb.id, auto: auto === true })
                         });
                         const data = await res.json();
                         if (data.success) totalNew += data.details?.emails_saved || 0;
                     } catch (e) { /* skip */ }
                 }
 
-                // Refresh inbox if new emails arrived
-                if (totalNew > 0 && typeof refreshCurrentView === 'function') {
-                    refreshCurrentView();
-                    loadFolderCounts();
+                // Refresh if anything new arrived - from this check, a webhook,
+                // or another analyst's inbox. The first look only sets the baseline:
+                // the page has just loaded, so it is already up to date.
+                const marker = await newestMarker();
+                const moved = marker !== null && lastMarker !== null && marker > lastMarker;
+                if (marker !== null) lastMarker = Math.max(marker, lastMarker || 0);
+                if ((totalNew > 0 || moved) && typeof refreshCurrentView === 'function') {
+                    refreshCurrentView();   // the same as the refresh button: list and folder counts
                 }
             } catch (e) { /* skip */ }
 
@@ -467,11 +1214,11 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         // Manual trigger
-        window.triggerMailCheck = checkMailboxes;
+        window.triggerMailCheck = () => checkMailboxes(false);
 
         // Run on load then every 60s
-        checkMailboxes();
-        setInterval(checkMailboxes, POLL_INTERVAL);
+        checkMailboxes(true);
+        setInterval(() => checkMailboxes(true), POLL_INTERVAL);
     })();
     </script>
 

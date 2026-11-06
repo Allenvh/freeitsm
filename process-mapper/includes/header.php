@@ -12,7 +12,7 @@ $current_module = 'process-mapper';
 $module_title = function_exists('t') ? t('process-mapper.title') : 'Process Mapper';
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 

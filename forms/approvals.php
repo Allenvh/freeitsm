@@ -1,0 +1,437 @@
+<?php
+/**
+ * Catalogue-request approvals inbox (#928).
+ *
+ * Where a designated approver signs off (or turns down) the catalogue requests waiting
+ * on them. Approving raises the ticket; rejecting records the decision. Modelled on the
+ * Change Management approvals inbox, scoped to the Forms module.
+ */
+session_start();
+require_once '../config.php';
+require_once '../includes/functions.php';
+require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
+require_once '../includes/version.php';   // named in the diagnostic report below
+I18n::initFromSession();
+Tz::init();
+
+if (!isset($_SESSION['analyst_id'])) {
+    header('Location: ../auth/login.php');
+    exit;
+}
+// Forms access, or named as an approver (#180 Part 3): an approver no longer needs the
+// whole Forms module to decide the requests sent to them.
+require_once '../includes/catalogue_approvals.php';
+$caConn = connectToDatabase();
+if (!catalogueApproverCanEnter($caConn, (int)$_SESSION['analyst_id'])) {
+    requireModuleAccess('forms');   // the ordinary bounce
+}
+$caFullAccess = analystCanAccessModule($caConn, (int)$_SESSION['analyst_id'], 'forms');
+
+$current_page = 'approvals';
+$path_prefix = '../';
+$translationNamespaces = ['common', 'forms'];
+?>
+<!DOCTYPE html>
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
+<head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars(pageTitle('forms', t('forms.nav.approvals'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <!-- inbox.css carries the shared header/nav styles (.header, .nav-btn); forms.css
+         the module chrome. Same set forms/index.php loads. -->
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/forms.css">
+    <style>
+        .ca-container { display: flex; height: calc(100vh - 48px); background: var(--app-bg, #f5f5f5); }
+        .ca-sidebar { width: 260px; background: var(--surface, #fff); border-right: 1px solid var(--border, #ddd); padding: 20px; display: flex; flex-direction: column; gap: 6px; }
+        .ca-sidebar h3 { font-size: 12px; font-weight: 600; color: var(--text-dim, #888); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 10px; }
+        .ca-filter { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text, #333); transition: background 0.15s; }
+        .ca-filter:hover { background: var(--surface-hover, #f5f5f5); }
+        .ca-filter.active { background: var(--accent-soft, #e8f4fd); color: var(--accent, #0078d4); font-weight: 600; }
+        .ca-filter .cnt { font-size: 12px; background: var(--border-soft, #eee); color: var(--text-muted, #666); padding: 2px 8px; border-radius: 10px; font-weight: 600; min-width: 20px; text-align: center; }
+        .ca-filter.active .cnt { background: var(--accent, #0078d4); color: var(--on-accent, #fff); }
+        .ca-main { flex: 1; overflow-y: auto; padding: 24px 30px; }
+        .ca-main h2 { margin: 0 0 20px; font-size: 20px; color: var(--text, #333); }
+        .ca-card { background: var(--surface, #fff); border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 1px 3px var(--shadow, rgba(0,0,0,0.06)); border-left: 4px solid var(--warning-border, #f0d9a8); }
+        .ca-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 12px; }
+        .ca-card-title { font-size: 15px; font-weight: 600; color: var(--text, #333); }
+        .ca-card-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--text-dim, #888); margin-bottom: 12px; }
+        .ca-card-meta .lbl { font-weight: 600; color: var(--text-faint, #999); }
+        .ca-answers { border: 1px solid var(--border-soft, #eee); border-radius: 6px; background: var(--surface-2, #fafafa); padding: 4px 0; margin-bottom: 12px; }
+        .ca-answer { display: flex; gap: 12px; padding: 6px 12px; font-size: 12.5px; }
+        .ca-answer .a-lbl { font-weight: 600; color: var(--text-muted, #666); flex: 0 0 40%; }
+        .ca-answer .a-val { color: var(--text, #333); white-space: pre-wrap; }
+        .ca-comment { width: 100%; padding: 8px 10px; border: 1px solid var(--border, #ddd); border-radius: 5px; font-size: 13px; font-family: inherit; background: var(--surface, #fff); color: var(--text, #333); margin-bottom: 10px; resize: vertical; min-height: 38px; }
+        .ca-actions { display: flex; gap: 10px; }
+        .ca-btn { padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 500; }
+        .ca-btn-secondary { background: var(--surface, #fff); color: var(--text, #333); border: 1px solid var(--border, #ddd); }   /* Move (GH #220) */
+        .ca-btn-approve { background: var(--success-accent, #16a34a); color: #fff; }
+        .ca-btn-reject { background: var(--surface, #fff); color: var(--danger-accent, #d13438); border: 1px solid var(--danger-accent, #d13438); }
+        .ca-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ca-badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 10px; }
+        .ca-badge.approved { background: var(--success-bg, #dcfce7); color: var(--success-text, #166534); }
+        .ca-badge.rejected { background: var(--danger-bg, #fee2e2); color: var(--danger-text, #991b1b); }
+        .ca-decided-note { font-size: 12.5px; color: var(--text-muted, #666); }
+        /* Team approvals (GH #220): progress, the votes so far, a stuck request, the
+           administrator's moves and overrides, and the Move panel. */
+        .ca-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 4px; font-size: 12.5px; }
+        .ca-progress strong { color: var(--text, #333); }
+        .ca-votes { margin: 4px 0 8px; padding: 0; list-style: none; font-size: 12.5px; color: var(--text-muted, #666); }
+        .ca-votes li { padding: 2px 0; }
+        .ca-vote-approved { color: var(--success-text, #166534); font-weight: 600; }
+        .ca-vote-rejected { color: var(--danger-text, #991b1b); font-weight: 600; }
+        .ca-stuck, .ca-override-hint { margin: 8px 0; padding: 8px 11px; border-radius: 6px; font-size: 12.5px; background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+        .ca-event { font-size: 12px; color: var(--text-muted, #666); margin: 2px 0; }
+        .ca-move { display: none; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+        .ca-move.open { display: flex; }
+        .ca-move select, .ca-move input { padding: 7px 9px; border: 1px solid var(--border, #ddd); border-radius: 5px; font-size: 13px; background: var(--surface, #fff); color: var(--text, #333); }
+        .ca-move input[type=text] { flex: 1; min-width: 160px; }
+        .ca-move input[type=number] { width: 70px; }
+        .ca-decided-note a { color: var(--accent, #0078d4); }
+        .ca-empty { text-align: center; padding: 60px 20px; color: var(--text-faint, #999); }
+        .ca-empty h3 { font-size: 16px; color: var(--text-muted, #666); margin: 0 0 6px; }
+        .ca-empty p { font-size: 13px; margin: 0; }
+
+        /* The list could not be loaded. Left-aligned and plain rather than
+           centred like .ca-empty: this is something to read and copy, not a
+           decorative "nothing here" state. Every colour is a theme token, so it
+           is legible in dark mode too. */
+        .ca-error { max-width: 760px; margin: 24px auto; background: var(--surface, #fff); border: 1px solid var(--danger-border, #f3c9c9); border-left: 4px solid var(--danger-accent, #d13438); border-radius: 8px; padding: 20px 22px; }
+        .ca-error h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: var(--text, #333); }
+        .ca-error p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.5; color: var(--text-muted, #666); }
+        .ca-error pre { margin: 0; padding: 12px 14px; background: var(--surface-2, #fafafa); border: 1px solid var(--border-soft, #eee); border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; color: var(--text, #333); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow-y: auto; }
+        .ca-error-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+        .ca-error-note { font-size: 12px; color: var(--text-faint, #999); flex: 1 1 260px; }
+    </style>
+    <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <!-- The diagnostic box offers a Copy button. navigator.clipboard is undefined
+         outside a secure context, which a self-hosted install often is. -->
+    <script src="../assets/js/clipboard.js?v=1"></script>
+    <!-- Mobile layer. Linked AFTER this page's inline <style> on purpose: the
+         mobile rules must win on equal specificity, and a link placed above it
+         would silently lose to the desktop block below (the load-order trap). -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
+</head>
+<body>
+    <?php include 'includes/header.php'; ?>
+
+    <div class="ca-container">
+        <div class="ca-sidebar">
+            <h3><?php echo htmlspecialchars(t('forms.approval.filter')); ?></h3>
+            <div class="ca-filter active" data-filter="mine" onclick="setFilter('mine')">
+                <span><?php echo htmlspecialchars(t('forms.approval.filter_mine')); ?></span>
+                <span class="cnt" id="cntMine">0</span>
+            </div>
+            <?php if ($caFullAccess): /* every pending request and its answers - Forms users only (#180) */ ?>
+            <div class="ca-filter" data-filter="all" onclick="setFilter('all')">
+                <span><?php echo htmlspecialchars(t('forms.approval.filter_all')); ?></span>
+                <span class="cnt" id="cntAll">0</span>
+            </div>
+            <?php endif; ?>
+            <div class="ca-filter" data-filter="decided" onclick="setFilter('decided')">
+                <span><?php echo htmlspecialchars(t('forms.approval.filter_decided')); ?></span>
+                <span class="cnt" id="cntDecided">0</span>
+            </div>
+        </div>
+
+        <div class="ca-main">
+            <h2 id="caTitle"><?php echo htmlspecialchars(t('forms.approval.inbox_heading')); ?></h2>
+            <div id="caList"><div class="ca-empty"><p><?php echo htmlspecialchars(t('forms.approval.loading')); ?></p></div></div>
+        </div>
+    </div>
+
+    <script>
+        // showToast is provided by the shared header (renderWaffleMenuJS loads toast.js).
+        const API_BASE = '../api/forms/';
+        // Read from includes/version.php, never written out as a literal - a
+        // hardcoded number here would still say 2.3.1 three releases from now,
+        // and a diagnostic that misreports the version is worse than one that
+        // omits it.
+        const APP_VERSION = <?php echo json_encode(freeitsmVersion()); ?>;
+        let currentFilter = 'mine';
+
+        document.addEventListener('DOMContentLoaded', loadApprovals);
+
+        function setFilter(f) {
+            currentFilter = f;
+            document.querySelectorAll('.ca-filter').forEach(el => el.classList.toggle('active', el.dataset.filter === f));
+            loadApprovals();
+        }
+
+        async function loadApprovals() {
+            const list = document.getElementById('caList');
+            list.innerHTML = '<div class="ca-empty"><p>' + esc(window.t('forms.approval.loading')) + '</p></div>';
+            const url = API_BASE + 'catalogue_approvals.php?filter=' + currentFilter;
+            let res = null, body = '';
+            try {
+                res = await fetch(url);
+                /* 🔴 TEXT FIRST, THEN PARSE — never res.json() straight off.
+                   res.json() throws on a body that is not JSON and throws the
+                   body away with it, leaving nothing to show and nothing to
+                   send. A body that is not JSON is exactly what #1850 looked
+                   like: a PHP warning printed ahead of the JSON, which this
+                   screen could only report as the bare word "Error". Reading
+                   the text first means the one thing that identifies the fault
+                   survives the failure. */
+                body = await res.text();
+                const data = JSON.parse(body);
+                if (!data.success) {
+                    showApprovalError(url, res, body, data.error || '');
+                    return;
+                }
+                document.getElementById('cntMine').textContent = data.counts.mine;
+                if (document.getElementById('cntAll')) document.getElementById('cntAll').textContent = data.counts.all;
+                document.getElementById('cntDecided').textContent = data.counts.decided;
+                renderApprovals(data.items);
+            } catch (e) {
+                showApprovalError(url, res, body, e && e.message ? e.message : String(e));
+            }
+        }
+
+        /**
+         * What to show when the list cannot be loaded.
+         *
+         * 🔑 The point is not to look tidy, it is to end the round trip in which
+         * somebody reports "it says Error" and nobody can act on it. Everything
+         * here is what a maintainer would otherwise have to ask for: which
+         * screen, which request, the HTTP status, what the server actually sent,
+         * and the version it was sent by.
+         *
+         * ⚠️ The RAW BODY is the valuable part and the part with a cost: a PHP
+         * fatal names file paths, and a database failure can name the host and
+         * user. It is shown anyway — this screen already requires a signed-in
+         * analyst with Forms access, and a diagnostic that hides the diagnosis
+         * is not worth having — but the box says plainly that it should be
+         * glanced at before being passed on. Truncated, because nobody needs
+         * fifty kilobytes of stack trace to identify a fault.
+         */
+        function showApprovalError(url, res, body, problem) {
+            const MAX = 800;
+            const raw = (body || '').trim();
+            const shown = raw.length > MAX ? raw.slice(0, MAX) + '\n… (' + (raw.length - MAX) + ' more characters)' : raw;
+
+            const report = [
+                'FreeITSM ' + APP_VERSION,
+                'When:    ' + new Date().toISOString(),
+                'Screen:  Forms > Approvals (showing: ' + currentFilter + ')',
+                'Request: ' + url,
+                'Status:  ' + (res ? res.status + ' ' + res.statusText : 'no response - the request did not complete'),
+                'Problem: ' + (problem || 'unknown'),
+                'Browser: ' + navigator.userAgent,
+                '',
+                'Server response:',
+                raw === '' ? '(empty)' : shown
+            ].join('\n');
+
+            const list = document.getElementById('caList');
+            list.innerHTML =
+                '<div class="ca-error">'
+              +   '<h3>' + esc(window.t('forms.approval.error_heading')) + '</h3>'
+              +   '<p>' + esc(window.t('forms.approval.error_intro')) + '</p>'
+              +   '<pre id="caErrReport"></pre>'
+              +   '<div class="ca-error-actions">'
+              +     '<button type="button" class="btn btn-secondary" id="caErrCopy">'
+              +       esc(window.t('common.copy')) + '</button>'
+              +     '<span class="ca-error-note">' + esc(window.t('forms.approval.error_note')) + '</span>'
+              +   '</div>'
+              + '</div>';
+
+            // textContent, not innerHTML: the body may be an HTML error page, and
+            // pasting a server's HTML into the DOM is how a diagnostic becomes a
+            // second bug.
+            document.getElementById('caErrReport').textContent = report;
+
+            document.getElementById('caErrCopy').addEventListener('click', function () {
+                const btn = this;
+                // The one clipboard helper — navigator.clipboard is undefined
+                // outside a secure context, which a self-hosted install often is.
+                window.copyToClipboard(report).then(function (ok) {
+                    btn.textContent = window.t(ok ? 'common.copied' : 'common.copy');
+                    setTimeout(function () { btn.textContent = window.t('common.copy'); }, 2000);
+                });
+            });
+        }
+
+        function renderApprovals(items) {
+            const list = document.getElementById('caList');
+            if (!items.length) {
+                list.innerHTML = `<div class="ca-empty"><h3>${esc(window.t('forms.approval.empty_heading'))}</h3><p>${esc(window.t('forms.approval.empty_text'))}</p></div>`;
+                return;
+            }
+            list.innerHTML = items.map(it => {
+                const requester = it.requester_name || it.requester_username || window.t('forms.approval.unknown_requester');
+                const answers = (it.answers || []).map(a =>
+                    `<div class="ca-answer"><span class="a-lbl">${esc(a.label)}</span><span class="a-val">${esc(a.value)}</span></div>`).join('')
+                    || `<div class="ca-answer"><span class="a-val">${esc(window.t('forms.approval.no_answers'))}</span></div>`;
+
+                const decided = it.approval_status === 'approved' || it.approval_status === 'rejected';
+                const team = it.mode === 'team';
+                const pr = it.progress || {};
+                // Team approvals (GH #220): who decides, how far it has got, and the votes.
+                let teamBlock = '';
+                if (team) {
+                    const rej = (pr.rejections_required || 1) > 1
+                        ? ` · ${esc(window.t('forms.approval.progress_rejections', { r: pr.rejections || 0, n: pr.rejections_required }))}` : '';
+                    const votes = (pr.votes || []).map(v =>
+                        `<li>${esc(v.full_name || '—')} — <span class="ca-vote-${esc(v.decision)}">${esc(window.t('forms.approval.voted_' + v.decision))}</span>`
+                        + ` · ${esc(formatDate(v.voted_datetime))}${v.comment ? ' · ' + esc(v.comment) : ''}</li>`).join('');
+                    teamBlock = `<div class="ca-progress"><span class="lbl">${esc(window.t('forms.approval.team'))}</span> ${esc(it.approval_team_name || '')}`
+                        + ` · <strong>${esc(window.t('forms.approval.progress', { a: pr.approvals || 0, n: pr.approvals_required || 1 }))}</strong>${rej}</div>`
+                        + (votes ? `<ul class="ca-votes">${votes}</ul>` : '');
+                }
+                const stuck = (!decided && pr.stuck) ? `<div class="ca-stuck">${esc(window.t('forms.approval.stuck'))}</div>` : '';
+                const events = (it.events || []).map(e => `<div class="ca-event">${esc(e.action === 'moved'
+                    ? window.t('forms.approval.event_moved', { name: e.full_name || '', detail: e.detail || '', reason: e.reason || '' })
+                    : window.t('forms.approval.event_override', { name: e.full_name || '', decision: window.t('forms.approval.voted_' + e.action.replace('override_', '')), reason: e.reason || '' }))}</div>`).join('');
+                let footer;
+                if (decided) {
+                    const badge = `<span class="ca-badge ${it.approval_status}">${esc(window.t('forms.approval.status_' + it.approval_status))}</span>`;
+                    // ⚠️ `?ticket_id=` with the ID. This used to be `?ticket=` with
+                    // the ticket NUMBER, which is wrong twice over: the inbox reads
+                    // exactly one parameter name and it is not that one, so the link
+                    // opened the ticket list and did nothing. `ticket_id` is already
+                    // in this response — see catalogueApprovalsList().
+                    const ticket = (it.approval_status === 'approved' && it.ticket_number && it.ticket_id)
+                        ? ` — <a href="../tickets/?ticket_id=${encodeURIComponent(it.ticket_id)}">${esc(it.ticket_number)}</a>` : '';
+                    const cmt = it.approval_comment ? `<div class="ca-decided-note">${esc(it.approval_comment)}</div>` : '';
+                    footer = `<div class="ca-decided-note">${badge}${ticket}</div>${cmt}`;
+                } else {
+                    // Buttons only for someone they will work for (GH #220): a voter, the
+                    // named approver - or, on a team request, an administrator, whose
+                    // Approve / Reject is an OVERRIDE with the note as its reason.
+                    const override = !it.can_vote && it.can_override;
+                    const canAct = it.can_vote || it.can_decide || override;
+                    const placeholder = team || override ? window.t('forms.approval.reason_placeholder') : window.t('forms.approval.comment_placeholder');
+                    const moveBtn = it.can_move
+                        ? `<button class="ca-btn ca-btn-secondary" title="${escAttr(window.t('forms.approval.move_title'))}" onclick="toggleMove(${it.id})">${esc(window.t('forms.approval.move'))}</button>` : '';
+                    footer = (override ? `<div class="ca-override-hint">${esc(window.t('forms.approval.override_hint'))}</div>` : '')
+                        + (canAct ? `
+                        <textarea class="ca-comment" id="cmt-${it.id}" placeholder="${escAttr(placeholder)}"></textarea>
+                        <div class="ca-actions">
+                            <button class="ca-btn ca-btn-approve" onclick="decide(${it.id}, 'approved', this, ${override}, ${team})">${esc(window.t('forms.approval.approve'))}</button>
+                            <button class="ca-btn ca-btn-reject" onclick="decide(${it.id}, 'rejected', this, ${override}, ${team})">${esc(window.t('forms.approval.reject'))}</button>
+                            ${moveBtn}
+                        </div>` : (moveBtn ? `<div class="ca-actions">${moveBtn}</div>` : ''))
+                        + (it.can_move ? `<div class="ca-move" id="move-${it.id}"></div>` : '');
+                }
+
+                return `
+                    <div class="ca-card">
+                        <div class="ca-card-top"><span class="ca-card-title">${esc(it.form_title)}</span></div>
+                        <div class="ca-card-meta">
+                            <span><span class="lbl">${esc(window.t('forms.approval.requester'))}</span> ${esc(requester)}</span>
+                            ${it.submitted_date ? `<span><span class="lbl">${esc(window.t('forms.approval.submitted'))}</span> ${esc(formatDate(it.submitted_date))}</span>` : ''}
+                            ${(currentFilter !== 'mine' && it.approver_name) ? `<span><span class="lbl">${esc(window.t('forms.approval.approver'))}</span> ${esc(it.approver_name)}</span>` : ''}
+                        </div>
+                        ${teamBlock}
+                        <div class="ca-answers">${answers}</div>
+                        ${stuck}${events}
+                        ${footer}
+                    </div>`;
+            }).join('');
+        }
+
+        async function decide(id, decision, btn, override = false, team = false) {
+            const card = btn.closest('.ca-card');
+            const comment = (document.getElementById('cmt-' + id) || {}).value || '';
+            // A team rejection, and any override, needs a reason (GH #220) - said here
+            // before the round trip; the server refuses it regardless.
+            if (!comment.trim() && (override || (team && decision === 'rejected'))) {
+                showToast(window.t('forms.approval.reason_required'), 'error');
+                return;
+            }
+            card.querySelectorAll('button').forEach(b => b.disabled = true);
+            try {
+                const res = await fetch(API_BASE + 'decide_catalogue_approval.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ submission_id: id, decision: decision, comment: comment, override: override })
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    showToast(data.error || window.t('forms.approval.decide_failed'), 'error');
+                    card.querySelectorAll('button').forEach(b => b.disabled = false);
+                    return;
+                }
+                if (data.decision === 'recorded') {
+                    // One vote of several (GH #220): the request is still waiting.
+                    showToast(window.t('forms.approval.vote_toast', { a: data.progress.approvals, n: data.progress.approvals_required }), 'success');
+                } else if (decision === 'approved' && data.ticket_number) {
+                    showToast(window.t('forms.approval.approved_toast', { ref: data.ticket_number }), 'success');
+                } else {
+                    showToast(window.t('forms.approval.rejected_toast'), 'success');
+                }
+                loadApprovals();
+            } catch (e) {
+                showToast(window.t('forms.approval.decide_failed'), 'error');
+                card.querySelectorAll('button').forEach(b => b.disabled = false);
+            }
+        }
+
+        // ===== Move a waiting request (GH #220, administrators) =====
+        let moveChoices = null;   // {teams, people}, fetched the first time a Move panel opens
+        async function toggleMove(id) {
+            const box = document.getElementById('move-' + id);
+            if (box.classList.toggle('open') && !box.innerHTML) {
+                if (!moveChoices) {
+                    const [tRes, pRes] = await Promise.all([
+                        fetch(API_BASE + 'approval_teams.php').then(r => r.json()).catch(() => ({})),
+                        fetch('../api/tickets/get_analysts.php').then(r => r.json()).catch(() => ({})),
+                    ]);
+                    moveChoices = { teams: tRes.teams || [], people: (pRes.analysts || []).filter(a => a.is_active) };
+                }
+                box.innerHTML = `<select id="mvTo-${id}" onchange="document.getElementById('mvN-${id}').hidden = !this.value.startsWith('t')">
+                        <option value="">${esc(window.t('forms.approval.move_choose'))}</option>
+                        <optgroup label="${escAttr(window.t('forms.approval.move_teams'))}">${moveChoices.teams.map(tm => `<option value="t${tm.id}">${esc(tm.name)}</option>`).join('')}</optgroup>
+                        <optgroup label="${escAttr(window.t('forms.approval.move_people'))}">${moveChoices.people.map(a => `<option value="p${a.id}">${esc(a.full_name || a.username)}</option>`).join('')}</optgroup>
+                    </select>
+                    <input type="number" id="mvN-${id}" min="1" max="20" value="1" title="${escAttr(window.t('forms.approval.approvals_needed'))}" hidden>
+                    <input type="text" id="mvWhy-${id}" placeholder="${escAttr(window.t('forms.approval.move_reason'))}">
+                    <button class="ca-btn ca-btn-secondary" onclick="moveRequest(${id}, this)">${esc(window.t('forms.approval.move'))}</button>`;
+            }
+        }
+
+        async function moveRequest(id, btn) {
+            const to = document.getElementById('mvTo-' + id).value;
+            const reason = document.getElementById('mvWhy-' + id).value.trim();
+            if (!to || !reason) { showToast(window.t('forms.approval.move_need'), 'error'); return; }
+            btn.disabled = true;
+            const body = { submission_id: id, reason };
+            if (to[0] === 't') { body.team_id = Number(to.slice(1)); body.approvals_required = parseInt(document.getElementById('mvN-' + id).value, 10) || 1; }
+            else body.approver_id = Number(to.slice(1));
+            try {
+                const data = await (await fetch(API_BASE + 'move_catalogue_approval.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                })).json();
+                if (!data.success) { showToast(data.error || window.t('forms.approval.decide_failed'), 'error'); btn.disabled = false; return; }
+                showToast(window.t('forms.approval.moved_toast'), 'success');
+                loadApprovals();
+            } catch (e) {
+                showToast(window.t('forms.approval.decide_failed'), 'error');
+                btn.disabled = false;
+            }
+        }
+
+        // Submitted = server UTC timestamp → analyst zone.
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = parseUTCDate(dateStr);
+            if (!d || isNaN(d.getTime())) return dateStr;
+            return fmtDateTime(d);
+        }
+
+        function esc(t) { const d = document.createElement('div'); d.textContent = (t == null ? '' : t); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    </script>
+    <!-- Mobile layer. Adds the views hamburger and the module drawer on a phone.
+         Loaded last so it can wrap the page's own globals rather than edit them. -->
+    <script src="../assets/js/mobile.js?v=83"></script>
+</body>
+</html>

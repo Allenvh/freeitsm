@@ -1,0 +1,59 @@
+# Say when a change has knocked the maintained locales off parity.
+#
+# 🔴 THE PROBLEM THIS REPORTS IS SILENT BY DESIGN. A missing translation key
+# falls back to English and renders perfectly - no error, no console warning,
+# nothing on screen. So a feature that adds thirty English strings ships a new
+# screen that is entirely in English in every other language, and it looks
+# finished to everybody except the person who reads that language.
+#
+# Measured on 2026-09-22: da, de, hi and pl had each been swept to 100% and had
+# all drifted back to 95.8%, every one of them missing THE SAME 347 keys. Five
+# separate features had shipped without their twins, and each time the gap was
+# rediscovered by running a full 24-locale audit from scratch.
+#
+# ⚠️ THIS WARNS, IT DOES NOT FAIL, AND THAT IS DELIBERATE.
+#
+# An untranslated string is not a broken build. Failing every commit that adds
+# an English string would block ordinary feature work behind a translation run,
+# and a check that always fails is a check that gets bypassed - along with the
+# real problem it would eventually have caught. The sister workflow, Schema
+# drift, DOES fail, because a schema disagreement corrupts somebody's install.
+# This one cannot.
+#
+# 🔑 So the hard gate lives at the point where the decision is actually made:
+# RELEASING.md section 5 step 3a runs the same script before a tag is cut. This
+# job exists so that by then there are no surprises.
+#
+# Run it yourself:  php scripts/i18n_gate.php --keys
+
+name: i18n drift
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 because the baseline is the last release TAG, and a
+      # shallow clone has no tags - the script would exit 2 rather than
+      # silently reporting nothing added.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # No database and no extensions - the script reads lang/ and asks git.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: New English strings reached the maintained locales
+        run: |
+          if php scripts/i18n_gate.php --keys; then
+            echo "No i18n drift since the last release tag."
+          else
+            echo "::warning title=i18n drift::English strings added since the last release tag are missing from locales that were current. Not a build failure - but RELEASING.md will ask about it before the next tag."
+          fi

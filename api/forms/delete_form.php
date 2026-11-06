@@ -1,10 +1,12 @@
 <?php
 /**
- * API: Delete a form (cascades to fields, submissions cascade separately)
+ * API: Delete a form (leaf-only; whole-chain deletes are an API-only option).
+ * Thin UI adapter over FormsService.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/services/forms.php';
 
 header('Content-Type: application/json');
 
@@ -12,35 +14,16 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
-
-$input = json_decode(file_get_contents('php://input'), true);
-$formId = (int)($input['id'] ?? 0);
-
-if ($formId <= 0) {
-    echo json_encode(['success' => false, 'error' => 'Missing form ID']);
-    exit;
-}
+requireModuleAccessJson('forms');
+requireModuleWriteJson('forms');   // Read only access (#180) changes nothing here
+require_once '../../includes/rbac.php';
+requireActionJson(Cap::FORMS_DESIGN);   // designing - #180; module access is enough until Forms → Settings → Access restricts it
 
 try {
     $conn = connectToDatabase();
-
-    // Delete submission data first (FK constraint)
-    $stmt = $conn->prepare("DELETE sd FROM form_submission_data sd
-                            INNER JOIN form_submissions s ON sd.submission_id = s.id
-                            WHERE s.form_id = ?");
-    $stmt->execute([$formId]);
-
-    // Delete submissions
-    $stmt = $conn->prepare("DELETE FROM form_submissions WHERE form_id = ?");
-    $stmt->execute([$formId]);
-
-    // Delete form (fields cascade)
-    $stmt = $conn->prepare("DELETE FROM forms WHERE id = ?");
-    $stmt->execute([$formId]);
-
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    FormsService::deleteForm($conn, ActorContext::fromSession($conn), (int)($input['id'] ?? 0), false);
     echo json_encode(['success' => true, 'message' => 'Form deleted']);
-
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
-?>

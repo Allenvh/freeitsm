@@ -6,6 +6,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/template_email.php';   // templateRulesByTemplate() (#80)
 
 header('Content-Type: application/json');
 
@@ -13,6 +14,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 try {
     $conn = connectToDatabase();
@@ -24,6 +26,20 @@ try {
     $stmt = $conn->prepare($sql);
     $stmt->execute();
     $templates = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Sender rules (#80). Attached to every template so the settings screen can show
+    // each one's scope in the list, work out whether a catch-all exists, and edit the
+    // rules without a second request per row.
+    $rules = templateRulesByTemplate($conn, array_column($templates, 'id'));
+    foreach ($templates as &$tpl) {
+        $tpl['rules'] = $rules[(int)$tpl['id']] ?? [];
+        // 🔑 The screen does NOT keep its own copy of this map. It comes from
+        // templateEventAudience() in includes/template_email.php - the same
+        // function the sender uses to pick the address - so a column reading
+        // "Requester" while the mail goes to an analyst is not reachable.
+        $tpl['audience'] = templateEventAudience((string)$tpl['event_trigger']);
+    }
+    unset($tpl);
 
     echo json_encode(['success' => true, 'templates' => $templates]);
 

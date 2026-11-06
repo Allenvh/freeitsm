@@ -6,12 +6,60 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/setup_state.php';
+require_once '../../includes/db_errors.php';    // dbErrorIsUnknownColumn(), used below
+require_once '../../includes/encryption.php';   // seeds + migrates secret settings
+require_once '../../includes/uploads.php';      // ATTACHMENT_QUARANTINE_EXT
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['analyst_id']) && empty($_SESSION['setup_access'])) {
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
+// ⚠️ Database Verification CREATES, ALTERS **AND DROPS**. TAKE A BACKUP FIRST.
+//
+// This comment used to say it "never drops anything". That was false, and had been
+// for a long time: this file contains DROP COLUMN for tickets.status,
+// tickets.priority, tickets.requester_email, tickets.requester_name,
+// ticket_rota_entries.location, warroom_messages.team_id and
+// warroom_presence.team_id, plus DROP INDEX and DROP FOREIGN KEY. Each drop is
+// guarded and each is the tail end of a migration that has already copied the data
+// somewhere better — but "the data was moved first" is a very different promise from
+// "nothing is ever dropped", and an administrator who read the old sentence would
+// reasonably have skipped their backup. Reported by Erlend Volden (F10).
+//
+// It IS idempotent: running it twice changes nothing the second time.
+//
+// To see what a run would do to a particular database before running it, call
+// api/system/db_verify_preview.php — read-only, executes no DDL at all.
+//
+// It is unmistakably an administrator's action, and it once checked only that you were
+// logged in: any analyst at all could run schema changes against the live database.
+// (Found closing out the RBAC roll-out. D005 had missed it too, for two separate
+// reasons — see that tool's write-detection and signature patterns.)
+//
+// There IS a real bootstrap problem underneath: on a fresh install no analyst exists yet,
+// and this is the endpoint that builds the table they will log in against. That used to be
+// solved with a $_SESSION['setup_access'] flag — but setup/index.php granted that flag to
+// every anonymous visitor, so `GET /setup/` then `POST` here ran migrations with no
+// credentials at any point. We now ask the database the question the flag was standing in
+// for, so there is nothing left to forge: the unauthenticated path exists only while it is
+// genuinely the only path. See includes/setup_state.php.
+try {
+    $conn = connectToDatabase();
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Database connection failed']);
     exit;
+}
+
+if (!installIsUnprovisioned($conn)) {
+    if (!isset($_SESSION['analyst_id'])) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+        exit;
+    }
+    require_once '../../includes/admin_api_guard.php';   // administrators only
 }
 
 /**
@@ -20,2216 +68,57 @@ if (!isset($_SESSION['analyst_id']) && empty($_SESSION['setup_access'])) {
  * Column format: 'column_name' => 'TYPE [NOT] NULL [DEFAULT ...]'
  * The first column with 'AUTO_INCREMENT' is the primary key.
  */
-$schema = [
-
-    'analysts' => [
-        'id'                     => 'INT NOT NULL AUTO_INCREMENT',
-        'username'               => 'VARCHAR(50) NOT NULL',
-        'password_hash'          => 'VARCHAR(255) NOT NULL',
-        'full_name'              => 'VARCHAR(100) NOT NULL',
-        'email'                  => 'VARCHAR(100) NOT NULL',
-        'is_active'              => 'TINYINT(1) NULL DEFAULT 1',
-        'created_datetime'       => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_login_datetime'    => 'DATETIME NULL',
-        'last_modified_datetime' => 'DATETIME NULL',
-        'totp_secret'            => 'VARCHAR(500) NULL',
-        'totp_enabled'           => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'trust_device_enabled'   => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'password_changed_datetime' => 'DATETIME NULL',
-        'failed_login_count'     => 'INT NOT NULL DEFAULT 0',
-        'locked_until'           => 'DATETIME NULL',
-        'auth_provider_id'       => 'INT NULL',
-        'can_access_all_tenants' => 'TINYINT(1) NOT NULL DEFAULT 1',
-    ],
-
-    'auth_providers' => [
-        'id'                     => 'INT NOT NULL AUTO_INCREMENT',
-        'display_name'           => 'VARCHAR(100) NOT NULL',
-        'protocol'               => "VARCHAR(20) NOT NULL DEFAULT 'oidc'",
-        'issuer_url'             => 'VARCHAR(500) NOT NULL',
-        'client_id'              => 'VARCHAR(255) NOT NULL',
-        'client_secret'          => 'VARCHAR(500) NULL',
-        'scopes'                 => "VARCHAR(255) NOT NULL DEFAULT 'openid email profile'",
-        'enabled'                => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'auto_create_users'      => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'require_verified_email' => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'default_modules'        => 'VARCHAR(500) NULL',
-        'sort_order'             => 'INT NOT NULL DEFAULT 0',
-        'tenant_id'              => 'INT NULL',
-        'created_datetime'       => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_modified_datetime' => 'DATETIME NULL',
-    ],
-
-    'analyst_sso_identities' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'          => 'INT NOT NULL',
-        'provider_id'         => 'INT NOT NULL',
-        'subject'             => 'VARCHAR(255) NOT NULL',
-        'email'               => 'VARCHAR(100) NULL',
-        'linked_datetime'     => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_login_datetime' => 'DATETIME NULL',
-    ],
-
-    'departments' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'teams' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(500) NULL',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'analyst_teams' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'team_id'           => 'INT NOT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'department_teams' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'department_id'     => 'INT NOT NULL',
-        'team_id'           => 'INT NOT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'analyst_modules' => [
-        'id'          => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'  => 'INT NOT NULL',
-        'module_key'  => 'VARCHAR(50) NOT NULL',
-    ],
-
-    'user_preferences' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'preference_key'    => 'VARCHAR(100) NOT NULL',
-        'preference_value'  => 'TEXT NULL',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_types' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        // Multi-tenancy: NULL = a global default type (shared by every company);
-        // set = a type that company added for itself. Existing rows stay NULL, so
-        // a single-company install is unaffected (all types are global). NB this
-        // is the *config* meaning of tenant_id (NULL = global default) — different
-        // from scoped data tables like `tickets` where NULL means "unrouted".
-        'tenant_id'         => 'INT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_origins' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-        // Multi-tenancy: NULL = global default origin; set = a company's own.
-        // (Config meaning of tenant_id — see ticket_types.) Existing rows stay
-        // NULL, so a single-company install is unaffected.
-        'tenant_id'         => 'INT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Multi-tenancy: the per-company "hide" layer for global config (the add+hide
-    // override model — design §7). A row means "this company does NOT want global
-    // <entity_type> #<entity_id> in its lists". Generic so one table serves every
-    // overridable config type (ticket_type, ticket_origin, department, …). The
-    // global row itself is never touched, so history/closed tickets still resolve
-    // it — hiding only removes it from that company's pickers, and is reversible.
-    'tenant_config_hidden' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'tenant_id'         => 'INT NOT NULL',
-        'entity_type'       => 'VARCHAR(50) NOT NULL',
-        'entity_id'         => 'INT NOT NULL',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_prefixes' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'prefix'        => 'VARCHAR(3) NOT NULL',
-        'description'   => 'VARCHAR(100) NULL',
-        'department_id' => 'INT NULL',
-        'is_default'    => 'TINYINT(1) NULL DEFAULT 0',
-    ],
-
-    'users' => [
-        'id'              => 'INT NOT NULL AUTO_INCREMENT',
-        'email'           => 'VARCHAR(255) NOT NULL',
-        'display_name'    => 'VARCHAR(255) NULL',
-        'preferred_name'  => 'VARCHAR(100) NULL',
-        'password_hash'   => 'VARCHAR(255) NULL',
-        'totp_secret'     => 'VARCHAR(500) NULL',
-        'totp_enabled'    => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'auth_provider_id' => 'INT NULL',
-        'created_at'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'user_sso_identities' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'user_id'             => 'INT NOT NULL',
-        'provider_id'         => 'INT NOT NULL',
-        'subject'             => 'VARCHAR(255) NOT NULL',
-        'email'               => 'VARCHAR(255) NULL',
-        'linked_datetime'     => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_login_datetime' => 'DATETIME NULL',
-    ],
-
-    'ticket_statuses' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'is_closed'         => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'pauses_sla'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_priorities' => [
-        'id'                      => 'INT NOT NULL AUTO_INCREMENT',
-        'name'                    => 'VARCHAR(50) NOT NULL',
-        'colour'                  => 'VARCHAR(20) NULL',
-        'is_default'              => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'           => 'INT NOT NULL DEFAULT 0',
-        'is_active'               => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'sla_response_minutes'    => 'INT NULL',
-        'sla_resolution_minutes'  => 'INT NULL',
-        'sla_calendar_id'         => 'INT NULL',
-        'created_datetime'        => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'sla_calendars' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'timezone'          => "VARCHAR(50) NOT NULL DEFAULT 'Europe/London'",
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-    ],
-
-    'sla_calendar_hours' => [
-        'id'           => 'INT NOT NULL AUTO_INCREMENT',
-        'calendar_id'  => 'INT NOT NULL',
-        'weekday'      => 'TINYINT NOT NULL',
-        'start_time'   => 'TIME NOT NULL',
-        'end_time'     => 'TIME NOT NULL',
-    ],
-
-    'sla_calendar_holidays' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'calendar_id'   => 'INT NOT NULL',
-        'holiday_date'  => 'DATE NOT NULL',
-        'name'          => 'VARCHAR(100) NULL',
-    ],
-
-    'sla_notification_rules' => [
-        'id'                       => 'INT NOT NULL AUTO_INCREMENT',
-        'department_id'            => 'INT NULL',
-        'trigger_type'             => "ENUM('warning','breach') NOT NULL",
-        'target_type'              => "ENUM('response','resolution','both') NOT NULL DEFAULT 'both'",
-        'notify_assignee'          => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'notify_department_teams'  => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'notify_analyst_id'        => 'INT NULL',
-        'notify_emails'            => 'TEXT NULL',
-        'is_active'                => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'sla_notifications_sent' => [
-        'id'             => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'      => 'INT NOT NULL',
-        'target_type'    => "ENUM('response','resolution') NOT NULL",
-        'trigger_type'   => "ENUM('warning','breach') NOT NULL",
-        'sent_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'recipients'     => 'TEXT NULL',
-    ],
-
-    'sla_cron_runs' => [
-        'id'             => 'INT NOT NULL AUTO_INCREMENT',
-        'started_at'     => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'ended_at'       => 'DATETIME NULL',
-        'duration_ms'    => 'INT NULL',
-        'invocation'     => "ENUM('cli','http') NOT NULL",
-        'client_ip'      => 'VARCHAR(45) NULL',
-        'outcome'        => "ENUM('ok','auth_failed','rate_limited','error','config_missing') NOT NULL",
-        'sent_count'     => 'INT NULL DEFAULT 0',
-        'skipped_count'  => 'INT NULL DEFAULT 0',
-        'error_count'    => 'INT NULL DEFAULT 0',
-        'notes'          => 'TEXT NULL',
-    ],
-
-    'tickets' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'tenant_id'             => 'INT NULL',
-        'ticket_number'         => 'VARCHAR(50) NOT NULL',
-        'subject'               => 'VARCHAR(500) NOT NULL',
-        'status_id'             => 'INT NULL',
-        'priority_id'           => 'INT NULL',
-        'department_id'         => 'INT NULL',
-        'ticket_type_id'        => 'INT NULL',
-        'assigned_analyst_id'   => 'INT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'closed_datetime'       => 'DATETIME NULL',
-        'origin_id'             => 'INT NULL',
-        'first_time_fix'        => 'TINYINT(1) NULL',
-        'it_training_provided'  => 'TINYINT(1) NULL',
-        'user_id'               => 'INT NULL',
-        'owner_id'              => 'INT NULL',
-        'work_start_datetime'   => 'DATETIME NULL',
-        'deleted_datetime'      => 'DATETIME NULL',
-        'deleted_by'            => 'INT NULL',
-        // Messaging channels: when the customer last messaged in (drives the 24h
-        // provider service window on the reply box). NULL for non-channel tickets.
-        'last_inbound_at'       => 'DATETIME NULL',
-    ],
-
-    'ticket_audit' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'         => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'field_name'        => 'VARCHAR(100) NOT NULL',
-        'old_value'         => 'VARCHAR(500) NULL',
-        'new_value'         => 'VARCHAR(500) NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_notes' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'         => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'note_text'         => 'LONGTEXT NOT NULL',
-        'is_internal'       => 'TINYINT(1) NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_time_entries' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'           => 'INT NOT NULL',
-        'analyst_id'          => 'INT NOT NULL',
-        'notes'               => 'LONGTEXT NULL',
-        'time_spent_minutes'  => 'INT NOT NULL',
-        'entry_datetime'      => 'DATETIME NOT NULL',
-        'is_active'           => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'    => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'    => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-    ],
-
-    // Multi-tenancy foundation — a single install can host multiple client
-    // companies (tenants). Invisible until a second tenant exists.
-    'tenants' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'name'             => 'VARCHAR(150) NOT NULL',
-        'slug'             => 'VARCHAR(100) NULL',
-        'is_default'       => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'is_active'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Domains owned by a tenant (used by shared-intake email routing).
-    'tenant_domains' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'tenant_id'        => 'INT NOT NULL',
-        'domain'           => 'VARCHAR(255) NOT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Admin-added public/free-email domains (gmail.com etc. are built into the
-    // code; this table holds extra ones an MSP wants treated as public). These
-    // are never mapped to a company — their mail is filed by hand from triage.
-    'freemail_domains' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'domain'           => 'VARCHAR(255) NOT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Specific sender addresses mapped to a company (shared-intake routing). The
-    // address-level twin of tenant_domains: matched before the domain, so a
-    // personal/freemail address (jane@gmail.com) can route to a company even
-    // though its domain is never mappable. UNIQUE so one address routes one way.
-    'tenant_sender_addresses' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'tenant_id'        => 'INT NOT NULL',
-        'email'            => 'VARCHAR(255) NOT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Messaging channel "inbox" — the channel twin of target_mailboxes. One row per
-    // WhatsApp number wired to a provider (Twilio / Meta Cloud). Pinned (tenant_id set)
-    // or shared intake (NULL, routed by sender phone). `credentials` = encrypted JSON
-    // (per-provider shape). See includes/messaging/.
-    'messaging_channels' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'name'                  => 'VARCHAR(100) NOT NULL',
-        'channel_type'          => "VARCHAR(20) NOT NULL DEFAULT 'whatsapp'",
-        'provider'              => "VARCHAR(20) NOT NULL DEFAULT 'twilio'",
-        'phone_number'          => 'VARCHAR(40) NULL',
-        'credentials'           => 'LONGTEXT NULL',
-        'verify_token'          => 'VARCHAR(255) NULL',
-        'ingress_mode'          => "VARCHAR(10) NOT NULL DEFAULT 'direct'",
-        'relay_secret'          => 'VARCHAR(255) NULL',
-        'tenant_id'             => 'INT NULL',
-        'is_active'             => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_inbound_datetime' => 'DATETIME NULL',
-    ],
-
-    // Specific sender phone numbers mapped to a company (shared-intake channel
-    // routing). Phone numbers have no domain, so for a shared channel an exact-number
-    // map is the only routing key (else triage). UNIQUE so one number routes one way.
-    'tenant_channel_senders' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'tenant_id'        => 'INT NOT NULL',
-        'identifier'       => 'VARCHAR(64) NOT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Pre-approved provider message templates (replying after the WhatsApp 24h window).
-    // FreeITSM stores the definition; the template is created/approved at the provider.
-    // provider_ref = Twilio Content SID or Meta template name. language used by Meta.
-    'messaging_templates' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'name'             => 'VARCHAR(100) NOT NULL',
-        'provider'         => "VARCHAR(20) NOT NULL DEFAULT 'twilio'",
-        'language'         => "VARCHAR(20) NOT NULL DEFAULT 'en'",
-        'provider_ref'     => 'VARCHAR(255) NOT NULL',
-        'body'             => 'LONGTEXT NOT NULL',
-        'tenant_id'        => 'INT NULL',
-        'is_active'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Which analysts may access which tenants (only consulted when an analyst
-    // is NOT flagged can_access_all_tenants).
-    'analyst_tenant_access' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'       => 'INT NOT NULL',
-        'tenant_id'        => 'INT NOT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'target_mailboxes' => [
-        'id'                      => 'INT NOT NULL AUTO_INCREMENT',
-        'name'                    => 'VARCHAR(100) NOT NULL',
-        'provider'                => "VARCHAR(20) NOT NULL DEFAULT 'microsoft'",
-        // Canonical mailbox storage is target_mailboxes. These IMAP/SMTP
-        // columns are listed here (rather than relying on ad-hoc ALTERs) so
-        // db-verify repairs existing installs before the Mailboxes UI selects
-        // provider_type/auth_mode or the intake workers read connection data.
-        'provider_type'           => "VARCHAR(20) NOT NULL DEFAULT 'graph'",
-        'azure_tenant_id'         => 'TEXT NOT NULL',
-        'azure_client_id'         => 'TEXT NOT NULL',
-        'azure_client_secret'     => 'TEXT NOT NULL',
-        'oauth_redirect_uri'      => 'TEXT NOT NULL',
-        'oauth_scopes'            => 'VARCHAR(500) NOT NULL DEFAULT \'openid email offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send\'',
-        'imap_server'             => 'TEXT NOT NULL',
-        'imap_port'               => 'INT NOT NULL DEFAULT 993',
-        'imap_encryption'         => 'VARCHAR(10) NOT NULL DEFAULT \'ssl\'',
-        'imap_host'               => 'TEXT NULL',
-        'imap_username'           => 'TEXT NULL',
-        'imap_password_encrypted' => 'TEXT NULL',
-        'imap_folder'             => 'VARCHAR(100) NOT NULL DEFAULT \'INBOX\'',
-        'smtp_host'               => 'TEXT NULL',
-        'smtp_port'               => 'INT NOT NULL DEFAULT 587',
-        'smtp_encryption'         => 'VARCHAR(10) NOT NULL DEFAULT \'tls\'',
-        'smtp_username'           => 'TEXT NULL',
-        'smtp_password_encrypted' => 'TEXT NULL',
-        'smtp_from_address'       => 'TEXT NULL',
-        'smtp_from_name'          => 'VARCHAR(255) NULL',
-        'intake_enabled'          => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'outbound_enabled'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'target_mailbox'          => 'TEXT NOT NULL',
-        // 'delegated' = OAuth sign-in (acts as the signed-in user, /me); 'app_only' =
-        // client-credentials (the app reads the specific /users/<target_mailbox>).
-        'auth_mode'               => "VARCHAR(20) NOT NULL DEFAULT 'delegated'",
-        // The account actually authenticated in delegated mode (the primary address,
-        // for display). Compared against target_mailbox to catch "reading the wrong
-        // inbox". NULL = not yet authenticated / needs (re)authentication.
-        'authenticated_as'        => 'VARCHAR(255) NULL',
-        // JSON array of EVERY address the authenticated mailbox owns (primary SMTP, UPN
-        // and aliases, from Graph proxyAddresses). The target matches if it's any of
-        // these — so an alias (e.g. ed@ on the edmozley@ mailbox) is accepted, not flagged.
-        'authenticated_addresses' => 'TEXT NULL',
-        'token_data'              => 'LONGTEXT NULL',
-        'email_folder'            => 'VARCHAR(100) NOT NULL DEFAULT \'INBOX\'',
-        'max_emails_per_check'    => 'INT NOT NULL DEFAULT 10',
-        'mark_as_read'            => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'rejected_action'         => 'VARCHAR(20) NOT NULL DEFAULT \'delete\'',
-        'imported_action'         => 'VARCHAR(20) NOT NULL DEFAULT \'delete\'',
-        'imported_folder'         => 'VARCHAR(100) NULL',
-        'is_active'               => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'tenant_id'               => 'INT NULL',
-        'created_datetime'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_checked_datetime'   => 'DATETIME NULL',
-        'last_checked_at'         => 'DATETIME NULL',
-    ],
-
-    'emails' => [
-        'id'                      => 'INT NOT NULL AUTO_INCREMENT',
-        'exchange_message_id'     => 'VARCHAR(255) NULL',
-        'subject'                 => 'VARCHAR(500) NULL',
-        'from_address'            => 'VARCHAR(255) NOT NULL',
-        'from_name'               => 'VARCHAR(255) NULL',
-        'to_recipients'           => 'LONGTEXT NULL',
-        'cc_recipients'           => 'LONGTEXT NULL',
-        'received_datetime'       => 'DATETIME NULL',
-        'body_preview'            => 'LONGTEXT NULL',
-        'body_content'            => 'LONGTEXT NULL',
-        'body_type'               => 'VARCHAR(20) NULL',
-        'has_attachments'         => 'TINYINT(1) NULL DEFAULT 0',
-        'importance'              => 'VARCHAR(20) NULL',
-        'is_read'                 => 'TINYINT(1) NULL DEFAULT 0',
-        'processed_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'ticket_created'          => 'TINYINT(1) NULL DEFAULT 0',
-        'ticket_id'               => 'INT NULL',
-        'department_id'           => 'INT NULL',
-        'ticket_type_id'          => 'INT NULL',
-        'assigned_analyst_id'     => 'INT NULL',
-        'status'                  => 'VARCHAR(50) NULL DEFAULT \'New\'',
-        'assigned_datetime'       => 'DATETIME NULL',
-        'is_initial'              => 'TINYINT(1) NULL DEFAULT 0',
-        'direction'               => 'VARCHAR(20) NULL DEFAULT \'Inbound\'',
-        'mailbox_id'              => 'INT NULL',
-        // Which channel this message arrived/left on. 'email' (default) leaves every
-        // existing row and the email pipeline untouched; 'whatsapp' reuses this table.
-        'channel'                 => 'VARCHAR(20) NOT NULL DEFAULT \'email\'',
-        // For channel messages: the messaging_channels row (which provider/number to
-        // reply from). NULL for email.
-        'channel_id'              => 'INT NULL',
-    ],
-
-    'email_attachments' => [
-        'id'                        => 'INT NOT NULL AUTO_INCREMENT',
-        'email_id'                  => 'INT NOT NULL',
-        'exchange_attachment_id'    => 'VARCHAR(255) NULL',
-        'filename'                  => 'VARCHAR(255) NOT NULL',
-        'content_type'              => 'VARCHAR(100) NOT NULL',
-        'content_id'                => 'VARCHAR(255) NULL',
-        'file_path'                 => 'VARCHAR(500) NOT NULL',
-        'file_size'                 => 'INT NOT NULL',
-        'is_inline'                 => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'          => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_recordings' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'           => 'INT NULL',
-        'recorded_by_user_id' => 'INT NULL',
-        'filename'            => 'VARCHAR(255) NOT NULL',
-        'original_filename'   => 'VARCHAR(255) NULL',
-        'content_type'        => 'VARCHAR(100) NOT NULL',
-        'file_path'           => 'VARCHAR(500) NOT NULL',
-        'file_size'           => 'INT NOT NULL',
-        'duration_seconds'    => 'INT NULL',
-        'has_audio'           => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_at'          => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'mailbox_email_whitelist' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'mailbox_id'        => 'INT NOT NULL',
-        'entry_type'        => 'VARCHAR(10) NOT NULL',
-        'entry_value'       => 'VARCHAR(255) NOT NULL',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'mailbox_activity_log' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'mailbox_id'        => 'INT NOT NULL',
-        'action'            => 'VARCHAR(20) NOT NULL',
-        'from_address'      => 'VARCHAR(255) NOT NULL',
-        'from_name'         => 'VARCHAR(255) NULL',
-        'subject'           => 'VARCHAR(500) NULL',
-        'reason'            => 'VARCHAR(255) NULL',
-        'ticket_id'         => 'INT NULL',
-        'processing_log'    => 'TEXT NULL',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_email_templates' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'event_trigger'     => 'VARCHAR(50) NOT NULL',
-        'subject_template'  => 'VARCHAR(500) NOT NULL',
-        'body_template'     => 'LONGTEXT NOT NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_csat_responses' => [
-        'id'                 => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'          => 'INT NOT NULL',
-        'token'              => 'VARCHAR(64) NOT NULL',
-        'sent_datetime'      => 'DATETIME NULL',
-        'responded_datetime' => 'DATETIME NULL',
-        'rating'             => 'TINYINT NULL',
-        'comment'            => 'TEXT NULL',
-        'analyst_id'         => 'INT NULL',
-        'created_at'         => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_rota_shifts' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'start_time'        => 'TIME NOT NULL',
-        'end_time'          => 'TIME NOT NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rota_locations' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_rota_entries' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'rota_date'         => 'DATE NOT NULL',
-        'shift_id'          => 'INT NOT NULL',
-        'location_id'       => 'INT NULL',
-        'is_on_call'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'assets' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'hostname'          => 'VARCHAR(50) NULL',
-        'manufacturer'      => 'VARCHAR(50) NULL',
-        'model'             => 'VARCHAR(50) NULL',
-        'memory'            => 'BIGINT NULL',
-        'service_tag'       => 'VARCHAR(50) NULL',
-        'operating_system'  => 'VARCHAR(50) NULL',
-        'feature_release'   => 'VARCHAR(10) NULL',
-        'build_number'      => 'VARCHAR(50) NULL',
-        'cpu_name'          => 'VARCHAR(250) NULL',
-        'speed'             => 'BIGINT NULL',
-        'bios_version'      => 'VARCHAR(20) NULL',
-        'first_seen'        => 'DATETIME NULL',
-        'last_seen'         => 'DATETIME NULL',
-        'asset_type_id'     => 'INT NULL',
-        'asset_status_id'   => 'INT NULL',
-        'location_id'       => 'INT NULL',
-        'domain'            => 'VARCHAR(100) NULL',
-        'logged_in_user'    => 'VARCHAR(100) NULL',
-        'last_boot_utc'     => 'DATETIME NULL',
-        'tpm_version'       => 'VARCHAR(50) NULL',
-        'bitlocker_status'  => 'VARCHAR(20) NULL',
-        'gpu_name'          => 'VARCHAR(250) NULL',
-        'purchase_date'     => 'DATE NULL',
-        'purchase_cost'     => 'DECIMAL(12,2) NULL',
-        'supplier_id'       => 'INT NULL',
-        'order_number'      => 'VARCHAR(100) NULL',
-        'warranty_expiry'   => 'DATE NULL',
-    ],
-
-    'asset_types' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'asset_status_types' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Arbitrary-depth physical location tree (adjacency list). Self-ref FK +
-    // parent index added in the post-schema section below.
-    'asset_locations' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'parent_id'         => 'INT NULL',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'users_assets' => [
-        'id'                        => 'INT NOT NULL AUTO_INCREMENT',
-        'user_id'                   => 'INT NOT NULL',
-        'asset_id'                  => 'INT NOT NULL',
-        'assigned_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'assigned_by_analyst_id'    => 'INT NULL',
-        'notes'                     => 'VARCHAR(500) NULL',
-        'expected_return_date'      => 'DATE NULL',
-    ],
-
-    // Check-in / check-out custody trail. FK + index in post-schema section.
-    'asset_checkout_log' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'asset_id'              => 'INT NOT NULL',
-        'user_id'               => 'INT NULL',
-        'user_name'             => 'VARCHAR(150) NULL',
-        'action'                => 'VARCHAR(10) NOT NULL',
-        'expected_return_date'  => 'DATE NULL',
-        'analyst_id'            => 'INT NULL',
-        'notes'                 => 'VARCHAR(500) NULL',
-        'action_datetime'       => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'asset_history' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'asset_id'          => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'field_name'        => 'VARCHAR(100) NOT NULL',
-        'old_value'         => 'VARCHAR(500) NULL',
-        'new_value'         => 'VARCHAR(500) NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'asset_disks' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'asset_id'      => 'INT NOT NULL',
-        'drive'         => 'VARCHAR(10) NULL',
-        'label'         => 'VARCHAR(100) NULL',
-        'file_system'   => 'VARCHAR(20) NULL',
-        'size_bytes'    => 'BIGINT NULL',
-        'free_bytes'    => 'BIGINT NULL',
-        'used_percent'  => 'DECIMAL(5,1) NULL',
-        'source'        => "VARCHAR(20) NOT NULL DEFAULT 'agent'",
-    ],
-
-    'asset_network_adapters' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'asset_id'      => 'INT NOT NULL',
-        'name'          => 'VARCHAR(255) NULL',
-        'mac_address'   => 'VARCHAR(17) NULL',
-        'ip_address'    => 'VARCHAR(45) NULL',
-        'subnet_mask'   => 'VARCHAR(45) NULL',
-        'gateway'       => 'VARCHAR(45) NULL',
-        'dhcp_enabled'  => 'TINYINT(1) NULL',
-    ],
-
-    'asset_devices' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'asset_id'          => 'INT NOT NULL',
-        'device_class'      => 'VARCHAR(100) NULL',
-        'device_name'       => 'VARCHAR(255) NOT NULL',
-        'status'            => 'VARCHAR(20) NULL',
-        'manufacturer'      => 'VARCHAR(255) NULL',
-        'driver_version'    => 'VARCHAR(50) NULL',
-        'driver_date'       => 'DATE NULL',
-    ],
-
-    'asset_dashboard_widgets' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                 => 'VARCHAR(100) NOT NULL',
-        'description'           => 'VARCHAR(255) NULL',
-        'chart_type'            => "VARCHAR(20) NOT NULL DEFAULT 'bar'",
-        'aggregate_property'    => 'VARCHAR(50) NOT NULL',
-        'is_status_filterable'  => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'default_status_id'     => 'INT NULL',
-        'display_order'         => 'INT NOT NULL DEFAULT 0',
-        'is_active'             => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'analyst_dashboard_widgets' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'widget_id'         => 'INT NOT NULL',
-        'sort_order'        => 'INT NOT NULL DEFAULT 0',
-        'status_filter_id'  => 'INT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_dashboard_widgets' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                 => 'VARCHAR(100) NOT NULL',
-        'description'           => 'VARCHAR(255) NULL',
-        'chart_type'            => "VARCHAR(20) NOT NULL DEFAULT 'bar'",
-        'aggregate_property'    => 'VARCHAR(50) NOT NULL',
-        'series_property'       => 'VARCHAR(20) NULL DEFAULT NULL',
-        'is_status_filterable'  => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'default_status'        => 'VARCHAR(50) NULL',
-        'date_range'            => 'VARCHAR(20) NULL DEFAULT NULL',
-        'department_filter'     => 'JSON NULL',
-        'time_grouping'         => 'VARCHAR(10) NULL DEFAULT NULL',
-        'display_order'         => 'INT NOT NULL DEFAULT 0',
-        'is_active'             => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'analyst_ticket_dashboard_widgets' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'widget_id'         => 'INT NOT NULL',
-        'sort_order'        => 'INT NOT NULL DEFAULT 0',
-        'status_filter'     => 'VARCHAR(50) NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'software_dashboard_widgets' => [
-        'id'                        => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                     => 'VARCHAR(100) NOT NULL',
-        'description'               => 'VARCHAR(255) NULL',
-        'chart_type'                => "VARCHAR(20) NOT NULL DEFAULT 'bar'",
-        'aggregate_property'        => "VARCHAR(50) NOT NULL DEFAULT 'version_distribution'",
-        'app_id'                    => 'INT NULL',
-        'exclude_system_components' => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'             => 'INT NOT NULL DEFAULT 0',
-        'is_active'                 => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'          => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'analyst_software_dashboard_widgets' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'widget_id'         => 'INT NOT NULL',
-        'sort_order'        => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'servers' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'vm_id'                 => 'VARCHAR(100) NOT NULL',
-        'name'                  => 'VARCHAR(255) NULL',
-        'power_state'           => 'VARCHAR(20) NULL',
-        'memory_gb'             => 'DECIMAL(10,2) NULL',
-        'num_cpu'               => 'INT NULL',
-        'ip_address'            => 'VARCHAR(50) NULL',
-        'hard_disk_size_gb'     => 'DECIMAL(10,2) NULL',
-        'host'                  => 'VARCHAR(255) NULL',
-        'cluster'               => 'VARCHAR(255) NULL',
-        'guest_os'              => 'VARCHAR(255) NULL',
-        'last_synced'           => 'DATETIME NULL',
-        'raw_data'              => 'LONGTEXT NULL',
-    ],
-
-    'intune_devices' => [
-        'id'                            => 'INT NOT NULL AUTO_INCREMENT',
-        'intune_id'                     => 'VARCHAR(64) NOT NULL',
-        'asset_id'                      => 'INT NULL',
-        'device_name'                   => 'VARCHAR(256) NULL',
-        'user_principal_name'           => 'VARCHAR(256) NULL',
-        'user_display_name'             => 'VARCHAR(256) NULL',
-        'user_id'                       => 'VARCHAR(64) NULL',
-        'operating_system'              => 'VARCHAR(64) NULL',
-        'os_version'                    => 'VARCHAR(64) NULL',
-        'compliance_state'              => 'VARCHAR(32) NULL',
-        'management_state'              => 'VARCHAR(32) NULL',
-        'managed_device_owner_type'     => 'VARCHAR(32) NULL',
-        'device_enrollment_type'        => 'VARCHAR(64) NULL',
-        'device_registration_state'     => 'VARCHAR(32) NULL',
-        'enrolled_datetime'             => 'DATETIME NULL',
-        'last_sync_datetime'            => 'DATETIME NULL',
-        'model'                         => 'VARCHAR(128) NULL',
-        'manufacturer'                  => 'VARCHAR(128) NULL',
-        'serial_number'                 => 'VARCHAR(128) NULL',
-        'imei'                          => 'VARCHAR(64) NULL',
-        'meid'                          => 'VARCHAR(64) NULL',
-        'wifi_mac_address'              => 'VARCHAR(64) NULL',
-        'ethernet_mac_address'          => 'VARCHAR(64) NULL',
-        'azure_ad_device_id'            => 'VARCHAR(64) NULL',
-        'is_encrypted'                  => 'TINYINT(1) NULL',
-        'is_supervised'                 => 'TINYINT(1) NULL',
-        'jail_broken'                   => 'VARCHAR(16) NULL',
-        'total_storage_bytes'           => 'BIGINT NULL',
-        'free_storage_bytes'            => 'BIGINT NULL',
-        'raw_json'                      => 'LONGTEXT NULL',
-        'last_seen_local'               => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'intune_sync_jobs' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'started_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'finished_datetime'     => 'DATETIME NULL',
-        'status'                => "VARCHAR(16) NOT NULL DEFAULT 'running'",
-        'total'                 => 'INT NOT NULL DEFAULT 0',
-        'processed'             => 'INT NOT NULL DEFAULT 0',
-        'message'               => 'LONGTEXT NULL',
-    ],
-
-    'intune_app_sync_jobs' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'started_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'finished_datetime' => 'DATETIME NULL',
-        'status'            => "VARCHAR(16) NOT NULL DEFAULT 'pending'",
-        'total'             => 'INT NOT NULL DEFAULT 0',
-        'processed'         => 'INT NOT NULL DEFAULT 0',
-        'failed'            => 'INT NOT NULL DEFAULT 0',
-        'message'           => 'LONGTEXT NULL',
-    ],
-
-    'intune_app_sync_job_assets' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'job_id'            => 'INT NOT NULL',
-        'asset_id'          => 'INT NOT NULL',
-        'status'            => "VARCHAR(16) NOT NULL DEFAULT 'pending'",
-        'error_message'     => 'LONGTEXT NULL',
-        'synced_datetime'   => 'DATETIME NULL',
-        'app_count'         => 'INT NULL',
-    ],
-
-    'change_types' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_statuses' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'is_closed'         => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_priorities' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_impacts' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Layout tables that drive the Change form's section structure.
-    // Sections are user-editable (admin can add / rename / reorder / delete).
-    // Each field_key in change_field_layout corresponds to a fixed slot in the
-    // form (validated against a hardcoded catalogue in api/change-management/
-    // get_field_layout.php) — what's configurable is which section the field
-    // appears in, the order within that section, and whether it's visible.
-    'change_field_sections' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_field_layout' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'field_key'         => 'VARCHAR(50) NOT NULL',
-        'section_id'        => 'INT NOT NULL',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_visible'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-    ],
-
-    'changes' => [
-        'id'                            => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                         => 'VARCHAR(255) NOT NULL',
-        'change_type_id'                => 'INT NULL',
-        'status_id'                     => 'INT NULL',
-        'priority_id'                   => 'INT NULL',
-        'impact_id'                     => 'INT NULL',
-        'category'                      => 'VARCHAR(100) NULL',
-        'requester_id'                  => 'INT NULL',
-        'assigned_to_id'                => 'INT NULL',
-        'approver_id'                   => 'INT NULL',
-        'approval_datetime'             => 'DATETIME NULL',
-        'work_start_datetime'           => 'DATETIME NULL',
-        'work_end_datetime'             => 'DATETIME NULL',
-        'outage_start_datetime'         => 'DATETIME NULL',
-        'outage_end_datetime'           => 'DATETIME NULL',
-        'description'                   => 'LONGTEXT NULL',
-        'reason_for_change'             => 'LONGTEXT NULL',
-        'risk_evaluation'               => 'LONGTEXT NULL',
-        'test_plan'                     => 'LONGTEXT NULL',
-        'rollback_plan'                 => 'LONGTEXT NULL',
-        'post_implementation_review'    => 'LONGTEXT NULL',
-        'risk_likelihood'               => 'TINYINT NULL',
-        'risk_impact_score'             => 'TINYINT NULL',
-        'risk_score'                    => 'TINYINT NULL',
-        'risk_level'                    => 'VARCHAR(20) NULL',
-        'pir_was_successful'            => 'TINYINT(1) NULL',
-        'pir_actual_start'              => 'DATETIME NULL',
-        'pir_actual_end'                => 'DATETIME NULL',
-        'pir_lessons_learned'           => 'LONGTEXT NULL',
-        'pir_follow_up'                 => 'LONGTEXT NULL',
-        'category_id'                   => 'INT NULL',
-        'template_id'                   => 'INT NULL',
-        'cab_required'                  => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'cab_approval_type'             => 'VARCHAR(20) NOT NULL DEFAULT \'all\'',
-        'created_by_id'                 => 'INT NULL',
-        'created_datetime'              => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'modified_datetime'             => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_attachments' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'change_id'             => 'INT NOT NULL',
-        'file_name'             => 'VARCHAR(255) NOT NULL',
-        'file_path'             => 'VARCHAR(500) NOT NULL',
-        'file_size'             => 'INT NULL',
-        'file_type'             => 'VARCHAR(100) NULL',
-        'uploaded_by_id'        => 'INT NULL',
-        'uploaded_datetime'     => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_audit' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'change_id'         => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'action_type'       => 'VARCHAR(50) NOT NULL',
-        'field_name'        => 'VARCHAR(100) NULL',
-        'old_value'         => 'VARCHAR(1000) NULL',
-        'new_value'         => 'VARCHAR(1000) NULL',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_comments' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'change_id'         => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'comment_text'      => 'LONGTEXT NOT NULL',
-        'is_internal'       => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_cab_members' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'change_id'         => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'is_required'       => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'vote'              => 'VARCHAR(20) NULL',
-        'vote_comment'      => 'TEXT NULL',
-        'vote_datetime'     => 'DATETIME NULL',
-        'added_by_id'       => 'INT NULL',
-        'added_datetime'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_checklist_items' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'change_id'             => 'INT NOT NULL',
-        'description'           => 'VARCHAR(500) NOT NULL',
-        'is_completed'          => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'completed_by_id'       => 'INT NULL',
-        'completed_datetime'    => 'DATETIME NULL',
-        'display_order'         => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_relations' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'change_id'         => 'INT NOT NULL',
-        'related_type'      => 'VARCHAR(20) NOT NULL',
-        'related_id'        => 'INT NOT NULL',
-        'relation_type'     => 'VARCHAR(30) NOT NULL',
-        'created_by_id'     => 'INT NULL',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_categories' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_templates' => [
-        'id'                        => 'INT NOT NULL AUTO_INCREMENT',
-        'name'                      => 'VARCHAR(200) NOT NULL',
-        'description'               => 'VARCHAR(500) NULL',
-        'change_type_id'            => 'INT NULL',
-        'priority_id'               => 'INT NULL',
-        'impact_id'                 => 'INT NULL',
-        'category_id'               => 'INT NULL',
-        'risk_likelihood'           => 'TINYINT NULL',
-        'risk_impact_score'         => 'TINYINT NULL',
-        'description_template'      => 'LONGTEXT NULL',
-        'reason_template'           => 'LONGTEXT NULL',
-        'risk_template'             => 'LONGTEXT NULL',
-        'test_plan_template'        => 'LONGTEXT NULL',
-        'rollback_plan_template'    => 'LONGTEXT NULL',
-        'is_active'                 => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'             => 'INT NOT NULL DEFAULT 0',
-        'created_by_id'             => 'INT NULL',
-        'created_datetime'          => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'change_notifications' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'change_id'         => 'INT NOT NULL',
-        'notification_type' => 'VARCHAR(50) NOT NULL',
-        'message'           => 'VARCHAR(500) NOT NULL',
-        'is_read'           => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // ---- Problem Management ----
-    // A Problem is the root cause behind one or more incidents (tickets). It carries
-    // RCA, a workaround and a known-error flag, and links to the incidents it explains
-    // (problem_tickets) and the change that fixes it (via change_relations). Company-
-    // scoped via tenant_id like tickets (NULL = Default), invisible at N=1.
-    'problems' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'tenant_id'           => 'INT NULL',
-        'problem_number'      => 'VARCHAR(20) NULL',
-        'title'               => 'VARCHAR(255) NOT NULL',
-        'description'         => 'LONGTEXT NULL',
-        'status_id'           => 'INT NULL',
-        'priority_id'         => 'INT NULL',
-        'assigned_analyst_id' => 'INT NULL',
-        'root_cause'          => 'LONGTEXT NULL',
-        'workaround'          => 'LONGTEXT NULL',
-        'is_known_error'      => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_by_id'       => 'INT NULL',
-        'created_datetime'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'closed_datetime'     => 'DATETIME NULL',
-    ],
-
-    'problem_statuses' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'name'             => 'VARCHAR(100) NOT NULL',
-        'is_closed'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'colour'           => 'VARCHAR(20) NULL',
-        'is_default'       => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'    => 'INT NOT NULL DEFAULT 0',
-        'is_active'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'problem_priorities' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'name'             => 'VARCHAR(100) NOT NULL',
-        'colour'           => 'VARCHAR(20) NULL',
-        'is_default'       => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'    => 'INT NOT NULL DEFAULT 0',
-        'is_active'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // The incident link: which tickets a problem explains. UNIQUE(problem_id,ticket_id).
-    'problem_tickets' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'problem_id'       => 'INT NOT NULL',
-        'ticket_id'        => 'INT NOT NULL',
-        'created_by_id'    => 'INT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'problem_audit' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'problem_id'       => 'INT NOT NULL',
-        'analyst_id'       => 'INT NOT NULL',
-        'action_type'      => 'VARCHAR(20) NOT NULL',
-        'field_name'       => 'VARCHAR(100) NULL',
-        'old_value'        => 'VARCHAR(1000) NULL',
-        'new_value'        => 'VARCHAR(1000) NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Free-text journal notes on a problem (who / when / the note). Distinct from
-    // problem_audit, which logs structured field changes.
-    'problem_notes' => [
-        'id'               => 'INT NOT NULL AUTO_INCREMENT',
-        'problem_id'       => 'INT NOT NULL',
-        'analyst_id'       => 'INT NULL',
-        'note'             => 'LONGTEXT NOT NULL',
-        'created_datetime' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'calendar_categories' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'name'          => 'VARCHAR(100) NOT NULL',
-        'color'         => 'VARCHAR(7) NOT NULL DEFAULT \'#ef6c00\'',
-        'description'   => 'VARCHAR(500) NULL',
-        'is_active'     => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_at'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_at'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'calendar_events' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'title'             => 'VARCHAR(255) NOT NULL',
-        'description'       => 'LONGTEXT NULL',
-        'category_id'       => 'INT NULL',
-        'start_datetime'    => 'DATETIME NOT NULL',
-        'end_datetime'      => 'DATETIME NULL',
-        'all_day'           => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'location'          => 'VARCHAR(255) NULL',
-        'contract_id'       => 'INT NULL',
-        'created_by'        => 'INT NOT NULL',
-        'source'            => 'VARCHAR(30) NULL',
-        'created_at'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_at'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'morningChecks_Checks' => [
-        'CheckID'           => 'INT NOT NULL AUTO_INCREMENT',
-        'CheckName'         => 'VARCHAR(255) NOT NULL',
-        'CheckDescription'  => 'LONGTEXT NULL',
-        'IsActive'          => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'SortOrder'         => 'INT NOT NULL DEFAULT 0',
-        'CreatedDate'       => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'ModifiedDate'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'morningChecks_Results' => [
-        'ResultID'      => 'INT NOT NULL AUTO_INCREMENT',
-        'CheckID'       => 'INT NOT NULL',
-        'CheckDate'     => 'DATETIME NOT NULL',
-        // Normalised reference to morningChecks_Statuses.StatusID. NULL
-        // is allowed for two cases: (a) pre-#424 rows whose Status label
-        // didn't match any seeded status (orphans the admin needs to
-        // normalise via Settings); (b) rows whose status was later
-        // deleted (FK is ON DELETE SET NULL, with delete_status.php
-        // snapshotting the label into Status first so the orphan keeps
-        // its label for the normalisation tool).
-        'StatusID'      => 'INT NULL',
-        // Label snapshot — nullable now that StatusID is the source of
-        // truth. Holds the original label string for orphan rows so the
-        // normalisation tool in Settings can show "you have N results
-        // with label X, map them to ...".
-        'Status'        => 'VARCHAR(50) NULL',
-        'Notes'         => 'LONGTEXT NULL',
-        'CreatedBy'     => 'VARCHAR(100) NULL',
-        'CreatedDate'   => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'ModifiedDate'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Configurable status options for morning checks. Drives the status
-    // buttons on the dashboard (label + colour) and whether picking a
-    // status pops the notes modal (RequiresNotes).
-    'morningChecks_Statuses' => [
-        'StatusID'        => 'INT NOT NULL AUTO_INCREMENT',
-        'Label'           => 'VARCHAR(50) NOT NULL',
-        'Colour'          => 'VARCHAR(20) NOT NULL',
-        'RequiresNotes'   => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'SortOrder'       => 'INT NOT NULL DEFAULT 0',
-        'IsActive'        => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'CreatedDate'     => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'ModifiedDate'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'system_logs' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'log_type'          => 'VARCHAR(50) NOT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'analyst_id'        => 'INT NULL',
-        'details'           => 'LONGTEXT NOT NULL',
-    ],
-
-    'system_settings' => [
-        'setting_key'       => 'VARCHAR(100) NOT NULL',
-        'setting_value'     => 'LONGTEXT NULL',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'trusted_devices' => [
-        'id'                 => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'         => 'INT NOT NULL',
-        'device_token_hash'  => 'VARCHAR(255) NOT NULL',
-        'user_agent'         => 'VARCHAR(500) NULL',
-        'ip_address'         => 'VARCHAR(45) NULL',
-        'created_datetime'   => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'expires_datetime'   => 'DATETIME NOT NULL',
-    ],
-
-    'password_reset_tokens' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'        => 'INT NOT NULL',
-        'token_hash'        => 'VARCHAR(255) NOT NULL',
-        'expires_datetime'  => 'DATETIME NOT NULL',
-        'used'              => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ip_login_bans' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'ip_address'        => 'VARCHAR(45) NOT NULL',
-        'attempt_count'     => 'INT NOT NULL DEFAULT 0',
-        'ban_count'         => 'INT NOT NULL DEFAULT 0',
-        'banned_until'      => 'DATETIME NULL',
-        'last_attempt'      => 'DATETIME NULL',
-    ],
-
-    'lms_courses' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                 => 'VARCHAR(255) NOT NULL',
-        'description'           => 'LONGTEXT NULL',
-        'scorm_version'         => 'VARCHAR(20) NULL',
-        'manifest_identifier'   => 'VARCHAR(255) NULL',
-        'launch_url'            => 'VARCHAR(500) NULL',
-        'original_filename'     => 'VARCHAR(255) NULL',
-        'is_active'             => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_by_id'         => 'INT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'lms_learning_groups' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'name'                  => 'VARCHAR(100) NOT NULL',
-        'description'           => 'VARCHAR(500) NULL',
-        'is_active'             => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_by_id'         => 'INT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'lms_learning_group_members' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'group_id'              => 'INT NOT NULL',
-        'analyst_id'            => 'INT NOT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'lms_course_assignments' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'course_id'             => 'INT NOT NULL',
-        'group_id'              => 'INT NOT NULL',
-        'deadline'              => 'DATETIME NULL',
-        'assigned_by_id'        => 'INT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'lms_progress' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'analyst_id'            => 'INT NOT NULL',
-        'course_id'             => 'INT NOT NULL',
-        'status'                => "VARCHAR(20) NOT NULL DEFAULT 'not_started'",
-        'score_raw'             => 'DECIMAL(10,2) NULL',
-        'score_min'             => 'DECIMAL(10,2) NULL',
-        'score_max'             => 'DECIMAL(10,2) NULL',
-        'total_time'            => 'VARCHAR(50) NULL',
-        'bookmark'              => 'VARCHAR(500) NULL',
-        'suspend_data'          => 'LONGTEXT NULL',
-        'completion_datetime'   => 'DATETIME NULL',
-        'first_access'          => 'DATETIME NULL',
-        'last_access'           => 'DATETIME NULL',
-        'attempt_count'         => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'lms_cmi_data' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'progress_id'           => 'INT NOT NULL',
-        'element'               => 'VARCHAR(255) NOT NULL',
-        'value'                 => 'LONGTEXT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'processes' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'title'             => 'VARCHAR(255) NOT NULL',
-        'description'       => 'TEXT NULL',
-        'created_by'        => 'INT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'process_steps' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'process_id'        => 'INT NOT NULL',
-        'type'              => "VARCHAR(50) NOT NULL DEFAULT 'process'",
-        'label'             => "VARCHAR(255) NOT NULL DEFAULT ''",
-        'description'       => 'TEXT NULL',
-        'url'               => 'VARCHAR(500) NULL',
-        'x'                 => 'INT NOT NULL DEFAULT 0',
-        'y'                 => 'INT NOT NULL DEFAULT 0',
-        'width'             => 'INT NOT NULL DEFAULT 160',
-        'height'            => 'INT NOT NULL DEFAULT 80',
-        'color'             => "VARCHAR(20) NULL DEFAULT '#0078d4'",
-        'color2'            => 'VARCHAR(20) NULL',
-        'lane_id'           => 'INT NULL',
-        'group_id'          => 'INT NULL',
-    ],
-
-    'process_annotations' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'process_id'        => 'INT NOT NULL',
-        'text'              => 'TEXT NULL',
-        'x'                 => 'INT NOT NULL DEFAULT 0',
-        'y'                 => 'INT NOT NULL DEFAULT 0',
-        'width'             => 'INT NOT NULL DEFAULT 180',
-        'height'            => 'INT NOT NULL DEFAULT 100',
-        'color'             => "VARCHAR(20) NULL DEFAULT '#fff59d'",
-        'color2'            => 'VARCHAR(20) NULL',
-    ],
-
-    'process_connectors' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'process_id'        => 'INT NOT NULL',
-        'from_step_id'      => 'INT NOT NULL',
-        'to_step_id'        => 'INT NOT NULL',
-        'label'             => "VARCHAR(255) NULL DEFAULT ''",
-    ],
-
-    'process_groups' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'process_id'        => 'INT NOT NULL',
-        'label'             => "VARCHAR(100) NULL DEFAULT ''",
-        'color'             => "VARCHAR(20) NULL DEFAULT '#e3f2fd'",
-        'color2'            => 'VARCHAR(20) NULL',
-        'x'                 => 'INT NOT NULL DEFAULT 0',
-        'y'                 => 'INT NOT NULL DEFAULT 0',
-        'width'             => 'INT NOT NULL DEFAULT 240',
-        'height'            => 'INT NOT NULL DEFAULT 160',
-    ],
-
-    'process_lanes' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'process_id'        => 'INT NOT NULL',
-        'label'             => "VARCHAR(100) NULL DEFAULT ''",
-        'color'             => "VARCHAR(20) NULL DEFAULT '#f5f7fa'",
-        'color2'            => 'VARCHAR(20) NULL',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'height'            => 'INT NOT NULL DEFAULT 180',
-    ],
-
-    'process_step_types' => [
-        'id'             => 'INT NOT NULL AUTO_INCREMENT',
-        'name'           => 'VARCHAR(100) NOT NULL',
-        'slug'           => 'VARCHAR(50) NOT NULL',
-        'shape'          => "VARCHAR(30) NOT NULL DEFAULT 'rounded'",
-        'color'          => "VARCHAR(20) NOT NULL DEFAULT '#0078d4'",
-        'display_order'  => 'INT NOT NULL DEFAULT 0',
-        'is_active'      => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'is_builtin'     => 'TINYINT(1) NOT NULL DEFAULT 0',
-    ],
-
-    // Workflows module — automation engine with cross-module triggers.
-    // conditions and actions are JSON-in-TEXT so the rule shape can evolve
-    // without a schema migration each time the engine grows new operators
-    // or action kinds.
-    'workflows' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(255) NOT NULL',
-        'description'       => 'TEXT NULL',
-        'trigger_event'     => 'VARCHAR(100) NOT NULL',
-        'conditions'        => 'TEXT NULL',
-        'actions'           => 'TEXT NOT NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_by'        => 'INT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
-        'last_run_datetime' => 'DATETIME NULL',
-        'last_run_status'   => 'VARCHAR(20) NULL',
-        'run_count'         => 'INT NOT NULL DEFAULT 0',
-    ],
-
-    'workflow_executions' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'workflow_id'       => 'INT NOT NULL',
-        'trigger_event'     => 'VARCHAR(100) NOT NULL',
-        'trigger_payload'   => 'TEXT NULL',
-        'status'            => 'VARCHAR(20) NOT NULL',
-        'started_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'finished_datetime' => 'DATETIME NULL',
-        'step_log'          => 'TEXT NULL',
-        'error_message'     => 'TEXT NULL',
-    ],
-
-    'knowledge_articles' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                 => 'VARCHAR(255) NOT NULL',
-        'body'                  => 'LONGTEXT NULL',
-        'author_id'             => 'INT NOT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'modified_datetime'     => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'is_published'          => 'TINYINT(1) NULL DEFAULT 1',
-        'view_count'            => 'INT NULL DEFAULT 0',
-        'next_review_date'      => 'DATE NULL',
-        'owner_id'              => 'INT NULL',
-        'embedding'             => 'LONGTEXT NULL',
-        'embedding_updated'     => 'DATETIME NULL',
-        'is_archived'           => 'TINYINT(1) NULL DEFAULT 0',
-        'archived_datetime'     => 'DATETIME NULL',
-        'archived_by_id'        => 'INT NULL',
-        'version'               => 'INT NOT NULL DEFAULT 1',
-    ],
-
-    'knowledge_article_versions' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'article_id'        => 'INT NOT NULL',
-        'version'           => 'INT NOT NULL',
-        'title'             => 'VARCHAR(255) NOT NULL',
-        'body'              => 'LONGTEXT NULL',
-        'saved_by_id'       => 'INT NOT NULL',
-        'saved_datetime'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'knowledge_tags' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'knowledge_article_tags' => [
-        'article_id'    => 'INT NOT NULL',
-        'tag_id'        => 'INT NOT NULL',
-    ],
-
-    'software_inventory_apps' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'display_name'      => 'VARCHAR(512) NOT NULL',
-        'publisher'         => 'VARCHAR(512) NULL',
-        'first_detected'    => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'software_inventory_detail' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'host_id'           => 'INT NOT NULL',
-        'app_id'            => 'INT NOT NULL',
-        'display_version'   => 'VARCHAR(100) NULL',
-        'install_date'      => 'VARCHAR(50) NULL',
-        'uninstall_string'  => 'LONGTEXT NULL',
-        'install_location'  => 'LONGTEXT NULL',
-        'estimated_size'    => 'VARCHAR(100) NULL',
-        'system_component'  => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_at'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'last_seen'         => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'source'            => "VARCHAR(20) NOT NULL DEFAULT 'agent'",
-    ],
-
-    'software_licences' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'app_id'            => 'INT NOT NULL',
-        'licence_type'      => 'VARCHAR(50) NOT NULL',
-        'licence_key'       => 'VARCHAR(500) NULL',
-        'quantity'          => 'INT NULL',
-        'renewal_date'      => 'DATE NULL',
-        'notice_period_days'=> 'INT NULL',
-        'portal_url'        => 'VARCHAR(500) NULL',
-        'cost'              => 'DECIMAL(10,2) NULL',
-        'currency'          => 'VARCHAR(10) NULL DEFAULT \'GBP\'',
-        'purchase_date'     => 'DATE NULL',
-        'vendor_contact'    => 'VARCHAR(500) NULL',
-        'notes'             => 'LONGTEXT NULL',
-        'status'            => 'VARCHAR(20) NOT NULL DEFAULT \'Active\'',
-        'created_by'        => 'INT NULL',
-        'created_at'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_at'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'apikeys' => [
-        'id'         => 'INT NOT NULL AUTO_INCREMENT',
-        'apikey'     => 'VARCHAR(50) NULL',
-        'analyst_id' => 'INT NULL',
-        'label'      => 'VARCHAR(100) NULL',
-        'datestamp'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'active'     => 'TINYINT(1) NULL DEFAULT 1',
-    ],
-
-    'api_rate_limits' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'apikey_id'     => 'INT NOT NULL',
-        'request_count' => 'INT NOT NULL DEFAULT 0',
-        'window_start'  => 'DATETIME NOT NULL',
-    ],
-
-    'task_statuses' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'is_closed'         => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'task_priorities' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'tasks' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'title'               => 'VARCHAR(255) NOT NULL',
-        'description'         => 'LONGTEXT NULL',
-        'status_id'           => 'INT NULL',
-        'priority_id'         => 'INT NULL',
-        'start_date'          => 'DATE NULL',
-        'due_date'            => 'DATE NULL',
-        'assigned_analyst_id' => 'INT NULL',
-        'assigned_team_id'    => 'INT NULL',
-        'parent_task_id'      => 'INT NULL',
-        'ticket_id'           => 'INT NULL',
-        'change_id'           => 'INT NULL',
-        'contract_id'         => 'INT NULL',
-        'board_position'      => 'INT NOT NULL DEFAULT 0',
-        'created_by_id'       => 'INT NOT NULL',
-        'created_datetime'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'completed_datetime'  => 'DATETIME NULL',
-    ],
-
-    'task_tags' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'task_tag_map' => [
-        'task_id' => 'INT NOT NULL',
-        'tag_id'  => 'INT NOT NULL',
-    ],
-
-    'task_comments' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'task_id'           => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'comment'           => 'LONGTEXT NOT NULL',
-        'created_datetime'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'forms' => [
-        'id'             => 'INT NOT NULL AUTO_INCREMENT',
-        'title'          => 'VARCHAR(255) NOT NULL',
-        'description'    => 'LONGTEXT NULL',
-        'is_active'      => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_by'     => 'INT NULL',
-        'created_date'   => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'modified_by'    => 'INT NULL',
-        'modified_date'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        // Versioning (#442): a form's history is a chain of rows, each
-        // pointing back at its predecessor via parent_form_id. The leaf
-        // (no children) is the current editable version; older rows are
-        // frozen snapshots. version_number is the position in the
-        // chain — set on create / clone, NEVER incremented by an
-        // in-place save (regular Save just updates modified_by/date).
-        'parent_form_id' => 'INT NULL',
-        'version_number' => 'INT NOT NULL DEFAULT 1',
-    ],
-
-    'form_fields' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'form_id'       => 'INT NOT NULL',
-        'field_type'    => 'VARCHAR(50) NOT NULL',
-        'label'         => 'VARCHAR(255) NOT NULL',
-        'options'       => 'LONGTEXT NULL',
-        'is_required'   => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'sort_order'    => 'INT NOT NULL DEFAULT 0',
-    ],
-
-    'form_submissions' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'form_id'           => 'INT NOT NULL',
-        'submitted_by'      => 'INT NULL',
-        'submitted_date'    => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'form_submission_data' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'submission_id' => 'INT NOT NULL',
-        'field_id'      => 'INT NOT NULL',
-        'field_value'   => 'LONGTEXT NULL',
-    ],
-
-    'wiki_scan_runs' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'started_at'        => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-        'completed_at'      => 'DATETIME NULL',
-        'status'            => 'VARCHAR(20) NOT NULL DEFAULT \'running\'',
-        'files_scanned'     => 'INT NOT NULL DEFAULT 0',
-        'functions_found'   => 'INT NOT NULL DEFAULT 0',
-        'classes_found'     => 'INT NOT NULL DEFAULT 0',
-        'error_message'     => 'LONGTEXT NULL',
-        'scanned_by'        => 'VARCHAR(100) NULL',
-    ],
-
-    'wiki_files' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'scan_id'           => 'INT NOT NULL',
-        'file_path'         => 'VARCHAR(500) NOT NULL',
-        'file_name'         => 'VARCHAR(255) NOT NULL',
-        'folder_path'       => 'VARCHAR(500) NOT NULL',
-        'file_type'         => 'VARCHAR(10) NOT NULL',
-        'file_size_bytes'   => 'BIGINT NOT NULL DEFAULT 0',
-        'line_count'        => 'INT NOT NULL DEFAULT 0',
-        'last_modified'     => 'DATETIME NULL',
-        'description'       => 'LONGTEXT NULL',
-        'created_date'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'wiki_functions' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'file_id'           => 'INT NOT NULL',
-        'function_name'     => 'VARCHAR(255) NOT NULL',
-        'line_number'       => 'INT NOT NULL',
-        'end_line_number'   => 'INT NULL',
-        'parameters'        => 'LONGTEXT NULL',
-        'class_name'        => 'VARCHAR(255) NULL',
-        'visibility'        => 'VARCHAR(20) NULL',
-        'is_static'         => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'description'       => 'LONGTEXT NULL',
-    ],
-
-    'wiki_classes' => [
-        'id'                        => 'INT NOT NULL AUTO_INCREMENT',
-        'file_id'                   => 'INT NOT NULL',
-        'class_name'                => 'VARCHAR(255) NOT NULL',
-        'line_number'               => 'INT NOT NULL',
-        'extends_class'             => 'VARCHAR(255) NULL',
-        'implements_interfaces'     => 'LONGTEXT NULL',
-        'description'               => 'LONGTEXT NULL',
-    ],
-
-    'wiki_dependencies' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'file_id'           => 'INT NOT NULL',
-        'dependency_type'   => 'VARCHAR(50) NOT NULL',
-        'target_path'       => 'VARCHAR(500) NOT NULL',
-        'resolved_file_id'  => 'INT NULL',
-        'line_number'       => 'INT NULL',
-    ],
-
-    'wiki_function_calls' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'file_id'       => 'INT NOT NULL',
-        'function_name' => 'VARCHAR(255) NOT NULL',
-        'line_number'   => 'INT NULL',
-    ],
-
-    'wiki_db_references' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'file_id'           => 'INT NOT NULL',
-        'table_name'        => 'VARCHAR(255) NOT NULL',
-        'reference_type'    => 'VARCHAR(50) NOT NULL',
-        'line_number'       => 'INT NULL',
-    ],
-
-    'wiki_session_vars' => [
-        'id'            => 'INT NOT NULL AUTO_INCREMENT',
-        'file_id'       => 'INT NOT NULL',
-        'variable_name' => 'VARCHAR(255) NOT NULL',
-        'access_type'   => 'VARCHAR(10) NOT NULL',
-        'line_number'   => 'INT NULL',
-    ],
-
-    // Contracts module
-    'supplier_types' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'supplier_statuses' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'suppliers' => [
-        'id'                            => 'INT NOT NULL AUTO_INCREMENT',
-        'legal_name'                    => 'VARCHAR(255) NOT NULL',
-        'trading_name'                  => 'VARCHAR(255) NULL',
-        'reg_number'                    => 'VARCHAR(50) NULL',
-        'vat_number'                    => 'VARCHAR(50) NULL',
-        'supplier_type_id'              => 'INT NULL',
-        'supplier_status_id'            => 'INT NULL',
-        'address_line_1'                => 'VARCHAR(255) NULL',
-        'address_line_2'                => 'VARCHAR(255) NULL',
-        'city'                          => 'VARCHAR(100) NULL',
-        'county'                        => 'VARCHAR(100) NULL',
-        'postcode'                      => 'VARCHAR(20) NULL',
-        'country'                       => 'VARCHAR(100) NULL',
-        'questionnaire_date_issued'     => 'DATE NULL',
-        'questionnaire_date_received'   => 'DATE NULL',
-        'comments'                      => 'LONGTEXT NULL',
-        'is_active'                     => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'supplies_assets'               => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'              => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'contacts' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'supplier_id'       => 'INT NULL',
-        'first_name'        => 'VARCHAR(100) NOT NULL',
-        'surname'           => 'VARCHAR(100) NOT NULL',
-        'email'             => 'VARCHAR(255) NULL',
-        'mobile'            => 'VARCHAR(50) NULL',
-        'job_title'         => 'VARCHAR(100) NULL',
-        'direct_dial'       => 'VARCHAR(50) NULL',
-        'switchboard'       => 'VARCHAR(50) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'contract_statuses' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'payment_schedules' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'contract_term_tabs' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(255) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'contract_term_values' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'contract_id'       => 'INT NOT NULL',
-        'term_tab_id'       => 'INT NOT NULL',
-        'content'           => 'LONGTEXT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'contracts' => [
-        'id'                        => 'INT NOT NULL AUTO_INCREMENT',
-        'contract_number'           => 'VARCHAR(50) NOT NULL',
-        'title'                     => 'VARCHAR(255) NOT NULL',
-        'description'               => 'LONGTEXT NULL',
-        'supplier_id'               => 'INT NULL',
-        'contract_owner_id'         => 'INT NULL',
-        'contract_status_id'        => 'INT NULL',
-        'contract_start'            => 'DATE NULL',
-        'contract_end'              => 'DATE NULL',
-        'notice_period_days'        => 'INT NULL',
-        'notice_date'               => 'DATE NULL',
-        'contract_value'            => 'DECIMAL(18,2) NULL',
-        'currency'                  => 'VARCHAR(3) NULL',
-        'payment_schedule_id'       => 'INT NULL',
-        'cost_centre'               => 'VARCHAR(100) NULL',
-        'dms_link'                  => 'VARCHAR(500) NULL',
-        'terms_status'              => 'VARCHAR(20) NULL',
-        'personal_data_transferred' => 'TINYINT(1) NULL',
-        'dpia_required'             => 'TINYINT(1) NULL',
-        'dpia_completed_date'       => 'DATE NULL',
-        'dpia_dms_link'             => 'VARCHAR(500) NULL',
-        'is_active'                 => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'          => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // RFP Builder (feature of the Contracts module)
-    'rfps' => [
-        'id'                       => 'INT NOT NULL AUTO_INCREMENT',
-        'name'                     => 'VARCHAR(200) NOT NULL',
-        'status'                   => "VARCHAR(50) NOT NULL DEFAULT 'draft'",
-        'contract_id'              => 'INT NULL',
-        'chosen_supplier_id'       => 'INT NULL',
-        'style_guide'              => 'LONGTEXT NULL',
-        'framing_context_text'     => 'LONGTEXT NULL',
-        'created_by_analyst_id'    => 'INT NULL',
-        'created_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_departments' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'colour'            => "VARCHAR(7) NOT NULL DEFAULT '#6c757d'",
-        'sort_order'        => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_categories' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'name'              => 'VARCHAR(200) NOT NULL',
-        'description'       => 'LONGTEXT NULL',
-        'sort_order'        => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_documents' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'department_id'     => 'INT NULL',
-        'filename'          => 'VARCHAR(255) NOT NULL',
-        'original_filename' => 'VARCHAR(255) NOT NULL',
-        'file_path'         => 'VARCHAR(500) NOT NULL',
-        'raw_text'          => 'LONGTEXT NULL',
-        'status'            => "VARCHAR(50) NOT NULL DEFAULT 'uploaded'",
-        'uploaded_datetime' => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_extracted_requirements' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'document_id'       => 'INT NOT NULL',
-        'requirement_text'  => 'LONGTEXT NOT NULL',
-        'requirement_type'  => "VARCHAR(50) NOT NULL DEFAULT 'requirement'",
-        'source_quote'      => 'LONGTEXT NULL',
-        'ai_confidence'     => 'DECIMAL(3,2) NULL',
-        'is_consolidated'   => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_consolidated_requirements' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'category_id'       => 'INT NULL',
-        'requirement_text'  => 'LONGTEXT NOT NULL',
-        'requirement_type'  => "VARCHAR(50) NOT NULL DEFAULT 'requirement'",
-        'priority'          => "VARCHAR(20) NOT NULL DEFAULT 'medium'",
-        'ai_rationale'      => 'LONGTEXT NULL',
-        'is_locked'         => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_consolidated_sources' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'consolidated_id'   => 'INT NOT NULL',
-        'extracted_id'      => 'INT NOT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_conflicts' => [
-        'id'                       => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'                   => 'INT NOT NULL',
-        'consolidated_id_a'        => 'INT NOT NULL',
-        'consolidated_id_b'        => 'INT NOT NULL',
-        'ai_explanation'           => 'LONGTEXT NULL',
-        'resolution'               => "VARCHAR(50) NOT NULL DEFAULT 'open'",
-        'resolution_notes'         => 'LONGTEXT NULL',
-        'resolved_by_analyst_id'   => 'INT NULL',
-        'resolved_datetime'        => 'DATETIME NULL',
-        'created_datetime'         => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_output_sections' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'              => 'INT NOT NULL',
-        'category_id'         => 'INT NOT NULL',
-        'section_title'       => 'VARCHAR(300) NOT NULL',
-        'section_content'     => 'LONGTEXT NULL',
-        'version'             => 'INT NOT NULL DEFAULT 1',
-        'is_manually_edited'  => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'requirements_hash'   => 'VARCHAR(64) NULL',
-        'generated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'edited_datetime'     => 'DATETIME NULL',
-    ],
-
-    'rfp_section_history' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'section_id'          => 'INT NOT NULL',
-        'version'             => 'INT NOT NULL',
-        'section_content'     => 'LONGTEXT NULL',
-        'is_manually_edited'  => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'created_datetime'    => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_document_sections' => [
-        'id'                  => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'              => 'INT NOT NULL',
-        'section_key'         => 'VARCHAR(50) NOT NULL',
-        'section_title'       => 'VARCHAR(200) NOT NULL',
-        'section_content'     => 'LONGTEXT NULL',
-        'sort_order'          => 'INT NOT NULL DEFAULT 0',
-        'is_manually_edited'  => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'inputs_hash'         => 'VARCHAR(64) NULL',
-        'generated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'edited_datetime'     => 'DATETIME NULL',
-    ],
-
-    'rfp_invited_suppliers' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'supplier_id'       => 'INT NOT NULL',
-        'invited_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'demo_date'         => 'DATE NULL',
-        'notes'             => 'LONGTEXT NULL',
-    ],
-
-    'rfp_scores' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'supplier_id'       => 'INT NOT NULL',
-        'analyst_id'        => 'INT NOT NULL',
-        'consolidated_id'   => 'INT NOT NULL',
-        'score'             => 'INT NULL',
-        'notes'             => 'LONGTEXT NULL',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'rfp_processing_log' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'rfp_id'            => 'INT NOT NULL',
-        'document_id'       => 'INT NULL',
-        'section_id'        => 'INT NULL',
-        'action'            => 'VARCHAR(100) NOT NULL',
-        'status'            => 'VARCHAR(50) NOT NULL',
-        'details'           => 'LONGTEXT NULL',
-        'tokens_in'         => 'INT NULL',
-        'tokens_out'        => 'INT NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    // Service Status module
-    'status_services' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(500) NULL',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'service_incident_statuses' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'is_resolved'       => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'service_impact_levels' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'name'              => 'VARCHAR(50) NOT NULL',
-        'colour'            => 'VARCHAR(20) NULL',
-        'is_default'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'severity_order'    => 'INT NOT NULL DEFAULT 99',
-        'display_order'     => 'INT NOT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NOT NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'status_incidents' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'title'                 => 'VARCHAR(255) NOT NULL',
-        'status_id'             => 'INT NULL',
-        'comment'               => 'LONGTEXT NULL',
-        'created_by_id'         => 'INT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'resolved_datetime'     => 'DATETIME NULL',
-    ],
-
-    'status_incident_services' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'incident_id'       => 'INT NOT NULL',
-        'service_id'        => 'INT NOT NULL',
-        'impact_level_id'   => 'INT NULL',
-    ],
-
-    // CMDB ----------------------------------------------------------
-    'cmdb_icons' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'icon_key'          => 'VARCHAR(50) NOT NULL',
-        'label'             => 'VARCHAR(100) NOT NULL',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-    ],
-
-    'cmdb_classes' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'class_key'         => 'VARCHAR(100) NOT NULL',
-        'name'              => 'VARCHAR(150) NOT NULL',
-        'description'       => 'VARCHAR(500) NULL',
-        'icon_id'           => 'INT NULL',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'cmdb_class_properties' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'class_id'          => 'INT NOT NULL',
-        'property_key'      => 'VARCHAR(100) NOT NULL',
-        'label'             => 'VARCHAR(150) NOT NULL',
-        'property_type'     => 'VARCHAR(20) NOT NULL',
-        'target_class_id'   => 'INT NULL',
-        'is_required'       => 'TINYINT(1) NULL DEFAULT 0',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'cmdb_class_property_options' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'property_id'       => 'INT NOT NULL',
-        'option_value'      => 'VARCHAR(255) NOT NULL',
-        'colour'            => 'VARCHAR(7) NULL',
-        'display_order'     => 'INT NULL DEFAULT 0',
-    ],
-
-    'cmdb_objects' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'class_id'          => 'INT NOT NULL',
-        'name'              => 'VARCHAR(255) NOT NULL',
-        'parent_id'         => 'INT NULL',
-        'is_planned'        => 'TINYINT(1) NOT NULL DEFAULT 0',
-        'ai_summary'        => 'LONGTEXT NULL',
-        'ai_summary_generated_at' => 'DATETIME NULL',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'cmdb_object_properties' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'object_id'         => 'INT NOT NULL',
-        'property_id'       => 'INT NOT NULL',
-        'value_text'        => 'TEXT NULL',
-        'value_number'      => 'DECIMAL(20,4) NULL',
-        'value_date'        => 'DATETIME NULL',
-        'value_boolean'     => 'TINYINT(1) NULL',
-        'value_object_id'   => 'INT NULL',
-    ],
-
-    'cmdb_relationship_types' => [
-        'id'                => 'INT NOT NULL AUTO_INCREMENT',
-        'verb'              => 'VARCHAR(100) NOT NULL',
-        'inverse_verb'      => 'VARCHAR(100) NOT NULL',
-        'description'       => 'VARCHAR(500) NULL',
-        'display_order'     => 'INT NULL DEFAULT 0',
-        'is_active'         => 'TINYINT(1) NULL DEFAULT 1',
-        'created_datetime'  => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'cmdb_object_relationships' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'from_object_id'        => 'INT NOT NULL',
-        'to_object_id'          => 'INT NOT NULL',
-        'relationship_type_id'  => 'INT NOT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-    ],
-
-    'ticket_cmdb_objects' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'ticket_id'             => 'INT NOT NULL',
-        'cmdb_object_id'        => 'INT NOT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'created_by_analyst_id' => 'INT NULL',
-    ],
-
-    // Network Mapper — visual diagrams over the CMDB graph (see freeitsm.sql header).
-    'network_diagrams' => [
-        'id'                    => 'INT NOT NULL AUTO_INCREMENT',
-        'parent_diagram_id'     => 'INT NULL',
-        'title'                 => 'VARCHAR(255) NOT NULL',
-        'description'           => 'TEXT NULL',
-        'version_label'         => 'VARCHAR(50) NULL',
-        'created_by_analyst_id' => 'INT NULL',
-        'created_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        'updated_datetime'      => 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP',
-        // Optional paper-size overlay (NULL = no overlay shown). Surfaces on
-        // the editor canvas as a dashed outline so analysts can see what
-        // will fit before exporting to PNG/PDF. Persisted per-diagram.
-        'paper_size'            => 'VARCHAR(20) NULL',
-        'paper_orientation'     => 'VARCHAR(20) NULL',
-        // Per-diagram header/footer override slots. NULL = inherit the
-        // org-wide default from system_settings (`branding_header_left` etc.);
-        // non-NULL = explicit override. Renders only when paper_size is set.
-        'header_left'           => 'VARCHAR(200) NULL',
-        'header_center'         => 'VARCHAR(200) NULL',
-        'header_right'          => 'VARCHAR(200) NULL',
-        'footer_left'           => 'VARCHAR(200) NULL',
-        'footer_center'         => 'VARCHAR(200) NULL',
-        'footer_right'          => 'VARCHAR(200) NULL',
-    ],
-
-    'network_diagram_nodes' => [
-        'id'             => 'INT NOT NULL AUTO_INCREMENT',
-        'diagram_id'     => 'INT NOT NULL',
-        'cmdb_object_id' => 'INT NOT NULL',
-        'x'              => 'INT NOT NULL DEFAULT 0',
-        'y'              => 'INT NOT NULL DEFAULT 0',
-        'size'           => "VARCHAR(20) NOT NULL DEFAULT 'medium'",
-        'icon_override'  => 'VARCHAR(100) NULL',
-    ],
-
-    'network_diagram_connectors' => [
-        'id'                   => 'INT NOT NULL AUTO_INCREMENT',
-        'diagram_id'           => 'INT NOT NULL',
-        'from_node_id'         => 'INT NOT NULL',
-        'to_node_id'           => 'INT NOT NULL',
-        'cmdb_relationship_id' => 'INT NULL',
-        'label'                => 'VARCHAR(255) NULL',
-        'line_style'           => "VARCHAR(20) NULL DEFAULT 'solid'",
-    ],
-];
+// The expected columns of every table, lifted into its own requirable file so
+// the drift guard (and any future tooling) can read it — see the header there.
+$schema = require __DIR__ . '/../../includes/db_verify_schema.php';
 
 // Primary key definitions: table => pk_column (defaults to 'id')
 $primaryKeys = [
+    // ⚠️ No auto-increment id on purpose: counter_key being the PK is what lets
+    // the read-and-increment happen in one statement (#1147).
+    'ticket_number_counters'    => 'counter_key',
+    'asset_tag_counters'        => 'counter_key',   // the same design, for asset tags (PR #164)
+    'job_schedules'             => 'job_key',       // one row per job, claimed by one atomic UPDATE (#233)
+    'attachment_text'           => 'attachment_id',
+    'document_text'             => 'document_id',
     'system_settings'           => 'setting_key',
     'morningChecks_Checks'      => 'CheckID',
     'morningChecks_Results'     => 'ResultID',
     'morningChecks_Statuses'    => 'StatusID',
-    'knowledge_article_tags'    => null, // composite PK: article_id, tag_id
-    'task_tag_map'              => null, // composite PK: task_id, tag_id
+    // ⚠️ A new table whose PK is not literally `id` MUST be listed here. The
+    // CREATE builder below falls back to PRIMARY KEY (`id`), so the table fails
+    // to create with "Key column 'id' doesn't exist" — which is how these two
+    // announced themselves. The $schema array carries columns and nothing else.
+    'morningChecks_Groups'      => 'GroupID',
+    'morningChecks_ResultLinks' => 'LinkID',
+    // Composite keys are an ARRAY. They used to be `null` here and then named
+    // again in an if/elseif chain inside the CREATE builder, which meant adding
+    // one was a code change in two places and forgetting the second half failed
+    // silently — the table simply fell through to PRIMARY KEY (`id`).
+    'knowledge_article_tags'    => ['article_id', 'tag_id'],
+    'task_tag_map'              => ['task_id', 'tag_id'],
+    // 3.3.0: one row per project, day and status - the cumulative flow diagram.
+    'project_task_flow'         => ['project_id', 'day', 'status_id'],
+    // Microsoft Teams alerts: one workflow per channel and alert.
+    'msteams_channel_workflows' => ['channel_id', 'alert_key'],
+    // GH #199 Part B: one mapping per connection, one sync-owned row per relationship, one decision per object.
+    'virt_cmdb_mappings'        => 'connection_id',
+    'cmdb_relationship_sources' => 'relationship_id',
+    'virt_cmdb_decisions'       => ['object_kind', 'virt_object_id'],
+    // 🔴 GH #123. Both of these were missed, and the warning above is the one
+    // they were missed in spite of. A table is only safe to leave out of this
+    // map if its PK is literally `id`; neither of these has an `id` column at
+    // all, so verification could not create them on a fresh install and
+    // reported "Key column 'id' doesn't exist in table" twice, every run.
+    'knowledge_gap_tickets'         => 'ticket_id',
+    // Feature Bingo's "Not for us" list: one row per card, keyed on the card.
+    'feature_bingo_dismissed'       => 'card_id',
+    'knowledge_gap_cluster_tickets' => ['cluster_id', 'ticket_id'],
 ];
 
 try {
-    $conn = connectToDatabase();
+    // $conn was opened above, before the authorisation gate — that gate has to ask
+    // the database whether any analyst exists, so the connection has to come first.
     $results = [];
     $dbName = DB_NAME;
 
@@ -2257,6 +146,299 @@ try {
         $ticketsTenantColWasMissing = ((int)$tkProbe->fetchColumn() === 0);
     } catch (Exception $e) {}
 
+    // Contracts and RFPs get an owning company (3.5.0). Was contracts.tenant_id
+    // absent before this run? If so, the post-schema section files each existing
+    // CUSTOMER contract under its customer's company - ONLY this once. Until now a
+    // customer contract was hidden by its customer's company (#153), so this keeps
+    // every analyst seeing exactly what they saw before. Supplier contracts and every
+    // RFP stay NULL, which is the Default company. Never re-run: afterwards a contract
+    // in Default with a customer elsewhere is a deliberate choice.
+    $contractsTenantColWasMissing = false;
+    try {
+        $ctProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'contracts' AND column_name = 'tenant_id'");
+        $ctProbe->execute([$dbName]);
+        $contractsTenantColWasMissing = ((int)$ctProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // GH #160 stage 2: was contracts.cost_centre_id absent before this run? If so,
+    // the post-schema section links each contract's old free-text cost centre to
+    // the real one with that CODE in the contract's company - only this once.
+    // Text that matches nothing stays, shown as "previously recorded" until
+    // somebody chooses a cost centre.
+    // GH #188: the same for domains.cost_centre_id.
+    $domainsCcColWasMissing = false;
+    try {
+        $dcProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'domains' AND column_name = 'cost_centre_id'");
+        $dcProbe->execute([$dbName]);
+        $domainsCcColWasMissing = ((int)$dcProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    $contractsCcColWasMissing = false;
+    try {
+        $ccProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'contracts' AND column_name = 'cost_centre_id'");
+        $ccProbe->execute([$dbName]);
+        $contractsCcColWasMissing = ((int)$ccProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // SSO JIT split (discussion #155): was auth_providers.auto_create_analysts
+    // absent before this run? Before the split, auto_create_users ALSO meant
+    // "create an analyst" on the analyst login, so on the run that adds the new
+    // column we copy the old value across. Only this once: after that the two
+    // switches are set deliberately and must never be re-synced.
+    $providerAutoAnalystsColWasMissing = false;
+    try {
+        $aaProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'auth_providers' AND column_name = 'auto_create_analysts'");
+        $aaProbe->execute([$dbName]);
+        $providerAutoAnalystsColWasMissing = ((int)$aaProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // Did change_approvals exist before this run? If not, every change already past
+    // submission predates approval records and gets a 'legacy' round (below), once.
+    // Running it on every Verify would be wrong: a change moved straight to Scheduled
+    // in Record mode after the upgrade has no round, and must not be dressed up as
+    // "approved before records were kept".
+    $changeApprovalsWasMissing = false;
+    try {
+        $caProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'change_approvals'");
+        $caProbe->execute([$dbName]);
+        $changeApprovalsWasMissing = ((int)$caProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // Was analysts.is_admin absent *before* this run added it? If so, every existing
+    // analyst predates the admin/non-admin split and must be grandfathered to admin
+    // (below) so an upgrade never locks anyone out of System. Once the column exists
+    // the flag is managed deliberately, so this backfill must run only this once.
+    $analystIsAdminColWasMissing = false;
+    try {
+        $iaProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'analysts' AND column_name = 'is_admin'");
+        $iaProbe->execute([$dbName]);
+        $analystIsAdminColWasMissing = ((int)$iaProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // Module access (issue #30): was analysts.can_access_all_modules absent before
+    // this run? The column defaults to 1 (all modules), which is right for analysts
+    // who were unrestricted — but analysts who already had analyst_modules rows were
+    // RESTRICTED, so once the column is added we must flip them to 0 (see back-fill
+    // below), or the upgrade would silently give restricted analysts every module.
+    $analystAllModulesColWasMissing = false;
+    try {
+        $amProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'analysts' AND column_name = 'can_access_all_modules'");
+        $amProbe->execute([$dbName]);
+        $analystAllModulesColWasMissing = ((int)$amProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // Was users.tenant_id absent before this run? Requesters predate the column,
+    // so on the run that adds it we pre-fill it from each address's domain (see
+    // the back-fill below) rather than leaving every existing person company-less
+    // and sending all their future portal tickets to triage.
+    $userTenantColWasMissing = false;
+    try {
+        $utProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'users' AND column_name = 'tenant_id'");
+        $utProbe->execute([$dbName]);
+        $userTenantColWasMissing = ((int)$utProbe->fetchColumn() === 0);
+    } catch (Exception $e) {}
+
+    // `users.email` was NOT NULL. A directory user may genuinely have no mailbox
+    // (GitHub #47 — warehouse and shop-floor staff are never given one), so it
+    // has to become nullable. Relaxing NOT NULL is safe in a way that tightening
+    // never is: every existing row already satisfies the looser rule.
+    //
+    // Only ADDing columns is the convention for the $schema array, not a wall —
+    // there are five MODIFY precedents in this file. Probed first, so it fires
+    // once and is a no-op on every later run.
+    try {
+        $emailCol = $conn->prepare(
+            "SELECT IS_NULLABLE FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'users' AND column_name = 'email'"
+        );
+        $emailCol->execute([$dbName]);
+        $emailRow = $emailCol->fetch(PDO::FETCH_ASSOC);
+        if ($emailRow && strtoupper($emailRow['IS_NULLABLE']) === 'NO') {
+            $conn->exec("ALTER TABLE `users` MODIFY `email` VARCHAR(255) NULL");
+
+            // Any address already stored as '' must become NULL, or it occupies
+            // the unique index and the NEXT mailbox-less person cannot be
+            // created. '' and NULL look equally empty on screen, so this would
+            // surface as an inexplicable "email already in use".
+            $blanked = $conn->exec("UPDATE `users` SET `email` = NULL WHERE `email` = ''");
+
+            $detail = "email: NOT NULL → NULL (directory users may have no mailbox)";
+            if ($blanked > 0) {
+                $detail .= "; converted $blanked empty address(es) to NULL so they stop occupying the unique index";
+            }
+            $results[] = ['table' => 'users', 'status' => 'updated', 'details' => [$detail]];
+        }
+    } catch (Exception $e) {
+        // Non-fatal: the portal keeps working for everyone who has an address.
+    }
+
+    // `ticket_audit.analyst_id` was NOT NULL, and the workflow engine's
+    // `add_ticket_note` action writes NULL there deliberately — its comment says
+    // so: NULL marks the entry as written by automation rather than by a person.
+    // The column never allowed it, so the action failed with
+    //   SQLSTATE[23000] ... Column 'analyst_id' cannot be null
+    // every single time it ran, on every installation, since it was written
+    // (GitHub #120).
+    //
+    // Same probe-then-MODIFY shape as the two either side. Safe for the same
+    // reason: every existing row already has an analyst, so relaxing the rule
+    // cannot invalidate one. The `fk_ticket_audit_analyst` foreign key is
+    // unaffected — a NULL never violates a foreign key, it simply has nothing
+    // to check.
+    try {
+        $auditCol = $conn->prepare(
+            "SELECT IS_NULLABLE FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'ticket_audit' AND column_name = 'analyst_id'"
+        );
+        $auditCol->execute([$dbName]);
+        $auditRow = $auditCol->fetch(PDO::FETCH_ASSOC);
+        if ($auditRow && strtoupper($auditRow['IS_NULLABLE']) === 'NO') {
+            $conn->exec("ALTER TABLE `ticket_audit` MODIFY `analyst_id` INT NULL");
+            $results[] = [
+                'table'   => 'ticket_audit',
+                'status'  => 'updated',
+                'details' => ["analyst_id: NOT NULL → NULL (a workflow writes history entries that no analyst made)"],
+            ];
+        }
+    } catch (Exception $e) {
+        // Non-fatal: ticket history keeps working; only the workflow action stays broken.
+    }
+
+    // `asset_history.analyst_id` was NOT NULL, so a change nobody on the desk
+    // made - an Intune rename, an inventory agent reporting a new hostname
+    // (PR #164) - had no way to be recorded, and the write failed the whole
+    // request. Same probe-then-MODIFY shape as ticket_audit above, and safe for
+    // the same reason: every existing row already has an analyst. The foreign
+    // key is left exactly as it is - a NULL never violates it.
+    try {
+        $ahCol = $conn->prepare(
+            "SELECT IS_NULLABLE FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'asset_history' AND column_name = 'analyst_id'"
+        );
+        $ahCol->execute([$dbName]);
+        $ahRow = $ahCol->fetch(PDO::FETCH_ASSOC);
+        if ($ahRow && strtoupper($ahRow['IS_NULLABLE']) === 'NO') {
+            $conn->exec("ALTER TABLE `asset_history` MODIFY `analyst_id` INT NULL");
+            $results[] = [
+                'table'   => 'asset_history',
+                'status'  => 'updated',
+                'details' => ["analyst_id: NOT NULL → NULL (Intune and the inventory agent record changes no analyst made)"],
+            ];
+        }
+    } catch (Exception $e) {
+        // Non-fatal: asset history keeps working for people; only automated entries stay broken.
+    }
+
+    // `users_assets.user_id` was NOT NULL, so an asset could only ever be
+    // recorded against a REQUESTER. Analysts hold equipment too — and they are
+    // not requesters: on a real install five of seven analysts had no `users`
+    // row at all, so most of the desk could not be picked as a holder even by
+    // somebody willing to type the name. `analyst_id` is added beside it by the
+    // ordinary column pass; this relaxes the old rule so a row can name one
+    // without the other.
+    //
+    // Same probe-then-MODIFY shape as the blocks above, and safe for the same
+    // reason: every existing row already has a user, so nothing becomes invalid.
+    // `fk_users_assets_user` is unaffected — a NULL never violates a foreign
+    // key, it simply has nothing to check.
+    try {
+        $uaCol = $conn->prepare(
+            "SELECT IS_NULLABLE FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'users_assets' AND column_name = 'user_id'"
+        );
+        $uaCol->execute([$dbName]);
+        $uaRow = $uaCol->fetch(PDO::FETCH_ASSOC);
+        if ($uaRow && strtoupper($uaRow['IS_NULLABLE']) === 'NO') {
+            $conn->exec("ALTER TABLE `users_assets` MODIFY `user_id` INT NULL");
+            $results[] = [
+                'table'   => 'users_assets',
+                'status'  => 'updated',
+                'details' => ["user_id: NOT NULL → NULL (an asset can be held by an analyst instead of a requester)"],
+            ];
+        }
+    } catch (Exception $e) {
+        // Non-fatal: assigning to a requester keeps working, only assigning to
+        // an analyst stays unavailable on this install.
+    }
+
+    // `emails.from_address` was NOT NULL. A portal requester who signs in
+    // through a directory may have no mailbox at all (GitHub #47), and their
+    // ticket has no sender address to record — the INSERT failed outright, so
+    // the person could sign in and then not raise a ticket. Same probe-then-
+    // MODIFY shape as users.email above; relaxing NOT NULL can't invalidate an
+    // existing row.
+    try {
+        $fromCol = $conn->prepare(
+            "SELECT IS_NULLABLE FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'emails' AND column_name = 'from_address'"
+        );
+        $fromCol->execute([$dbName]);
+        $fromRow = $fromCol->fetch(PDO::FETCH_ASSOC);
+        if ($fromRow && strtoupper($fromRow['IS_NULLABLE']) === 'NO') {
+            $conn->exec("ALTER TABLE `emails` MODIFY `from_address` VARCHAR(255) NULL");
+            $results[] = [
+                'table'   => 'emails',
+                'status'  => 'updated',
+                'details' => ['from_address: NOT NULL → NULL (a portal requester may have no mailbox)'],
+            ];
+        }
+    } catch (Exception $e) {
+        // Non-fatal — everyone with an address is unaffected either way.
+    }
+
+    // `changes.risk_level` was VARCHAR(20), wide enough for the built-in words
+    // ("Very High"). A risk policy (#246) uses the organisation's own words, so
+    // it is 50 now. Same probe-then-MODIFY shape as above; widening a VARCHAR
+    // cannot invalidate an existing row.
+    try {
+        $rlCol = $conn->prepare(
+            "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'changes' AND column_name = 'risk_level'"
+        );
+        $rlCol->execute([$dbName]);
+        $rlLen = $rlCol->fetchColumn();
+        if ($rlLen !== false && (int)$rlLen < 50) {
+            $conn->exec("ALTER TABLE `changes` MODIFY `risk_level` VARCHAR(50) NULL");
+            $results[] = [
+                'table'   => 'changes',
+                'status'  => 'updated',
+                'details' => ['risk_level: VARCHAR(' . (int)$rlLen . ') → VARCHAR(50) (a risk policy uses its own words)'],
+            ];
+        }
+    } catch (Exception $e) {
+        // Non-fatal — the built-in words fit either way; only a long policy word would be cut.
+    }
+
+    // `calendar_sync_events.ticket_id` was NOT NULL back when only a ticket
+    // could reach a calendar. A task now can (#75), and a row belongs to one or
+    // the other, never both — so a task's row has no ticket to name. Same
+    // probe-then-MODIFY shape as the two above; relaxing NOT NULL cannot
+    // invalidate a row that already exists.
+    //
+    // ⚠️ The UNIQUE index on (ticket_id, analyst_id) is deliberately left
+    // alone. MySQL permits any number of NULLs in a unique index, so task rows
+    // pass straight through it and get their own unique on
+    // (task_id, analyst_id, kind) instead.
+    try {
+        $csCol = $conn->prepare(
+            "SELECT IS_NULLABLE FROM information_schema.columns
+             WHERE table_schema = ? AND table_name = 'calendar_sync_events' AND column_name = 'ticket_id'"
+        );
+        $csCol->execute([$dbName]);
+        $csRow = $csCol->fetch(PDO::FETCH_ASSOC);
+        if ($csRow && strtoupper($csRow['IS_NULLABLE']) === 'NO') {
+            $conn->exec("ALTER TABLE `calendar_sync_events` MODIFY `ticket_id` INT NULL");
+            $results[] = [
+                'table'   => 'calendar_sync_events',
+                'status'  => 'updated',
+                'details' => ['ticket_id: NOT NULL → NULL (a row can now belong to a task instead)'],
+            ];
+        }
+    } catch (Exception $e) {
+        // Non-fatal — the table may not exist yet on an install that has never
+        // configured calendar sync, and $schema creates it correctly.
+    }
+
     foreach ($schema as $tableName => $columns) {
         $tableResult = ['table' => $tableName, 'status' => 'ok', 'details' => []];
 
@@ -2272,17 +454,13 @@ try {
                 $colDefs[] = "`$colName` $colDef";
             }
 
-            // Determine primary key
-            if ($tableName === 'knowledge_article_tags') {
-                $colDefs[] = "PRIMARY KEY (`article_id`, `tag_id`)";
-            } elseif ($tableName === 'task_tag_map') {
-                $colDefs[] = "PRIMARY KEY (`task_id`, `tag_id`)";
-            } elseif (isset($primaryKeys[$tableName])) {
-                $pkCol = $primaryKeys[$tableName];
-                $colDefs[] = "PRIMARY KEY (`$pkCol`)";
-            } else {
-                $colDefs[] = "PRIMARY KEY (`id`)";
-            }
+            /* Determine the primary key. One rule now, reading $primaryKeys:
+               an array is a composite, a string is one column, and absent means
+               `id`. The two composites used to be named here as well as in the
+               map, so a third one had to be added in both places to work. */
+            $pk = $primaryKeys[$tableName] ?? 'id';
+            $pkCols = is_array($pk) ? $pk : [$pk];
+            $colDefs[] = 'PRIMARY KEY (`' . implode('`, `', $pkCols) . '`)';
 
             $sql = "CREATE TABLE `$tableName` (\n    " . implode(",\n    ", $colDefs) . "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
@@ -2381,60 +559,150 @@ try {
         ];
     }
 
-    // Diagnostic/repair for the canonical mailbox schema. FreeITSM stores mailbox
-    // configuration in target_mailboxes (not a separate `mailboxes` table). Make
-    // legacy OAuth rows explicit so newer UI/API/intake code can read provider_type
-    // without breaking existing Graph/Gmail/Exchange records.
-    try {
-        $requiredMailboxColumns = [
-            'provider_type', 'auth_mode', 'imap_host', 'imap_port', 'imap_encryption',
-            'imap_username', 'imap_password_encrypted', 'imap_folder', 'smtp_host',
-            'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_password_encrypted',
-            'smtp_from_address', 'smtp_from_name', 'intake_enabled', 'outbound_enabled',
-            'last_checked_at'
+    // One-time SSO JIT split (discussion #155). Keeps every existing provider
+    // behaving exactly as it did before the upgrade:
+    //  - analyst JIT stays on wherever the old single switch was on
+    //  - someone with no analyst account is refused, as before, rather than
+    //    being offered the portal; admins can choose 'confirm' deliberately
+    if ($providerAutoAnalystsColWasMissing) {
+        $copied = $conn->exec("UPDATE auth_providers SET auto_create_analysts = auto_create_users");
+        $conn->exec("UPDATE auth_providers SET analyst_fallback_mode = 'block'");
+        $results[] = [
+            'table'   => 'auth_providers',
+            'status'  => 'updated',
+            'details' => ['Kept the auto-create setting for ' . (int)$copied . ' sign-in provider(s) (one-time upgrade)']
         ];
-        $missingMailboxColumns = [];
-        foreach ($requiredMailboxColumns as $columnName) {
-            $colProbe = $conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = 'target_mailboxes' AND column_name = ?");
-            $colProbe->execute([$dbName, $columnName]);
-            if ((int)$colProbe->fetchColumn() === 0) {
-                $missingMailboxColumns[] = $columnName;
+    }
+
+    // One-time grandfather: if is_admin was just added, promote every existing
+    // analyst to admin so the upgrade preserves today's behaviour (all analysts
+    // could reach System) rather than locking everyone out. Admins then demote
+    // people deliberately. Runs only on the run that first adds the column.
+    if ($analystIsAdminColWasMissing) {
+        $graduated = $conn->exec("UPDATE analysts SET is_admin = 1");
+        $results[] = [
+            'table' => 'analysts',
+            'status' => 'updated',
+            'details' => ['Granted admin to ' . (int)$graduated . ' existing analyst(s) (one-time upgrade — demote non-admins in System → Analysts)']
+        ];
+    }
+
+    // One-time module-access grandfather (issue #30): analysts who already had
+    // analyst_modules rows were restricted, so flip their new all-modules flag to 0
+    // (the default 1 correctly leaves previously-unrestricted analysts untouched).
+    // Runs only on the run that first adds the column, so a later deliberate
+    // "all modules" choice is never clobbered.
+    if ($analystAllModulesColWasMissing) {
+        $restricted = $conn->exec("UPDATE analysts SET can_access_all_modules = 0
+            WHERE id IN (SELECT analyst_id FROM (SELECT DISTINCT analyst_id FROM analyst_modules) t)");
+        $results[] = [
+            'table' => 'analysts',
+            'status' => 'updated',
+            'details' => ['Preserved module restrictions for ' . (int)$restricted . ' analyst(s) on upgrade (issue #30)']
+        ];
+    }
+
+    // One-time company pre-fill for requesters (portal tickets were landing in
+    // triage because nobody had a company). Runs ONLY on the run that first adds
+    // the column, so an admin's later deliberate choice — including deliberately
+    // clearing someone — is never overwritten on a subsequent verify.
+    //
+    // Domain match only. Freemail is skipped on purpose: two customers share
+    // gmail.com, so a domain match there would be a guess, and a wrong company is
+    // worse than a blank one. Those get set by hand in Tickets → Users.
+    if ($userTenantColWasMissing) {
+        require_once '../../includes/tenancy.php';
+        $filled = 0;
+        try {
+            if (!isMultiTenant($conn)) {
+                // Single-company install: everyone belongs to the silent Default.
+                // Doing this now means that if a second company is added later,
+                // these people stay on Default instead of falling into triage.
+                $stmt = $conn->prepare("UPDATE users SET tenant_id = ? WHERE tenant_id IS NULL");
+                $stmt->execute([getDefaultTenantId($conn)]);
+                $filled = $stmt->rowCount();
+            } else {
+                $upd = $conn->prepare(
+                    "UPDATE users SET tenant_id = ?
+                     WHERE tenant_id IS NULL AND SUBSTRING_INDEX(email, '@', -1) = ?"
+                );
+                foreach ($conn->query("SELECT domain, tenant_id FROM tenant_domains") as $row) {
+                    $domain = strtolower(trim($row['domain']));
+                    if ($domain === '' || $row['tenant_id'] === null) continue;
+                    if (isFreemailDomain($conn, $domain)) continue;
+                    $upd->execute([(int)$row['tenant_id'], $domain]);
+                    $filled += $upd->rowCount();
+                }
             }
+        } catch (Exception $e) {
+            // tenancy tables missing / part-migrated install — leave them blank,
+            // which is the safe state (triage), not a broken one.
         }
-        if (!empty($missingMailboxColumns)) {
-            $results[] = [
-                'table' => 'target_mailboxes',
-                'status' => 'error',
-                'details' => ['Canonical mailbox table is missing required columns after repair attempt: ' . implode(', ', $missingMailboxColumns)]
-            ];
-        } else {
-            $updatedProviderTypes = $conn->exec("UPDATE target_mailboxes SET provider_type = CASE WHEN provider = 'google' THEN 'gmail' WHEN provider = 'imap_smtp' THEN 'imap_smtp' ELSE 'graph' END WHERE provider_type IS NULL OR provider_type = ''");
-            $updatedAuthModes = $conn->exec("UPDATE target_mailboxes SET auth_mode = 'delegated' WHERE auth_mode IS NULL OR auth_mode = '' OR auth_mode = 'oauth'");
-            $updatedFolders = $conn->exec("UPDATE target_mailboxes SET imap_folder = COALESCE(NULLIF(imap_folder, ''), email_folder, 'INBOX') WHERE imap_folder IS NULL OR imap_folder = ''");
-            $details = [];
-            if ($updatedProviderTypes) $details[] = "Backfilled provider_type on $updatedProviderTypes mailbox(es)";
-            if ($updatedAuthModes) $details[] = "Normalised OAuth auth_mode on $updatedAuthModes mailbox(es)";
-            if ($updatedFolders) $details[] = "Backfilled imap_folder on $updatedFolders mailbox(es)";
-            if (!empty($details)) {
-                $results[] = ['table' => 'target_mailboxes', 'status' => 'updated', 'details' => $details];
-            }
+
+        $blank = 0;
+        try {
+            $blank = (int)$conn->query("SELECT COUNT(*) FROM users WHERE tenant_id IS NULL")->fetchColumn();
+        } catch (Exception $e) {}
+
+        $detail = 'Set the company for ' . $filled . ' requester(s) from their email domain (one-time upgrade)';
+        if ($blank > 0) {
+            $detail .= '; ' . $blank . ' left blank (freemail or unregistered domain) — set these in Tickets → Users or their tickets go to triage';
         }
-    } catch (Exception $e) {
-        $results[] = ['table' => 'target_mailboxes', 'status' => 'error', 'details' => ['Mailbox schema diagnostic failed: ' . $e->getMessage()]];
+        $results[] = [
+            'table' => 'users',
+            'status' => 'updated',
+            'details' => [$detail]
+        ];
     }
 
     // Seed default admin account if no analysts exist
     $countStmt = $conn->query("SELECT COUNT(*) FROM analysts");
     $analystCount = (int) $countStmt->fetchColumn();
     if ($analystCount === 0) {
+        // must_change_password = 1: admin/freeitsm used to be permanent. There was no
+        // column like this and nothing anywhere forced, warned about or nagged on the
+        // change, so the published default credentials stayed valid on installs that
+        // never got round to it. Now the first sign-in cannot go anywhere else.
         $defaultHash = password_hash('freeitsm', PASSWORD_DEFAULT);
-        $seedStmt = $conn->prepare("INSERT INTO analysts (username, password_hash, full_name, email, is_active, created_datetime) VALUES (?, ?, ?, ?, 1, UTC_TIMESTAMP())");
+        $seedStmt = $conn->prepare("INSERT INTO analysts (username, password_hash, full_name, email, is_active, is_admin, must_change_password, created_datetime) VALUES (?, ?, ?, ?, 1, 1, 1, UTC_TIMESTAMP())");
         $seedStmt->execute(['admin', $defaultHash, 'Administrator', 'admin@localhost']);
         $results[] = [
             'table' => 'analysts',
             'status' => 'seeded',
-            'details' => ['Created default admin account (username: admin, password: freeitsm)']
+            'details' => ['Created default admin account (username: admin, password: freeitsm) — it must be changed at first sign-in']
         ];
+    }
+
+    // ⚠️ …and the same guarantee for installs that did NOT get their admin row from the
+    // block above. database/freeitsm.sql is mounted as a docker-entrypoint-initdb.d
+    // script, so on the Docker quickstart the row already exists by the time this runs
+    // and `COUNT(*) === 0` is false — which left admin/freeitsm permanently valid there.
+    // The SQL seed now sets the flag itself, but that only helps a fresh container; this
+    // catches the installs already out there.
+    //
+    // Deliberately narrow: the flag is only forced when the published default password
+    // STILL WORKS. Testing the password rather than the username means an admin who
+    // long ago changed it is never nagged, and an account merely named "admin" with a
+    // real password is left alone. password_verify() against the stored hash is the
+    // only honest test of that — the hash is salted, so it cannot be compared literally.
+    try {
+        $defStmt = $conn->query("SELECT id, password_hash, must_change_password FROM analysts WHERE username = 'admin'");
+        $defAdmin = $defStmt ? $defStmt->fetch(PDO::FETCH_ASSOC) : null;
+        if ($defAdmin
+            && (int)$defAdmin['must_change_password'] === 0
+            && password_verify('freeitsm', (string)$defAdmin['password_hash'])) {
+            $conn->prepare("UPDATE analysts SET must_change_password = 1 WHERE id = ?")
+                 ->execute([$defAdmin['id']]);
+            $results[] = [
+                'table'   => 'analysts',
+                'status'  => 'updated',
+                'details' => ['The default admin account is still using the published password — it must now be changed at the next sign-in']
+            ];
+        }
+    } catch (PDOException $e) {
+        // must_change_password may not exist yet on a part-migrated install; the column
+        // pass above creates it, and the next run of Database Verify will do this.
+        if (!dbErrorIsUnknownColumn($e)) throw $e;
     }
 
     // Seed the silent Default tenant (multi-tenancy foundation) if none exists.
@@ -2453,6 +721,17 @@ try {
             ];
         }
     }
+
+    // Leases (3.5.0): the four starting outcomes, when the list is empty. Renamed,
+    // added to or switched off in Assets -> Settings -> Leasing afterwards.
+    try {
+        if ($conn->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = " . $conn->quote(DB_NAME) . " AND table_name = 'lease_outcomes'")->fetchColumn()
+            && (int)$conn->query("SELECT COUNT(*) FROM lease_outcomes")->fetchColumn() === 0) {
+            $conn->exec("INSERT INTO lease_outcomes (name, kind, is_default, display_order) VALUES
+                ('On lease', 'active', 1, 1), ('Extended', 'active', 0, 2), ('Returned', 'closed', 0, 3), ('Bought out', 'closed', 0, 4)");
+            $results[] = ['table' => 'lease_outcomes', 'status' => 'seeded', 'details' => ['Added the four starting lease outcomes']];
+        }
+    } catch (Exception $e) {}
 
     // Seed default dashboard widgets if table is empty
     $widgetCheck = $conn->prepare("SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = ? AND table_name = 'asset_dashboard_widgets'");
@@ -2575,10 +854,472 @@ try {
         }
     }
 
+    // Seed default ticket types if table is empty. Parity with statuses/priorities
+    // above (GitHub #42): a fresh install landed with an empty Type dropdown because
+    // types were only ever created by the demo data. Global defaults (tenant_id NULL);
+    // only ever seeded into an empty table, so a deliberately-cleared list is respected.
+    // Seed the project roles (3.2.0) into an empty table only, so an edited list
+    // is never put back. Same words as the freeitsm.sql seed.
+    if ($tableExists('project_roles')) {
+        if ((int) $conn->query("SELECT COUNT(*) FROM project_roles")->fetchColumn() === 0) {
+            $conn->exec("INSERT INTO project_roles (name, description, display_order) VALUES
+                ('Executive', 'Owns the business case and makes the final call at each gate', 1),
+                ('Senior User', 'Speaks for the people who will use what the project delivers', 2),
+                ('Senior Supplier', 'Speaks for the people building or supplying it', 3),
+                ('Project Manager', 'Runs the project day to day', 4),
+                ('Team Manager', 'Leads a team delivering part of the work', 5),
+                ('Project Assurance', 'Checks independently that the project is being run properly', 6),
+                ('Project Support', 'Helps with plans, records and admin', 7),
+                ('Team member', 'Does the work', 8),
+                ('Stakeholder', 'Needs to be kept informed', 9)");
+            $results[] = ['table' => 'project_roles', 'status' => 'seeded', 'details' => ['Inserted 9 default project roles']];
+        }
+    }
+
+    // Seed default domain statuses (#154) into an empty table only, the same rule
+    // as ticket types below. "Letting lapse" and "Cancelled" carry
+    // alerts_enabled = 0: choosing them is how an operator stops the reminders.
+    if ($tableExists('domain_statuses')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM domain_statuses")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO domain_statuses (name, colour, alerts_enabled, display_order) VALUES
+                ('Active',               '#16a34a', 1, 1),
+                ('Transfer in progress', '#2563eb', 1, 2),
+                ('Parked',               '#64748b', 1, 3),
+                ('Letting lapse',        '#d97706', 0, 4),
+                ('Cancelled',            '#dc2626', 0, 5)");
+            $results[] = ['table' => 'domain_statuses', 'status' => 'seeded', 'details' => ['Inserted 5 default domain statuses']];
+        }
+    }
+    // Subdomains already in the register are linked to their parents ONCE, the
+    // first time Database Verification sees the column - after that, adding a
+    // domain links it (includes/domains/subdomains.php). Shortest names first,
+    // so in a chain (example.org, a.example.org, x.a.example.org) every one is
+    // linked to the domain itself, one level deep. A marker setting stops it
+    // ever running again: an operator who unlinks one is never overruled.
+    try {
+        $colOk = (bool)$conn->query("SHOW COLUMNS FROM domains LIKE 'parent_domain_id'")->fetch();
+        $done  = $colOk && $conn->query("SELECT 1 FROM system_settings WHERE setting_key = 'domain_subdomains_linked'")->fetchColumn();
+        if ($colOk && !$done) {
+            require_once dirname(__DIR__, 2) . '/includes/domains/subdomains.php';
+            $linked = domainLinkExistingSubdomains($conn);
+            $conn->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('domain_subdomains_linked', ?)")->execute([gmdate('Y-m-d H:i:s')]);
+            if ($linked) $results[] = ['table' => 'domains', 'status' => 'updated', 'details' => ["Linked $linked subdomain(s) to their parent domain"]];
+        }
+    } catch (Throwable $e) { /* the domains table is not there yet - next run */ }
+    // The certificate types a recorded certificate can be - into an empty table only.
+    if ($tableExists('domain_certificate_types')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM domain_certificate_types")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO domain_certificate_types (name, display_order) VALUES
+                ('DV (domain validated)', 1), ('OV (organisation validated)', 2), ('EV (extended validation)', 3),
+                ('Wildcard', 4), ('Multi-domain (SAN)', 5), ('Code signing', 6), ('Email (S/MIME)', 7),
+                ('Client / device', 8), ('Internal CA', 9), ('Other', 10)");
+            $results[] = ['table' => 'domain_certificate_types', 'status' => 'seeded', 'details' => ['Inserted 10 certificate types']];
+        }
+    }
+
+    if ($tableExists('ticket_types')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM ticket_types")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO ticket_types (name, description, is_active, display_order, tenant_id) VALUES
+                ('Incident',        'Something is broken or not working as expected',   1, 10, NULL),
+                ('Service Request', 'A request for something new or a standard change',  1, 20, NULL),
+                ('Question',        'A general query or how-to',                         1, 30, NULL)");
+            $results[] = ['table' => 'ticket_types', 'status' => 'seeded', 'details' => ['Inserted 3 default ticket types']];
+        }
+    }
+
+    // Seed default ticket origins if table is empty (GitHub #42). WhatsApp is
+    // deliberately excluded here — the WhatsApp origin is owned by its own seeder
+    // further down (which adds it whether or not this base set exists).
+    if ($tableExists('ticket_origins')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM ticket_origins")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO ticket_origins (name, description, display_order, is_active, tenant_id) VALUES
+                ('Email',   'Received by email',                     10, 1, NULL),
+                ('Phone',   'Logged from a phone call',              20, 1, NULL),
+                ('Portal',  'Raised via the self-service portal',    30, 1, NULL),
+                ('Walk-up', 'Reported in person',                    40, 1, NULL)");
+            $results[] = ['table' => 'ticket_origins', 'status' => 'seeded', 'details' => ['Inserted 4 default ticket origins']];
+        }
+    }
+
     // ----------------------------------------------------------
     // Multi-tenancy foundation — unique keys + FKs for the tenant tables
     // (the $schema loop builds columns + PK only). Added idempotently.
     // ----------------------------------------------------------
+    // Native LMS content. The cascades are the point: deleting a course takes its
+    // lessons, their questions and those questions' answers with it, so a deleted
+    // course can't leave an orphaned answer key behind.
+    if ($tableExists('lms_lessons') && $tableExists('lms_courses')) {
+        if (!$fkExists('lms_lessons', 'fk_lms_lessons_course')) {
+            try { $conn->exec("ALTER TABLE lms_lessons ADD CONSTRAINT fk_lms_lessons_course FOREIGN KEY (course_id) REFERENCES lms_courses (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('lms_questions') && $tableExists('lms_lessons')) {
+        if (!$fkExists('lms_questions', 'fk_lms_questions_lesson')) {
+            try { $conn->exec("ALTER TABLE lms_questions ADD CONSTRAINT fk_lms_questions_lesson FOREIGN KEY (lesson_id) REFERENCES lms_lessons (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('lms_answers') && $tableExists('lms_questions')) {
+        if (!$fkExists('lms_answers', 'fk_lms_answers_question')) {
+            try { $conn->exec("ALTER TABLE lms_answers ADD CONSTRAINT fk_lms_answers_question FOREIGN KEY (question_id) REFERENCES lms_questions (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+
+    // Competency tests (3.0.0). A sitting outlives its test (SET NULL): its
+    // snapshot holds everything the result needs, so deleting a test never
+    // deletes a candidate's result - retention does that, on its own clock.
+    $ctFks = [
+        ['lms_ct_test_skills',    'fk_lcts_test',     "ALTER TABLE lms_ct_test_skills ADD CONSTRAINT fk_lcts_test FOREIGN KEY (test_id) REFERENCES lms_ct_tests (id) ON DELETE CASCADE"],
+        ['lms_ct_test_questions', 'fk_lcttq_test',    "ALTER TABLE lms_ct_test_questions ADD CONSTRAINT fk_lcttq_test FOREIGN KEY (test_id) REFERENCES lms_ct_tests (id) ON DELETE CASCADE"],
+        ['lms_ct_test_questions', 'fk_lcttq_question',"ALTER TABLE lms_ct_test_questions ADD CONSTRAINT fk_lcttq_question FOREIGN KEY (question_id) REFERENCES lms_ct_questions (id) ON DELETE CASCADE"],
+        ['lms_ct_sittings',       'fk_lcs_test',      "ALTER TABLE lms_ct_sittings ADD CONSTRAINT fk_lcs_test FOREIGN KEY (test_id) REFERENCES lms_ct_tests (id) ON DELETE SET NULL"],
+    ];
+    foreach ($ctFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Documents. Deleting the document takes its links with it. Note the cascade
+    // runs ONE way only, deliberately: removing a link must never remove the
+    // document, because something else may still be using the same file.
+    if ($tableExists('document_links') && $tableExists('documents')) {
+        if (!$fkExists('document_links', 'fk_document_links_document')) {
+            try { $conn->exec("ALTER TABLE document_links ADD CONSTRAINT fk_document_links_document FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // Per-company settings. Deleting a company takes its overrides with it —
+    // they would otherwise outlive it and be inherited by a reused id.
+    if ($tableExists('tenant_settings') && $tableExists('tenants')) {
+        if (!$fkExists('tenant_settings', 'fk_tenant_settings_tenant')) {
+            try { $conn->exec("ALTER TABLE tenant_settings ADD CONSTRAINT fk_tenant_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('document_text') && $tableExists('documents')) {
+        if (!$fkExists('document_text', 'fk_document_text_document')) {
+            try { $conn->exec("ALTER TABLE document_text ADD CONSTRAINT fk_document_text_document FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('document_access_log') && $tableExists('documents')) {
+        if (!$fkExists('document_access_log', 'fk_document_access_document')) {
+            try { $conn->exec("ALTER TABLE document_access_log ADD CONSTRAINT fk_document_access_document FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+
+    // Ticket numbering (#1147). ticket_number_history is defined BEFORE the
+    // tickets table in freeitsm.sql, so its FK cannot be inline there — same
+    // reason as fk_assets_supplier.
+    if ($tableExists('ticket_number_history') && $tableExists('tickets')
+        && !$fkExists('ticket_number_history', 'fk_tnh_ticket')) {
+        try {
+            $conn->exec("ALTER TABLE ticket_number_history ADD CONSTRAINT fk_tnh_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE");
+        } catch (Exception $e) {}
+    }
+
+    // Ticket classification (#1540): categories + resolution codes.
+    //
+    // ⚠️ The three `tickets` constraints carry NO ON DELETE action, so MySQL
+    // RESTRICTs. That is deliberate and load-bearing: a category or resolution
+    // code that any ticket still references cannot be deleted at all, so a
+    // closed ticket keeps the label it was closed with. Lists are RETIRED
+    // (is_active = 0), never removed. The settings screen checks first and
+    // explains why; this is the backstop for anything that doesn't.
+    //
+    // The category's own type link is SET NULL instead — deleting a ticket type
+    // must not silently destroy the categories underneath it. They fall back to
+    // "offered for every type", which is visible and fixable.
+    $ticketClassificationFks = [
+        ['ticket_categories',       'fk_ticket_categories_parent',         'ticket_categories',       'parent_id',           'id', null],
+        ['ticket_categories',       'fk_ticket_categories_type',           'ticket_types',            'ticket_type_id',      'id', 'SET NULL'],
+        ['ticket_categories',       'fk_ticket_categories_tenant',         'tenants',                 'tenant_id',           'id', 'CASCADE'],
+        ['ticket_resolution_codes', 'fk_ticket_resolution_codes_tenant',   'tenants',                 'tenant_id',           'id', 'CASCADE'],
+        ['tickets',                 'fk_tickets_category',                 'ticket_categories',       'category_id',         'id', null],
+        ['tickets',                 'fk_tickets_closure_category',         'ticket_categories',       'closure_category_id', 'id', null],
+        ['tickets',                 'fk_tickets_resolution_code',          'ticket_resolution_codes', 'resolution_code_id',  'id', null],
+    ];
+    foreach ($ticketClassificationFks as [$table, $name, $refTable, $col, $refCol, $onDelete]) {
+        if ($tableExists($table) && $tableExists($refTable) && !$fkExists($table, $name)) {
+            $action = $onDelete ? " ON DELETE {$onDelete}" : '';
+            try {
+                $conn->exec("ALTER TABLE {$table} ADD CONSTRAINT {$name} FOREIGN KEY ({$col}) REFERENCES {$refTable} ({$refCol}){$action}");
+            } catch (Exception $e) {}
+        }
+    }
+
+    // Change approvals and evidence (#180). A revision goes with its change, and
+    // outlives its editor (SET NULL): the text stays in the evidence when the person
+    // who wrote it has left.
+    $changeEvidenceFks = [
+        ['change_text_revisions', 'fk_ctr_change', 'changes',  'change_id', 'id', 'CASCADE'],
+        ['change_text_revisions', 'fk_ctr_editor', 'analysts', 'editor_id', 'id', 'SET NULL'],
+        // TRAP: no ON DELETE action = RESTRICT, deliberately. A change that has approval
+        // records is evidence; a stray DELETE must fail rather than wipe them.
+        ['change_approvals',      'fk_change_approvals_change',     'changes',          'change_id',     'id', null],
+        ['change_approvals',      'fk_change_approvals_opened_by',  'analysts',         'opened_by_id',  'id', 'SET NULL'],
+        ['change_approvals',      'fk_change_approvals_decided_by', 'analysts',         'decided_by_id', 'id', 'SET NULL'],
+        ['change_approval_votes', 'fk_cav_approval',                'change_approvals', 'approval_id',   'id', 'CASCADE'],
+        ['change_approval_votes', 'fk_cav_analyst',                 'analysts',         'analyst_id',    'id', 'SET NULL'],
+        // Templates (#180 §8): versions RESTRICT their template (evidence); teams go with it.
+        ['change_template_versions', 'fk_ctv_template',    'change_templates', 'template_id',    'id', null],
+        ['change_template_versions', 'fk_ctv_created_by',  'analysts',         'created_by_id',  'id', 'SET NULL'],
+        ['change_template_versions', 'fk_ctv_approved_by', 'analysts',         'approved_by_id', 'id', 'SET NULL'],
+        ['change_template_teams',    'fk_ctt_template',    'change_templates', 'template_id',    'id', 'CASCADE'],
+        ['change_template_teams',    'fk_ctt_team',        'teams',            'team_id',        'id', 'CASCADE'],
+    ];
+    foreach ($changeEvidenceFks as [$table, $name, $refTable, $col, $refCol, $onDelete]) {
+        if ($tableExists($table) && $tableExists($refTable) && !$fkExists($table, $name)) {
+            $action = $onDelete ? " ON DELETE {$onDelete}" : '';
+            try {
+                $conn->exec("ALTER TABLE {$table} ADD CONSTRAINT {$name} FOREIGN KEY ({$col}) REFERENCES {$refTable} ({$refCol}){$action}");
+            } catch (Exception $e) {}
+        }
+    }
+
+    // Group catalogue approvals (GH #220). A deleted team leaves its forms and waiting
+    // requests unconfigured (SET NULL) - visible as stuck, never silently approved. A
+    // vote or an administrator's action goes with its request, and outlives the
+    // person (SET NULL), because it is the record of a decision.
+    $groupApprovalFks = [
+        ['forms',                           'fk_forms_approval_team',                        'teams',            'approval_team_id', 'id', 'SET NULL'],
+        ['form_submissions',                'fk_form_submissions_approval_team',             'teams',            'approval_team_id', 'id', 'SET NULL'],
+        ['form_submission_votes',           'fk_form_submission_votes_submission',           'form_submissions', 'submission_id',    'id', 'CASCADE'],
+        ['form_submission_votes',           'fk_form_submission_votes_analyst',              'analysts',         'analyst_id',       'id', 'SET NULL'],
+        ['form_submission_approval_events', 'fk_form_submission_approval_events_submission', 'form_submissions', 'submission_id',    'id', 'CASCADE'],
+        ['form_submission_approval_events', 'fk_form_submission_approval_events_analyst',    'analysts',         'analyst_id',       'id', 'SET NULL'],
+    ];
+    foreach ($groupApprovalFks as [$table, $name, $refTable, $col, $refCol, $onDelete]) {
+        if ($tableExists($table) && $tableExists($refTable) && !$fkExists($table, $name)) {
+            try {
+                $conn->exec("ALTER TABLE {$table} ADD CONSTRAINT {$name} FOREIGN KEY ({$col}) REFERENCES {$refTable} ({$refCol}) ON DELETE {$onDelete}");
+            } catch (Exception $e) {}
+        }
+    }
+
+    // Ticket team assignment (#1566). SET NULL, never CASCADE: deleting a team
+    // must not take its tickets with it. They return to "no team", which is
+    // visible on screen and fixable; vanishing is neither.
+    if ($tableExists('tickets') && $tableExists('teams')
+        && !$fkExists('tickets', 'fk_tickets_team')) {
+        try {
+            $conn->exec("ALTER TABLE tickets ADD CONSTRAINT fk_tickets_team FOREIGN KEY (assigned_team_id) REFERENCES teams (id) ON DELETE SET NULL");
+        } catch (Exception $e) {}
+    }
+
+    // Manually added applications (#1549). SET NULL: deleting the analyst who
+    // typed an application in must not take the application with them.
+    if ($tableExists('software_inventory_apps') && $tableExists('analysts')
+        && !$fkExists('software_inventory_apps', 'fk_software_apps_created_by')) {
+        try {
+            $conn->exec("ALTER TABLE software_inventory_apps ADD CONSTRAINT fk_software_apps_created_by FOREIGN KEY (created_by) REFERENCES analysts (id) ON DELETE SET NULL");
+        } catch (Exception $e) {}
+    }
+
+    // An asset type's icon (#1146). SET NULL, never CASCADE: retiring a glyph
+    // from the library must not delete the asset type that was using it.
+    if ($tableExists('asset_types') && $tableExists('cmdb_icons') && !$fkExists('asset_types', 'fk_asset_types_icon')) {
+        try {
+            $conn->exec("ALTER TABLE asset_types ADD CONSTRAINT fk_asset_types_icon FOREIGN KEY (icon_id) REFERENCES cmdb_icons (id) ON DELETE SET NULL");
+        } catch (Exception $e) {}
+    }
+
+    // Physical disks (discussion #97). Matched to its siblings asset_disks and
+    // asset_devices — a plain RESTRICT, no cascade — because that is what every
+    // other agent-reported child table on this install already has, and a table
+    // that deletes differently from the two beside it is a surprise waiting to
+    // happen. The agent clears and reinserts its own rows on every report.
+    if ($tableExists('asset_physical_disks') && $tableExists('assets')
+        && !$fkExists('asset_physical_disks', 'fk_asset_physical_disks_asset')) {
+        try {
+            $conn->exec("ALTER TABLE asset_physical_disks ADD CONSTRAINT fk_asset_physical_disks_asset FOREIGN KEY (asset_id) REFERENCES assets (id)");
+        } catch (Exception $e) {}
+    }
+
+    // ── A hand-added television is not a machine that stopped reporting ──────
+    //
+    // Until #1583, creating an asset by hand — the Add button, a CSV import, or
+    // POST /assets — stamped BOTH first_seen and last_seen with the moment it
+    // was typed in, as though something had reported it. That was invisible
+    // while nothing displayed last_seen, and wrong the moment #1578 put it on
+    // screen: a television reads "21 days ago" in amber as if its agent had
+    // gone quiet, and it has been inflating the Watchtower "not seen" count all
+    // along. Every install in the wild has these, not just the one you are
+    // reading this on, and nobody out there knows to go looking.
+    //
+    // 🔑 THIS DESTROYS NO INFORMATION. The precondition is first_seen = last_seen,
+    // so the timestamp survives in first_seen — all that is removed is a
+    // duplicate of it that was masquerading as an agent report.
+    //
+    // 🔑 EVIDENCE, NOT A HEURISTIC. Two facts together, both recorded rather
+    // than inferred:
+    //   1. an `asset_created` row in asset_history — written by
+    //      AssetsService::createAsset() and by nothing else, so a person or an
+    //      import made this record;
+    //   2. first_seen = last_seen — no agent has reported it since.
+    // Guessing from "it has no CPU or BIOS recorded" would have been close, and
+    // close is not the same: on the install this was developed against that
+    // guess caught two extra rows whose dates were seeded deliberately.
+    //
+    // ⚠️ Naturally idempotent, so it needs no run-once flag: after #1583 a
+    // manual asset has last_seen NULL, which fails `first_seen <=> last_seen`
+    // and is excluded. A second verification finds nothing.
+    //
+    // And if it ever did fire on a machine that genuinely reports, the next
+    // agent run puts last_seen straight back.
+    if ($tableExists('assets') && $tableExists('asset_history')) {
+        try {
+            $cleared = $conn->exec(
+                "UPDATE assets a
+                    SET a.last_seen = NULL
+                  WHERE a.last_seen IS NOT NULL
+                    AND a.first_seen <=> a.last_seen
+                    AND EXISTS (SELECT 1 FROM asset_history h
+                                 WHERE h.asset_id = a.id AND h.field_name = 'asset_created')"
+            );
+            if ($cleared > 0) {
+                $results[] = ['table' => 'assets', 'status' => 'updated', 'details' => [
+                    "Cleared a last_seen on $cleared hand-added asset(s) that no inventory agent had ever reported — "
+                    . "they were showing as machines that had stopped reporting. The date itself is unchanged in first_seen."
+                ]];
+            }
+        } catch (Exception $e) {
+            // A repair that cannot run must never fail a verification: the
+            // schema work around it is what an upgrade actually needs.
+        }
+    }
+
+    // Disk hide rules (#97). CASCADE, unlike its neighbours above: an
+    // asset-scoped rule is ABOUT that asset and means nothing once it is gone,
+    // where a disk row is a record of what was in the machine. A rule with a
+    // NULL asset_id is estate-wide and no asset's deletion touches it.
+    if ($tableExists('asset_disk_hide_rules') && $tableExists('assets')
+        && !$fkExists('asset_disk_hide_rules', 'fk_adhr_asset')) {
+        try {
+            $conn->exec("ALTER TABLE asset_disk_hide_rules ADD CONSTRAINT fk_adhr_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE");
+        } catch (Exception $e) {}
+    }
+
+    // Custom asset fields. Cascades everywhere EXCEPT asset_field_values.field_id,
+    // which is deliberately RESTRICT: a field is retired by setting is_deleted,
+    // never dropped, because dropping it would silently destroy every answer ever
+    // recorded against it. The FK is what makes that a hard guarantee rather than
+    // a convention. See docs/design/flexible-asset-fields.md §3.1.
+    $assetFieldFks = [
+        ['asset_fields',           'fk_asset_fields_tenant',       'tenants',           'tenant_id',             'id', 'CASCADE'],
+        ['asset_field_options',    'fk_asset_field_options_field', 'asset_fields',      'field_id',              'id', 'CASCADE'],
+        ['asset_field_sets',       'fk_asset_field_sets_tenant',   'tenants',           'tenant_id',             'id', 'CASCADE'],
+        ['asset_field_set_fields', 'fk_afsf_set',                  'asset_field_sets',  'set_id',                'id', 'CASCADE'],
+        ['asset_field_set_fields', 'fk_afsf_field',                'asset_fields',      'field_id',              'id', 'CASCADE'],
+        ['asset_type_field_sets',  'fk_atfs_type',                 'asset_types',       'asset_type_id',         'id', 'CASCADE'],
+        ['asset_type_field_sets',  'fk_atfs_set',                  'asset_field_sets',  'set_id',                'id', 'CASCADE'],
+        ['asset_type_layout',      'fk_atl_type',                  'asset_types',       'asset_type_id',         'id', 'CASCADE'],
+        // GH #200 parts C and D: a connection or a review case goes with either asset.
+        ['asset_connections',      'fk_asset_connections_asset',   'assets',            'asset_id',              'id', 'CASCADE'],
+        ['asset_connections',      'fk_asset_connections_other',   'assets',            'connected_asset_id',    'id', 'CASCADE'],
+        ['asset_review_items',     'fk_asset_review_asset',        'assets',            'asset_id',              'id', 'CASCADE'],
+        // GH #199: a connection's estate goes with it; a VM's disks, adapters and placements with the VM.
+        ['virt_clusters',         'fk_virt_clusters_conn',     'virt_connections', 'connection_id',         'id', 'CASCADE'],
+        ['virt_hosts',            'fk_virt_hosts_conn',        'virt_connections', 'connection_id',         'id', 'CASCADE'],
+        ['virt_cluster_roles',    'fk_virt_roles_conn',        'virt_connections', 'connection_id',         'id', 'CASCADE'],
+        ['virt_vms',              'fk_virt_vms_conn',          'virt_connections', 'connection_id',         'id', 'CASCADE'],
+        ['virt_reports',          'fk_virt_reports_conn',      'virt_connections', 'connection_id',         'id', 'CASCADE'],
+        ['virt_identity_reviews', 'fk_virt_reviews_conn',      'virt_connections', 'connection_id',         'id', 'CASCADE'],
+        ['virt_vm_disks',         'fk_virt_vm_disks_vm',       'virt_vms',         'vm_id',                 'id', 'CASCADE'],
+        ['virt_vm_networks',      'fk_virt_vm_networks_vm',    'virt_vms',         'vm_id',                 'id', 'CASCADE'],
+        ['virt_placements',       'fk_virt_placements_vm',     'virt_vms',         'vm_id',                 'id', 'CASCADE'],
+        // GH #201: the link history goes only if the asset itself does (a merge moves it first).
+        ['asset_ci_links',         'fk_asset_ci_links_asset',      'assets',            'asset_id',              'id', 'CASCADE'],
+        ['asset_review_items',     'fk_asset_review_other',        'assets',            'other_asset_id',        'id', 'CASCADE'],
+        ['asset_merges',           'fk_asset_merges_into',         'assets',            'into_asset_id',         'id', 'CASCADE'],
+        ['asset_protected_fields', 'fk_asset_protected_asset',     'assets',            'asset_id',              'id', 'CASCADE'],
+        ['asset_field_set_assets', 'fk_afsa_asset',                'assets',            'asset_id',              'id', 'CASCADE'],
+        ['asset_field_set_assets', 'fk_afsa_set',                  'asset_field_sets',  'set_id',                'id', 'CASCADE'],
+        ['asset_field_set_assets', 'fk_afsa_analyst',              'analysts',          'created_by_analyst_id', 'id', 'SET NULL'],
+        ['asset_field_values',     'fk_afv_asset',                 'assets',            'asset_id',              'id', 'CASCADE'],
+        ['asset_field_values',     'fk_afv_field',                 'asset_fields',      'field_id',              'id', null],
+    ];
+    foreach ($assetFieldFks as [$table, $name, $refTable, $col, $refCol, $onDelete]) {
+        if ($tableExists($table) && $tableExists($refTable) && !$fkExists($table, $name)) {
+            $action = $onDelete ? " ON DELETE {$onDelete}" : '';
+            try {
+                $conn->exec("ALTER TABLE {$table} ADD CONSTRAINT {$name} FOREIGN KEY ({$col}) REFERENCES {$refTable} ({$refCol}){$action}");
+            } catch (Exception $e) {}
+        }
+    }
+
+    // Asset import. A run OUTLIVES its profile (SET NULL): deleting the saved
+    // mapping must not erase the history of what it did, or the holding area of
+    // rows it could not import.
+    $assetImportFks = [
+        ['asset_import_profiles',    'fk_aip_tenant',      'tenants',               'tenant_id',             'id', 'CASCADE'],
+        ['asset_import_profiles',    'fk_aip_type',        'asset_types',           'default_asset_type_id', 'id', 'SET NULL'],
+        ['asset_import_profiles',    'fk_aip_status',      'asset_status_types',    'default_status_id',     'id', 'SET NULL'],
+        ['asset_import_profiles',    'fk_aip_set',         'asset_field_sets',      'apply_field_set_id',    'id', 'SET NULL'],
+        ['asset_import_mappings',    'fk_aim_profile',     'asset_import_profiles', 'profile_id',            'id', 'CASCADE'],
+        ['asset_import_runs',        'fk_air_profile',     'asset_import_profiles', 'profile_id',            'id', 'SET NULL'],
+        ['asset_import_run_entries', 'fk_aire_run',        'asset_import_runs',     'run_id',                'id', 'CASCADE'],
+    ];
+    foreach ($assetImportFks as [$table, $name, $refTable, $col, $refCol, $onDelete]) {
+        if ($tableExists($table) && $tableExists($refTable) && !$fkExists($table, $name)) {
+            $action = $onDelete ? " ON DELETE {$onDelete}" : '';
+            try {
+                $conn->exec("ALTER TABLE {$table} ADD CONSTRAINT {$name} FOREIGN KEY ({$col}) REFERENCES {$refTable} ({$refCol}){$action}");
+            } catch (Exception $e) {}
+        }
+    }
+
+    // RBAC Layer 2. Cascades keep the join tables clean: deleting a role, an
+    // analyst or a team removes the assignments that pointed at it.
+    if ($tableExists('rbac_role_capabilities') && $tableExists('rbac_roles')) {
+        if (!$fkExists('rbac_role_capabilities', 'fk_rrc_role')) {
+            try { $conn->exec("ALTER TABLE rbac_role_capabilities ADD CONSTRAINT fk_rrc_role FOREIGN KEY (role_id) REFERENCES rbac_roles (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('rbac_analyst_roles') && $tableExists('rbac_roles') && $tableExists('analysts')) {
+        if (!$fkExists('rbac_analyst_roles', 'fk_rar_analyst')) {
+            try { $conn->exec("ALTER TABLE rbac_analyst_roles ADD CONSTRAINT fk_rar_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('rbac_analyst_roles', 'fk_rar_role')) {
+            try { $conn->exec("ALTER TABLE rbac_analyst_roles ADD CONSTRAINT fk_rar_role FOREIGN KEY (role_id) REFERENCES rbac_roles (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // 3.5.0: SSO group -> team mappings and seen groups go with their provider / team.
+    foreach ([['sso_group_teams', 'fk_sso_group_teams_provider', 'provider_id', 'auth_providers'],
+              ['sso_group_teams', 'fk_sso_group_teams_team', 'team_id', 'teams'],
+              ['sso_groups_seen', 'fk_sso_groups_seen_provider', 'provider_id', 'auth_providers'],
+              // Entra directory groups go with their provider; memberships with the group and the person.
+              ['directory_groups', 'fk_directory_groups_provider', 'provider_id', 'auth_providers'],
+              ['directory_group_members', 'fk_dgm_group', 'group_id', 'directory_groups'],
+              ['directory_group_members', 'fk_dgm_user', 'user_id', 'users']] as [$t, $fk, $col, $ref]) {
+        if ($tableExists($t) && $tableExists($ref) && !$fkExists($t, $fk)) {
+            try { $conn->exec("ALTER TABLE $t ADD CONSTRAINT $fk FOREIGN KEY ($col) REFERENCES $ref (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // 3.5.0 (PR #174): an API-managed role goes with the analyst it belongs to.
+    if ($tableExists('rbac_roles') && $tableExists('analysts')) {
+        if (!$fkExists('rbac_roles', 'fk_rbac_roles_managed_analyst')) {
+            try { $conn->exec("ALTER TABLE rbac_roles ADD CONSTRAINT fk_rbac_roles_managed_analyst FOREIGN KEY (managed_for_analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // Search corpus. The cascade is the point, not tidiness: a corpus row holds a
+    // COPY of ticket content that is searchable outside the ticket's own access
+    // check, so a deleted ticket whose text is still findable would be a
+    // data-protection problem rather than an untidy table.
+    if ($tableExists('search_documents') && $tableExists('tickets')) {
+        if (!$fkExists('search_documents', 'fk_search_docs_ticket')) {
+            try { $conn->exec("ALTER TABLE search_documents ADD CONSTRAINT fk_search_docs_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('rbac_team_roles') && $tableExists('rbac_roles') && $tableExists('teams')) {
+        if (!$fkExists('rbac_team_roles', 'fk_rtr_team')) {
+            try { $conn->exec("ALTER TABLE rbac_team_roles ADD CONSTRAINT fk_rtr_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('rbac_team_roles', 'fk_rtr_role')) {
+            try { $conn->exec("ALTER TABLE rbac_team_roles ADD CONSTRAINT fk_rtr_role FOREIGN KEY (role_id) REFERENCES rbac_roles (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+
     if ($tableExists('tenant_domains') && $tableExists('tenants')) {
         if (!$idxExists('tenant_domains', 'uq_tenant_domains_domain')) {
             try { $conn->exec("ALTER TABLE tenant_domains ADD UNIQUE KEY uq_tenant_domains_domain (domain)"); } catch (Exception $e) {}
@@ -2621,6 +1362,261 @@ try {
             try { $conn->exec("ALTER TABLE messaging_templates ADD CONSTRAINT fk_messaging_templates_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"); } catch (Exception $e) {}
         }
     }
+    // Telegram chat-identity links (PR #159). CASCADE both ways: deleting the
+    // matched person, or the channel, drops the link rather than leaving it
+    // dangling - a dangling link would resolve a chat to an id that is gone.
+    // Proxmox servers: nodes and VMs belong to one server and go with it on delete.
+    foreach (['proxmox_nodes', 'proxmox_vms'] as $pxTable) {
+        $pxFk = 'fk_' . $pxTable . '_connection';
+        if ($tableExists($pxTable) && $tableExists('proxmox_connections') && !$fkExists($pxTable, $pxFk)) {
+            try { $conn->exec("ALTER TABLE {$pxTable} ADD CONSTRAINT {$pxFk} FOREIGN KEY (connection_id) REFERENCES proxmox_connections (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // vCloud Director servers: VMs and edge gateways belong to one server.
+    foreach (['vcloud_vms', 'vcloud_edge_gateways'] as $vcTable) {
+        $vcFk = 'fk_' . $vcTable . '_connection';
+        if ($tableExists($vcTable) && $tableExists('vcloud_connections') && !$fkExists($vcTable, $vcFk)) {
+            try { $conn->exec("ALTER TABLE {$vcTable} ADD CONSTRAINT {$vcFk} FOREIGN KEY (connection_id) REFERENCES vcloud_connections (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('messaging_identity_links') && $tableExists('users') && $colExists('messaging_identity_links', 'user_id')) {
+        if (!$fkExists('messaging_identity_links', 'fk_messaging_identity_links_user')) {
+            try { $conn->exec("ALTER TABLE messaging_identity_links ADD CONSTRAINT fk_messaging_identity_links_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('messaging_identity_links') && $tableExists('messaging_channels') && $colExists('messaging_identity_links', 'channel_id')) {
+        if (!$fkExists('messaging_identity_links', 'fk_messaging_identity_links_channel')) {
+            try { $conn->exec("ALTER TABLE messaging_identity_links ADD CONSTRAINT fk_messaging_identity_links_channel FOREIGN KEY (channel_id) REFERENCES messaging_channels (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // Web chat widget → its messaging channel (1:1). CASCADE so deleting the channel
+    // removes its widget config. The two UNIQUE keys are built from $uniqueIndexes below.
+    if ($tableExists('webchat_widgets') && $tableExists('messaging_channels') && $colExists('webchat_widgets', 'channel_id')) {
+        if (!$fkExists('webchat_widgets', 'fk_webchat_widget_channel')) {
+            try { $conn->exec("ALTER TABLE webchat_widgets ADD CONSTRAINT fk_webchat_widget_channel FOREIGN KEY (channel_id) REFERENCES messaging_channels (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // Web chat conversation → its channel. CASCADE so removing the widget/channel clears
+    // its conversations. The token UNIQUE key is built from $uniqueIndexes below.
+    if ($tableExists('webchat_conversations') && $tableExists('messaging_channels') && $colExists('webchat_conversations', 'channel_id')) {
+        if (!$idxExists('webchat_conversations', 'ix_webchat_conversation_channel')) {
+            try { $conn->exec("ALTER TABLE webchat_conversations ADD KEY ix_webchat_conversation_channel (channel_id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('webchat_conversations', 'ix_webchat_conversation_ticket')) {
+            try { $conn->exec("ALTER TABLE webchat_conversations ADD KEY ix_webchat_conversation_ticket (ticket_id)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('webchat_conversations', 'fk_webchat_conversation_channel')) {
+            try { $conn->exec("ALTER TABLE webchat_conversations ADD CONSTRAINT fk_webchat_conversation_channel FOREIGN KEY (channel_id) REFERENCES messaging_channels (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // Web chat pre-ticket transcript → its conversation. CASCADE with the conversation.
+    if ($tableExists('webchat_messages') && $tableExists('webchat_conversations') && $colExists('webchat_messages', 'conversation_id')) {
+        if (!$idxExists('webchat_messages', 'ix_webchat_messages_conversation')) {
+            try { $conn->exec("ALTER TABLE webchat_messages ADD KEY ix_webchat_messages_conversation (conversation_id)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('webchat_messages', 'fk_webchat_messages_conversation')) {
+            try { $conn->exec("ALTER TABLE webchat_messages ADD CONSTRAINT fk_webchat_messages_conversation FOREIGN KEY (conversation_id) REFERENCES webchat_conversations (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // ── War room ──────────────────────────────────────────────────────────────
+    //
+    // Channels. team_id and dm_key are each UNIQUE over a NULLABLE column, which
+    // MySQL lets repeat NULLs — so "one channel per team" and "one DM per pair"
+    // are enforced without constraining the other kinds. The DM one matters more
+    // than it looks: without it, two people opening a DM with each other at the
+    // same moment end up with one conversation each.
+    if ($tableExists('warroom_channels')) {
+        if ($tableExists('teams') && !$idxExists('warroom_channels', 'uq_warroom_channels_team')) {
+            try { $conn->exec("ALTER TABLE warroom_channels ADD UNIQUE KEY uq_warroom_channels_team (team_id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_channels', 'uq_warroom_channels_dm')) {
+            try { $conn->exec("ALTER TABLE warroom_channels ADD UNIQUE KEY uq_warroom_channels_dm (dm_key)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_channels', 'ix_warroom_channels_kind')) {
+            try { $conn->exec("ALTER TABLE warroom_channels ADD KEY ix_warroom_channels_kind (kind, archived_datetime)"); } catch (Exception $e) {}
+        }
+        // CASCADE: a team channel goes with its team, which is what keeps a team
+        // channel from being orphaned or renamed into a lie.
+        if ($tableExists('teams') && !$fkExists('warroom_channels', 'fk_warroom_channels_team')) {
+            try { $conn->exec("ALTER TABLE warroom_channels ADD CONSTRAINT fk_warroom_channels_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        // SET NULL: a channel must outlive whoever opened it.
+        if ($tableExists('analysts') && !$fkExists('warroom_channels', 'fk_warroom_channels_creator')) {
+            try { $conn->exec("ALTER TABLE warroom_channels ADD CONSTRAINT fk_warroom_channels_creator FOREIGN KEY (created_by) REFERENCES analysts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+        // The all-hands room. Seeded here as well as in freeitsm.sql so an
+        // installation grown by Database Verification gets one too.
+        try {
+            $conn->exec(
+                "INSERT INTO warroom_channels (kind, created_datetime)
+                 SELECT 'all', UTC_TIMESTAMP() FROM DUAL
+                  WHERE NOT EXISTS (SELECT 1 FROM warroom_channels WHERE kind = 'all')"
+            );
+        } catch (Exception $e) {}
+    }
+    if ($tableExists('warroom_channel_members') && $tableExists('warroom_channels')) {
+        if (!$idxExists('warroom_channel_members', 'uq_warroom_member')) {
+            try { $conn->exec("ALTER TABLE warroom_channel_members ADD UNIQUE KEY uq_warroom_member (channel_id, analyst_id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_channel_members', 'ix_warroom_member_analyst')) {
+            try { $conn->exec("ALTER TABLE warroom_channel_members ADD KEY ix_warroom_member_analyst (analyst_id)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('warroom_channel_members', 'fk_warroom_member_channel')) {
+            try { $conn->exec("ALTER TABLE warroom_channel_members ADD CONSTRAINT fk_warroom_member_channel FOREIGN KEY (channel_id) REFERENCES warroom_channels (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('warroom_channel_members', 'fk_warroom_member_analyst')) {
+            try { $conn->exec("ALTER TABLE warroom_channel_members ADD CONSTRAINT fk_warroom_member_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // War room messages → their channel and their author.
+    //
+    // The two rules are deliberately different, and the difference is the point:
+    //   channel_id CASCADE  — delete a channel and its conversation goes with it.
+    //   analyst_id SET NULL — delete an analyst and the conversation SURVIVES.
+    //                        These messages are the record of what was said during
+    //                        an incident; losing half of it because somebody left
+    //                        the company would be the wrong trade. Orphaned rows
+    //                        render as "Former analyst".
+    if ($tableExists('warroom_messages')) {
+        // ONE-TIME MIGRATION. The first cut of the war room hung messages directly
+        // off team_id, because a channel was a team and nothing else. Channels are
+        // rows now, so every existing message needs pointing at one — and it must
+        // happen BEFORE the FK below, or the constraint fails on rows with a NULL
+        // channel_id and the whole table silently keeps the old shape.
+        if ($colExists('warroom_messages', 'team_id') && $colExists('warroom_messages', 'channel_id')
+            && $tableExists('warroom_channels')) {
+            try {
+                // Make sure a channel exists for every team that has messages,
+                // then point the messages at it. All-hands (team_id IS NULL) goes
+                // to the seeded 'all' row.
+                $conn->exec(
+                    "INSERT INTO warroom_channels (kind, team_id, created_datetime)
+                     SELECT DISTINCT 'team', m.team_id, UTC_TIMESTAMP()
+                       FROM warroom_messages m
+                      WHERE m.team_id IS NOT NULL
+                        AND NOT EXISTS (SELECT 1 FROM warroom_channels c
+                                         WHERE c.kind = 'team' AND c.team_id = m.team_id)"
+                );
+                $moved = (int) $conn->exec(
+                    "UPDATE warroom_messages m
+                       JOIN warroom_channels c
+                         ON (m.team_id IS NULL AND c.kind = 'all')
+                         OR (m.team_id IS NOT NULL AND c.kind = 'team' AND c.team_id = m.team_id)
+                        SET m.channel_id = c.id
+                      WHERE m.channel_id IS NULL"
+                );
+                if ($moved > 0) {
+                    $results[] = ['table' => 'warroom_messages', 'status' => 'migrated', 'details' => ["Moved $moved war room message(s) onto the new channel records"]];
+                }
+                // Only once every row has a home. A leftover NULL means a team was
+                // deleted between the two statements; leaving the column in place
+                // is safer than dropping it with data still hanging off it.
+                $orphans = (int) $conn->query("SELECT COUNT(*) FROM warroom_messages WHERE channel_id IS NULL")->fetchColumn();
+                if ($orphans === 0) {
+                    try { $conn->exec("ALTER TABLE warroom_messages DROP FOREIGN KEY fk_warroom_messages_team"); } catch (Exception $e) {}
+                    try { $conn->exec("ALTER TABLE warroom_messages DROP INDEX ix_warroom_messages_team"); } catch (Exception $e) {}
+                    try { $conn->exec("ALTER TABLE warroom_messages DROP COLUMN team_id"); } catch (Exception $e) {}
+                }
+            } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_messages', 'ix_warroom_messages_channel')) {
+            // (channel_id, id) — every read is "this channel, newer than id N".
+            try { $conn->exec("ALTER TABLE warroom_messages ADD KEY ix_warroom_messages_channel (channel_id, id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_messages', 'ix_warroom_messages_created')) {
+            // Retention deletes by age across every channel at once.
+            try { $conn->exec("ALTER TABLE warroom_messages ADD KEY ix_warroom_messages_created (created_datetime)"); } catch (Exception $e) {}
+        }
+        if ($colExists('warroom_messages', 'reply_to_id') && !$idxExists('warroom_messages', 'ix_warroom_messages_reply')) {
+            // Warbot's reply points at the message it answers; the lookup is also
+            // what stops a retried trigger posting the same answer twice.
+            try { $conn->exec("ALTER TABLE warroom_messages ADD KEY ix_warroom_messages_reply (reply_to_id)"); } catch (Exception $e) {}
+        }
+        if ($tableExists('warroom_channels') && !$fkExists('warroom_messages', 'fk_warroom_messages_channel')) {
+            try { $conn->exec("ALTER TABLE warroom_messages ADD CONSTRAINT fk_warroom_messages_channel FOREIGN KEY (channel_id) REFERENCES warroom_channels (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('warroom_messages', 'fk_warroom_messages_analyst')) {
+            try { $conn->exec("ALTER TABLE warroom_messages ADD CONSTRAINT fk_warroom_messages_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+        // Who deleted a message. SET NULL, like the author: the tombstone must
+        // outlive the person, or deleting a leaver would turn "deleted by Sarah"
+        // back into an unexplained gap.
+        if ($tableExists('analysts') && $colExists('warroom_messages', 'deleted_by')
+            && !$fkExists('warroom_messages', 'fk_warroom_messages_deleter')) {
+            try { $conn->exec("ALTER TABLE warroom_messages ADD CONSTRAINT fk_warroom_messages_deleter FOREIGN KEY (deleted_by) REFERENCES analysts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('warroom_mentions') && $tableExists('warroom_messages')) {
+        if (!$idxExists('warroom_mentions', 'uq_warroom_mention')) {
+            // One row per (message, person), however many times their name appears.
+            try { $conn->exec("ALTER TABLE warroom_mentions ADD UNIQUE KEY uq_warroom_mention (message_id, analyst_id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_mentions', 'ix_warroom_mentions_analyst')) {
+            // The notifications panel asks "mine, newest first".
+            try { $conn->exec("ALTER TABLE warroom_mentions ADD KEY ix_warroom_mentions_analyst (analyst_id, id)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('warroom_mentions', 'fk_warroom_mentions_message')) {
+            try { $conn->exec("ALTER TABLE warroom_mentions ADD CONSTRAINT fk_warroom_mentions_message FOREIGN KEY (message_id) REFERENCES warroom_messages (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('warroom_mentions', 'fk_warroom_mentions_analyst')) {
+            try { $conn->exec("ALTER TABLE warroom_mentions ADD CONSTRAINT fk_warroom_mentions_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('warroom_attachments') && $tableExists('warroom_messages')) {
+        if (!$idxExists('warroom_attachments', 'ix_warroom_attachments_message')) {
+            try { $conn->exec("ALTER TABLE warroom_attachments ADD KEY ix_warroom_attachments_message (message_id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_attachments', 'ix_warroom_attachments_stored')) {
+            // Retention looks a file up by its stored name before unlinking it.
+            try { $conn->exec("ALTER TABLE warroom_attachments ADD KEY ix_warroom_attachments_stored (stored_name)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('warroom_attachments', 'fk_warroom_attachments_message')) {
+            try { $conn->exec("ALTER TABLE warroom_attachments ADD CONSTRAINT fk_warroom_attachments_message FOREIGN KEY (message_id) REFERENCES warroom_messages (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('warroom_reads') && $tableExists('warroom_channels')) {
+        if (!$idxExists('warroom_reads', 'uq_warroom_read')) {
+            // UNIQUE is what makes marking-as-read an upsert rather than a row per poll.
+            try { $conn->exec("ALTER TABLE warroom_reads ADD UNIQUE KEY uq_warroom_read (analyst_id, channel_id)"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('warroom_reads', 'fk_warroom_reads_analyst')) {
+            try { $conn->exec("ALTER TABLE warroom_reads ADD CONSTRAINT fk_warroom_reads_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('warroom_reads', 'fk_warroom_reads_channel')) {
+            try { $conn->exec("ALTER TABLE warroom_reads ADD CONSTRAINT fk_warroom_reads_channel FOREIGN KEY (channel_id) REFERENCES warroom_channels (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // War room presence. UNIQUE on analyst_id is what makes the heartbeat an
+    // upsert — without it a long-running poll would add a row per request.
+    // Presence is ephemeral, so both parents CASCADE/SET NULL freely.
+    if ($tableExists('warroom_presence')) {
+        // Same one-time move as messages: presence used to record which TEAM you
+        // were in, and now records which CHANNEL. Presence is ephemeral, so there
+        // is nothing worth migrating — the column is replaced, not backfilled.
+        if ($colExists('warroom_presence', 'team_id') && $colExists('warroom_presence', 'channel_id')) {
+            try { $conn->exec("ALTER TABLE warroom_presence DROP FOREIGN KEY fk_warroom_presence_team"); } catch (Exception $e) {}
+            try { $conn->exec("ALTER TABLE warroom_presence DROP COLUMN team_id"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_presence', 'uq_warroom_presence')) {
+            try { $conn->exec("ALTER TABLE warroom_presence ADD UNIQUE KEY uq_warroom_presence (analyst_id)"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('warroom_presence', 'ix_warroom_presence_last_seen')) {
+            try { $conn->exec("ALTER TABLE warroom_presence ADD KEY ix_warroom_presence_last_seen (last_seen)"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('warroom_presence', 'fk_warroom_presence_analyst')) {
+            try { $conn->exec("ALTER TABLE warroom_presence ADD CONSTRAINT fk_warroom_presence_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('warroom_channels') && !$fkExists('warroom_presence', 'fk_warroom_presence_channel')) {
+            try { $conn->exec("ALTER TABLE warroom_presence ADD CONSTRAINT fk_warroom_presence_channel FOREIGN KEY (channel_id) REFERENCES warroom_channels (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+
+    // Web chat widget → its optional business-hours calendar (SET NULL if the calendar goes).
+    if ($tableExists('webchat_widgets') && $tableExists('sla_calendars') && $colExists('webchat_widgets', 'business_calendar_id')) {
+        if (!$fkExists('webchat_widgets', 'fk_webchat_widget_calendar')) {
+            try { $conn->exec("ALTER TABLE webchat_widgets ADD CONSTRAINT fk_webchat_widget_calendar FOREIGN KEY (business_calendar_id) REFERENCES sla_calendars (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
     // Seed the WhatsApp ticket origin (global default) if absent, so channel tickets
     // can be tagged by origin out of the box. Single-company installs see it like any
     // other origin; it can be hidden per-company via the add+hide model.
@@ -2631,6 +1627,37 @@ try {
             if ((int) $chk->fetchColumn() === 0) {
                 $conn->exec("INSERT INTO ticket_origins (name, description, display_order, is_active, tenant_id) VALUES ('WhatsApp', 'Messages received via WhatsApp', 50, 1, NULL)");
                 $results[] = ['table' => 'ticket_origins', 'status' => 'updated', 'details' => ['Seeded the WhatsApp ticket origin']];
+            }
+        } catch (Exception $e) {}
+        // Web chat origin — same treatment, for tickets raised from a website chat widget.
+        try {
+            $chk = $conn->prepare("SELECT COUNT(*) FROM ticket_origins WHERE name = 'Web chat' AND tenant_id IS NULL");
+            $chk->execute();
+            if ((int) $chk->fetchColumn() === 0) {
+                $conn->exec("INSERT INTO ticket_origins (name, description, display_order, is_active, tenant_id) VALUES ('Web chat', 'Messages received via the website chat widget', 51, 1, NULL)");
+                $results[] = ['table' => 'ticket_origins', 'status' => 'updated', 'details' => ['Seeded the Web chat ticket origin']];
+            }
+        } catch (Exception $e) {}
+        // Slack origin — for tickets raised from a message in a Slack channel.
+        // Without it getChannelOriginId() returns null and Slack tickets have no
+        // origin at all, so they vanish from any report grouped by origin.
+        try {
+            $chk = $conn->prepare("SELECT COUNT(*) FROM ticket_origins WHERE name = 'Slack' AND tenant_id IS NULL");
+            $chk->execute();
+            if ((int) $chk->fetchColumn() === 0) {
+                $conn->exec("INSERT INTO ticket_origins (name, description, display_order, is_active, tenant_id) VALUES ('Slack', 'Messages received via Slack', 52, 1, NULL)");
+                $results[] = ['table' => 'ticket_origins', 'status' => 'updated', 'details' => ['Seeded the Slack ticket origin']];
+            }
+        } catch (Exception $e) {}
+        // Telegram origin (PR #159 shipped without one). Same reason as Slack:
+        // getChannelOriginId() looks the origin up BY NAME - ucfirst('telegram') -
+        // and without this row every Telegram ticket has no origin at all.
+        try {
+            $chk = $conn->prepare("SELECT COUNT(*) FROM ticket_origins WHERE name = 'Telegram' AND tenant_id IS NULL");
+            $chk->execute();
+            if ((int) $chk->fetchColumn() === 0) {
+                $conn->exec("INSERT INTO ticket_origins (name, description, display_order, is_active, tenant_id) VALUES ('Telegram', 'Messages received via a Telegram bot', 53, 1, NULL)");
+                $results[] = ['table' => 'ticket_origins', 'status' => 'updated', 'details' => ['Seeded the Telegram ticket origin']];
             }
         } catch (Exception $e) {}
     }
@@ -2657,6 +1684,100 @@ try {
             try { $conn->exec("ALTER TABLE ticket_types ADD UNIQUE KEY uq_ticket_types_tenant_name (tenant_id, name)"); } catch (Exception $e) {}
         }
     }
+
+    // --- Asset Management multi-tenancy (mirrors ticket_types above) ----------
+    // asset_types / asset_status_types are CONFIG LISTS: NULL tenant_id = global
+    // default (shared by every company); set = a company's own. Widen their
+    // name-uniqueness from global to per-scope so a company may hold an option
+    // whose name matches a shared default (global-name dedup is enforced in the
+    // API — NULL tenant_id rows aren't de-duped by a unique key).
+    // asset_locations is NOT a config list — it is SCOPED DATA (a company's sites
+    // are its own, never shared), so NULL means the Default company's rather than
+    // "global" and it takes no name unique. Same CASCADE either way.
+    foreach ([
+        ['asset_types',        'fk_asset_types_tenant',        'uq_asset_types_name',        'uq_asset_types_tenant_name'],
+        ['asset_status_types', 'fk_asset_status_types_tenant', 'uq_asset_status_types_name', 'uq_asset_status_types_tenant_name'],
+        ['asset_locations',    'fk_asset_locations_tenant',    null,                         null],
+    ] as [$tbl, $fk, $oldIdx, $newIdx]) {
+        if ($tableExists($tbl) && $tableExists('tenants') && $colExists($tbl, 'tenant_id')) {
+            if (!$fkExists($tbl, $fk)) {
+                try { $conn->exec("ALTER TABLE $tbl ADD CONSTRAINT $fk FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+            }
+            if ($oldIdx && $idxExists($tbl, $oldIdx)) {
+                try { $conn->exec("ALTER TABLE $tbl DROP INDEX $oldIdx"); } catch (Exception $e) {}
+            }
+            if ($newIdx && !$idxExists($tbl, $newIdx)) {
+                try { $conn->exec("ALTER TABLE $tbl ADD UNIQUE KEY $newIdx (tenant_id, name)"); } catch (Exception $e) {}
+            }
+        }
+    }
+    // assets.tenant_id (SCOPED DATA, not config): the company an asset belongs to.
+    // FK reverts to Default (SET NULL) if a company is ever deleted — never
+    // cascade-delete assets. Index backs the list scope filter.
+    if ($tableExists('assets') && $tableExists('tenants') && $colExists('assets', 'tenant_id')) {
+        if (!$fkExists('assets', 'fk_assets_tenant')) {
+            try { $conn->exec("ALTER TABLE assets ADD CONSTRAINT fk_assets_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('assets', 'idx_assets_tenant')) {
+            try { $conn->exec("ALTER TABLE assets ADD INDEX idx_assets_tenant (tenant_id)"); } catch (Exception $e) {}
+        }
+    }
+    // tasks.tenant_id (SCOPED DATA, not config): the company a task belongs to.
+    // NULL = the Default company's, matching tickets and assets — a task is a work
+    // item, so it takes the data convention, not the shared-intake one. SET NULL so
+    // deleting a company reverts its tasks to Default rather than destroying work.
+    if ($tableExists('tasks') && $tableExists('tenants') && $colExists('tasks', 'tenant_id')) {
+        if (!$fkExists('tasks', 'fk_tasks_tenant')) {
+            try { $conn->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+        if (!$idxExists('tasks', 'idx_tasks_tenant')) {
+            try { $conn->exec("ALTER TABLE tasks ADD INDEX idx_tasks_tenant (tenant_id)"); } catch (Exception $e) {}
+        }
+    }
+    // Recurring tasks (#94). Both SET NULL rather than CASCADE, deliberately:
+    // deleting the rule must stop the series repeating, and deleting the first
+    // task must not take the work already done from later occurrences with it.
+    // A task that has happened is a record of something, whatever produced it.
+    if ($tableExists('tasks') && $tableExists('task_recurrences') && $colExists('tasks', 'recurrence_id')) {
+        if (!$fkExists('tasks', 'fk_tasks_recurrence')) {
+            try { $conn->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_recurrence FOREIGN KEY (recurrence_id) REFERENCES task_recurrences (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+    // Contractors (3.3.0): a task's supplier and contact go to NULL if either is deleted.
+    if ($tableExists('tasks') && $colExists('tasks', 'assigned_supplier_id')) {
+        if (!$fkExists('tasks', 'fk_tasks_supplier')) {
+            try { $conn->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_supplier FOREIGN KEY (assigned_supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('tasks', 'fk_tasks_contact')) {
+            try { $conn->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_contact FOREIGN KEY (assigned_contact_id) REFERENCES contacts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+    if ($tableExists('tasks') && $colExists('tasks', 'recurrence_master_id')) {
+        if (!$fkExists('tasks', 'fk_tasks_recurrence_master')) {
+            try { $conn->exec("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_recurrence_master FOREIGN KEY (recurrence_master_id) REFERENCES tasks (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+    // apikeys.tenant_id: the company an ingest key pins its assets to (NULL =
+    // Default). SET NULL so deleting a company reverts its keys to Default rather
+    // than orphaning the agent.
+    if ($tableExists('apikeys') && $tableExists('tenants') && $colExists('apikeys', 'tenant_id')) {
+        if (!$fkExists('apikeys', 'fk_apikeys_tenant')) {
+            try { $conn->exec("ALTER TABLE apikeys ADD CONSTRAINT fk_apikeys_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+    // cmdb_objects.tenant_id (SCOPED DATA): the company a configuration item
+    // belongs to. SET NULL like assets — deleting a company reverts its CIs to
+    // Default rather than destroying the estate record. Only cmdb_objects is
+    // scoped; classes/properties/relationship types stay install-wide config, and
+    // the child tables inherit through their object.
+    // (The backing index ix_cmdb_objects_tenant_id comes from the generated index
+    // list, which is parsed out of freeitsm.sql — no manual add needed here.)
+    if ($tableExists('cmdb_objects') && $tableExists('tenants') && $colExists('cmdb_objects', 'tenant_id')) {
+        if (!$fkExists('cmdb_objects', 'fk_cmdb_objects_tenant')) {
+            try { $conn->exec("ALTER TABLE cmdb_objects ADD CONSTRAINT fk_cmdb_objects_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+
     // ticket_origins had no name unique key historically; we don't add one (would
     // fail on pre-existing duplicate names) — dedup is enforced in the API.
     if ($tableExists('ticket_origins') && $tableExists('tenants') && $colExists('ticket_origins', 'tenant_id')) {
@@ -2675,6 +1796,75 @@ try {
             try { $conn->exec("ALTER TABLE analyst_tenant_access ADD CONSTRAINT fk_ata_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
         }
     }
+    if ($tableExists('team_tenant_access') && $tableExists('teams') && $tableExists('tenants')) {
+        if (!$idxExists('team_tenant_access', 'uq_team_tenant')) {
+            try { $conn->exec("ALTER TABLE team_tenant_access ADD UNIQUE KEY uq_team_tenant (team_id, tenant_id)"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('team_tenant_access', 'fk_tta_team')) {
+            try { $conn->exec("ALTER TABLE team_tenant_access ADD CONSTRAINT fk_tta_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if (!$fkExists('team_tenant_access', 'fk_tta_tenant')) {
+            try { $conn->exec("ALTER TABLE team_tenant_access ADD CONSTRAINT fk_tta_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+    }
+    // contracts.tenant_id - the ONE-TIME filing of customer contracts under their
+    // customer's company (see $contractsTenantColWasMissing). Only when the install
+    // had the old setting at its default ('company'): an install that opened
+    // customer contracts to everyone ('all') keeps them in Default, where everyone
+    // with the Default company still sees them.
+    if ($contractsTenantColWasMissing && $tableExists('contracts') && $colExists('contracts', 'tenant_id')
+        && $colExists('contracts', 'party_type')) {
+        try {
+            $vis = $conn->query("SELECT setting_value FROM system_settings WHERE setting_key = 'contracts_customer_visibility'")->fetchColumn();
+            if ($vis !== 'all') {
+                $n = $conn->exec(
+                    "UPDATE contracts c
+                        SET c.tenant_id = COALESCE(c.customer_tenant_id, (SELECT u.tenant_id FROM users u WHERE u.id = c.customer_user_id))
+                      WHERE c.party_type = 'customer' AND c.tenant_id IS NULL");
+                // The Default company is stored as NULL, like every other scoped table.
+                $def = (int)($conn->query("SELECT id FROM tenants WHERE is_default = 1 ORDER BY id LIMIT 1")->fetchColumn() ?: 0);
+                if ($def > 0) $conn->exec("UPDATE contracts SET tenant_id = NULL WHERE tenant_id = $def");
+                if ($n > 0) {
+                    $results[] = ['table' => 'contracts', 'status' => 'updated', 'details' => ["Filed $n customer contract(s) under their customer's company (contracts now belong to a company)"]];
+                }
+            }
+        } catch (Exception $e) {}
+    }
+
+    // contracts.cost_centre_id - the ONE-TIME link of the old free text (see
+    // $contractsCcColWasMissing). Matched on code, in the contract's own company
+    // (codes are unique per company, ignoring case - the column's collation).
+    if ($contractsCcColWasMissing && $tableExists('cost_centres') && $colExists('contracts', 'cost_centre_id')) {
+        try {
+            $def = (int)($conn->query("SELECT id FROM tenants WHERE is_default = 1 ORDER BY id LIMIT 1")->fetchColumn() ?: 0);
+            $tenantExpr = $colExists('contracts', 'tenant_id') ? "COALESCE(c.tenant_id, $def)" : (string)$def;
+            $n = $conn->exec(
+                "UPDATE contracts c
+                   JOIN cost_centres cc ON cc.tenant_id = $tenantExpr AND cc.code = TRIM(c.cost_centre)
+                    SET c.cost_centre_id = cc.id, c.cost_centre = NULL
+                  WHERE c.cost_centre IS NOT NULL AND TRIM(c.cost_centre) <> '' AND c.cost_centre_id IS NULL");
+            if ($n > 0) {
+                $results[] = ['table' => 'contracts', 'status' => 'updated', 'details' => ["Linked the typed-in cost centre of $n contract(s) to the matching cost centre"]];
+            }
+        } catch (Exception $e) {}
+    }
+
+    // domains.cost_centre_id (GH #188) - the ONE-TIME link of the old free text,
+    // exactly as for contracts above: on the code, in the domain's own company.
+    if ($domainsCcColWasMissing && $tableExists('cost_centres') && $colExists('domains', 'cost_centre_id')) {
+        try {
+            $def = (int)($conn->query("SELECT id FROM tenants WHERE is_default = 1 ORDER BY id LIMIT 1")->fetchColumn() ?: 0);
+            $n = $conn->exec(
+                "UPDATE domains d
+                   JOIN cost_centres cc ON cc.tenant_id = COALESCE(d.tenant_id, $def) AND cc.code = TRIM(d.cost_centre)
+                    SET d.cost_centre_id = cc.id, d.cost_centre = NULL
+                  WHERE d.cost_centre IS NOT NULL AND TRIM(d.cost_centre) <> '' AND d.cost_centre_id IS NULL");
+            if ($n > 0) {
+                $results[] = ['table' => 'domains', 'status' => 'updated', 'details' => ["Linked the typed-in cost centre of $n domain(s) to the matching cost centre"]];
+            }
+        } catch (Exception $e) {}
+    }
+
     // tickets.tenant_id — index + FK + a ONE-TIME backfill of existing tickets to
     // the Default company. Like target_mailboxes (and unlike a naive sweep), we
     // backfill ONLY when the column was just added ($ticketsTenantColWasMissing):
@@ -2810,6 +2000,41 @@ try {
         }
     }
 
+    // ticket_merges: the merge log. CASCADE on either ticket being hard-deleted (the
+    // row describes a relationship between two tickets and means nothing without
+    // them), SET NULL on the analyst so a merge record survives a leaver.
+    if ($tableExists('ticket_merges')) {
+        if ($tableExists('tickets') && !$fkExists('ticket_merges', 'fk_ticket_merges_source')) {
+            try { $conn->exec("ALTER TABLE ticket_merges ADD CONSTRAINT fk_ticket_merges_source FOREIGN KEY (source_ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('tickets') && !$fkExists('ticket_merges', 'fk_ticket_merges_target')) {
+            try { $conn->exec("ALTER TABLE ticket_merges ADD CONSTRAINT fk_ticket_merges_target FOREIGN KEY (target_ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('ticket_merges', 'fk_ticket_merges_analyst')) {
+            try { $conn->exec("ALTER TABLE ticket_merges ADD CONSTRAINT fk_ticket_merges_analyst FOREIGN KEY (merged_by_id) REFERENCES analysts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+
+    // ticket_splits: the mirror of ticket_merges, same FK reasoning.
+    if ($tableExists('ticket_splits')) {
+        if ($tableExists('tickets') && !$fkExists('ticket_splits', 'fk_ticket_splits_source')) {
+            try { $conn->exec("ALTER TABLE ticket_splits ADD CONSTRAINT fk_ticket_splits_source FOREIGN KEY (source_ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('tickets') && !$fkExists('ticket_splits', 'fk_ticket_splits_new')) {
+            try { $conn->exec("ALTER TABLE ticket_splits ADD CONSTRAINT fk_ticket_splits_new FOREIGN KEY (new_ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+        }
+        if ($tableExists('analysts') && !$fkExists('ticket_splits', 'fk_ticket_splits_analyst')) {
+            try { $conn->exec("ALTER TABLE ticket_splits ADD CONSTRAINT fk_ticket_splits_analyst FOREIGN KEY (split_by_id) REFERENCES analysts (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+        }
+    }
+
+    // tickets.merged_into_id is a SELF-reference, and deliberately SET NULL rather
+    // than CASCADE: hard-deleting a surviving ticket must never drag the tickets that
+    // were merged into it out of the database along with it.
+    if ($tableExists('tickets') && !$fkExists('tickets', 'fk_tickets_merged_into')) {
+        try { $conn->exec("ALTER TABLE tickets ADD CONSTRAINT fk_tickets_merged_into FOREIGN KEY (merged_into_id) REFERENCES tickets (id) ON DELETE SET NULL"); } catch (Exception $e) {}
+    }
+
     // Seed a default Mon-Fri 09:00-17:00 calendar in Europe/London if no
     // calendars exist yet. Detected installs that pre-date the SLA module
     // will pick this up on first verify; the freeitsm.sql seed handles fresh.
@@ -2844,12 +2069,52 @@ try {
             'sla_cron_min_interval_seconds'   => '30',
             // How many days to keep rows in sla_cron_runs before pruning
             'sla_cron_log_retention_days'     => '30',
+            // Outbound-webhook delivery worker (cron/webhook_deliveries.php):
+            // shared secret for HTTP invocation + min seconds between runs +
+            // how long to keep delivered/dead rows before pruning.
+            'webhook_cron_token'              => bin2hex(random_bytes(16)),
+            'webhook_cron_min_interval_seconds' => '20',
+            'webhook_delivery_retention_days' => '30',
+            // Time-based workflow triggers (cron/workflow_scheduled.php): emits
+            // contract.expiring / asset.warranty_expiring. Expiry windows move once
+            // a day, so a 5-minute floor is generous — hourly scheduling is plenty.
+            // (sla.warning / sla.breached come from the SLA cron instead.)
+            'workflow_cron_token'             => bin2hex(random_bytes(16)),
+            'workflow_cron_min_interval_seconds' => '300',
+            // Domains (cron/domains.php, #154): registry lookups, checks, alerts.
+            // Its own lock (GET_LOCK) stops overlapping runs, so no interval floor.
+            'domain_cron_token'               => bin2hex(random_bytes(16)),
+            // External issue trackers (cron/integration_poll.php): refreshes the
+            // cached status of every linked issue. A 60s floor rather than the
+            // webhook worker's 20s because this makes an outbound API call per
+            // connection and trackers rate-limit — there is no benefit in being
+            // more eager than the poll_interval_minutes set per connection.
+            'integration_cron_token'          => bin2hex(random_bytes(16)),
+            'integration_cron_min_interval_seconds' => '60',
+            // LMS training reminders (cron/lms_reminders.php). Never seeded before
+            // #182, so its web address could not be used on any install - the HTTP
+            // door was shut because the secret did not exist.
+            'lms_reminder_cron_token'         => bin2hex(random_bytes(16)),
+            // Background job health (#182): when run recording began on this install.
+            // #181's evidence report says "run history not available" for anything
+            // earlier, rather than "no recorded run" - an absence of records from
+            // before recording existed proves nothing about the scheduler.
+            'job_runs_recording_since'        => gmdate('Y-m-d H:i:s'),
+            'job_runs_retention_months'       => '13',
             // Watchtower: flag tickets stuck in a paused-SLA status longer than this
             // (wall-clock hours since last status change). Guardrail against analysts
             // parking tickets in On Hold to escape the SLA clock.
             'watchtower_paused_too_long_hours' => '24',
             // Tasks calendar: how multi-day tasks render — deadline | span | repeat
             'tasks_calendar_span_mode'        => 'deadline',
+            // Repeating task evidence (#181), Tasks -> Settings -> Evidence. Each
+            // defaults to the more forgiving choice so an upgrade changes nothing;
+            // the record is kept either way. skip_status_id empty = the last closed
+            // status in the admin's order, worked out when it is needed.
+            'tasks_evidence_completed_checklist' => 'allow',      // allow | refuse
+            'tasks_evidence_delete_occurrence'   => 'allow',      // allow | refuse
+            'tasks_evidence_skip_status_id'      => '',
+            'tasks_evidence_report_access'       => 'anyone',     // anyone | permission
             // CSAT (customer satisfaction surveys on ticket closure)
             // mode: off | auto | manual
             //   off    — feature disabled, no survey ever sent
@@ -2865,13 +2130,244 @@ try {
             // If 1, a reopened-then-closed ticket only gets a new survey when the analyst
             // manually triggers it (stops survey-spamming a flaky ticket). If 0, every close fires.
             'csat_one_per_ticket'             => '1',
+            // PR #166: ask chat customers in their chat. OFF on an upgrade - an
+            // install that has emailed every survey for months must not start
+            // messaging its chat customers the day it upgrades. freeitsm.sql
+            // seeds '1' first on a new install, and INSERT IGNORE keeps it.
+            'csat_in_channel'                 => '0',
             // Shared HMAC secret for tokenising survey URLs. Random per install — leaking it
             // would let anyone post ratings on behalf of users, so it stays in system_settings
             // rather than going to a public file or being printed in error pages.
             'csat_token_secret'                => bin2hex(random_bytes(32)),
+            // What to do with an inbound attachment whose type we do not accept
+            // (see includes/uploads.php). 'store' keeps it under a name of our own
+            // with an inert .bin extension, download-only; 'drop' does not write it
+            // at all. Either way the outcome is written onto the ticket, so a file
+            // never disappears silently. Defaults to keeping, because losing
+            // somebody's file is the worse surprise of the two.
+            'attachment_rejected_behaviour'   => 'store',
+
+            // Which attachment types are accepted. Seeded EMPTY on purpose: empty means
+            // "the whole catalogue in includes/uploads.php", so an install picks up new
+            // safe types when the product adds them instead of being frozen at whatever
+            // the list happened to be on the day it was installed. An administrator who
+            // wants to narrow it types the extensions they want; attachmentAllowedTypes()
+            // intersects that with the catalogue, so it can only ever subtract.
+            'attachment_allowed_extensions'   => '',
+
+            // ── Brute-force protection ──────────────────────────────────────────
+            // None of these were ever seeded, and both call sites read a missing
+            // value as 0 and 0 as "off" — so every fresh install shipped with
+            // account lockout and IP banning entirely disabled. Worse, System →
+            // Security pre-filled "5" and "2" in the boxes from a hardcoded
+            // fallback, so an administrator looking at the page reasonably concluded
+            // the protection was on. It only became true if they happened to press
+            // Save. Seeding the values the UI was already claiming makes the screen
+            // honest and turns the protection on by default.
+            //
+            // The trade-off is real and deliberate: an attacker who knows a username
+            // can lock that account for 30 minutes. That is preferable to unlimited
+            // password guessing, and the IP ban below is what handles the broader
+            // sweep across many usernames.
+            'max_failed_logins'               => '5',
+            'lockout_duration_minutes'        => '30',
+            'max_ip_attempts'                 => '5',
+            'min_ip_attempts'                 => '2',
+            // 0 = passwords never expire. Left off on purpose: forced rotation on a
+            // timer is no longer considered good practice (it drives predictable
+            // increments), and unlike the settings above, turning it on silently at
+            // upgrade would lock people out of their own service desk.
+            'password_expiry_days'            => '0',
+            'intune_company_id'                 => null,
+            // OFF on upgrade (a new install's freeitsm.sql seeds '1' first, and
+            // INSERT IGNORE keeps it): turning it on renames every asset whose
+            // device has been renamed in Intune since it was linked (PR #164).
+            'intune_sync_hostnames'             => '0',
+            // OFF on upgrade and on a new install: it assigns assets to people,
+            // with custody rows and asset.assigned workflows (intuneAssignPrimaryUsers()).
+            'intune_assign_primary_user'        => '0',
+            'asset_reconciliation_ignored_serials' => "TO BE FILLED BY O.E.M.\nDEFAULT STRING\nNONE\nSYSTEM SERIAL NUMBER\nNOT SPECIFIED\n123456789",
+            // Asset tags (PR #164): off until somebody switches them on.
+            'asset_tag_autogen_enabled'          => '0',
+            'asset_tag_format'                   => 'AST-{#####}',
+            'asset_tag_start'                    => '1',
+            'asset_tag_scope'                    => 'per_company',
         ];
+        // Secrets are seeded already encrypted. The whole block is best-effort: an
+        // install that has no encryption key yet must still be able to build its
+        // schema, so a missing key downgrades to plaintext with a warning rather
+        // than aborting the verify.
+        $encryptionUsable = true;
         $stmt = $conn->prepare("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, ?)");
-        foreach ($defaults as $k => $v) { $stmt->execute([$k, $v]); }
+        foreach ($defaults as $k => $v) {
+            $toStore = $v;
+            if ($v !== null && $v !== '' && isEncryptedSettingKey($k) && $encryptionUsable) {
+                try {
+                    $toStore = encryptValue($v);
+                } catch (Exception $e) {
+                    $encryptionUsable = false;
+                    $results[] = ['table' => 'system_settings', 'status' => 'warning',
+                                  'details' => ['Could not encrypt seeded secrets (' . $e->getMessage() . ') — stored as-is. Fix the encryption key and re-run.']];
+                }
+            }
+            $stmt->execute([$k, $toStore]);
+        }
+
+        // Migrate secrets that were stored before isEncryptedSettingKey() covered
+        // them. csat_token_secret and the four *_cron_token values were seeded in
+        // plaintext by every release up to f7f1e9dd, and are never re-saved through
+        // the settings UI, so without this they would stay in the clear forever.
+        // Idempotent: anything already carrying the ENC: prefix is skipped.
+        if ($encryptionUsable) {
+            try {
+                $reencrypted = [];
+                $updSecret = $conn->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = ?");
+                foreach ($conn->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                    $k = $row['setting_key'];
+                    $v = $row['setting_value'];
+                    if ($v === null || $v === '') continue;
+                    if (!isEncryptedSettingKey($k)) continue;
+                    if (str_starts_with($v, ENCRYPTION_PREFIX)) continue;   // already ciphertext
+                    $updSecret->execute([encryptValue($v), $k]);
+                    $reencrypted[] = $k;
+                }
+                if ($reencrypted) {
+                    $results[] = ['table' => 'system_settings', 'status' => 'migrated',
+                                  'details' => ['Encrypted ' . count($reencrypted) . ' secret(s) that were stored in plaintext: ' . implode(', ', $reencrypted)]];
+                }
+            } catch (Exception $e) {
+                $results[] = ['table' => 'system_settings', 'status' => 'warning',
+                              'details' => ['Could not re-encrypt existing secrets: ' . $e->getMessage()]];
+            }
+        }
+    }
+
+    // Attachments written before the ingest paths were fixed still carry the
+    // sender's own extension on disk — a real install had a .html sitting under
+    // tickets/attachments/. The new directory rules deny those on Apache and IIS and
+    // get_attachment.php forces a download, but nginx reads neither file, so the only
+    // way to be sure is to take the dangerous extension away. The displayed filename
+    // is a separate column and is untouched, so the attachment still downloads under
+    // the name the sender gave it. Idempotent: .bin files no longer match.
+    if ($tableExists('email_attachments') && $colExists('email_attachments', 'file_path')) {
+        try {
+            // ⚠️ This one sweep is a DENYLIST, unlike the ingest side, which is an
+            // allow-list and stays that way. A denylist is only defensible here because
+            // it is looking at names that already exist on disk rather than deciding what
+            // may arrive — but it still has to be reasonably complete. .phar and .pht are
+            // executed by common PHP configurations; .hta and .cer are executable on IIS;
+            // .mhtml is a same-origin document; and .xml/.xsl/.xslt matter because a
+            // legacy .xml served as text/xml can carry a self-referencing xml-stylesheet
+            // processing instruction and run script in our own origin. All added after
+            // Erlend Volden pointed out the gaps.
+            $riskyExt = '[.](php|phtml|pht|php[0-9]|phps|phar|cgi|pl|py|jsp|asp|aspx|cer|sh|shtml|hta|htaccess|html|htm|mhtml|svg|svgz|xhtml|xml|xsl|xslt)$';
+            $risky = $conn->query("SELECT id, file_path FROM email_attachments WHERE file_path REGEXP '$riskyExt'")->fetchAll(PDO::FETCH_ASSOC);
+            $renamed = 0;
+            $missing = 0;
+            $attachRoot = dirname(dirname(__DIR__)) . '/tickets/attachments/';
+            $updPath = $conn->prepare("UPDATE email_attachments SET file_path = ? WHERE id = ?");
+            foreach ($risky as $att) {
+                $rel = (string)$att['file_path'];
+                $newRel = preg_replace('/\.[^.\/\\\\]+$/', '.' . ATTACHMENT_QUARANTINE_EXT, $rel);
+                if ($newRel === null || $newRel === $rel) continue;
+
+                $oldAbs = $attachRoot . $rel;
+                $newAbs = $attachRoot . $newRel;
+                if (!file_exists($oldAbs)) {
+                    // Row points at a file that is already gone — still worth
+                    // correcting the path so nothing re-derives an extension from it.
+                    $updPath->execute([$newRel, $att['id']]);
+                    $missing++;
+                    continue;
+                }
+
+                // ⚠️ Two attachments on one email can collide here even though they never
+                // collided on disk: report.htm and report.html both want report.bin, as do
+                // index.html and index.php. rename() overwrites silently on POSIX, so one
+                // file was destroyed and BOTH rows were then pointed at the survivor —
+                // rare, and unrecoverable when it landed. Find a free name instead. The
+                // displayed filename is a separate column, so the suffix is never seen by
+                // anyone; it exists only to keep the two files apart.
+                if (file_exists($newAbs)) {
+                    $base = preg_replace('/\.[^.\/\\\\]+$/', '', $newRel);
+                    $suffix = 1;
+                    do {
+                        $candidate = $base . '-' . $suffix . '.' . ATTACHMENT_QUARANTINE_EXT;
+                        $suffix++;
+                    } while ($suffix < 1000 && file_exists($attachRoot . $candidate));
+                    if (file_exists($attachRoot . $candidate)) continue;   // gave up; leave it alone
+                    $newRel = $candidate;
+                    $newAbs = $attachRoot . $newRel;
+                }
+
+                if (@rename($oldAbs, $newAbs)) {
+                    $updPath->execute([$newRel, $att['id']]);
+                    $renamed++;
+                }
+            }
+            if ($renamed > 0 || $missing > 0) {
+                $detail = "Renamed $renamed existing attachment(s) with an executable or web extension to ." . ATTACHMENT_QUARANTINE_EXT;
+                if ($missing > 0) $detail .= " ($missing row(s) had no file on disk)";
+                $results[] = ['table' => 'email_attachments', 'status' => 'migrated', 'details' => [$detail]];
+            }
+        } catch (Exception $e) {
+            $results[] = ['table' => 'email_attachments', 'status' => 'warning',
+                          'details' => ['Could not rename legacy attachments: ' . $e->getMessage()]];
+        }
+    }
+
+    // GH #115: every upload folder's .htaccess used to carry an unguarded
+    // `php_flag engine off`. On Apache with PHP-FPM that is an unknown command,
+    // and Apache answers every file in the folder with a 500 - the logo, the
+    // portal logo and LMS courses never load. Updating FreeITSM fixes the files it
+    // ships; this fixes the ones it WROTE (one per attachment folder, the portal
+    // logo folder, per-form image folders). Idempotent: a repaired file is skipped.
+    try {
+        $htFixed = uploadRepairHtaccessTree(dirname(__DIR__, 2));
+        if ($htFixed > 0) {
+            $results[] = ['table' => 'upload folders', 'status' => 'migrated',
+                          'details' => ["Repaired $htFixed .htaccess file(s) so they no longer break Apache with PHP-FPM"]];
+        }
+    } catch (Throwable $e) {
+        $results[] = ['table' => 'upload folders', 'status' => 'warning',
+                      'details' => ['Could not check the upload folders\' .htaccess files: ' . $e->getMessage()]];
+    }
+
+    // Same migration for target_mailboxes. token_data was absent from
+    // ENCRYPTED_MAILBOX_COLUMNS, so on an existing install the azure_* columns are
+    // ciphertext while the access + refresh tokens minted with them sit in the next
+    // column in the clear. Writers encrypt from now on, but a mailbox only rewrites
+    // token_data when its token refreshes — a dormant or app-only mailbox could stay
+    // plaintext indefinitely, so bring the existing rows across here.
+    // Covers every column in the list, not just token_data, so any future addition
+    // migrates itself. Idempotent: ENC: values are skipped.
+    if ($tableExists('target_mailboxes')) {
+        try {
+            $mbCols = array_values(array_filter(ENCRYPTED_MAILBOX_COLUMNS, fn($c) => $colExists('target_mailboxes', $c)));
+            if ($mbCols) {
+                $encryptedCount = 0;
+                $touchedCols = [];
+                $mbRows = $conn->query("SELECT id, `" . implode('`, `', $mbCols) . "` FROM target_mailboxes")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($mbRows as $mbRow) {
+                    foreach ($mbCols as $col) {
+                        $v = $mbRow[$col] ?? null;
+                        if ($v === null || $v === '') continue;
+                        if (str_starts_with($v, ENCRYPTION_PREFIX)) continue;   // already ciphertext
+                        $conn->prepare("UPDATE target_mailboxes SET `$col` = ? WHERE id = ?")
+                             ->execute([encryptValue($v), $mbRow['id']]);
+                        $encryptedCount++;
+                        $touchedCols[$col] = true;
+                    }
+                }
+                if ($encryptedCount > 0) {
+                    $results[] = ['table' => 'target_mailboxes', 'status' => 'migrated',
+                                  'details' => ["Encrypted $encryptedCount mailbox value(s) previously stored in plaintext (" . implode(', ', array_keys($touchedCols)) . ')']];
+                }
+            }
+        } catch (Exception $e) {
+            $results[] = ['table' => 'target_mailboxes', 'status' => 'warning',
+                          'details' => ['Could not re-encrypt mailbox credentials: ' . $e->getMessage()]];
+        }
     }
 
     // Backfill tickets.status_id from legacy tickets.status
@@ -2912,6 +2408,32 @@ try {
         }
 
         $conn->exec("UPDATE tickets SET priority_id = (SELECT id FROM ticket_priorities WHERE is_default = 1 LIMIT 1) WHERE priority_id IS NULL");
+    }
+
+    // Repair tickets left with no status/priority at all. This deliberately sits
+    // OUTSIDE the two legacy blocks above: those are gated on the old
+    // tickets.status / tickets.priority columns, which a fresh install has never
+    // had, so their identical repairs could never run on the installs that hit
+    // #79 — intake paths inserted a NULL status_id whenever the default status
+    // had been renamed (e.g. translated to 'Offen'). The row then showed no
+    // status chip and an empty Status dropdown.
+    if ($tableExists('tickets') && $colExists('tickets', 'status_id')) {
+        $upd = $conn->exec("UPDATE tickets
+                               SET status_id = (SELECT id FROM ticket_statuses WHERE is_active = 1 ORDER BY is_default DESC, display_order, id LIMIT 1)
+                             WHERE status_id IS NULL");
+        if ($upd > 0) {
+            $results[] = ['table' => 'tickets', 'status' => 'migrated',
+                          'details' => ["Set the default status on $upd ticket(s) that had none"]];
+        }
+    }
+    if ($tableExists('tickets') && $colExists('tickets', 'priority_id')) {
+        $upd = $conn->exec("UPDATE tickets
+                               SET priority_id = (SELECT id FROM ticket_priorities WHERE is_active = 1 ORDER BY is_default DESC, display_order, id LIMIT 1)
+                             WHERE priority_id IS NULL");
+        if ($upd > 0) {
+            $results[] = ['table' => 'tickets', 'status' => 'migrated',
+                          'details' => ["Set the default priority on $upd ticket(s) that had none"]];
+        }
     }
 
     // asset_history.field_name normalisation: legacy rows stored an English label
@@ -3114,18 +2636,39 @@ try {
     if ($tableExists('change_statuses')) {
         $cnt = (int) $conn->query("SELECT COUNT(*) FROM change_statuses")->fetchColumn();
         if ($cnt === 0) {
-            $conn->exec("INSERT INTO change_statuses (name, is_closed, colour, is_default, display_order) VALUES
-                ('Draft',            0, '#9e9e9e', 1, 10),
-                ('Submitted',        0, '#2563eb', 0, 20),
-                ('Pending Approval', 0, '#e65100', 0, 30),
-                ('Approved',         0, '#2e7d32', 0, 40),
-                ('Rejected',         1, '#c62828', 0, 50),
-                ('Scheduled',        0, '#9333ea', 0, 60),
-                ('In Progress',      0, '#1565c0', 0, 70),
-                ('Completed',        1, '#1b5e20', 0, 80),
-                ('Failed',           1, '#c62828', 0, 90),
-                ('Cancelled',        1, '#bdbdbd', 0, 100)");
+            $conn->exec("INSERT INTO change_statuses (name, stage, is_closed, colour, is_default, display_order) VALUES
+                ('Draft',            'draft',        0, '#9e9e9e', 1, 10),
+                ('Submitted',        'draft',        0, '#2563eb', 0, 20),
+                ('Pending Approval', 'awaiting',     0, '#e65100', 0, 30),
+                ('Approved',         'approved',     0, '#2e7d32', 0, 40),
+                ('Rejected',         'stopped',      1, '#c62828', 0, 50),
+                ('Scheduled',        'implementing', 0, '#9333ea', 0, 60),
+                ('In Progress',      'implementing', 0, '#1565c0', 0, 70),
+                ('Completed',        'done',         1, '#1b5e20', 0, 80),
+                ('Failed',           'done',         1, '#c62828', 0, 90),
+                ('Cancelled',        'stopped',      1, '#bdbdbd', 0, 100)");
             $results[] = ['table' => 'change_statuses', 'status' => 'seeded', 'details' => ['Inserted 10 default change statuses']];
+        }
+
+        // Give every status that still carries a seeded name its stage. Idempotent and
+        // never overrides a stage somebody chose; a renamed or custom status is left
+        // without one, for an administrator to decide in Settings → Statuses.
+        require_once __DIR__ . '/../../includes/changes/approvals.php';
+        $classified = changeStagesBackfill($conn);
+        if ($classified > 0) {
+            $results[] = ['table' => 'change_statuses', 'status' => 'updated', 'details' => ['Gave ' . $classified . ' change status(es) their stage']];
+        }
+
+        // One-time: rounds for the changes that were past submission before approval
+        // records existed (#180 §8 Legacy). Needs the stages above, so it runs after them.
+        if ($changeApprovalsWasMissing && $tableExists('change_approvals') && $tableExists('change_approval_votes')) {
+            [$legacyApproved, $legacyOpen] = changeApprovalBackfillLegacy($conn);
+            if ($legacyApproved + $legacyOpen > 0) {
+                $results[] = ['table' => 'change_approvals', 'status' => 'updated', 'details' => [
+                    'Recorded ' . $legacyApproved . ' change(s) as approved before approval records were kept, and opened '
+                    . $legacyOpen . ' round(s) for changes awaiting approval (one-time upgrade)'
+                ]];
+            }
         }
     }
 
@@ -3239,6 +2782,37 @@ try {
                      ON DELETE SET NULL"
                 );
                 $results[] = ['table' => 'morningChecks_Results', 'status' => 'updated', 'details' => ['Added fk_results_status (StatusID → morningChecks_Statuses.StatusID, ON DELETE SET NULL)']];
+            } catch (Exception $e) { /* shrug — possibly mismatched engine */ }
+        }
+
+        // Step 4: the check FK (fk_results_checks in freeitsm.sql) was never
+        // backfilled here, so installs grown via Database Verification could
+        // hold results pointing at deleted checks. Remove any such orphans
+        // (a result without its check is meaningless — the UI deletes a
+        // check's results with the check), then add the constraint.
+        $hasCheckFk = $conn->prepare(
+            "SELECT COUNT(*) FROM information_schema.table_constraints
+             WHERE table_schema = ? AND table_name = 'morningChecks_Results'
+               AND constraint_name = 'fk_results_checks' AND constraint_type = 'FOREIGN KEY'"
+        );
+        $hasCheckFk->execute([$dbName]);
+        if ((int)$hasCheckFk->fetchColumn() === 0 && $tableExists('morningChecks_Checks')) {
+            try {
+                $orphans = $conn->exec(
+                    "DELETE r FROM morningChecks_Results r
+                     LEFT JOIN morningChecks_Checks c ON c.CheckID = r.CheckID
+                     WHERE c.CheckID IS NULL"
+                );
+                $conn->exec(
+                    "ALTER TABLE morningChecks_Results
+                     ADD CONSTRAINT fk_results_checks
+                     FOREIGN KEY (CheckID) REFERENCES morningChecks_Checks (CheckID)"
+                );
+                $details = ['Added fk_results_checks (CheckID → morningChecks_Checks.CheckID)'];
+                if ($orphans > 0) {
+                    $details[] = "Removed $orphans orphaned result row(s) whose check no longer exists";
+                }
+                $results[] = ['table' => 'morningChecks_Results', 'status' => 'updated', 'details' => $details];
             } catch (Exception $e) { /* shrug — possibly mismatched engine */ }
         }
     }
@@ -3365,6 +2939,7 @@ try {
         ['changes',          'fk_changes_priority',    "ALTER TABLE changes ADD CONSTRAINT fk_changes_priority FOREIGN KEY (priority_id) REFERENCES change_priorities (id)"],
         ['changes',          'fk_changes_change_type', "ALTER TABLE changes ADD CONSTRAINT fk_changes_change_type FOREIGN KEY (change_type_id) REFERENCES change_types (id)"],
         ['changes',          'fk_changes_impact',      "ALTER TABLE changes ADD CONSTRAINT fk_changes_impact FOREIGN KEY (impact_id) REFERENCES change_impacts (id)"],
+        ['changes',          'fk_changes_tenant',      "ALTER TABLE changes ADD CONSTRAINT fk_changes_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
         ['change_templates', 'fk_template_change_type',"ALTER TABLE change_templates ADD CONSTRAINT fk_template_change_type FOREIGN KEY (change_type_id) REFERENCES change_types (id)"],
         ['change_templates', 'fk_template_priority',   "ALTER TABLE change_templates ADD CONSTRAINT fk_template_priority FOREIGN KEY (priority_id) REFERENCES change_priorities (id)"],
         ['change_templates', 'fk_template_impact',     "ALTER TABLE change_templates ADD CONSTRAINT fk_template_impact FOREIGN KEY (impact_id) REFERENCES change_impacts (id)"],
@@ -3379,6 +2954,7 @@ try {
         ['changes', 'ix_changes_priority_id',    'priority_id'],
         ['changes', 'ix_changes_change_type_id', 'change_type_id'],
         ['changes', 'ix_changes_impact_id',      'impact_id'],
+        ['changes', 'ix_changes_tenant_id',      'tenant_id'],
     ];
     foreach ($changeIndexes as [$tbl, $name, $col]) {
         if (!$tableExists($tbl) || $idxExists($tbl, $name)) continue;
@@ -3392,6 +2968,10 @@ try {
         ['problems',        'fk_problems_tenant',   "ALTER TABLE problems ADD CONSTRAINT fk_problems_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
         ['problem_tickets', 'fk_ptickets_problem',  "ALTER TABLE problem_tickets ADD CONSTRAINT fk_ptickets_problem FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
         ['problem_tickets', 'fk_ptickets_ticket',   "ALTER TABLE problem_tickets ADD CONSTRAINT fk_ptickets_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['change_tickets',  'fk_ctickets_change',   "ALTER TABLE change_tickets ADD CONSTRAINT fk_ctickets_change FOREIGN KEY (change_id) REFERENCES changes (id) ON DELETE CASCADE"],
+        ['change_tickets',  'fk_ctickets_ticket',   "ALTER TABLE change_tickets ADD CONSTRAINT fk_ctickets_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['ticket_links',    'fk_ticket_links_source', "ALTER TABLE ticket_links ADD CONSTRAINT fk_ticket_links_source FOREIGN KEY (source_ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['ticket_links',    'fk_ticket_links_target', "ALTER TABLE ticket_links ADD CONSTRAINT fk_ticket_links_target FOREIGN KEY (target_ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
         ['problem_audit',   'fk_paudit_problem',    "ALTER TABLE problem_audit ADD CONSTRAINT fk_paudit_problem FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
         ['problem_notes',   'fk_pnotes_problem',    "ALTER TABLE problem_notes ADD CONSTRAINT fk_pnotes_problem FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
     ];
@@ -3403,6 +2983,8 @@ try {
         ['problems', 'ix_problems_status_id',  'status_id'],
         ['problems', 'ix_problems_tenant_id',  'tenant_id'],
         ['problem_tickets', 'ix_ptickets_ticket', 'ticket_id'],
+        ['change_tickets',  'ix_ctickets_ticket', 'ticket_id'],
+        ['ticket_links',    'ix_ticket_links_target', 'target_ticket_id'],
         ['problem_notes', 'ix_pnotes_problem', 'problem_id'],
     ];
     foreach ($problemIndexes as [$tbl, $name, $col]) {
@@ -3427,6 +3009,546 @@ try {
         try { $conn->exec($sql); } catch (Exception $e) {}
     }
 
+    // Knowledge foreign keys (db_verify $schema only builds columns + PK; a
+    // grown install was missing all of these, which orphaned tag links on
+    // hard delete). Names + delete rules match freeitsm.sql. The article-tags
+    // FKs won't add while orphaned junction rows exist (MySQL refuses); the
+    // endpoints now clean children explicitly, so orphans stop accumulating.
+    $knowledgeFks = [
+        ['knowledge_articles',         'fk_knowledge_articles_author',      "ALTER TABLE knowledge_articles ADD CONSTRAINT fk_knowledge_articles_author FOREIGN KEY (author_id) REFERENCES analysts (id)"],
+        ['knowledge_articles',         'fk_knowledge_articles_owner',       "ALTER TABLE knowledge_articles ADD CONSTRAINT fk_knowledge_articles_owner FOREIGN KEY (owner_id) REFERENCES analysts (id)"],
+        ['knowledge_articles',         'fk_knowledge_articles_archived_by', "ALTER TABLE knowledge_articles ADD CONSTRAINT fk_knowledge_articles_archived_by FOREIGN KEY (archived_by_id) REFERENCES analysts (id)"],
+        // Deliberately NOT "ON DELETE SET NULL" (which fk_assets_tenant uses): for
+        // knowledge, NULL means "shared with every company", so SET NULL would turn a
+        // deleted company's private articles into everyone's. Restrict instead.
+        ['knowledge_articles',         'fk_knowledge_articles_tenant',      "ALTER TABLE knowledge_articles ADD CONSTRAINT fk_knowledge_articles_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)"],
+        ['knowledge_article_versions', 'fk_kav_article',                    "ALTER TABLE knowledge_article_versions ADD CONSTRAINT fk_kav_article FOREIGN KEY (article_id) REFERENCES knowledge_articles (id)"],
+        ['knowledge_article_versions', 'fk_kav_saved_by',                   "ALTER TABLE knowledge_article_versions ADD CONSTRAINT fk_kav_saved_by FOREIGN KEY (saved_by_id) REFERENCES analysts (id)"],
+        ['knowledge_article_tags',     'fk_article_tags_article',           "ALTER TABLE knowledge_article_tags ADD CONSTRAINT fk_article_tags_article FOREIGN KEY (article_id) REFERENCES knowledge_articles (id) ON DELETE CASCADE"],
+        ['knowledge_article_tags',     'fk_article_tags_tag',               "ALTER TABLE knowledge_article_tags ADD CONSTRAINT fk_article_tags_tag FOREIGN KEY (tag_id) REFERENCES knowledge_tags (id) ON DELETE CASCADE"],
+    ];
+    foreach ($knowledgeFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // CMDB foreign keys (db_verify $schema only builds columns + PK; grown
+    // installs had NONE of these, so the module's cascade-delete design
+    // silently didn't apply there). Names + delete rules match freeitsm.sql.
+    $cmdbFks = [
+        ['cmdb_classes',                'fk_cmdb_classes_icon',    "ALTER TABLE cmdb_classes ADD CONSTRAINT fk_cmdb_classes_icon FOREIGN KEY (icon_id) REFERENCES cmdb_icons (id) ON DELETE SET NULL"],
+        ['cmdb_class_properties',       'fk_cmdb_cp_class',        "ALTER TABLE cmdb_class_properties ADD CONSTRAINT fk_cmdb_cp_class FOREIGN KEY (class_id) REFERENCES cmdb_classes (id) ON DELETE CASCADE"],
+        ['cmdb_class_properties',       'fk_cmdb_cp_target_class', "ALTER TABLE cmdb_class_properties ADD CONSTRAINT fk_cmdb_cp_target_class FOREIGN KEY (target_class_id) REFERENCES cmdb_classes (id)"],
+        ['cmdb_class_property_options', 'fk_cmdb_cpo_property',    "ALTER TABLE cmdb_class_property_options ADD CONSTRAINT fk_cmdb_cpo_property FOREIGN KEY (property_id) REFERENCES cmdb_class_properties (id) ON DELETE CASCADE"],
+        ['cmdb_objects',                'fk_cmdb_objects_class',   "ALTER TABLE cmdb_objects ADD CONSTRAINT fk_cmdb_objects_class FOREIGN KEY (class_id) REFERENCES cmdb_classes (id)"],
+        ['cmdb_objects',                'fk_cmdb_objects_parent',  "ALTER TABLE cmdb_objects ADD CONSTRAINT fk_cmdb_objects_parent FOREIGN KEY (parent_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['cmdb_object_properties',      'fk_cmdb_op_object',       "ALTER TABLE cmdb_object_properties ADD CONSTRAINT fk_cmdb_op_object FOREIGN KEY (object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['cmdb_object_properties',      'fk_cmdb_op_property',     "ALTER TABLE cmdb_object_properties ADD CONSTRAINT fk_cmdb_op_property FOREIGN KEY (property_id) REFERENCES cmdb_class_properties (id) ON DELETE CASCADE"],
+        ['cmdb_object_properties',      'fk_cmdb_op_value_object', "ALTER TABLE cmdb_object_properties ADD CONSTRAINT fk_cmdb_op_value_object FOREIGN KEY (value_object_id) REFERENCES cmdb_objects (id) ON DELETE SET NULL"],
+        ['cmdb_object_relationships',   'fk_cmdb_or_from',         "ALTER TABLE cmdb_object_relationships ADD CONSTRAINT fk_cmdb_or_from FOREIGN KEY (from_object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['cmdb_object_relationships',   'fk_cmdb_or_to',           "ALTER TABLE cmdb_object_relationships ADD CONSTRAINT fk_cmdb_or_to FOREIGN KEY (to_object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['cmdb_object_relationships',   'fk_cmdb_or_type',         "ALTER TABLE cmdb_object_relationships ADD CONSTRAINT fk_cmdb_or_type FOREIGN KEY (relationship_type_id) REFERENCES cmdb_relationship_types (id)"],
+        ['ticket_cmdb_objects',         'fk_tco_ticket',           "ALTER TABLE ticket_cmdb_objects ADD CONSTRAINT fk_tco_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['ticket_cmdb_objects',         'fk_tco_cmdb_object',      "ALTER TABLE ticket_cmdb_objects ADD CONSTRAINT fk_tco_cmdb_object FOREIGN KEY (cmdb_object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['ticket_cmdb_objects',         'fk_tco_analyst',          "ALTER TABLE ticket_cmdb_objects ADD CONSTRAINT fk_tco_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        // Attachment text (#53). CASCADE: the extracted text is meaningless once
+        // the attachment it came from has gone.
+        ['attachment_text',             'fk_attachment_text_attachment', "ALTER TABLE attachment_text ADD CONSTRAINT fk_attachment_text_attachment FOREIGN KEY (attachment_id) REFERENCES email_attachments (id) ON DELETE CASCADE"],
+        // Tickets ↔ assets (#57)
+        ['table_views',                 'fk_tv_owner',             "ALTER TABLE table_views ADD CONSTRAINT fk_tv_owner FOREIGN KEY (owner_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['table_views',                 'fk_tv_team',              "ALTER TABLE table_views ADD CONSTRAINT fk_tv_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE SET NULL"],
+        // Report Packs
+        ['report_packs',                'fk_rp_owner',             "ALTER TABLE report_packs ADD CONSTRAINT fk_rp_owner FOREIGN KEY (owner_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['report_packs',                'fk_rp_updater',           "ALTER TABLE report_packs ADD CONSTRAINT fk_rp_updater FOREIGN KEY (updated_by) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['report_pack_shares',          'fk_rps_pack',             "ALTER TABLE report_pack_shares ADD CONSTRAINT fk_rps_pack FOREIGN KEY (pack_id) REFERENCES report_packs (id) ON DELETE CASCADE"],
+        ['contract_assets',             'fk_ca_contract',          "ALTER TABLE contract_assets ADD CONSTRAINT fk_ca_contract FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE CASCADE"],
+        ['contract_assets',             'fk_ca_asset',             "ALTER TABLE contract_assets ADD CONSTRAINT fk_ca_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE"],
+        ['contract_assets',             'fk_ca_analyst',           "ALTER TABLE contract_assets ADD CONSTRAINT fk_ca_analyst FOREIGN KEY (linked_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['ticket_assets',               'fk_ta_ticket',            "ALTER TABLE ticket_assets ADD CONSTRAINT fk_ta_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['ticket_assets',               'fk_ta_asset',             "ALTER TABLE ticket_assets ADD CONSTRAINT fk_ta_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE"],
+        ['ticket_assets',               'fk_ta_analyst',           "ALTER TABLE ticket_assets ADD CONSTRAINT fk_ta_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['ticket_assets',               'fk_ta_user',              "ALTER TABLE ticket_assets ADD CONSTRAINT fk_ta_user FOREIGN KEY (created_by_user_id) REFERENCES users (id) ON DELETE SET NULL"],
+    ];
+    foreach ($cmdbFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Software-module foreign keys (db_verify $schema only builds columns +
+    // PK). Names + rules match freeitsm.sql; note the RESTRICT (no rule) FKs
+    // deliberately block deleting an app while installs/licences reference it.
+    $softwareFks = [
+        ['software_inventory_detail',        'fk_software_detail_app',      "ALTER TABLE software_inventory_detail ADD CONSTRAINT fk_software_detail_app FOREIGN KEY (app_id) REFERENCES software_inventory_apps (id)"],
+        ['software_licences',                'fk_software_licences_app',    "ALTER TABLE software_licences ADD CONSTRAINT fk_software_licences_app FOREIGN KEY (app_id) REFERENCES software_inventory_apps (id)"],
+        ['software_licences',                'fk_software_licences_analyst', "ALTER TABLE software_licences ADD CONSTRAINT fk_software_licences_analyst FOREIGN KEY (created_by) REFERENCES analysts (id)"],
+        ['software_dashboard_widgets',       'fk_sdw_app',                  "ALTER TABLE software_dashboard_widgets ADD CONSTRAINT fk_sdw_app FOREIGN KEY (app_id) REFERENCES software_inventory_apps (id) ON DELETE SET NULL"],
+        ['analyst_software_dashboard_widgets', 'fk_asdw_analyst',           "ALTER TABLE analyst_software_dashboard_widgets ADD CONSTRAINT fk_asdw_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id)"],
+        ['analyst_software_dashboard_widgets', 'fk_asdw_widget',            "ALTER TABLE analyst_software_dashboard_widgets ADD CONSTRAINT fk_asdw_widget FOREIGN KEY (widget_id) REFERENCES software_dashboard_widgets (id)"],
+    ];
+    foreach ($softwareFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Calendar foreign keys (db_verify $schema only builds columns + PK) —
+    // names + rules match freeitsm.sql. The category FK has no delete rule
+    // (RESTRICT), backstopping delete_category.php's in-use guard.
+    $calendarFks = [
+        ['calendar_events', 'fk_calendar_events_category', "ALTER TABLE calendar_events ADD CONSTRAINT fk_calendar_events_category FOREIGN KEY (category_id) REFERENCES calendar_categories (id)"],
+        ['calendar_events', 'fk_calendar_events_contract', "ALTER TABLE calendar_events ADD CONSTRAINT fk_calendar_events_contract FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE SET NULL"],
+    ];
+    foreach ($calendarFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Contracts-domain foreign keys (db_verify $schema only builds columns +
+    // PK; this domain historically had NO FKs anywhere — not even in
+    // freeitsm.sql — so contract deletes orphaned term values). Names + rules
+    // match the constraints now in freeitsm.sql. Lookups use SET NULL to
+    // preserve the existing delete-freely settings behaviour.
+    $contractFks = [
+        ['suppliers',            'fk_suppliers_type',             "ALTER TABLE suppliers ADD CONSTRAINT fk_suppliers_type FOREIGN KEY (supplier_type_id) REFERENCES supplier_types (id) ON DELETE SET NULL"],
+        ['suppliers',            'fk_suppliers_status',           "ALTER TABLE suppliers ADD CONSTRAINT fk_suppliers_status FOREIGN KEY (supplier_status_id) REFERENCES supplier_statuses (id) ON DELETE SET NULL"],
+        ['contacts',             'fk_contacts_supplier',          "ALTER TABLE contacts ADD CONSTRAINT fk_contacts_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_supplier',         "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_owner',            "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_owner FOREIGN KEY (contract_owner_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_status',           "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_status FOREIGN KEY (contract_status_id) REFERENCES contract_statuses (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_customer_tenant',  "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_customer_tenant FOREIGN KEY (customer_tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_tenant',           "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['rfps',                 'fk_rfps_tenant',                "ALTER TABLE rfps ADD CONSTRAINT fk_rfps_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        // GH #160 stage 2: what a cost centre is charged with. SET NULL as a backstop -
+        // CostCentresService refuses to delete one that is still in use.
+        ['contracts',            'fk_contracts_cost_centre',      "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_cost_centre FOREIGN KEY (cost_centre_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],
+        ['assets',               'fk_assets_cost_centre',         "ALTER TABLE assets ADD CONSTRAINT fk_assets_cost_centre FOREIGN KEY (cost_centre_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],
+        ['users',                'fk_users_cost_centre',          "ALTER TABLE users ADD CONSTRAINT fk_users_cost_centre FOREIGN KEY (cost_centre_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],
+        // Leases (3.5.0). Scoped data: a removed company or supplier leaves the lease.
+        ['leases',               'fk_leases_tenant',              "ALTER TABLE leases ADD CONSTRAINT fk_leases_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['leases',               'fk_leases_supplier',            "ALTER TABLE leases ADD CONSTRAINT fk_leases_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
+        ['leases',               'fk_leases_cost_centre',         "ALTER TABLE leases ADD CONSTRAINT fk_leases_cost_centre FOREIGN KEY (cost_centre_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],
+        ['leases',               'fk_leases_contract',            "ALTER TABLE leases ADD CONSTRAINT fk_leases_contract FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE SET NULL"],
+        ['lease_schedules',      'fk_lease_schedules_lease',      "ALTER TABLE lease_schedules ADD CONSTRAINT fk_lease_schedules_lease FOREIGN KEY (lease_id) REFERENCES leases (id) ON DELETE CASCADE"],
+        ['lease_assets',         'fk_lease_assets_schedule',      "ALTER TABLE lease_assets ADD CONSTRAINT fk_lease_assets_schedule FOREIGN KEY (schedule_id) REFERENCES lease_schedules (id) ON DELETE CASCADE"],
+        ['lease_assets',         'fk_lease_assets_asset',         "ALTER TABLE lease_assets ADD CONSTRAINT fk_lease_assets_asset FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE"],
+        ['lease_assets',         'fk_lease_assets_outcome',       "ALTER TABLE lease_assets ADD CONSTRAINT fk_lease_assets_outcome FOREIGN KEY (outcome_id) REFERENCES lease_outcomes (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_customer_user',    "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_customer_user FOREIGN KEY (customer_user_id) REFERENCES users (id) ON DELETE SET NULL"],
+        ['contracts',            'fk_contracts_payment_schedule', "ALTER TABLE contracts ADD CONSTRAINT fk_contracts_payment_schedule FOREIGN KEY (payment_schedule_id) REFERENCES payment_schedules (id) ON DELETE SET NULL"],
+        ['contract_term_values', 'fk_ctv_contract',               "ALTER TABLE contract_term_values ADD CONSTRAINT fk_ctv_contract FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE CASCADE"],
+        ['contract_term_values', 'fk_ctv_term_tab',               "ALTER TABLE contract_term_values ADD CONSTRAINT fk_ctv_term_tab FOREIGN KEY (term_tab_id) REFERENCES contract_term_tabs (id) ON DELETE CASCADE"],
+    ];
+    foreach ($contractFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Domains-module foreign keys (#154). Names + rules match freeitsm.sql. Every
+    // reference out of `domains` is SET NULL — removing a supplier, an analyst or a
+    // company must never take a domain record with it — and the child tables
+    // cascade, although DomainsService::deleteDomain() also deletes them by hand
+    // because an install whose FKs failed to add has no cascade to rely on.
+    $domainFks = [
+        ['domain_registrar_accounts', 'fk_dra_tenant',              "ALTER TABLE domain_registrar_accounts ADD CONSTRAINT fk_dra_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['domain_registrar_accounts', 'fk_dra_supplier',            "ALTER TABLE domain_registrar_accounts ADD CONSTRAINT fk_dra_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
+        ['domain_registrar_accounts', 'fk_dra_owner',               "ALTER TABLE domain_registrar_accounts ADD CONSTRAINT fk_dra_owner FOREIGN KEY (owner_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_tenant',          "ALTER TABLE domains ADD CONSTRAINT fk_domains_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_status',          "ALTER TABLE domains ADD CONSTRAINT fk_domains_status FOREIGN KEY (status_id) REFERENCES domain_statuses (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_registrar',       "ALTER TABLE domains ADD CONSTRAINT fk_domains_registrar FOREIGN KEY (registrar_supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_account',         "ALTER TABLE domains ADD CONSTRAINT fk_domains_account FOREIGN KEY (registrar_account_id) REFERENCES domain_registrar_accounts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_owner',           "ALTER TABLE domains ADD CONSTRAINT fk_domains_owner FOREIGN KEY (owner_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_tech_contact',    "ALTER TABLE domains ADD CONSTRAINT fk_domains_tech_contact FOREIGN KEY (tech_contact_id) REFERENCES contacts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_customer_user',   "ALTER TABLE domains ADD CONSTRAINT fk_domains_customer_user FOREIGN KEY (customer_user_id) REFERENCES users (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_customer_supplier', "ALTER TABLE domains ADD CONSTRAINT fk_domains_customer_supplier FOREIGN KEY (customer_supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_customer_contact', "ALTER TABLE domains ADD CONSTRAINT fk_domains_customer_contact FOREIGN KEY (customer_contact_id) REFERENCES contacts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_tech_analyst',    "ALTER TABLE domains ADD CONSTRAINT fk_domains_tech_analyst FOREIGN KEY (tech_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_contract',        "ALTER TABLE domains ADD CONSTRAINT fk_domains_contract FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE SET NULL"],
+        ['domains',                   'fk_domains_cost_centre',     "ALTER TABLE domains ADD CONSTRAINT fk_domains_cost_centre FOREIGN KEY (cost_centre_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],   // GH #188
+        ['domain_audit',              'fk_domain_audit_domain',     "ALTER TABLE domain_audit ADD CONSTRAINT fk_domain_audit_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_alerts_sent',        'fk_domain_alerts_domain',    "ALTER TABLE domain_alerts_sent ADD CONSTRAINT fk_domain_alerts_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_lookalikes',         'fk_domain_lookalikes_domain', "ALTER TABLE domain_lookalikes ADD CONSTRAINT fk_domain_lookalikes_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_certificates',       'fk_domain_certificates_domain', "ALTER TABLE domain_certificates ADD CONSTRAINT fk_domain_certificates_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        // Domains joined to the rest of FreeITSM (3.0.0). Every link goes with
+        // either side; the analyst who made it can leave without taking it.
+        ['domain_cmdb_objects',       'fk_dco_domain',      "ALTER TABLE domain_cmdb_objects ADD CONSTRAINT fk_dco_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_cmdb_objects',       'fk_dco_cmdb_object', "ALTER TABLE domain_cmdb_objects ADD CONSTRAINT fk_dco_cmdb_object FOREIGN KEY (cmdb_object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['domain_cmdb_objects',       'fk_dco_analyst',     "ALTER TABLE domain_cmdb_objects ADD CONSTRAINT fk_dco_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['domain_status_services',    'fk_dss_domain',      "ALTER TABLE domain_status_services ADD CONSTRAINT fk_dss_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_status_services',    'fk_dss_service',     "ALTER TABLE domain_status_services ADD CONSTRAINT fk_dss_service FOREIGN KEY (service_id) REFERENCES status_services (id) ON DELETE CASCADE"],
+        ['domain_status_services',    'fk_dss_analyst',     "ALTER TABLE domain_status_services ADD CONSTRAINT fk_dss_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['ticket_domains',            'fk_td_ticket',       "ALTER TABLE ticket_domains ADD CONSTRAINT fk_td_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['ticket_domains',            'fk_td_domain',       "ALTER TABLE ticket_domains ADD CONSTRAINT fk_td_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['ticket_domains',            'fk_td_analyst',      "ALTER TABLE ticket_domains ADD CONSTRAINT fk_td_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['domain_knowledge_articles', 'fk_dka_domain',      "ALTER TABLE domain_knowledge_articles ADD CONSTRAINT fk_dka_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_knowledge_articles', 'fk_dka_article',     "ALTER TABLE domain_knowledge_articles ADD CONSTRAINT fk_dka_article FOREIGN KEY (article_id) REFERENCES knowledge_articles (id) ON DELETE CASCADE"],
+        ['domain_knowledge_articles', 'fk_dka_analyst',     "ALTER TABLE domain_knowledge_articles ADD CONSTRAINT fk_dka_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['domain_status_incidents',   'fk_dsi_domain',      "ALTER TABLE domain_status_incidents ADD CONSTRAINT fk_dsi_domain FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE"],
+        ['domain_status_incidents',   'fk_dsi_incident',    "ALTER TABLE domain_status_incidents ADD CONSTRAINT fk_dsi_incident FOREIGN KEY (incident_id) REFERENCES status_incidents (id) ON DELETE CASCADE"],
+    ];
+    foreach ($domainFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Projects foreign keys (3.2.0). Names + rules match freeitsm.sql. A task keeps
+    // its work when its project or stage goes (SET NULL, never CASCADE); a project's
+    // own stages and history go with it.
+    $projectFks = [
+        ['projects',       'fk_projects_tenant',        "ALTER TABLE projects ADD CONSTRAINT fk_projects_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['projects',       'fk_projects_owner',         "ALTER TABLE projects ADD CONSTRAINT fk_projects_owner FOREIGN KEY (owner_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['projects',       'fk_projects_created_by',    "ALTER TABLE projects ADD CONSTRAINT fk_projects_created_by FOREIGN KEY (created_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['projects',       'fk_projects_approval_by',   "ALTER TABLE projects ADD CONSTRAINT fk_projects_approval_by FOREIGN KEY (approval_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['projects',       'fk_projects_submission',    "ALTER TABLE projects ADD CONSTRAINT fk_projects_submission FOREIGN KEY (form_submission_id) REFERENCES form_submissions (id) ON DELETE SET NULL"],
+        ['project_stages', 'fk_project_stages_project', "ALTER TABLE project_stages ADD CONSTRAINT fk_project_stages_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_audit',  'fk_project_audit_project',  "ALTER TABLE project_audit ADD CONSTRAINT fk_project_audit_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['tasks',          'fk_tasks_project',          "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL"],
+        ['tasks',          'fk_tasks_project_stage',    "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_project_stage FOREIGN KEY (project_stage_id) REFERENCES project_stages (id) ON DELETE SET NULL"],
+        // Phase 2.
+        ['project_members', 'fk_pmem_project', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_members', 'fk_pmem_analyst', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"],
+        ['project_members', 'fk_pmem_team', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE"],
+        ['project_members', 'fk_pmem_user', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE"],
+        ['project_members', 'fk_pmem_role', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_role FOREIGN KEY (role_id) REFERENCES project_roles (id) ON DELETE SET NULL"],
+        ['project_members', 'fk_pmem_created_by', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_created_by FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_items', 'fk_pitem_project', "ALTER TABLE project_items ADD CONSTRAINT fk_pitem_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_items', 'fk_pitem_parent', "ALTER TABLE project_items ADD CONSTRAINT fk_pitem_parent FOREIGN KEY (parent_id) REFERENCES project_items (id) ON DELETE SET NULL"],
+        ['project_items', 'fk_pitem_stage', "ALTER TABLE project_items ADD CONSTRAINT fk_pitem_stage FOREIGN KEY (stage_id) REFERENCES project_stages (id) ON DELETE SET NULL"],
+        ['project_raci', 'fk_praci_project', "ALTER TABLE project_raci ADD CONSTRAINT fk_praci_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_raci', 'fk_praci_item', "ALTER TABLE project_raci ADD CONSTRAINT fk_praci_item FOREIGN KEY (item_id) REFERENCES project_items (id) ON DELETE CASCADE"],
+        ['project_raci', 'fk_praci_member', "ALTER TABLE project_raci ADD CONSTRAINT fk_praci_member FOREIGN KEY (member_id) REFERENCES project_members (id) ON DELETE CASCADE"],
+        ['project_raid', 'fk_praid_project', "ALTER TABLE project_raid ADD CONSTRAINT fk_praid_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_raid', 'fk_praid_owner', "ALTER TABLE project_raid ADD CONSTRAINT fk_praid_owner FOREIGN KEY (owner_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_raid', 'fk_praid_ticket', "ALTER TABLE project_raid ADD CONSTRAINT fk_praid_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE SET NULL"],
+        ['project_raid', 'fk_praid_raised_by', "ALTER TABLE project_raid ADD CONSTRAINT fk_praid_raised_by FOREIGN KEY (raised_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_raid', 'fk_praid_article', "ALTER TABLE project_raid ADD CONSTRAINT fk_praid_article FOREIGN KEY (knowledge_article_id) REFERENCES knowledge_articles (id) ON DELETE SET NULL"],
+        ['project_raid', 'fk_praid_escalated_by', "ALTER TABLE project_raid ADD CONSTRAINT fk_praid_escalated_by FOREIGN KEY (escalated_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_raid_tasks', 'fk_prt_raid', "ALTER TABLE project_raid_tasks ADD CONSTRAINT fk_prt_raid FOREIGN KEY (raid_id) REFERENCES project_raid (id) ON DELETE CASCADE"],
+        ['project_raid_tasks', 'fk_prt_task', "ALTER TABLE project_raid_tasks ADD CONSTRAINT fk_prt_task FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE"],
+        ['project_tolerances', 'fk_ptol_project', "ALTER TABLE project_tolerances ADD CONSTRAINT fk_ptol_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_tolerances', 'fk_ptol_stage', "ALTER TABLE project_tolerances ADD CONSTRAINT fk_ptol_stage FOREIGN KEY (stage_id) REFERENCES project_stages (id) ON DELETE CASCADE"],
+        ['project_asset_targets', 'fk_patg_project', "ALTER TABLE project_asset_targets ADD CONSTRAINT fk_patg_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_asset_targets', 'fk_patg_type', "ALTER TABLE project_asset_targets ADD CONSTRAINT fk_patg_type FOREIGN KEY (scope_type_id) REFERENCES asset_types (id) ON DELETE SET NULL"],
+        ['project_asset_targets', 'fk_patg_created_by', "ALTER TABLE project_asset_targets ADD CONSTRAINT fk_patg_created_by FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_asset_target_snapshots', 'fk_patgs_target', "ALTER TABLE project_asset_target_snapshots ADD CONSTRAINT fk_patgs_target FOREIGN KEY (target_id) REFERENCES project_asset_targets (id) ON DELETE CASCADE"],
+        ['project_templates', 'fk_ptpl_created_by', "ALTER TABLE project_templates ADD CONSTRAINT fk_ptpl_created_by FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_milestones', 'fk_pms_project', "ALTER TABLE project_milestones ADD CONSTRAINT fk_pms_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_milestones', 'fk_pms_stage', "ALTER TABLE project_milestones ADD CONSTRAINT fk_pms_stage FOREIGN KEY (stage_id) REFERENCES project_stages (id) ON DELETE SET NULL"],
+        ['project_milestones', 'fk_pms_done_by', "ALTER TABLE project_milestones ADD CONSTRAINT fk_pms_done_by FOREIGN KEY (done_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_milestones', 'fk_pms_created_by', "ALTER TABLE project_milestones ADD CONSTRAINT fk_pms_created_by FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        // Change control (3.3.0)
+        ['project_baselines', 'fk_pbase_project', "ALTER TABLE project_baselines ADD CONSTRAINT fk_pbase_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_baselines', 'fk_pbase_stage', "ALTER TABLE project_baselines ADD CONSTRAINT fk_pbase_stage FOREIGN KEY (stage_id) REFERENCES project_stages (id) ON DELETE SET NULL"],
+        ['project_baselines', 'fk_pbase_created_by', "ALTER TABLE project_baselines ADD CONSTRAINT fk_pbase_created_by FOREIGN KEY (created_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_change_requests', 'fk_pcr_project', "ALTER TABLE project_change_requests ADD CONSTRAINT fk_pcr_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_change_requests', 'fk_pcr_raised_by', "ALTER TABLE project_change_requests ADD CONSTRAINT fk_pcr_raised_by FOREIGN KEY (raised_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_change_requests', 'fk_pcr_decided_by', "ALTER TABLE project_change_requests ADD CONSTRAINT fk_pcr_decided_by FOREIGN KEY (decided_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        // Task flow (3.3.0)
+        ['project_task_flow', 'fk_ptf_project', "ALTER TABLE project_task_flow ADD CONSTRAINT fk_ptf_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        // Task dependencies (3.3.0)
+        ['task_dependencies', 'fk_tdep_task', "ALTER TABLE task_dependencies ADD CONSTRAINT fk_tdep_task FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE"],
+        ['task_dependencies', 'fk_tdep_on', "ALTER TABLE task_dependencies ADD CONSTRAINT fk_tdep_on FOREIGN KEY (depends_on_id) REFERENCES tasks (id) ON DELETE CASCADE"],
+        // Gate checklists (3.3.0)
+        ['project_gate_items', 'fk_pgi_project', "ALTER TABLE project_gate_items ADD CONSTRAINT fk_pgi_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_gate_items', 'fk_pgi_stage', "ALTER TABLE project_gate_items ADD CONSTRAINT fk_pgi_stage FOREIGN KEY (stage_id) REFERENCES project_stages (id) ON DELETE CASCADE"],
+        ['project_gate_items', 'fk_pgi_analyst', "ALTER TABLE project_gate_items ADD CONSTRAINT fk_pgi_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_gate_items', 'fk_pgi_done_by', "ALTER TABLE project_gate_items ADD CONSTRAINT fk_pgi_done_by FOREIGN KEY (done_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        // Benefits (3.3.0)
+        ['project_benefits', 'fk_pben_project', "ALTER TABLE project_benefits ADD CONSTRAINT fk_pben_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_benefits', 'fk_pben_owner', "ALTER TABLE project_benefits ADD CONSTRAINT fk_pben_owner FOREIGN KEY (owner_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_benefit_measures', 'fk_pbm_benefit', "ALTER TABLE project_benefit_measures ADD CONSTRAINT fk_pbm_benefit FOREIGN KEY (benefit_id) REFERENCES project_benefits (id) ON DELETE CASCADE"],
+        ['project_benefit_measures', 'fk_pbm_recorded_by', "ALTER TABLE project_benefit_measures ADD CONSTRAINT fk_pbm_recorded_by FOREIGN KEY (recorded_by_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_change_requests', 'fk_pcr_baseline', "ALTER TABLE project_change_requests ADD CONSTRAINT fk_pcr_baseline FOREIGN KEY (baseline_id) REFERENCES project_baselines (id) ON DELETE SET NULL"],
+        // Connections - every link goes with either side.
+        ['project_assets', 'fk_pas_project', "ALTER TABLE project_assets ADD CONSTRAINT fk_pas_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_assets', 'fk_pas_target', "ALTER TABLE project_assets ADD CONSTRAINT fk_pas_target FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE"],
+        ['project_assets', 'fk_pas_analyst', "ALTER TABLE project_assets ADD CONSTRAINT fk_pas_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_changes', 'fk_pch_project', "ALTER TABLE project_changes ADD CONSTRAINT fk_pch_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_changes', 'fk_pch_target', "ALTER TABLE project_changes ADD CONSTRAINT fk_pch_target FOREIGN KEY (change_id) REFERENCES changes (id) ON DELETE CASCADE"],
+        ['project_changes', 'fk_pch_analyst', "ALTER TABLE project_changes ADD CONSTRAINT fk_pch_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_tickets', 'fk_ptk_project', "ALTER TABLE project_tickets ADD CONSTRAINT fk_ptk_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_tickets', 'fk_ptk_target', "ALTER TABLE project_tickets ADD CONSTRAINT fk_ptk_target FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
+        ['project_tickets', 'fk_ptk_analyst', "ALTER TABLE project_tickets ADD CONSTRAINT fk_ptk_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_contracts', 'fk_pco_project', "ALTER TABLE project_contracts ADD CONSTRAINT fk_pco_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_contracts', 'fk_pco_target', "ALTER TABLE project_contracts ADD CONSTRAINT fk_pco_target FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE CASCADE"],
+        ['project_contracts', 'fk_pco_analyst', "ALTER TABLE project_contracts ADD CONSTRAINT fk_pco_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_cmdb_objects', 'fk_pcm_project', "ALTER TABLE project_cmdb_objects ADD CONSTRAINT fk_pcm_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_cmdb_objects', 'fk_pcm_target', "ALTER TABLE project_cmdb_objects ADD CONSTRAINT fk_pcm_target FOREIGN KEY (cmdb_object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['project_cmdb_objects', 'fk_pcm_analyst', "ALTER TABLE project_cmdb_objects ADD CONSTRAINT fk_pcm_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_knowledge_articles', 'fk_pka_project', "ALTER TABLE project_knowledge_articles ADD CONSTRAINT fk_pka_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_knowledge_articles', 'fk_pka_target', "ALTER TABLE project_knowledge_articles ADD CONSTRAINT fk_pka_target FOREIGN KEY (article_id) REFERENCES knowledge_articles (id) ON DELETE CASCADE"],
+        ['project_knowledge_articles', 'fk_pka_analyst', "ALTER TABLE project_knowledge_articles ADD CONSTRAINT fk_pka_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['project_problems', 'fk_ppr_project', "ALTER TABLE project_problems ADD CONSTRAINT fk_ppr_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_problems', 'fk_ppr_target', "ALTER TABLE project_problems ADD CONSTRAINT fk_ppr_target FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE"],
+        // 3.3.0: in freeitsm.sql since 3.2.0 but never listed here, so an upgraded install had none of them.
+        ['project_budget_lines', 'fk_pbl_project', "ALTER TABLE project_budget_lines ADD CONSTRAINT fk_pbl_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_budget_lines', 'fk_pbl_contract', "ALTER TABLE project_budget_lines ADD CONSTRAINT fk_pbl_contract FOREIGN KEY (contract_id) REFERENCES contracts (id) ON DELETE SET NULL"],
+        ['project_budget_lines', 'fk_pbl_cost_centre', "ALTER TABLE project_budget_lines ADD CONSTRAINT fk_pbl_cost_centre FOREIGN KEY (cost_centre_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],
+        // A contractor on a project team (3.3.0): the member goes with its supplier or contact.
+        ['project_members', 'fk_pmem_supplier', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE CASCADE"],
+        ['project_members', 'fk_pmem_contact', "ALTER TABLE project_members ADD CONSTRAINT fk_pmem_contact FOREIGN KEY (contact_id) REFERENCES contacts (id) ON DELETE CASCADE"],
+        // The AI project assistant (3.3.0).
+        ['project_ai_threads', 'fk_pait_project', "ALTER TABLE project_ai_threads ADD CONSTRAINT fk_pait_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_ai_threads', 'fk_pait_analyst', "ALTER TABLE project_ai_threads ADD CONSTRAINT fk_pait_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"],
+        ['project_ai_messages', 'fk_paim_thread', "ALTER TABLE project_ai_messages ADD CONSTRAINT fk_paim_thread FOREIGN KEY (thread_id) REFERENCES project_ai_threads (id) ON DELETE CASCADE"],
+        ['project_ai_messages', 'fk_paim_analyst', "ALTER TABLE project_ai_messages ADD CONSTRAINT fk_paim_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['status_planned', 'fk_sp_project', "ALTER TABLE status_planned ADD CONSTRAINT fk_sp_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL"],
+        ['project_reports', 'fk_prep_project',"ALTER TABLE project_reports ADD CONSTRAINT fk_prep_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE"],
+        ['project_problems', 'fk_ppr_analyst', "ALTER TABLE project_problems ADD CONSTRAINT fk_ppr_analyst FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+    ];
+    foreach ($projectFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        if ($tbl === 'tasks' && !$tableExists('projects')) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Starters & leavers (4.6.0). Names and rules match freeitsm.sql.
+    $jmlFks = [
+        ['jml_templates',      'fk_jml_templates_tenant',  "ALTER TABLE jml_templates ADD CONSTRAINT fk_jml_templates_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"],
+        ['jml_template_steps', 'fk_jml_steps_template',    "ALTER TABLE jml_template_steps ADD CONSTRAINT fk_jml_steps_template FOREIGN KEY (template_id) REFERENCES jml_templates (id) ON DELETE CASCADE"],
+        ['jml_template_steps', 'fk_jml_steps_team',        "ALTER TABLE jml_template_steps ADD CONSTRAINT fk_jml_steps_team FOREIGN KEY (assigned_team_id) REFERENCES teams (id) ON DELETE SET NULL"],
+        ['jml_template_steps', 'fk_jml_steps_analyst',     "ALTER TABLE jml_template_steps ADD CONSTRAINT fk_jml_steps_analyst FOREIGN KEY (assigned_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['jml_template_steps', 'fk_jml_steps_checklist',   "ALTER TABLE jml_template_steps ADD CONSTRAINT fk_jml_steps_checklist FOREIGN KEY (checklist_template_id) REFERENCES checklist_templates (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_tenant',      "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_user',        "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_manager',     "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_manager FOREIGN KEY (manager_user_id) REFERENCES users (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_template',    "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_template FOREIGN KEY (template_id) REFERENCES jml_templates (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_task',        "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_task FOREIGN KEY (parent_task_id) REFERENCES tasks (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_owner',       "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_owner FOREIGN KEY (owner_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_created_by',  "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_created_by FOREIGN KEY (created_by) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['jml_templates',      'fk_jml_templates_form',    "ALTER TABLE jml_templates ADD CONSTRAINT fk_jml_templates_form FOREIGN KEY (form_id) REFERENCES forms (id) ON DELETE SET NULL"],
+        ['jml_cases',          'fk_jml_cases_submission',  "ALTER TABLE jml_cases ADD CONSTRAINT fk_jml_cases_submission FOREIGN KEY (form_submission_id) REFERENCES form_submissions (id) ON DELETE SET NULL"],
+        ['jml_audit',          'fk_jml_audit_case',        "ALTER TABLE jml_audit ADD CONSTRAINT fk_jml_audit_case FOREIGN KEY (case_id) REFERENCES jml_cases (id) ON DELETE CASCADE"],
+    ];
+    foreach ($jmlFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Files. Names + rules match freeitsm.sql. files_audit has none on purpose:
+    // the trail must outlive the folders, files and people it names.
+    $filesFks = [
+        ['files_folders', 'fk_files_folders_parent', "ALTER TABLE files_folders ADD CONSTRAINT fk_files_folders_parent FOREIGN KEY (parent_id) REFERENCES files_folders (id) ON DELETE CASCADE"],
+        ['files_items', 'fk_files_items_folder', "ALTER TABLE files_items ADD CONSTRAINT fk_files_items_folder FOREIGN KEY (folder_id) REFERENCES files_folders (id) ON DELETE CASCADE"],
+        ['files_versions', 'fk_files_versions_item', "ALTER TABLE files_versions ADD CONSTRAINT fk_files_versions_item FOREIGN KEY (item_id) REFERENCES files_items (id) ON DELETE CASCADE"],
+        ['files_shortcuts', 'fk_files_shortcuts_folder', "ALTER TABLE files_shortcuts ADD CONSTRAINT fk_files_shortcuts_folder FOREIGN KEY (folder_id) REFERENCES files_folders (id) ON DELETE CASCADE"],
+        ['files_permissions', 'fk_files_permissions_folder', "ALTER TABLE files_permissions ADD CONSTRAINT fk_files_permissions_folder FOREIGN KEY (folder_id) REFERENCES files_folders (id) ON DELETE CASCADE"],
+    ];
+    foreach ($filesFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Cost centres (GH #160). Names + rules match freeitsm.sql: a company takes
+    // its cost centres with it; a parent going leaves its children at the top
+    // level (CostCentresService refuses to delete a parent first anyway).
+    $costCentreFks = [
+        ['cost_centres', 'fk_cost_centres_parent', "ALTER TABLE cost_centres ADD CONSTRAINT fk_cost_centres_parent FOREIGN KEY (parent_id) REFERENCES cost_centres (id) ON DELETE SET NULL"],
+        ['cost_centres', 'fk_cost_centres_tenant', "ALTER TABLE cost_centres ADD CONSTRAINT fk_cost_centres_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"],
+    ];
+    foreach ($costCentreFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Photo Album: an analyst's pictures go with them.
+    if ($tableExists('photo_album') && !$fkExists('photo_album', 'fk_photo_album_analyst')) {
+        try { $conn->exec("ALTER TABLE photo_album ADD CONSTRAINT fk_photo_album_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id) ON DELETE CASCADE"); } catch (Exception $e) {}
+    }
+
+    // Forms-module foreign keys (db_verify $schema only builds columns + PK;
+    // grown installs had NONE of the four freeitsm.sql constraints, and
+    // parent_form_id — the #442 version chain — never had one anywhere).
+    // Orphans are cleaned first so the constraints can attach: fields /
+    // submissions / data of deleted parents go, dangling version-chain
+    // pointers become chain roots (SET NULL).
+    if ($tableExists('forms')) {
+        try {
+            if ($tableExists('form_fields')) {
+                $conn->exec("DELETE ff FROM form_fields ff LEFT JOIN forms f ON f.id = ff.form_id WHERE f.id IS NULL");
+            }
+            if ($tableExists('form_submission_data')) {
+                $conn->exec("DELETE sd FROM form_submission_data sd LEFT JOIN form_submissions s ON s.id = sd.submission_id WHERE s.id IS NULL");
+                $conn->exec("DELETE sd FROM form_submission_data sd LEFT JOIN form_fields ff ON ff.id = sd.field_id WHERE ff.id IS NULL");
+            }
+            if ($tableExists('form_submissions')) {
+                $conn->exec("DELETE s FROM form_submissions s LEFT JOIN forms f ON f.id = s.form_id WHERE f.id IS NULL");
+            }
+            $conn->exec("UPDATE forms c LEFT JOIN forms p ON p.id = c.parent_form_id SET c.parent_form_id = NULL WHERE c.parent_form_id IS NOT NULL AND p.id IS NULL");
+        } catch (Exception $e) { /* shrug */ }
+    }
+    $formsFks = [
+        ['forms',                'fk_forms_parent',              "ALTER TABLE forms ADD CONSTRAINT fk_forms_parent FOREIGN KEY (parent_form_id) REFERENCES forms (id)"],
+        ['form_fields',          'fk_form_fields_form',          "ALTER TABLE form_fields ADD CONSTRAINT fk_form_fields_form FOREIGN KEY (form_id) REFERENCES forms (id) ON DELETE CASCADE"],
+        ['form_submissions',     'fk_form_submissions_form',     "ALTER TABLE form_submissions ADD CONSTRAINT fk_form_submissions_form FOREIGN KEY (form_id) REFERENCES forms (id)"],
+        ['form_submission_data', 'fk_submission_data_submission', "ALTER TABLE form_submission_data ADD CONSTRAINT fk_submission_data_submission FOREIGN KEY (submission_id) REFERENCES form_submissions (id) ON DELETE CASCADE"],
+        ['form_submission_data', 'fk_submission_data_field',     "ALTER TABLE form_submission_data ADD CONSTRAINT fk_submission_data_field FOREIGN KEY (field_id) REFERENCES form_fields (id)"],
+        ['forms',                'fk_forms_collection',          "ALTER TABLE forms ADD CONSTRAINT fk_forms_collection FOREIGN KEY (collection_id) REFERENCES form_collections (id) ON DELETE SET NULL"],
+        ['form_submissions',     'fk_form_submissions_collection', "ALTER TABLE form_submissions ADD CONSTRAINT fk_form_submissions_collection FOREIGN KEY (collection_id) REFERENCES form_collections (id)"],
+    ];
+    foreach ($formsFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Workflow-module foreign keys (db_verify $schema only builds columns +
+    // PK; these tables historically had NO FKs anywhere — deliberately, so
+    // execution rows survive workflow deletion as an audit trail). The intent
+    // is kept but made referentially sound: workflow_id becomes nullable with
+    // ON DELETE SET NULL, and the workflow_name snapshot (backfilled from
+    // still-live parents, stamped by the engine on every new run) keeps
+    // orphaned runs attributable. Existing dangling workflow_ids are detached
+    // (no rows deleted).
+    if ($tableExists('workflow_executions')) {
+        try {
+            if ($tableExists('workflows')) {
+                $conn->exec("UPDATE workflow_executions we JOIN workflows w ON w.id = we.workflow_id
+                             SET we.workflow_name = w.name WHERE we.workflow_name IS NULL");
+                $conn->exec("UPDATE workflow_executions we LEFT JOIN workflows w ON w.id = we.workflow_id
+                             SET we.workflow_id = NULL WHERE we.workflow_id IS NOT NULL AND w.id IS NULL");
+            }
+            // Grown installs created workflow_id as NOT NULL — the SET NULL
+            // FK can't attach until it's nullable ($schema only adds columns).
+            $conn->exec("ALTER TABLE workflow_executions MODIFY workflow_id INT NULL");
+        } catch (Exception $e) { /* shrug */ }
+    }
+    if ($tableExists('workflows') && $tableExists('analysts')) {
+        try {
+            $conn->exec("UPDATE workflows w LEFT JOIN analysts a ON a.id = w.created_by
+                         SET w.created_by = NULL WHERE w.created_by IS NOT NULL AND a.id IS NULL");
+        } catch (Exception $e) { /* shrug */ }
+    }
+    // webhook_deliveries.workflow_id can dangle if a workflow is deleted while a
+    // delivery is queued; detach (SET NULL) before attaching the FK.
+    if ($tableExists('webhook_deliveries') && $tableExists('workflows')) {
+        try {
+            $conn->exec("UPDATE webhook_deliveries wd LEFT JOIN workflows w ON w.id = wd.workflow_id
+                         SET wd.workflow_id = NULL WHERE wd.workflow_id IS NOT NULL AND w.id IS NULL");
+        } catch (Exception $e) { /* shrug */ }
+    }
+    // response_snippet was originally TEXT (64KB). We now store the full endpoint
+    // response for the Webhooks queue log, so widen it to MEDIUMTEXT (matching
+    // request_body). MODIFY is a no-op if it's already MEDIUMTEXT.
+    if ($tableExists('webhook_deliveries')) {
+        try {
+            $col = $conn->query("SHOW COLUMNS FROM webhook_deliveries LIKE 'response_snippet'")->fetch(PDO::FETCH_ASSOC);
+            if ($col && stripos($col['Type'], 'mediumtext') === false) {
+                $conn->exec("ALTER TABLE webhook_deliveries MODIFY `response_snippet` MEDIUMTEXT NULL");
+            }
+        } catch (Exception $e) { /* shrug */ }
+    }
+    // Seed the built-in webhook message formats (Slack / Teams / Discord).
+    // INSERT IGNORE on the unique format_key, so this is idempotent and never
+    // clobbers an install's own rows. The engine carries the same three as a
+    // hardcoded fallback, so webhooks work even before this runs.
+    if ($tableExists('webhook_message_formats')) {
+        try {
+            require_once dirname(__DIR__, 2) . '/workflow/includes/engine.php';
+            $ins = $conn->prepare(
+                "INSERT IGNORE INTO webhook_message_formats
+                 (format_key, label, body_template, url_pattern, markdown_hint, is_builtin, display_order)
+                 VALUES (?, ?, ?, ?, ?, 1, ?)"
+            );
+            $order = 10;
+            $seeded = 0;
+            foreach (WorkflowEngine::BUILTIN_WEBHOOK_FORMATS as $key => $f) {
+                $ins->execute([$key, $f['label'], $f['body_template'], $f['url_pattern'], $f['markdown_hint'], $order]);
+                $seeded += $ins->rowCount();
+                $order += 10;
+            }
+            if ($seeded > 0) {
+                $results[] = ['table' => 'webhook_message_formats', 'status' => 'seeded',
+                              'details' => ["Inserted $seeded built-in webhook message format(s)"]];
+            }
+        } catch (Exception $e) { /* shrug — engine falls back to its built-ins */ }
+    }
+
+    // url was VARCHAR(1000). It is now ENCRYPTED at rest, and AES-256-GCM +
+    // base64 inflates a string by ~1/3 + 28 bytes — so a max-length 1000-char
+    // URL becomes ~1377 chars. At VARCHAR(1000) MySQL would silently TRUNCATE
+    // the ciphertext, and a truncated ciphertext can never be decrypted again.
+    // This widen MUST happen before anything is encrypted. No-op once widened.
+    if ($tableExists('webhook_deliveries')) {
+        try {
+            $col = $conn->query("SHOW COLUMNS FROM webhook_deliveries LIKE 'url'")->fetch(PDO::FETCH_ASSOC);
+            if ($col && !preg_match('/varchar\((\d+)\)/i', $col['Type'], $m0)) {
+                // not a varchar at all — leave it alone
+            } elseif ($col && isset($m0[1]) && (int)$m0[1] < 2000) {
+                $conn->exec("ALTER TABLE webhook_deliveries MODIFY `url` VARCHAR(2000) NOT NULL");
+                $results[] = ['table' => 'webhook_deliveries', 'status' => 'altered',
+                              'details' => ['Widened url to VARCHAR(2000) — required headroom for encryption at rest']];
+            }
+        } catch (Exception $e) { /* shrug */ }
+    }
+    $workflowFks = [
+        ['workflows',           'fk_workflows_created_by', "ALTER TABLE workflows ADD CONSTRAINT fk_workflows_created_by FOREIGN KEY (created_by) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['workflow_executions', 'fk_we_workflow',          "ALTER TABLE workflow_executions ADD CONSTRAINT fk_we_workflow FOREIGN KEY (workflow_id) REFERENCES workflows (id) ON DELETE SET NULL"],
+        ['webhook_deliveries',  'fk_wd_workflow',          "ALTER TABLE webhook_deliveries ADD CONSTRAINT fk_wd_workflow FOREIGN KEY (workflow_id) REFERENCES workflows (id) ON DELETE SET NULL"],
+        // GH #209. CASCADE on workflows: SET NULL would turn a deleted company's
+        // workflows into SHARED ones that run for every company. SET NULL on runs
+        // is safe - a run with no company is shown only to every-company viewers.
+        ['workflows',           'fk_workflows_tenant',     "ALTER TABLE workflows ADD CONSTRAINT fk_workflows_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE"],
+        ['workflow_executions', 'fk_we_tenant',            "ALTER TABLE workflow_executions ADD CONSTRAINT fk_we_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE SET NULL"],
+    ];
+    foreach ($workflowFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // Network Mapper foreign keys (db_verify $schema only builds columns + PK;
+    // freeitsm.sql has had 7 of these 8 since the module shipped but grown
+    // installs got NONE — so delete_diagram.php's reliance on CASCADE orphaned
+    // nodes/connectors there, and deleting a CMDB object left its diagram
+    // nodes dangling). Orphans are cleaned first so the constraints attach:
+    // nodes of dead diagrams/objects go (CASCADE semantics, matching fresh
+    // installs), connectors of dead diagrams/nodes go, dangling provenance /
+    // parent / author pointers become NULL (SET NULL semantics).
+    if ($tableExists('network_diagrams')) {
+        try {
+            if ($tableExists('network_diagram_nodes')) {
+                $conn->exec("DELETE n FROM network_diagram_nodes n LEFT JOIN network_diagrams d ON d.id = n.diagram_id WHERE d.id IS NULL");
+                if ($tableExists('cmdb_objects')) {
+                    $conn->exec("DELETE n FROM network_diagram_nodes n LEFT JOIN cmdb_objects o ON o.id = n.cmdb_object_id WHERE o.id IS NULL");
+                }
+            }
+            if ($tableExists('network_diagram_connectors')) {
+                $conn->exec("DELETE c FROM network_diagram_connectors c LEFT JOIN network_diagrams d ON d.id = c.diagram_id WHERE d.id IS NULL");
+                $conn->exec("DELETE c FROM network_diagram_connectors c LEFT JOIN network_diagram_nodes n ON n.id = c.from_node_id WHERE n.id IS NULL");
+                $conn->exec("DELETE c FROM network_diagram_connectors c LEFT JOIN network_diagram_nodes n ON n.id = c.to_node_id WHERE n.id IS NULL");
+                if ($tableExists('cmdb_object_relationships')) {
+                    $conn->exec("UPDATE network_diagram_connectors c LEFT JOIN cmdb_object_relationships r ON r.id = c.cmdb_relationship_id
+                                 SET c.cmdb_relationship_id = NULL WHERE c.cmdb_relationship_id IS NOT NULL AND r.id IS NULL");
+                }
+            }
+            $conn->exec("UPDATE network_diagrams d LEFT JOIN network_diagrams p ON p.id = d.parent_diagram_id
+                         SET d.parent_diagram_id = NULL WHERE d.parent_diagram_id IS NOT NULL AND p.id IS NULL");
+            $conn->exec("UPDATE network_diagrams d LEFT JOIN analysts a ON a.id = d.created_by_analyst_id
+                         SET d.created_by_analyst_id = NULL WHERE d.created_by_analyst_id IS NOT NULL AND a.id IS NULL");
+        } catch (Exception $e) { /* shrug */ }
+    }
+    $networkFks = [
+        ['network_diagrams',           'fk_net_diag_parent', "ALTER TABLE network_diagrams ADD CONSTRAINT fk_net_diag_parent FOREIGN KEY (parent_diagram_id) REFERENCES network_diagrams (id) ON DELETE SET NULL"],
+        ['network_diagrams',           'fk_net_diag_author', "ALTER TABLE network_diagrams ADD CONSTRAINT fk_net_diag_author FOREIGN KEY (created_by_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['network_diagram_nodes',      'fk_net_node_diag',   "ALTER TABLE network_diagram_nodes ADD CONSTRAINT fk_net_node_diag FOREIGN KEY (diagram_id) REFERENCES network_diagrams (id) ON DELETE CASCADE"],
+        ['network_diagram_nodes',      'fk_net_node_cmdb',   "ALTER TABLE network_diagram_nodes ADD CONSTRAINT fk_net_node_cmdb FOREIGN KEY (cmdb_object_id) REFERENCES cmdb_objects (id) ON DELETE CASCADE"],
+        ['network_diagram_connectors', 'fk_net_conn_diag',   "ALTER TABLE network_diagram_connectors ADD CONSTRAINT fk_net_conn_diag FOREIGN KEY (diagram_id) REFERENCES network_diagrams (id) ON DELETE CASCADE"],
+        ['network_diagram_connectors', 'fk_net_conn_from',   "ALTER TABLE network_diagram_connectors ADD CONSTRAINT fk_net_conn_from FOREIGN KEY (from_node_id) REFERENCES network_diagram_nodes (id) ON DELETE CASCADE"],
+        ['network_diagram_connectors', 'fk_net_conn_to',     "ALTER TABLE network_diagram_connectors ADD CONSTRAINT fk_net_conn_to FOREIGN KEY (to_node_id) REFERENCES network_diagram_nodes (id) ON DELETE CASCADE"],
+        ['network_diagram_connectors', 'fk_net_conn_rel',    "ALTER TABLE network_diagram_connectors ADD CONSTRAINT fk_net_conn_rel FOREIGN KEY (cmdb_relationship_id) REFERENCES cmdb_object_relationships (id) ON DELETE SET NULL"],
+    ];
+    foreach ($networkFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
+    // REST API v1 key foreign keys (db_verify $schema only builds columns + PK)
+    $apiKeyFks = [
+        ['api_keys',            'fk_api_keys_analyst',        "ALTER TABLE api_keys ADD CONSTRAINT fk_api_keys_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id)"],
+        ['api_keys',            'fk_api_keys_created_by',     "ALTER TABLE api_keys ADD CONSTRAINT fk_api_keys_created_by FOREIGN KEY (created_by) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['api_key_rate_limits', 'fk_api_key_rate_limits_key', "ALTER TABLE api_key_rate_limits ADD CONSTRAINT fk_api_key_rate_limits_key FOREIGN KEY (api_key_id) REFERENCES api_keys (id) ON DELETE CASCADE"],
+    ];
+    foreach ($apiKeyFks as [$tbl, $name, $sql]) {
+        if (!$tableExists($tbl) || $fkExists($tbl, $name)) continue;
+        try { $conn->exec($sql); } catch (Exception $e) {}
+    }
+
     // Ticket child foreign keys (db_verify $schema only builds columns + PK; FKs
     // added here so installs grown via db_verify match a fresh freeitsm.sql).
     // These have NO cascade, so delete_ticket.php removes the children explicitly.
@@ -3441,6 +3563,7 @@ try {
         ['ticket_notes',        'fk_notes_tickets',           'ticket_id', 'tickets', "ALTER TABLE ticket_notes ADD CONSTRAINT fk_notes_tickets FOREIGN KEY (ticket_id) REFERENCES tickets (id)"],
         ['ticket_audit',        'fk_ticket_audit_ticket',     'ticket_id', 'tickets', "ALTER TABLE ticket_audit ADD CONSTRAINT fk_ticket_audit_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id)"],
         ['ticket_time_entries', 'fk_time_entries_tickets',    'ticket_id', 'tickets', "ALTER TABLE ticket_time_entries ADD CONSTRAINT fk_time_entries_tickets FOREIGN KEY (ticket_id) REFERENCES tickets (id)"],
+        ['ticket_ai_summaries', 'fk_ticket_ai_summaries_ticket', 'ticket_id', 'tickets', "ALTER TABLE ticket_ai_summaries ADD CONSTRAINT fk_ticket_ai_summaries_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE"],
     ];
     // Plain-English description of what an orphan in each table actually is.
     $orphanLabel = [
@@ -3448,6 +3571,7 @@ try {
         'ticket_notes'        => 'note(s) whose ticket no longer exists',
         'ticket_audit'        => 'audit record(s) whose ticket no longer exists',
         'ticket_time_entries' => 'time entry/entries whose ticket no longer exists',
+        'ticket_ai_summaries' => 'AI summary/summaries whose ticket no longer exists',
     ];
     foreach ($ticketChildFks as [$tbl, $name, $col, $parent, $sql]) {
         if (!$tableExists($tbl) || !$tableExists($parent) || $fkExists($tbl, $name)) continue;
@@ -3530,6 +3654,57 @@ try {
         }
     }
 
+    // Resolution codes (#1540). Seeded on an EMPTY table only, so an install that
+    // has curated its own list never has these pushed back in.
+    //
+    // ⚠️ ticket_categories is deliberately NOT seeded alongside this. A resolution
+    // code list is near enough universal across service desks; a CATEGORY tree is
+    // the one thing every organisation has to own, and a pre-seeded taxonomy is
+    // just someone else's wrong answer that has to be deleted first.
+    if ($tableExists('ticket_resolution_codes')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM ticket_resolution_codes")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO ticket_resolution_codes (name, description, display_order) VALUES
+                ('Fixed remotely',       'Resolved without visiting the user',              10),
+                ('Fixed on site',        'Resolved in person',                              20),
+                ('Hardware replaced',    'The faulty item was swapped out',                 30),
+                ('Configuration change', 'Settings changed on a system, device or account', 40),
+                ('Training given',       'Nothing was broken - the user was shown how',     50),
+                ('Access granted',       'A permission, licence or account was provided',   60),
+                ('No fault found',       'Investigated and working as expected',            70),
+                ('Duplicate',            'Already covered by another ticket',               80),
+                ('Withdrawn',            'The requester no longer needs it',                90),
+                ('Referred to supplier', 'Passed to a third party to resolve',             100)");
+            $results[] = ['table' => 'ticket_resolution_codes', 'status' => 'seeded', 'details' => ['Inserted 10 default resolution codes']];
+        }
+    }
+
+    // SOP checklist roles (PR #141). Seeded here for the same reason resolution
+    // codes are: "who normally does this step" is near enough universal across
+    // service desks, and an empty dropdown on first use teaches nobody anything.
+    //
+    // ⚠️ checklist_categories is deliberately NOT seeded alongside it, on exactly
+    // the reasoning given for ticket_categories above: a category tree is the one
+    // thing an organisation has to own. The contributed module seeded five
+    // (Network, HR & IT, Infrastructure, Security, General) from inside a page;
+    // the table now fills itself as templates are saved, which gets there without
+    // anybody having to delete somebody else's taxonomy first.
+    if ($tableExists('checklist_roles')) {
+        $cnt = (int) $conn->query("SELECT COUNT(*) FROM checklist_roles")->fetchColumn();
+        if ($cnt === 0) {
+            $conn->exec("INSERT INTO checklist_roles (name) VALUES
+                ('Tier 1 Support'),
+                ('Tier 2 Support'),
+                ('Network Admin'),
+                ('Systems Administrator'),
+                ('Security Team'),
+                ('Database Admin'),
+                ('DevOps / Cloud'),
+                ('HR & IT')");
+            $results[] = ['table' => 'checklist_roles', 'status' => 'seeded', 'details' => ['Inserted 8 default checklist roles']];
+        }
+    }
+
     if ($tableExists('process_step_types')) {
         $cnt = (int) $conn->query("SELECT COUNT(*) FROM process_step_types")->fetchColumn();
         if ($cnt === 0) {
@@ -3609,10 +3784,20 @@ try {
         } catch (Exception $e) { /* leave the legacy column in place if migration fails */ }
     }
 
-    // FKs and indexes for tasks
+    // FKs and indexes for tasks (full set matching freeitsm.sql — grown
+    // installs were missing the parent/comments cascades, which orphaned
+    // subtasks and comments on delete)
     foreach ([
         ['tasks', 'fk_tasks_status',   "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_status FOREIGN KEY (status_id) REFERENCES task_statuses (id)"],
         ['tasks', 'fk_tasks_priority', "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_priority FOREIGN KEY (priority_id) REFERENCES task_priorities (id)"],
+        ['tasks', 'fk_tasks_analyst',  "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_analyst FOREIGN KEY (assigned_analyst_id) REFERENCES analysts (id) ON DELETE SET NULL"],
+        ['tasks', 'fk_tasks_team',     "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_team FOREIGN KEY (assigned_team_id) REFERENCES teams (id) ON DELETE SET NULL"],
+        ['tasks', 'fk_tasks_parent',   "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_parent FOREIGN KEY (parent_task_id) REFERENCES tasks (id) ON DELETE CASCADE"],
+        ['tasks', 'fk_tasks_ticket',   "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE SET NULL"],
+        ['tasks', 'fk_tasks_change',   "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_change FOREIGN KEY (change_id) REFERENCES changes (id) ON DELETE SET NULL"],
+        ['tasks', 'fk_tasks_created_by', "ALTER TABLE tasks ADD CONSTRAINT fk_tasks_created_by FOREIGN KEY (created_by_id) REFERENCES analysts (id)"],
+        ['task_comments', 'fk_task_comments_task',    "ALTER TABLE task_comments ADD CONSTRAINT fk_task_comments_task FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE"],
+        ['task_comments', 'fk_task_comments_analyst', "ALTER TABLE task_comments ADD CONSTRAINT fk_task_comments_analyst FOREIGN KEY (analyst_id) REFERENCES analysts (id)"],
         ['task_tag_map', 'fk_task_tag_map_task', "ALTER TABLE task_tag_map ADD CONSTRAINT fk_task_tag_map_task FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE"],
         ['task_tag_map', 'fk_task_tag_map_tag',  "ALTER TABLE task_tag_map ADD CONSTRAINT fk_task_tag_map_tag FOREIGN KEY (tag_id) REFERENCES task_tags (id) ON DELETE CASCADE"],
     ] as [$tbl, $name, $sql]) {
@@ -3664,14 +3849,38 @@ try {
     if ($tableExists('service_impact_levels')) {
         $cnt = (int) $conn->query("SELECT COUNT(*) FROM service_impact_levels")->fetchColumn();
         if ($cnt === 0) {
-            $conn->exec("INSERT INTO service_impact_levels (name, colour, is_default, severity_order, display_order) VALUES
-                ('Major Outage',   '#dc2626', 0, 1, 10),
-                ('Partial Outage', '#f59e0b', 0, 2, 20),
-                ('Degraded',       '#eab308', 0, 3, 30),
-                ('Maintenance',    '#0891b2', 0, 4, 40),
-                ('Operational',    '#16a34a', 1, 5, 50),
-                ('No Disruption',  '#9ca3af', 0, 6, 60)");
+            $conn->exec("INSERT INTO service_impact_levels (name, colour, is_default, severity_order, display_order, counts_as_downtime) VALUES
+                ('Major Outage',   '#dc2626', 0, 1, 10, 1),
+                ('Partial Outage', '#f59e0b', 0, 2, 20, 1),
+                ('Degraded',       '#eab308', 0, 3, 30, 1),
+                ('Maintenance',    '#0891b2', 0, 4, 40, 0),
+                ('Operational',    '#16a34a', 1, 5, 50, 0),
+                ('No Disruption',  '#9ca3af', 0, 6, 60, 0)");
             $results[] = ['table' => 'service_impact_levels', 'status' => 'seeded', 'details' => ['Inserted 6 default impact levels']];
+        }
+    }
+
+    // Uptime (discussion #59): the new counts_as_downtime column defaults to 1, which
+    // is the conservative answer for a level nobody has ruled on. For the three SHIPPED
+    // levels where it is plainly wrong it is cleared once, on the upgrade path only.
+    //
+    // ⚠️ Guarded by a marker row rather than by "is it still 1?", because an
+    // administrator who deliberately decides that maintenance DOES count for them must
+    // not have that choice reverted on the next verification. Running once is the
+    // difference between a migration and a policy.
+    if ($tableExists('service_impact_levels') && $colExists('service_impact_levels', 'counts_as_downtime')) {
+        $already = (int) $conn->query(
+            "SELECT COUNT(*) FROM system_settings WHERE setting_key = 'status_downtime_defaults_applied'"
+        )->fetchColumn();
+        if ($already === 0) {
+            $n = $conn->exec(
+                "UPDATE service_impact_levels SET counts_as_downtime = 0
+                  WHERE name IN ('Maintenance', 'Operational', 'No Disruption')"
+            );
+            $conn->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('status_downtime_defaults_applied', '1')")
+                 ->execute();
+            $results[] = ['table' => 'service_impact_levels', 'status' => 'updated',
+                          'details' => ["Excluded {$n} level(s) from downtime (Maintenance / Operational / No Disruption)"]];
         }
     }
 
@@ -3771,6 +3980,22 @@ try {
             ['storage',        'Storage',          140],
             ['workstation',    'Workstation',      150],
             ['printer',        'Printer',          160],
+            // Peripherals & displays (#1146) — added so ASSET TYPES have
+            // something to pick. ⚠️ 'display' is the screen; 'monitor' below is
+            // the monitoring GAUGE, which is why it is labelled that way.
+            ['display',        'Display / screen', 170],
+            ['television',     'Television',       171],
+            ['projector',      'Projector',        172],
+            ['webcam',         'Webcam',           173],
+            ['headset',        'Headset',          174],
+            ['keyboard',       'Keyboard',         175],
+            ['mouse',          'Mouse',            176],
+            ['speaker',        'Speaker',          177],
+            ['dock',           'Docking station',  178],
+            ['scanner',        'Scanner',          179],
+            ['camera',         'Camera',           180],
+            ['desk-phone',     'Desk phone',       181],
+            ['ups',            'UPS',              182],
             ['person',         'Person',           170],
             ['team',           'Team',             180],
             ['document',       'Document',         190],
@@ -3840,20 +4065,34 @@ try {
     if ($tableExists('cmdb_relationship_types')) {
         $cnt = (int) $conn->query("SELECT COUNT(*) FROM cmdb_relationship_types")->fetchColumn();
         if ($cnt === 0) {
-            $conn->exec("INSERT INTO cmdb_relationship_types (verb, inverse_verb, description, display_order) VALUES
-                ('depends on',  'is depended on by', 'A needs B in order to function',           10),
-                ('connects to', 'is connected from', 'A has a network or data link to B',       20),
-                ('managed by',  'manages',           'A is administered by B',                  30)");
+            // Only 'depends on' carries impact by default — see freeitsm.sql.
+            $conn->exec("INSERT INTO cmdb_relationship_types (verb, inverse_verb, description, impact_direction, display_order) VALUES
+                ('depends on',  'is depended on by', 'A needs B in order to function',     'to_from', 10),
+                ('connects to', 'is connected from', 'A has a network or data link to B',  'none',    20),
+                ('managed by',  'manages',           'A is administered by B',             'none',    30)");
             $results[] = ['table' => 'cmdb_relationship_types', 'status' => 'seeded', 'details' => ['Inserted 3 default CMDB relationship types']];
         }
     }
 
     // Ensure unique indexes exist on LMS tables (db_verify only creates columns, not indexes)
     $uniqueIndexes = [
+        ['webhook_message_formats', 'uq_wmf_key', '(`format_key`)'],
+        // THE fire-once guarantee for time-based triggers. Without this UNIQUE key
+        // the INSERT IGNORE is meaningless and a breached SLA would re-escalate on
+        // every cron run, forever. It is not an optimisation — it is the feature.
+        ['workflow_scheduled_emissions', 'uq_wse_once', '(`trigger_event`, `entity_key`, `fingerprint`)'],
         ['lms_cmi_data', 'uq_lcd_progress_element', '(`progress_id`, `element`)'],
-        ['lms_progress', 'uq_lp_analyst_course', '(`analyst_id`, `course_id`)'],
+        // ⚠️ lms_progress / lms_course_assignments are DELIBERATELY ABSENT from
+        // this list now. Their unique keys moved when a learner stopped having to
+        // be an analyst — (learner_type, learner_id, course_id) and
+        // (course_id, target_type, group_id) — and both new keys are in the
+        // generated backfill further down. Re-adding the old ones here would put
+        // back the two keys the repair block below exists to remove, and on a run
+        // where this loop happened to come after it, permanently.
+        ['rbac_role_capabilities', 'uq_rrc_role_capability', '(`role_id`, `capability_key`)'],
+        ['rbac_analyst_roles', 'uq_rar_analyst_role', '(`analyst_id`, `role_id`)'],
+        ['rbac_team_roles', 'uq_rtr_team_role', '(`team_id`, `role_id`)'],
         ['lms_learning_group_members', 'uq_lgm_group_analyst', '(`group_id`, `analyst_id`)'],
-        ['lms_course_assignments', 'uq_lca_course_group', '(`course_id`, `group_id`)'],
         ['intune_devices', 'uq_intune_devices_intune_id', '(`intune_id`)'],
         ['rfp_departments', 'uq_rfp_departments_name', '(`name`)'],
         ['rfp_consolidated_sources', 'uq_rfp_consolidated_sources', '(`consolidated_id`, `extracted_id`)'],
@@ -3875,7 +4114,25 @@ try {
         ['user_sso_identities', 'uq_user_sso_provider_user', '(`provider_id`, `user_id`)'],
         ['freemail_domains', 'uq_freemail_domains_domain', '(`domain`)'],
         ['tenant_channel_senders', 'uq_tenant_channel_sender_identifier', '(`identifier`)'],
+        ['webchat_widgets', 'uq_webchat_widget_key', '(`widget_key`)'],
+        ['webchat_widgets', 'uq_webchat_widget_channel', '(`channel_id`)'],
+        ['webchat_conversations', 'uq_webchat_conversation_token', '(`token`)'],
         ['problem_tickets', 'uq_problem_ticket', '(`problem_id`, `ticket_id`)'],
+        ['change_tickets',  'uq_change_ticket',  '(`change_id`, `ticket_id`)'],
+        ['ticket_links',    'uq_ticket_link',    '(`source_ticket_id`, `target_ticket_id`, `relation_type`)'],
+        ['api_keys', 'uq_api_keys_hash', '(`key_hash`)'],
+        ['api_key_rate_limits', 'uq_api_key_window', '(`api_key_id`, `window_start`)'],
+        ['contract_term_values', 'uq_ctv_contract_tab', '(`contract_id`, `term_tab_id`)'],
+        ['morningChecks_Results', 'uq_check_date', '(`CheckID`, `CheckDate`)'],
+        // 🔴 CALENDAR SYNC — these are not tidiness, they ARE the upsert.
+        // Both tables are written with INSERT ... ON DUPLICATE KEY UPDATE, which
+        // without the UNIQUE key never matches: every save appends another row and
+        // every read takes the first one, so nothing an analyst or an admin
+        // changes appears to stick. A fresh install gets these from freeitsm.sql;
+        // only an upgrade needs them here, which is exactly the install that would
+        // have been silently broken.
+        ['calendar_enrolments',  'uniq_calendar_enrolment_analyst',  '(`analyst_id`)'],
+        ['calendar_sync_events', 'uniq_calendar_sync_ticket_analyst', '(`ticket_id`, `analyst_id`)'],
     ];
 
     foreach ($uniqueIndexes as [$tbl, $idxName, $cols]) {
@@ -3890,6 +4147,21 @@ try {
             $idxCheck->execute([DB_NAME, $tbl, $idxName]);
             if ((int)$idxCheck->fetch(PDO::FETCH_ASSOC)['cnt'] > 0) continue;
 
+            // Calendar sync: anyone who ran the build where the UNIQUE key was
+            // missing has a pile of duplicate rows, and ADD UNIQUE KEY refuses
+            // outright while they exist. Keep the NEWEST per analyst / per
+            // ticket-and-analyst — that is the one carrying whatever they last
+            // chose, and the older rows are failed writes, not history.
+            if ($tbl === 'calendar_enrolments') {
+                $conn->exec("DELETE e1 FROM calendar_enrolments e1
+                             INNER JOIN calendar_enrolments e2
+                             ON e1.analyst_id = e2.analyst_id AND e1.id < e2.id");
+            }
+            if ($tbl === 'calendar_sync_events') {
+                $conn->exec("DELETE s1 FROM calendar_sync_events s1
+                             INNER JOIN calendar_sync_events s2
+                             ON s1.ticket_id = s2.ticket_id AND s1.analyst_id = s2.analyst_id AND s1.id < s2.id");
+            }
             // For lms_cmi_data: clean up duplicates before adding unique key
             if ($tbl === 'lms_cmi_data') {
                 $conn->exec("DELETE d1 FROM lms_cmi_data d1
@@ -3901,6 +4173,21 @@ try {
                 $conn->exec("DELETE t1 FROM process_step_types t1
                              INNER JOIN process_step_types t2
                              ON t1.slug = t2.slug AND t1.id > t2.id");
+            }
+            // For contract_term_values: the old select-then-insert upsert could
+            // double-insert under concurrency — keep the newest row per
+            // (contract, tab) before adding the unique key
+            if ($tbl === 'contract_term_values') {
+                $conn->exec("DELETE t1 FROM contract_term_values t1
+                             INNER JOIN contract_term_values t2
+                             ON t1.contract_id = t2.contract_id AND t1.term_tab_id = t2.term_tab_id AND t1.id < t2.id");
+            }
+            // For morningChecks_Results: same select-then-insert upsert shape —
+            // keep the newest row per (check, date) before adding the unique key
+            if ($tbl === 'morningChecks_Results') {
+                $conn->exec("DELETE t1 FROM morningChecks_Results t1
+                             INNER JOIN morningChecks_Results t2
+                             ON t1.CheckID = t2.CheckID AND t1.CheckDate = t2.CheckDate AND t1.ResultID < t2.ResultID");
             }
 
             $conn->exec("ALTER TABLE `$tbl` ADD UNIQUE KEY `$idxName` $cols");
@@ -3933,13 +4220,248 @@ try {
         // Non-fatal — fall through with verification result
     }
 
-    require_once __DIR__ . '/../../includes/ldap_schema.php';
-    ensureNativeLdapSchema($conn);
+    // ---- LMS: a learner may now be a portal user, not only an analyst -------
+    //
+    // Courses can be assigned to the shared people groups (and to every portal
+    // user at once), so lms_progress is keyed on (learner_type, learner_id)
+    // rather than analyst_id. See the comments on both tables in freeitsm.sql.
+    //
+    // 🔴 THIS BLOCK MUST STAY ABOVE THE INDEX BACKFILL BELOW. That pass adds
+    // uq_lp_learner_course (learner_type, learner_id, course_id). On a grown
+    // install every existing row is an analyst's and its learner_id is still the
+    // column default of 0 — so they ALL collide on ('analyst', 0, course_id) and
+    // the unique key cannot be created until the backfill here has run. Move this
+    // below and the key is silently reported as un-addable on every install that
+    // has ever recorded a course. Ordering, not tidiness.
+    if ($tableExists('lms_progress') && $colExists('lms_progress', 'learner_id')) {
+        try {
+            $conn->exec("UPDATE lms_progress
+                            SET learner_id = analyst_id, learner_type = 'analyst'
+                          WHERE learner_id = 0 AND analyst_id IS NOT NULL");
+        } catch (Exception $e) { /* reported by the index pass if it mattered */ }
+
+        // analyst_id is legacy from here on and has to accept NULL, because a
+        // portal learner has no analyst record to point at. Probe-then-MODIFY,
+        // the same shape as the five precedents earlier in this file; relaxing
+        // NOT NULL cannot invalidate an existing row.
+        try {
+            $col = $conn->query("SHOW COLUMNS FROM `lms_progress` LIKE 'analyst_id'")->fetch(PDO::FETCH_ASSOC);
+            if ($col && strtoupper((string)($col['Null'] ?? '')) === 'NO') {
+                $conn->exec("ALTER TABLE `lms_progress` MODIFY `analyst_id` INT NULL");
+            }
+        } catch (Exception $e) { /* non-fatal */ }
+
+        // The old key has to go, not just be superseded: with analyst_id nullable
+        // it constrains nothing for portal learners (MySQL allows any number of
+        // NULLs in a unique index) while still looking like it does.
+        if ($idxExists('lms_progress', 'uq_lp_analyst_course')) {
+            try { $conn->exec("ALTER TABLE lms_progress DROP INDEX uq_lp_analyst_course"); } catch (Exception $e) {}
+        }
+    }
+
+    if ($tableExists('lms_course_assignments') && $colExists('lms_course_assignments', 'target_type')) {
+        // 🔴 (course_id, group_id) cannot tell an analyst learning group from a
+        // people group. Left in place, assigning a course to people-group 2 when
+        // learning-group 2 already has it is refused as a duplicate of something
+        // unrelated — and the message would name the wrong group entirely.
+        if ($idxExists('lms_course_assignments', 'uq_lca_course_group')) {
+            try { $conn->exec("ALTER TABLE lms_course_assignments DROP INDEX uq_lca_course_group"); } catch (Exception $e) {}
+        }
+    }
+
+    // ---- Repeating task evidence (#181): baselines ----------------------------
+    //
+    // A series that existed before rule versions were recorded gets ONE version,
+    // marked 'baseline', holding the rule as found now. The evidence report works
+    // out missing occurrences only from the first recorded version onwards and
+    // says "not recorded" before it - so the baseline is honest about being a
+    // starting point, not a history. Likewise each checklist template gets version 1.
+    // Idempotent: only rows with no version yet are touched.
+    if ($tableExists('task_recurrence_versions') && $tableExists('task_recurrences')) {
+        try {
+            $series = $conn->query(
+                "SELECT r.* FROM task_recurrences r
+                  WHERE NOT EXISTS (SELECT 1 FROM task_recurrence_versions v WHERE v.recurrence_id = r.id)"
+            )->fetchAll(PDO::FETCH_ASSOC);
+            if ($series) {
+                require_once '../../includes/services/task_history.php';
+                foreach ($series as $r) TaskHistory::recordRuleVersion($conn, (int)$r['id'], 'baseline', null, $r);
+                $results[] = ['table' => 'task_recurrence_versions', 'status' => 'updated',
+                              'details' => ['Recorded the current rule of ' . count($series) . ' repeating series as their first version (#181)']];
+            }
+        } catch (Exception $e) { /* non-fatal: the report says "not recorded" without it */ }
+    }
+    if ($tableExists('checklist_template_versions') && $colExists('checklist_templates', 'version_no')) {
+        try {
+            $tpls = $conn->query("SELECT id FROM checklist_templates WHERE version_no = 0")->fetchAll(PDO::FETCH_COLUMN);
+            if ($tpls) {
+                require_once '../../includes/services/checklists.php';
+                foreach ($tpls as $tid) ChecklistsService::recordTemplateVersion($conn, (int)$tid, null);
+                $results[] = ['table' => 'checklist_template_versions', 'status' => 'updated',
+                              'details' => ['Recorded ' . count($tpls) . ' checklist template(s) as version 1 (#181)']];
+            }
+        } catch (Exception $e) { /* non-fatal */ }
+    }
+
+    // ---- Comprehensive named-index backfill --------------------------------
+    // freeitsm.sql creates every secondary index at CREATE TABLE time, but a
+    // GROWN install only ever received the indexes db_verify was explicitly told
+    // to add — so an index that was dropped, or never existed on an older
+    // install, stays missing, and for a UNIQUE key that silently permits
+    // duplicate data (e.g. two users sharing one email). This pass is the
+    // backstop: it restores EVERY named index in freeitsm.sql, idempotently —
+    // present -> skip, missing -> add. It runs LAST, after the feature-specific
+    // FK/index groups above, so anything they added is simply skipped here.
+    //
+    // A UNIQUE key that can't be added because duplicate rows already exist is
+    // REPORTED, never forced: unlike orphaned FK child rows (which have a Fix
+    // button), we can't know which duplicate the admin wants to keep — so they
+    // resolve it and re-run. The list is generated from freeitsm.sql by
+    // scripts/gen_db_verify_indexes.php.
+    // Drift guard: the backfill list is a GENERATED mirror of freeitsm.sql, and
+    // the failure mode is someone adding an index to freeitsm.sql but forgetting
+    // to regenerate — so the mirror silently omits it and grown installs miss it
+    // again. Re-parse freeitsm.sql and compare; if they've drifted, say so loudly
+    // right here (this page is the ritual after a schema change). Mirrors
+    // capSelfCheck().
+    //
+    // ⚠️ This used to say the check "only ever fires for a developer mid-change,
+    // because both files ship from one commit". That was wrong, and it was
+    // reported by a user (GH #113): the two files ship from one commit, but
+    // nothing checked they AGREED in that commit, so a shipped release carried
+    // 16 indexes present in freeitsm.sql and missing from the list. Every
+    // administrator who ran Verification saw a developer instruction they could
+    // do nothing with, after every update.
+    // The check is right; what was missing was running it before shipping —
+    // `php scripts/gen_db_verify_indexes.php --check` now does that, and exits
+    // non-zero.
+    //
+    // ⚠️ AND IT SHIPPED AGAIN, in 1.6 and again in 1.9, reported by three
+    // people. `--check` was the right tool and nothing was obliged to run it,
+    // so it caught nothing; .github/workflows/schema-drift.yml now runs it on
+    // every push, which is the part that was actually missing. The lesson is
+    // not "remember harder" - a guard a human has to remember is not a guard.
+    //
+    // 🔑 The wording below is for the person READING it, who is an
+    // administrator with no repository and nothing to commit. Telling them to
+    // run a developer script, in red, on the screen that tells them whether
+    // their database is healthy, reads as "your data is broken". It is not:
+    // this is a fault in the release, their rows are untouched, and the only
+    // useful thing they can do is say so. Hence 'warning', not 'error' - the
+    // loud alarm belongs in CI, where somebody can act on it.
+    require_once '../../includes/db_verify_index_parse.php';
+    $indexListDrift = dbVerifyIndexListSelfCheck();
+    if (!empty($indexListDrift)) {
+        $results[] = [
+            'table'   => 'index backfill list',
+            'status'  => 'warning',
+            'details' => array_merge(
+                ['Your database is fine and your data is unaffected - this is a fault in the FreeITSM release itself.',
+                 'The list FreeITSM uses to restore missing database indexes does not match the schema it ships with, '
+                 . 'which means this installation may be missing an index. Nothing here is lost or at risk, and there is '
+                 . 'nothing for you to do beyond reporting it: please open an issue at '
+                 . 'https://github.com/edmozley/freeitsm/issues and paste the lines below. It is a one-file fix.'],
+                array_slice($indexListDrift, 0, 12)
+            ),
+        ];
+    }
+
+    // The same idea for COLUMNS. Indexes are the easy case — their list is
+    // GENERATED, so drift only means "you forgot to regenerate". freeitsm.sql and
+    // includes/db_verify_schema.php are BOTH hand-maintained, so they can
+    // disagree in either direction, and each direction breaks a different
+    // install: a column only in Verification leaves a FRESH install missing it
+    // (this shipped once — asset_locations.tenant_id), while a column only in
+    // freeitsm.sql means an EXISTING install never gains it. Silent when in sync.
+    require_once '../../includes/db_verify_column_parse.php';
+    // Same audience, same reasoning as the index list above: an administrator
+    // cannot fix a disagreement between two files inside the release. The
+    // consequence for them is real but narrow (a fresh install missing a
+    // column, or an existing one never gaining it), so say that plainly rather
+    // than in the vocabulary of whoever has to repair it.
+    $columnDrift = dbVerifyColumnSelfCheck();
+    if (!empty($columnDrift)) {
+        $results[] = [
+            'table'   => 'schema column drift',
+            'status'  => 'warning',
+            'details' => array_merge(
+                ['Your database is fine and your data is unaffected - this is a fault in the FreeITSM release itself.',
+                 'The two descriptions of the schema that ship with FreeITSM disagree about which columns exist, '
+                 . 'so a column listed below may be missing here. Please open an issue at '
+                 . 'https://github.com/edmozley/freeitsm/issues and paste the lines below.'],
+                array_slice($columnDrift, 0, 12)
+            ),
+        ];
+    }
+
+    // #194: preserve existing observations while allowing per-source coexistence.
+    require_once '../../includes/db_verify_inventory.php';
+    try {
+        $inventoryChanges=dbVerifyInventoryUpgrade($conn);
+        if ($inventoryChanges) $results[]=['table'=>'software_inventory_detail','status'=>'updated','details'=>$inventoryChanges];
+    } catch (Throwable $e) {
+        $results[]=['table'=>'software_inventory_detail','status'=>'error','details'=>['Inventory schema upgrade failed: ' . $e->getMessage()]];
+    }
+    $allNamedIndexes = require '../../includes/db_verify_indexes.php';
+    $resultPosByTable = [];
+    foreach ($results as $ri => $rr) {
+        if (isset($rr['table']) && !isset($resultPosByTable[$rr['table']])) {
+            $resultPosByTable[$rr['table']] = $ri;
+        }
+    }
+    foreach ($allNamedIndexes as [$idxTable, $idxName, $idxType, $idxCols]) {
+        if (!$tableExists($idxTable) || $idxExists($idxTable, $idxName)) continue;
+        // The third element carried a boolean before 2026-08 and a type string
+        // after it. dbVerifyIndexTypeOf reads both — guessing here would be worse
+        // than an error, because the string 'key' is truthy and a naive ternary
+        // would build a UNIQUE index over columns that are not unique.
+        $idxType = dbVerifyIndexTypeOf($idxType);
+        $keyword = ['unique' => 'UNIQUE KEY', 'fulltext' => 'FULLTEXT KEY'][$idxType] ?? 'KEY';
+        $pos = $resultPosByTable[$idxTable] ?? null;
+        try {
+            // ⚠️ The FIRST full-text index on an InnoDB table rebuilds that table,
+            // so it is slow on a populated one. In practice this is fine: db_verify
+            // creates a missing table from $schema moments earlier and then indexes
+            // it while empty. The slow path only exists if someone drops a full-text
+            // index from a table that already holds rows.
+            $conn->exec("ALTER TABLE `$idxTable` ADD $keyword `$idxName` $idxCols");
+            if ($pos !== null) {
+                $results[$pos]['details'][] = 'Restored missing index ' . $idxName;
+                if (($results[$pos]['status'] ?? '') === 'ok') $results[$pos]['status'] = 'updated';
+            }
+        } catch (Exception $e) {
+            if ($pos !== null) {
+                if ($idxType === 'unique') {
+                    $detail = 'Could not add unique index ' . $idxName . ' — duplicate rows exist; resolve them, then re-run';
+                } elseif ($idxType === 'fulltext') {
+                    // Nearly always the column type: InnoDB full-text indexes only
+                    // accept CHAR, VARCHAR and TEXT.
+                    $detail = 'Could not add full-text index ' . $idxName
+                            . ' — full-text indexes only work on CHAR, VARCHAR or TEXT columns. ' . $e->getMessage();
+                } else {
+                    $detail = 'Could not add index ' . $idxName . ': ' . $e->getMessage();
+                }
+                $results[$pos]['details'][] = $detail;
+                $results[$pos]['status'] = 'error';
+            }
+        }
+    }
+
+    // Tag each result with its module for the card grid's colour + filter. This
+    // is presentation only (a label on a table name); it reads no schema truth
+    // and cannot affect verification. Derived from table-name prefixes — see
+    // includes/db_verify_modules.php.
+    require_once '../../includes/db_verify_modules.php';
+    foreach ($results as &$r) {
+        $r['module'] = dbVerifyModuleForTable($r['table'] ?? '');
+    }
+    unset($r);
 
     echo json_encode([
         'success' => true,
         'results' => $results,
-        'total_tables' => count($schema)
+        'total_tables' => count($schema),
+        'modules' => dbVerifyModuleMeta()
     ]);
 
 } catch (Exception $e) {

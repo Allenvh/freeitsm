@@ -4,8 +4,15 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
+require_once '../includes/money.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('contracts');
 
 $current_page = 'dashboard';
 $path_prefix = '../';
@@ -13,26 +20,33 @@ $translationNamespaces = ['common', 'contracts'];
 $contract_id = $_GET['id'] ?? null;
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($contract_id ? t('contracts.edit.page_title_edit') : t('contracts.edit.page_title_add')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('contracts', $contract_id ? t('contracts.edit.page_title_edit') : t('contracts.edit.page_title_add'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <script src="../assets/js/tinymce/tinymce.min.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <?php echo Money::scriptTag(); ?>
+    <script src="../assets/js/money.js?v=1"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <script src="../assets/js/tinymce/tinymce.min.js?v=8.10.0"></script>
     <style>
         /* Full-screen layout with sidebar - matches contracts dashboard */
+        body { --accent: var(--con-accent, #f59e0b); }
         .contracts-layout {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
         }
         .contracts-sidebar {
             width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface, white);
+            border-right: 1px solid var(--border, #ddd);
             padding: 20px;
             overflow-y: auto;
             flex-shrink: 0;
@@ -45,24 +59,24 @@ $contract_id = $_GET['id'] ?? null;
 
         .sidebar-section { margin-bottom: 24px; }
         .sidebar-section h3 {
-            font-size: 14px; font-weight: 600; color: #333;
+            font-size: 14px; font-weight: 600; color: var(--text, #333);
             margin: 0 0 12px 0;
         }
         .sidebar-stat {
             display: flex; justify-content: space-between; align-items: center;
             padding: 10px 12px; border-radius: 6px;
-            font-size: 14px; color: #333; cursor: default; margin-bottom: 4px;
+            font-size: 14px; color: var(--text, #333); cursor: default; margin-bottom: 4px;
         }
         .sidebar-stat .stat-value { font-weight: 700; font-size: 16px; }
-        .sidebar-stat.warning .stat-value { color: #f59e0b; }
+        .sidebar-stat.warning .stat-value { color: var(--con-accent, #f59e0b); }
         .sidebar-links { display: flex; flex-direction: column; gap: 4px; }
         .sidebar-link {
             display: flex; align-items: center; gap: 10px;
             padding: 10px 12px; border-radius: 6px;
-            font-size: 14px; color: #333;
+            font-size: 14px; color: var(--text, #333);
             text-decoration: none; transition: all 0.15s;
         }
-        .sidebar-link:hover { background: #fff7ed; color: #f59e0b; }
+        .sidebar-link:hover { background: #fff7ed; color: var(--con-accent, #f59e0b); }
         .sidebar-link svg { width: 18px; height: 18px; flex-shrink: 0; }
         .sidebar-add-btn {
             display: block; width: 100%;
@@ -77,7 +91,7 @@ $contract_id = $_GET['id'] ?? null;
         .sidebar-add-btn:hover { background: #d97706; }
 
         .form-card {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
             overflow: hidden;
@@ -85,10 +99,10 @@ $contract_id = $_GET['id'] ?? null;
 
         .form-card-header {
             padding: 20px 30px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
         }
 
-        .form-card-header h2 { margin: 0; font-size: 20px; color: #333; }
+        .form-card-header h2 { margin: 0; font-size: 20px; color: var(--text, #333); }
 
         .form-card-body { padding: 30px; }
 
@@ -100,10 +114,10 @@ $contract_id = $_GET['id'] ?? null;
         }
 
         .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px; color: #333; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px; color: var(--text, #333); }
 
         .form-group input, .form-group select, .form-group textarea {
-            width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px;
+            width: 100%; padding: 10px 12px; border: 1px solid var(--border, #ddd); border-radius: 4px;
             font-size: 14px; box-sizing: border-box; font-family: inherit;
             transition: border-color 0.15s, box-shadow 0.15s;
         }
@@ -111,27 +125,27 @@ $contract_id = $_GET['id'] ?? null;
         .form-group textarea { height: 80px; resize: vertical; }
 
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-            outline: none; border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
+            outline: none; border-color: var(--con-accent, #f59e0b); box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
         }
 
         .form-section {
             font-size: 13px;
             font-weight: 600;
-            color: #888;
+            color: var(--text-dim, #888);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             padding: 12px 0 6px 0;
             margin-top: 10px;
-            border-top: 1px solid #eee;
+            border-top: 1px solid var(--border-soft, #eee);
         }
 
-        .form-hint { font-size: 12px; color: #888; margin-top: 4px; }
+        .form-hint { font-size: 12px; color: var(--text-dim, #888); margin-top: 4px; }
 
         .form-actions {
             position: sticky;
             bottom: 0;
-            background: #fff;
-            border-top: 1px solid #ddd;
+            background: var(--surface, #fff);
+            border-top: 1px solid var(--border, #ddd);
             box-shadow: 0 -2px 6px rgba(0,0,0,0.04);
             padding: 10px 16px 22px 16px;
             margin: 16px -30px 0 -30px;
@@ -144,12 +158,35 @@ $contract_id = $_GET['id'] ?? null;
         .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; text-decoration: none; }
         .btn-primary { background-color: #f59e0b; color: white; }
         .btn-primary:hover { background-color: #d97706; }
-        .btn-secondary { background: #e0e0e0; color: #333; }
-        .btn-secondary:hover { background: #d0d0d0; }
+        .btn-secondary { background: var(--surface-3, #e0e0e0); color: var(--text, #333); }
+        .btn-secondary:hover { background: var(--surface-hover, #d0d0d0); }
 
 
         .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        /* 🔴 The OFF track was `var(--surface-3)`, which is a SURFACE token —
+           `#f8f8f8` light, `#20242b` dark. In dark mode that is all but the
+           panel colour behind it, so the track vanished and the only thing
+           left was the white knob: two white dots that did not read as
+           controls at all until you tapped one.
+
+           ⭐ Every other toggle in the product uses a flat `#ccc` here
+           (inbox.css:2822, knowledge.css:1220) precisely because a control's
+           track must NOT follow the surface it sits on — it has to contrast
+           with it in both themes, which is the one thing a surface token
+           guarantees it will not do. This was the only place that reached for
+           one. Restoring the canonical value fixes dark mode outright and
+           makes the switch look like every other switch in FreeITSM.
+
+           ⚠️ THIS ONE IS DELIBERATELY NOT GATED TO MOBILE, and it is the only
+           change in the polish round that alters the desktop render. It is a
+           reported bug rather than mobile work: the track was `#f8f8f8` on a
+           white panel in LIGHT mode too, so the switch was near-invisible at
+           every width and in both themes — it simply showed up first in dark.
+           Gating it would have left the desktop screen carrying the fault Ed
+           had just asked to have fixed. The visible desktop change is that an
+           OFF switch's track goes from near-white to the same grey every other
+           switch in the product already uses. Flagged rather than slipped in. */
         .toggle-slider {
             position: absolute; cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -160,24 +197,43 @@ $contract_id = $_GET['id'] ?? null;
             height: 18px; width: 18px; left: 3px; bottom: 3px;
             background: white; border-radius: 50%; transition: transform 0.2s;
         }
-        .toggle-switch input:checked + .toggle-slider { background: #f59e0b; }
+        .toggle-switch input:checked + .toggle-slider { background: var(--con-accent, #f59e0b); }
         .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
         .toggle-row { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; margin-bottom: 15px; }
 
-        .terms-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; margin-bottom: 0; }
+        .terms-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border, #e0e0e0); margin-bottom: 0; }
         .terms-tab {
-            padding: 10px 20px; font-size: 13px; font-weight: 500; color: #666; cursor: pointer;
+            padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text-muted, #666); cursor: pointer;
             background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s;
         }
-        .terms-tab:hover { color: #333; background: #f5f5f5; }
-        .terms-tab.active { color: #f59e0b; border-bottom-color: #f59e0b; font-weight: 600; }
+        .terms-tab:hover { color: var(--text, #333); background: var(--surface-hover, #f5f5f5); }
+        .terms-tab.active { color: var(--con-accent, #f59e0b); border-bottom-color: var(--con-accent, #f59e0b); font-weight: 600; }
         .terms-panel { display: none; padding-top: 16px; }
         .terms-panel.active { display: block; }
-        .terms-empty { color: #999; font-size: 13px; padding: 12px 0; }
-        .terms-empty a { color: #f59e0b; }
+        .terms-empty { color: var(--text-dim, #999); font-size: 13px; padding: 12px 0; }
+        .terms-empty a { color: var(--con-accent, #f59e0b); }
+
+        [data-theme-mode="dark"] .sidebar-link:hover { background: #3a2e12; }
+        /* Supplier / Customer (#153) */
+        .party-label { display: block; margin-bottom: 6px; font-weight: 500; color: var(--text, #333); font-size: 14px; }
+        .party-switch { display: inline-flex; border: 1px solid var(--border, #ddd); border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+        .party-switch label { display: flex; align-items: center; gap: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text, #333); margin: 0; }
+        .party-switch label:first-child { border-right: 1px solid var(--border, #ddd); }
+        .party-switch label:has(input:checked) { background: var(--con-accent-soft, #fef3c7); color: var(--text, #222); font-weight: 600; }
+        #partyCustomer > select { margin-bottom: 8px; }
+        .person-picker { position: relative; }
+        .person-picker input[type=text] { width: 100%; box-sizing: border-box; padding-right: 30px; }
+        .person-clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: none; background: none; font-size: 18px; color: var(--text-muted, #777); cursor: pointer; line-height: 1; }
+        .person-results { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px; list-style: none; background: var(--surface, #fff); border: 1px solid var(--border, #ddd); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.12); max-height: 240px; overflow-y: auto; }
+        .person-results li { padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text, #333); }
+        .person-results li small { display: block; color: var(--text-muted, #777); font-size: 11.5px; }
+        .person-results li[aria-selected="true"], .person-results li:hover { background: var(--surface-hover, #f3f4f6); }
+        .party-hint { display: block; margin-top: 6px; color: var(--text-muted, #777); font-size: 12px; }
     </style>
+    <!-- Mobile layer: linked AFTER this page's own <style> so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="contracts" data-mobile-page="contract-edit">
     <?php include 'includes/header.php'; ?>
 
     <div class="contracts-layout">
@@ -242,6 +298,13 @@ $contract_id = $_GET['id'] ?? null;
             </div>
             <div class="form-card-body">
                 <form id="contractForm" autocomplete="off">
+                    <!-- The company the contract BELONGS to (3.5.0) - who can see it. Hidden
+                         on a single-company install; who it is WITH is set further down. -->
+                    <div class="form-group" id="ownerCompanyGroup" hidden>
+                        <label for="ownerTenantId"><?php echo htmlspecialchars(t('contracts.edit.company')); ?> *</label>
+                        <select id="ownerTenantId"></select>
+                        <small class="party-hint"><?php echo htmlspecialchars(t('contracts.edit.company_hint')); ?></small>
+                    </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="contractNumber"><?php echo htmlspecialchars(t('contracts.edit.contract_number')); ?> *</label>
@@ -267,10 +330,29 @@ $contract_id = $_GET['id'] ?? null;
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="supplierId"><?php echo htmlspecialchars(t('contracts.detail.supplier')); ?></label>
-                            <select id="supplierId">
-                                <option value="">-- <?php echo htmlspecialchars(t('contracts.edit.select_supplier')); ?> --</option>
-                            </select>
+                            <!-- Who the contract is WITH (#153): a supplier (we buy) or a customer (we sell). -->
+                            <span class="party-label"><?php echo htmlspecialchars(t('contracts.party.with')); ?></span>
+                            <div class="party-switch" role="radiogroup" aria-label="<?php echo htmlspecialchars(t('contracts.party.with')); ?>">
+                                <label><input type="radio" name="partyType" value="supplier" checked onchange="showParty()"> <?php echo htmlspecialchars(t('contracts.party.supplier')); ?></label>
+                                <label><input type="radio" name="partyType" value="customer" onchange="showParty()"> <?php echo htmlspecialchars(t('contracts.party.customer')); ?></label>
+                            </div>
+                            <div id="partySupplier">
+                                <select id="supplierId" aria-label="<?php echo htmlspecialchars(t('contracts.detail.supplier')); ?>">
+                                    <option value="">-- <?php echo htmlspecialchars(t('contracts.edit.select_supplier')); ?> --</option>
+                                </select>
+                            </div>
+                            <div id="partyCustomer" hidden>
+                                <select id="customerTenantId" aria-label="<?php echo htmlspecialchars(t('contracts.party.company')); ?>" onchange="clearPersonIfOtherCompany()" hidden>
+                                    <option value="">-- <?php echo htmlspecialchars(t('contracts.party.select_company')); ?> --</option>
+                                </select>
+                                <div class="person-picker">
+                                    <input type="text" id="customerPersonSearch" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('contracts.party.person_ph')); ?>" aria-label="<?php echo htmlspecialchars(t('contracts.party.person')); ?>" oninput="searchPeople()" onkeydown="personKeys(event)">
+                                    <input type="hidden" id="customerUserId">
+                                    <button type="button" class="person-clear" id="customerPersonClear" onclick="clearPerson()" title="<?php echo htmlspecialchars(t('contracts.party.clear_person')); ?>" aria-label="<?php echo htmlspecialchars(t('contracts.party.clear_person')); ?>" hidden>&times;</button>
+                                    <ul class="person-results" id="customerPersonResults" role="listbox" hidden></ul>
+                                </div>
+                                <small class="party-hint" id="partyCustomerHint"></small>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="ownerId"><?php echo htmlspecialchars(t('contracts.detail.owner')); ?></label>
@@ -323,8 +405,12 @@ $contract_id = $_GET['id'] ?? null;
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="costCentre"><?php echo htmlspecialchars(t('contracts.detail.cost_centre')); ?></label>
-                            <input type="text" id="costCentre">
+                            <label for="costCentreId"><?php echo htmlspecialchars(t('contracts.detail.cost_centre')); ?></label>
+                            <!-- GH #160: a cost centre of the contract's company (System -> Cost Centres). -->
+                            <select id="costCentreId">
+                                <option value="">-- <?php echo htmlspecialchars(t('contracts.edit.none')); ?> --</option>
+                            </select>
+                            <small class="party-hint" id="costCentreLegacy" hidden></small>
                         </div>
                     </div>
 
@@ -333,6 +419,37 @@ $contract_id = $_GET['id'] ?? null;
                         <label for="dmsLink"><?php echo htmlspecialchars(t('contracts.edit.dms_link_contract')); ?></label>
                         <input type="url" id="dmsLink" placeholder="https://...">
                     </div>
+
+                    <?php
+                    // Attach files, or several links, rather than the single DMS
+                    // URL above. That field is left in place for now because
+                    // removing it is a migration decision, not a build one — see
+                    // the note in the commit. The panel appears only once the
+                    // contract exists, since an unsaved record has no id to
+                    // attach to.
+                    require_once __DIR__ . '/../includes/documents_panel.php';
+                    renderDocumentsPanel('contract', (int) $contract_id, '../');
+                    ?>
+
+                    <?php
+                    // Equipment lives on view.php with the other related sections
+                    // (tasks, calendar events), not here. Ed went looking for it on
+                    // this page, which is what anybody wanting to CHANGE something
+                    // about a contract will do — so rather than explain the
+                    // convention, point at it. A signpost, not a second copy of the
+                    // panel: two screens managing the same links is how two screens
+                    // end up disagreeing.
+                    //
+                    // Only on a saved contract. A new one has no id, so there is
+                    // nothing to link equipment to yet and nowhere to send them.
+                    // GH #217: not while Assets is off (or not granted) - view.php hides the section too.
+                    if ($contract_id && analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'assets')): ?>
+                        <div class="form-section"><?php echo htmlspecialchars(t('contracts.detail.linked_assets')); ?></div>
+                        <p class="form-hint">
+                            <?php echo t('contracts.edit.equipment_signpost'); ?>
+                            <a href="view.php?id=<?php echo (int) $contract_id; ?>#equipment"><?php echo htmlspecialchars(t('contracts.edit.equipment_signpost_link')); ?></a>
+                        </p>
+                    <?php endif; ?>
 
                     <div class="form-section"><?php echo htmlspecialchars(t('contracts.detail.section_terms')); ?></div>
                     <div class="form-row">
@@ -397,28 +514,6 @@ $contract_id = $_GET['id'] ?? null;
         const TICKETS_API = '../api/tickets/';
         let contractId = <?php echo json_encode($contract_id); ?>;
 
-        const currencies = [
-            { code: 'GBP', name: 'British Pound (GBP)' },
-            { code: 'USD', name: 'US Dollar (USD)' },
-            { code: 'EUR', name: 'Euro (EUR)' },
-            { code: 'AUD', name: 'Australian Dollar (AUD)' },
-            { code: 'CAD', name: 'Canadian Dollar (CAD)' },
-            { code: 'CHF', name: 'Swiss Franc (CHF)' },
-            { code: 'CNY', name: 'Chinese Yuan (CNY)' },
-            { code: 'DKK', name: 'Danish Krone (DKK)' },
-            { code: 'HKD', name: 'Hong Kong Dollar (HKD)' },
-            { code: 'INR', name: 'Indian Rupee (INR)' },
-            { code: 'JPY', name: 'Japanese Yen (JPY)' },
-            { code: 'KRW', name: 'South Korean Won (KRW)' },
-            { code: 'MXN', name: 'Mexican Peso (MXN)' },
-            { code: 'NOK', name: 'Norwegian Krone (NOK)' },
-            { code: 'NZD', name: 'New Zealand Dollar (NZD)' },
-            { code: 'PLN', name: 'Polish Zloty (PLN)' },
-            { code: 'SEK', name: 'Swedish Krona (SEK)' },
-            { code: 'SGD', name: 'Singapore Dollar (SGD)' },
-            { code: 'ZAR', name: 'South African Rand (ZAR)' }
-        ];
-
         let termTabs = [];
         let termEditorIds = [];
 
@@ -426,6 +521,7 @@ $contract_id = $_GET['id'] ?? null;
             loadStats();
             populateCurrencies();
             await Promise.all([
+                loadCustomerCompanies(),
                 loadSuppliers(),
                 loadAnalysts(),
                 loadContractStatuses(),
@@ -433,6 +529,9 @@ $contract_id = $_GET['id'] ?? null;
                 loadContractTermTabs()
             ]);
             if (contractId) await loadContract();
+            await loadCostCentres();
+            // A different company means a different list of cost centres.
+            document.getElementById('ownerTenantId').addEventListener('change', loadCostCentres);
 
             buildTermEditors();
             initTermEditors(() => {
@@ -454,10 +553,17 @@ $contract_id = $_GET['id'] ?? null;
             } catch (error) { console.error('Error loading stats:', error); }
         }
 
-        function populateCurrencies() {
-            const select = document.getElementById('currency');
-            select.innerHTML = '<option value="">-- ' + escapeHtml(window.t('contracts.edit.none')) + ' --</option>' +
-                currencies.map(c => `<option value="${c.code}">${c.name}</option>`).join('');
+        /**
+         * Every current currency, favourites first (System -> Currencies, GH #189).
+         * A new contract starts in the install's default; "None" stays for the
+         * contracts that never had one.
+         *
+         * @param {string} [selected]  the stored code; omitted on a new contract
+         */
+        function populateCurrencies(selected) {
+            Money.fill(document.getElementById('currency'),
+                selected !== undefined ? selected : (contractId ? '' : Money.def()),
+                { blank: '-- ' + window.t('contracts.edit.none') + ' --' });
         }
 
         async function loadSuppliers() {
@@ -473,6 +579,107 @@ $contract_id = $_GET['id'] ?? null;
                 }
             } catch (error) { console.error('Error loading suppliers:', error); }
         }
+
+        // ── Supplier or customer (#153) ─────────────────────────────────
+        let multiCompany = false;
+        // ── Cost centre (GH #160) ───────────────────────────────────────
+        // The contract's company's active cost centres, plus the one it holds if
+        // that has since been made inactive. A choice that is not in the new list
+        // (after changing company) falls back to none.
+        let contractCostCentreId = null;
+        async function loadCostCentres() {
+            const sel = document.getElementById('costCentreId');
+            const keep = sel.value || contractCostCentreId || '';
+            const company = multiCompany ? document.getElementById('ownerTenantId').value : '';
+            try {
+                const r = await fetch('../api/cost-centres/options.php?' + new URLSearchParams({ company_id: company || '', keep: contractCostCentreId || '' }), { credentials: 'same-origin' });
+                const d = await r.json();
+                if (!d.success) return;
+                sel.innerHTML = '<option value="">-- ' + escapeHtml(window.t('contracts.edit.none')) + ' --</option>'
+                    + d.cost_centres.map(c => `<option value="${c.id}">${escapeHtml(c.code + ' ' + c.name)}${c.is_active ? '' : ' (' + escapeHtml(window.t('contracts.edit.cost_centre_inactive')) + ')'}</option>`).join('');
+                sel.value = d.cost_centres.some(c => String(c.id) === String(keep)) ? String(keep) : '';
+            } catch (e) { /* the box keeps what it had */ }
+        }
+
+        async function loadCustomerCompanies() {
+            try {
+                const r = await fetch(API_BASE + 'customer_lookup.php');
+                const d = await r.json();
+                if (!d.success) return;
+                multiCompany = d.multi_company;
+                // The owning company: every company the analyst can reach, the active one preselected.
+                const own = document.getElementById('ownerTenantId');
+                document.getElementById('ownerCompanyGroup').hidden = !multiCompany;
+                own.innerHTML = d.companies.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+                if (d.active_company) own.value = String(d.active_company);
+                const sel = document.getElementById('customerTenantId');
+                sel.hidden = !multiCompany;
+                sel.innerHTML = '<option value="">-- ' + escapeHtml(window.t('contracts.party.select_company')) + ' --</option>' +
+                    d.companies.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+                document.getElementById('partyCustomerHint').textContent = window.t(multiCompany ? 'contracts.party.hint_multi' : 'contracts.party.hint_single');
+            } catch (e) { console.error('Error loading companies:', e); }
+        }
+        function partyType() { return document.querySelector('input[name="partyType"]:checked').value; }
+        function showParty() {
+            const customer = partyType() === 'customer';
+            document.getElementById('partySupplier').hidden = customer;
+            document.getElementById('partyCustomer').hidden = !customer;
+        }
+        function setPerson(id, label) {
+            document.getElementById('customerUserId').value = id || '';
+            document.getElementById('customerPersonSearch').value = label || '';
+            document.getElementById('customerPersonClear').hidden = !id;
+            hidePeople();
+        }
+        function clearPerson() { setPerson('', ''); document.getElementById('customerPersonSearch').focus(); }
+        function clearPersonIfOtherCompany() { if (document.getElementById('customerUserId').value) clearPerson(); }
+        function hidePeople() { const ul = document.getElementById('customerPersonResults'); ul.hidden = true; ul.replaceChildren(); }
+        let peopleTimer = null, peopleSeq = 0;
+        function searchPeople() {
+            document.getElementById('customerUserId').value = '';   // typing again means choosing again
+            document.getElementById('customerPersonClear').hidden = true;
+            clearTimeout(peopleTimer);
+            const q = document.getElementById('customerPersonSearch').value.trim();
+            if (q.length < 2) { hidePeople(); return; }
+            peopleTimer = setTimeout(async () => {
+                const seq = ++peopleSeq;
+                const tenant = document.getElementById('customerTenantId').value;
+                const r = await fetch(API_BASE + 'customer_lookup.php?q=' + encodeURIComponent(q) + (tenant ? '&tenant_id=' + encodeURIComponent(tenant) : ''));
+                const d = await r.json();
+                if (seq !== peopleSeq) return;
+                const ul = document.getElementById('customerPersonResults');
+                if (!d.success || !d.people.length) {
+                    const li = document.createElement('li'); li.textContent = window.t('contracts.party.no_people'); li.setAttribute('aria-disabled', 'true');
+                    ul.replaceChildren(li); ul.hidden = false; return;
+                }
+                ul.replaceChildren(...d.people.map((p, i) => {
+                    const li = document.createElement('li');
+                    li.setAttribute('role', 'option'); li.dataset.id = p.id;
+                    li.dataset.label = p.name;
+                    li.append(document.createTextNode(p.name));
+                    const meta = document.createElement('small');
+                    meta.textContent = [p.email, multiCompany ? p.company : ''].filter(Boolean).join(' · ');
+                    li.append(meta);
+                    li.addEventListener('mousedown', (e) => { e.preventDefault(); setPerson(p.id, p.name); });
+                    return li;
+                }));
+                ul.hidden = false;
+            }, 220);
+        }
+        function personKeys(e) {
+            const ul = document.getElementById('customerPersonResults');
+            const items = Array.from(ul.querySelectorAll('li[role=option]'));
+            if (ul.hidden || !items.length) return;
+            let i = items.findIndex(li => li.getAttribute('aria-selected') === 'true');
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                i = e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : Math.max(0, i - 1);
+                items.forEach((li, n) => li.setAttribute('aria-selected', n === i ? 'true' : 'false'));
+            } else if (e.key === 'Enter' && i >= 0) {
+                e.preventDefault(); setPerson(items[i].dataset.id, items[i].dataset.label);
+            } else if (e.key === 'Escape') { hidePeople(); }
+        }
+        document.addEventListener('click', (e) => { if (!e.target.closest('.person-picker')) hidePeople(); });
 
         async function loadAnalysts() {
             try {
@@ -522,10 +729,15 @@ $contract_id = $_GET['id'] ?? null;
                 const data = await response.json();
                 if (data.success) {
                     const c = data.contract;
+                    if (c.tenant_id) document.getElementById('ownerTenantId').value = String(c.tenant_id);
                     document.getElementById('contractNumber').value = c.contract_number;
                     document.getElementById('title').value = c.title;
                     document.getElementById('description').value = c.description || '';
                     document.getElementById('supplierId').value = c.supplier_id || '';
+                    document.querySelector('input[name="partyType"][value="' + (c.party_type === 'customer' ? 'customer' : 'supplier') + '"]').checked = true;
+                    document.getElementById('customerTenantId').value = c.customer_tenant_id || '';
+                    setPerson(c.customer_user_id || '', c.customer_person_name || '');
+                    showParty();
                     document.getElementById('ownerId').value = c.contract_owner_id || '';
                     document.getElementById('contractStatusId').value = c.contract_status_id || '';
                     document.getElementById('contractStart').value = c.contract_start || '';
@@ -533,9 +745,14 @@ $contract_id = $_GET['id'] ?? null;
                     document.getElementById('noticePeriod').value = c.notice_period_days || '';
                     document.getElementById('noticeDate').value = c.notice_date || '';
                     document.getElementById('contractValue').value = c.contract_value || '';
-                    document.getElementById('currency').value = c.currency || '';
+                    populateCurrencies(c.currency || '');
                     document.getElementById('paymentScheduleId').value = c.payment_schedule_id || '';
-                    document.getElementById('costCentre').value = c.cost_centre || '';
+                    contractCostCentreId = c.cost_centre_id || null;
+                    // Typed in before 3.5.0 and matching no cost centre code: shown, so it
+                    // is not lost, until somebody chooses a real one.
+                    const legacy = document.getElementById('costCentreLegacy');
+                    legacy.hidden = !(c.cost_centre && !c.cost_centre_id);
+                    legacy.textContent = legacy.hidden ? '' : window.t('contracts.edit.cost_centre_previous', { text: c.cost_centre });
                     document.getElementById('dmsLink').value = c.dms_link || '';
                     document.getElementById('termsStatus').value = c.terms_status || '';
                     document.getElementById('personalDataTransferred').checked = !!c.personal_data_transferred;
@@ -553,10 +770,14 @@ $contract_id = $_GET['id'] ?? null;
             saveBtn.textContent = window.t('common.saving');
 
             const payload = {
+                tenant_id: multiCompany ? (document.getElementById('ownerTenantId').value || null) : null,
                 contract_number: document.getElementById('contractNumber').value.trim(),
                 title: document.getElementById('title').value.trim(),
                 description: document.getElementById('description').value.trim(),
-                supplier_id: document.getElementById('supplierId').value || null,
+                party_type: partyType(),
+                supplier_id: partyType() === 'supplier' ? (document.getElementById('supplierId').value || null) : null,
+                customer_tenant_id: partyType() === 'customer' ? (document.getElementById('customerTenantId').value || null) : null,
+                customer_user_id: partyType() === 'customer' ? (document.getElementById('customerUserId').value || null) : null,
                 contract_owner_id: document.getElementById('ownerId').value || null,
                 contract_status_id: document.getElementById('contractStatusId').value || null,
                 contract_start: document.getElementById('contractStart').value || null,
@@ -566,7 +787,7 @@ $contract_id = $_GET['id'] ?? null;
                 contract_value: document.getElementById('contractValue').value || null,
                 currency: document.getElementById('currency').value || null,
                 payment_schedule_id: document.getElementById('paymentScheduleId').value || null,
-                cost_centre: document.getElementById('costCentre').value.trim(),
+                cost_centre_id: document.getElementById('costCentreId').value || null,
                 dms_link: document.getElementById('dmsLink').value.trim(),
                 terms_status: document.getElementById('termsStatus').value || null,
                 personal_data_transferred: document.getElementById('personalDataTransferred').checked ? 1 : 0,
@@ -620,7 +841,7 @@ $contract_id = $_GET['id'] ?? null;
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Contract Terms
@@ -672,15 +893,59 @@ $contract_id = $_GET['id'] ?? null;
             let initialized = 0;
             const total = termEditorIds.length;
 
+            const tinyDark = (document.documentElement.getAttribute('data-theme-mode')||'light')==='dark';
+            // The same gate mobile.js uses. Read once at init; an editor is not
+            // rebuilt on resize, and a desktop browser dragged narrow is not a
+            // case worth re-initialising a TinyMCE instance for.
+            const tinyIsPhone = window.matchMedia('(max-width: 768px)').matches;
             termEditorIds.forEach(id => {
                 tinymce.init({
+                    // Plugins and skins load without the page's ?v=, so a browser could pair a new
+                    // editor with old cached plugins after an update. TinyMCE's own version stamps them.
+                    cache_suffix: '?v=' + tinymce.majorVersion + '.' + tinymce.minorVersion,
                     selector: '#' + id,
                     license_key: 'gpl',
                     height: 300,
                     menubar: false,
-                    plugins: ['advlist', 'autolink', 'lists', 'link', 'table', 'wordcount'],
-                    toolbar: 'undo redo | blocks | bold italic underline | bullist numlist | link table | removeformat',
-                    content_style: 'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; }',
+                    skin: tinyDark ? 'oxide-dark' : 'oxide',
+                    content_css: tinyDark ? 'dark' : 'default',
+                    plugins: ['advlist', 'autolink', 'lists', 'link', 'table', 'wordcount', 'fullscreen'],
+                    // The DESKTOP toolbar is the existing one with `fullscreen`
+                    // appended, which is exactly where lms-editor.js — the only
+                    // other editor in the product that offers it — puts it. So a
+                    // desktop user gets one new button on the end and nothing
+                    // else moves.
+                    //
+                    // ⚠️ On a phone that position is useless, and it was measured
+                    // rather than assumed: at 360px TinyMCE's own overflow
+                    // collapsed the bar to `undo redo …` and buried the button
+                    // inside the "…" popup — the worst place for the one control
+                    // that rescues a 300px editor on a small screen. So the
+                    // phone gets it FIRST, where it survives any collapse.
+                    //
+                    // Gated on matchMedia for the same reason every other mobile
+                    // behaviour in this product is: above 768px this branch does
+                    // not run and the desktop editor is byte-identical.
+                    toolbar: tinyIsPhone
+                        ? 'fullscreen | undo redo | blocks | bold italic underline | bullist numlist | link table | removeformat'
+                        : 'undo redo | blocks | bold italic underline | bullist numlist | link table | removeformat | fullscreen',
+                    // Sliding keeps the buttons in order behind a chevron rather
+                    // than in a popup that covers the text. Phone only — on a
+                    // wide screen nothing collapses, so this would be invisible
+                    // either way, and "invisible either way" is not a reason to
+                    // change a desktop setting.
+                    toolbar_mode: tinyIsPhone ? 'sliding' : 'floating',
+                    // 🔴 The 16px is NOT cosmetic. iOS Safari zooms on focus for
+                    // any field under 16px, and in a full-screen editor that
+                    // spills the layout wide, makes Safari reflow to desktop
+                    // width and stops `max-width: 768px` matching at all — the
+                    // whole mobile layer switches off (iOS lesson #1).
+                    // CSS cannot reach inside a TinyMCE iframe, so it has to be
+                    // set here. Keyed on `pointer: coarse` rather than a width
+                    // query, exactly as inbox.js does it: a width query is
+                    // unreliable inside an iframe, and this way the desktop
+                    // editor stays at 14px and is byte-identical.
+                    content_style: 'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; font-size: 14px; color: ' + (tinyDark ? '#e6e8eb' : '#333') + '; } @media (pointer: coarse) { body { font-size: 16px; } }',
                     setup: function(editor) {
                         editor.on('init', function() {
                             initialized++;
@@ -706,5 +971,6 @@ $contract_id = $_GET['id'] ?? null;
         }
 
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

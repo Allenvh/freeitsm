@@ -18,7 +18,11 @@ require_once '../../includes/oidc.php';
 $portal = ($_GET['portal'] ?? '') === 'self-service' ? 'self-service' : 'analyst';
 $_SESSION['oidc_portal'] = $portal;
 
-/** Bounce back to the right portal's login page with an error message. */
+/**
+ * Bounce back to the right portal's login page with an error message.
+ *
+ * @param string $msg  the error shown on the login page, in plain text
+ */
 function ssoBail(string $msg): void {
     $loginPath = (($_SESSION['oidc_portal'] ?? 'analyst') === 'self-service')
         ? 'self-service/login.php' : 'login.php';
@@ -49,6 +53,13 @@ try {
     if ((int)$provider['enabled'] !== 1) {
         ssoBail('That identity provider is disabled.');
     }
+    // This flow is OIDC-only. An LDAP provider has no issuer to discover, so
+    // reaching here with one would fail deep inside discovery with a confusing
+    // "no host part in the URL". The login pages never offer an LDAP button, so
+    // this is a backstop against a hand-typed or stale ?provider= id.
+    if (($provider['protocol'] ?? 'oidc') !== 'oidc') {
+        ssoBail('That sign-in method does not use single sign-on. Enter your username and password instead.');
+    }
 
     $disco = oidcDiscover($provider['issuer_url']);
 
@@ -69,5 +80,6 @@ try {
     exit;
 
 } catch (Exception $e) {
-    ssoBail('Could not start sign-in: ' . $e->getMessage());
+    require_once __DIR__ . '/../../includes/db_errors.php';
+    ssoBail('Could not start sign-in: ' . dbSafeClientMessage($e, 'a server error. The details are in the server log.'));
 }

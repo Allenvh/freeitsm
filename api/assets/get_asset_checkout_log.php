@@ -16,6 +16,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('assets');
 
 $assetId = $_GET['asset_id'] ?? null;
 if (!$assetId) {
@@ -24,7 +25,13 @@ if (!$assetId) {
 }
 
 try {
+    require_once '../../includes/tenancy.php';
     $conn = connectToDatabase();
+    // Multi-tenancy: only serve child data for an asset in this analyst's companies.
+    if (!analystCanAccessAsset($conn, (int)$_SESSION['analyst_id'], (int)$assetId)) {
+        echo json_encode(['success' => false, 'error' => 'Asset not found']);
+        exit;
+    }
 
     // Table may not exist until DB verification has run.
     $check = $conn->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'asset_checkout_log'");

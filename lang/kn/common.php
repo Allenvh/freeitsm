@@ -22,7 +22,8 @@ return [
     'copied'       => 'ನಕಲಿಸಲಾಗಿದೆ',
     'retry'        => 'ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ',
     'export'       => 'ರಫ್ತು',
-    'open'         => 'ತೆರೆಯಿರಿ',
+    'back'         => 'ಹಿಂದೆ',
+    'open'         =>  'ತೆರೆಯಿರಿ',
     'apply'        => 'ಅನ್ವಯಿಸಿ',
 
     'yes'          => 'ಹೌದು',
@@ -43,6 +44,7 @@ return [
     'optional'     => 'ಐಚ್ಛಿಕ',
     'select_one'   => 'ಆಯ್ಕೆ ಮಾಡಿ…',
     'search'       => 'ಹುಡುಕಿ',
+    'filter'       => 'ಫಿಲ್ಟರ್',
 
     'error_generic'       => 'ಏನೋ ತಪ್ಪಾಯಿತು.',
     'error_network'       => 'ನೆಟ್‌ವರ್ಕ್ ದೋಷ',
@@ -140,6 +142,33 @@ return [
             'friday'    => 'ಶುಕ್ರವಾರ',
             'saturday'  => 'ಶನಿವಾರ',
             'sunday'    => 'ಭಾನುವಾರ',
+        ],
+
+        // Abbreviated forms, used by the date formatter for the
+        // "25 Aug 2026" family of formats (GH #105).
+        'months_short' => [
+            'january'   => 'ಜನವರಿ',
+            'february'  => 'ಫೆಬ್ರವರಿ',
+            'march'     => 'ಮಾರ್ಚ್',
+            'april'     => 'ಏಪ್ರಿಲ್',
+            'may'       => 'ಮೇ',
+            'june'      => 'ಜೂನ್',
+            'july'      => 'ಜುಲೈ',
+            'august'    => 'ಆಗಸ್ಟ್',
+            'september' => 'ಸೆಪ್ಟೆಂಬರ್',
+            'october'   => 'ಅಕ್ಟೋಬರ್',
+            'november'  => 'ನವೆಂಬರ್',
+            'december'  => 'ಡಿಸೆಂಬರ್',
+        ],
+
+        'weekdays_short' => [
+            'monday'    => 'ಸೋಮ',
+            'tuesday'   => 'ಮಂಗಳ',
+            'wednesday' => 'ಬುಧ',
+            'thursday'  => 'ಗುರು',
+            'friday'    => 'ಶುಕ್ರ',
+            'saturday'  => 'ಶನಿ',
+            'sunday'    => 'ಭಾನು',
         ],
     ],
 ];

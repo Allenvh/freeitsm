@@ -3,8 +3,11 @@
 /* Board / calendar / timeline are fixed-height app shells — the body
    never scrolls, only the inner panels do. Flex layout means the header
    can be any height without the content overflowing the viewport.
-   (The settings page re-enables body scrolling in its own <style>.) */
+   (The settings page re-enables body scrolling in its own <style>.)
+   --accent is pinned to the module's violet so shared components (tabs,
+   toggles, focus rings, add-buttons) pick up the Tasks brand. */
 body {
+    --accent: var(--tsk-accent, #7c3aed);
     height: 100vh;
     overflow: hidden;
     display: flex;
@@ -25,8 +28,8 @@ body {
 .tasks-sidebar {
     width: 220px;
     min-width: 220px;
-    background: #fff;
-    border-right: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border-right: 1px solid var(--border, #e0e0e0);
     padding: 16px 12px;
     overflow-y: auto;
     display: flex;
@@ -41,7 +44,7 @@ body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    color: #999;
+    color: var(--text-dim, #999);
     padding: 0 8px;
     margin-bottom: 4px;
 }
@@ -55,18 +58,18 @@ body {
     justify-content: center;
     gap: 6px;
     padding: 7px 10px;
-    border: 1px solid #ddd;
-    background: #fff;
+    border: 1px solid var(--border, #ddd);
+    background: var(--surface, #fff);
     border-radius: 6px;
     font-size: 12px;
     font-weight: 500;
-    color: #666;
+    color: var(--text-muted, #666);
     cursor: pointer;
     transition: all 0.15s;
 }
 
-.view-btn:hover { background: #f5f5f5; }
-.view-btn.active { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+.view-btn:hover { background: var(--surface-hover, #f5f5f5); }
+.view-btn.active { background: var(--tsk-accent, #7c3aed); color: #fff; border-color: var(--tsk-accent, #7c3aed); }
 .view-btn.active svg { stroke: #fff; }
 
 .filter-btn {
@@ -78,29 +81,29 @@ body {
     background: none;
     border-radius: 6px;
     font-size: 13px;
-    color: #555;
+    color: var(--text-muted, #555);
     cursor: pointer;
     width: 100%;
     text-align: left;
     transition: background 0.15s;
 }
 
-.filter-btn:hover { background: #f5f5f5; }
-.filter-btn.active { background: #f3f0ff; color: #7c3aed; font-weight: 600; }
-.filter-btn.active svg { stroke: #7c3aed; }
+.filter-btn:hover { background: var(--surface-hover, #f5f5f5); }
+.filter-btn.active { background: var(--tsk-accent-soft, #f3f0ff); color: var(--tsk-accent, #7c3aed); font-weight: 600; }
+.filter-btn.active svg { stroke: var(--tsk-accent, #7c3aed); }
 
 .sidebar-select {
     width: 100%;
     padding: 7px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
-    color: #333;
-    background: #fff;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     cursor: pointer;
 }
 
-.sidebar-select:focus { outline: none; border-color: #7c3aed; }
+.sidebar-select:focus { outline: none; border-color: var(--tsk-accent, #7c3aed); }
 
 /* Search box */
 .search-box { position: relative; display: flex; align-items: center; }
@@ -108,22 +111,22 @@ body {
 .search-box > svg {
     position: absolute;
     left: 9px;
-    color: #999;
+    color: var(--text-dim, #999);
     pointer-events: none;
 }
 
 .search-input {
     width: 100%;
     padding: 7px 26px 7px 28px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
-    color: #333;
-    background: #fff;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     outline: none;
 }
 
-.search-input:focus { border-color: #7c3aed; }
+.search-input:focus { border-color: var(--tsk-accent, #7c3aed); }
 
 .search-clear {
     position: absolute;
@@ -132,7 +135,7 @@ body {
     height: 18px;
     border: none;
     background: none;
-    color: #999;
+    color: var(--text-dim, #999);
     font-size: 16px;
     line-height: 1;
     cursor: pointer;
@@ -142,13 +145,13 @@ body {
     justify-content: center;
 }
 
-.search-clear:hover { background: #eee; color: #555; }
+.search-clear:hover { background: var(--surface-hover, #eee); color: var(--text-muted, #555); }
 
 /* Main content area */
 .tasks-main {
     flex: 1;
     overflow: hidden;
-    background: #f5f7fa;
+    background: var(--app-bg, #f5f7fa);
 }
 
 /* Board view */
@@ -163,14 +166,14 @@ body {
 .board-column {
     flex: 1;
     min-width: 280px;
-    background: #eef0f4;
+    background: var(--surface-2, #eef0f4);
     border-radius: 10px;
     display: flex;
     flex-direction: column;
     max-height: 100%;
 }
 
-.board-column.drag-over { background: #e8e5f0; }
+.board-column.drag-over { background: var(--tsk-accent-soft, #e8e5f0); }
 
 .board-column-header {
     display: flex;
@@ -179,7 +182,7 @@ body {
     padding: 12px 14px;
     font-size: 13px;
     font-weight: 700;
-    color: #555;
+    color: var(--text-muted, #555);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     cursor: grab;
@@ -208,8 +211,8 @@ body {
 }
 
 .column-count {
-    background: #d0d4dc;
-    color: #555;
+    background: var(--surface-3, #d0d4dc);
+    color: var(--text-muted, #555);
     font-size: 11px;
     font-weight: 600;
     padding: 1px 7px;
@@ -223,7 +226,7 @@ body {
     border: none;
     background: none;
     font-size: 18px;
-    color: #999;
+    color: var(--text-dim, #999);
     cursor: pointer;
     border-radius: 4px;
     display: flex;
@@ -232,7 +235,7 @@ body {
     transition: all 0.15s;
 }
 
-.column-add-btn:hover { background: #d0d4dc; color: #555; }
+.column-add-btn:hover { background: var(--surface-3, #d0d4dc); color: var(--text-muted, #555); }
 
 /* Quick add */
 .quick-add-container { padding: 0 10px 8px; }
@@ -240,10 +243,11 @@ body {
 .quick-add-input {
     width: 100%;
     padding: 8px 12px;
-    border: 2px solid #7c3aed;
+    border: 2px solid var(--tsk-accent, #7c3aed);
     border-radius: 8px;
     font-size: 13px;
-    background: #fff;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
     outline: none;
 }
 
@@ -258,7 +262,7 @@ body {
 }
 
 .task-card {
-    background: #fff;
+    background: var(--surface, #fff);
     border-radius: 8px;
     padding: 12px 14px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -274,7 +278,7 @@ body {
 .task-card-title {
     font-size: 13px;
     font-weight: 500;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 8px;
     line-height: 1.4;
     word-break: break-word;
@@ -288,17 +292,36 @@ body {
 }
 
 /* Priority badges */
+/* The colour is applied inline from task_priorities.colour by TasksPriority.
+ * 🔴 There are deliberately NO per-name rules here. There used to be four
+ * (.urgent/.high/.medium/.low) and a renamed or translated priority matched
+ * none of them, leaving a transparent 8px circle and no dot at all — see
+ * assets/js/tasks-priority.js. The grey below is a floor, not a default: if a
+ * renderer ever forgets the inline colour the dot is visibly wrong rather than
+ * invisible, which is the failure that took discussion #108 to notice. */
 .priority-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    background: #9ca3af;
 }
 
-.priority-dot.urgent { background: #dc3545; }
-.priority-dot.high { background: #f57c00; }
-.priority-dot.medium { background: #0078d4; }
-.priority-dot.low { background: #999; }
+/* Left-edge accent, the 'border' placement. The colour arrives as an inline
+ * custom property so the width and radius stay here in one place. */
+[data-priority-accent] {
+    border-left: 3px solid var(--priority-accent, #9ca3af);
+}
+.task-card[data-priority-accent] {
+    /* The card already has a radius; square off only the accented edge so the
+     * stripe reads as a full-height bar rather than a clipped sliver. */
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+}
+.subtask-item[data-priority-accent],
+.tl-row-label[data-priority-accent] {
+    padding-left: 8px;
+}
 
 /* Assignee initials */
 .assignee-badge {
@@ -308,21 +331,136 @@ body {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: #e0e0e0;
+    background: var(--surface-3, #e0e0e0);
     font-size: 10px;
     font-weight: 700;
-    color: #555;
+    color: var(--text-muted, #555);
     flex-shrink: 0;
+}
+
+/* ── Involved: the other people on a task (GH #89) ───────────────────────────
+   The screen says "Involved"; the code says "collaborator". See the note in
+   assets/js/tasks.js — the cognate of that word is a wartime slur in nine of the
+   languages FreeITSM ships in, and a current criminal charge in Ukrainian.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* On a card: the same disc as the owner's, outlined rather than filled, so the
+   person accountable still reads first at a glance. */
+.assignee-badge.involved-badge {
+    background: transparent;
+    border: 1px dashed var(--border, #c9c9c9);
+    color: var(--text-dim, #888);
+    margin-left: -4px;                 /* a slight overlap, so a row of them reads as a group */
+}
+.assignee-badge.involved-badge.is-done {
+    border-style: solid;
+    border-color: var(--success, #16a34a);
+    color: var(--success, #16a34a);
+}
+
+/* The mark on a task in "My Tasks" that you are helping with rather than own. */
+.involved-flag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    border: 1px solid var(--border, #c9c9c9);
+    background: transparent;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim, #888);
+    white-space: nowrap;
+}
+
+/* In the detail panel. */
+.involved-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.involved-empty {
+    font-size: 12px;
+    color: var(--text-dim, #888);
+}
+.involved-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 4px 4px 9px;
+    border-radius: 14px;
+    background: var(--surface-2, #f1f1f4);
+    font-size: 12px;
+    color: var(--text, #333);
+}
+.involved-chip.is-done .involved-chip-name {
+    text-decoration: line-through;
+    color: var(--text-dim, #888);
+}
+.involved-tick { margin: 0; }
+.involved-chip-x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-dim, #888);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+.involved-chip-x:hover {
+    background: var(--surface-3, #e0e0e0);
+    color: var(--text, #333);
+}
+.involved-add { margin-top: 2px; }
+
+/* A phone: a chip is a tap target, so it gets a tap target's height. */
+@media (max-width: 768px) {
+    .involved-chip   { padding: 7px 6px 7px 12px; font-size: 13px; }
+    .involved-chip-x { width: 26px; height: 26px; font-size: 18px; }
+    .involved-tick   { width: 18px; height: 18px; }
 }
 
 /* Due date */
 .due-badge {
     font-size: 11px;
-    color: #888;
+    color: var(--text-dim, #888);
 }
 
 .due-badge.overdue { color: #dc3545; font-weight: 600; }
 .due-badge.today { color: #f57c00; font-weight: 600; }
+
+/* A card's subtask line: chevron, progress and "1/4 subtasks", left-aligned above
+   the list, and the button that shows or hides it (GH #184). */
+.card-subtask-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0 0 -4px;
+    padding: 3px 6px 3px 4px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: var(--text-dim, #888);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.card-subtask-head:hover { background: var(--surface-2, #f1f1f4); color: var(--text, #333); }
+.card-subtask-head:focus-visible { outline: 2px solid var(--tsk-accent, #7c3aed); outline-offset: 1px; }
+.card-subtask-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+.card-subtask-head.is-open .card-subtask-chevron { transform: rotate(90deg); }
+/* A track you can see in both themes, so an empty bar still reads as a bar. */
+.card-subtask-head .subtask-bar { background: var(--border, #d6d6dc); }
+.card-subtask-head + .task-card-subtasks { margin-top: 2px; }
+
+/* A tick box in the sidebar, e.g. Hide done (GH #184). */
+.sidebar-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text, #333); cursor: pointer; padding: 4px 2px; }
+.sidebar-check input { accent-color: var(--tsk-accent, #7c3aed); width: 15px; height: 15px; cursor: pointer; margin: 0; }
 
 /* Subtask progress */
 .subtask-progress {
@@ -330,18 +468,21 @@ body {
     align-items: center;
     gap: 4px;
     font-size: 11px;
-    color: #888;
+    color: var(--text-dim, #888);
 }
 
 .subtask-bar {
     width: 40px;
     height: 4px;
-    background: #e0e0e0;
+    background: var(--surface-3, #e0e0e0);
     border-radius: 2px;
     overflow: hidden;
 }
 
 .subtask-bar-fill {
+    /* A <span>, so without this it is inline and its width and height are
+       ignored - the green never showed, however many subtasks were done. */
+    display: block;
     height: 100%;
     background: #2e7d32;
     border-radius: 2px;
@@ -351,7 +492,7 @@ body {
 /* Link badge */
 .link-badge {
     font-size: 11px;
-    color: #7c3aed;
+    color: var(--tsk-accent, #7c3aed);
     display: flex;
     align-items: center;
     gap: 3px;
@@ -360,7 +501,7 @@ body {
 /* Optional card fields (toggled in Settings → Card) */
 .task-card-desc {
     font-size: 12px;
-    color: #888;
+    color: var(--text-dim, #888);
     line-height: 1.45;
     margin: 0 0 8px;
     display: -webkit-box;
@@ -371,8 +512,8 @@ body {
 
 .team-badge {
     font-size: 11px;
-    color: #666;
-    background: #eef0f4;
+    color: var(--text-muted, #666);
+    background: var(--surface-2, #eef0f4);
     padding: 1px 8px;
     border-radius: 10px;
     max-width: 120px;
@@ -381,7 +522,7 @@ body {
     white-space: nowrap;
 }
 
-.start-date-badge { color: #888; }
+.start-date-badge { color: var(--text-dim, #888); }
 .start-date-badge::before { content: "▸ "; }
 
 /* ── Tags ── */
@@ -426,21 +567,23 @@ body {
     margin-bottom: 8px;
 }
 
-.tag-edit-empty { font-size: 12px; color: #aaa; }
+.tag-edit-empty { font-size: 12px; color: var(--text-faint, #aaa); }
 
 .tag-picker { position: relative; }
 
 .tag-picker-input {
     width: 100%;
     padding: 7px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     outline: none;
     box-sizing: border-box;
 }
 
-.tag-picker-input:focus { border-color: #7c3aed; }
+.tag-picker-input:focus { border-color: var(--tsk-accent, #7c3aed); }
 
 .tag-picker-results {
     display: none;
@@ -449,8 +592,8 @@ body {
     left: 0;
     right: 0;
     margin-top: 2px;
-    background: #fff;
-    border: 1px solid #ddd;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     max-height: 220px;
@@ -466,13 +609,13 @@ body {
     gap: 7px;
     padding: 8px 12px;
     font-size: 13px;
-    color: #333;
+    color: var(--text, #333);
     cursor: pointer;
 }
 
-.tag-pick-opt:hover { background: #f3f0ff; }
-.tag-pick-create { color: #7c3aed; font-weight: 500; }
-.tag-pick-empty { padding: 8px 12px; font-size: 13px; color: #999; }
+.tag-pick-opt:hover { background: var(--tsk-accent-soft, #f3f0ff); }
+.tag-pick-create { color: var(--tsk-accent, #7c3aed); font-weight: 500; }
+.tag-pick-empty { padding: 8px 12px; font-size: 13px; color: var(--text-dim, #999); }
 
 .tag-swatch {
     width: 11px;
@@ -496,7 +639,7 @@ body {
 .drop-indicator {
     height: 3px;
     flex-shrink: 0;
-    background: #7c3aed;
+    background: var(--tsk-accent, #7c3aed);
     border-radius: 2px;
     margin: 2px 0;
     transition: opacity 0.1s;
@@ -519,8 +662,8 @@ body {
     position: fixed;
     z-index: 3000;
     min-width: 180px;
-    background: #fff;
-    border: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e0e0e0);
     border-radius: 8px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
     padding: 5px;
@@ -535,15 +678,15 @@ body {
     gap: 8px;
     padding: 8px 10px;
     border-radius: 5px;
-    color: #333;
+    color: var(--text, #333);
     cursor: pointer;
     white-space: nowrap;
 }
 
-.ctx-item:hover { background: #f3f0ff; }
+.ctx-item:hover { background: var(--tsk-accent-soft, #f3f0ff); }
 .ctx-item-label { flex: 1; }
-.ctx-arrow { color: #aaa; font-size: 14px; line-height: 1; }
-.ctx-sep { height: 1px; background: #eee; margin: 4px 6px; }
+.ctx-arrow { color: var(--text-faint, #aaa); font-size: 14px; line-height: 1; }
+.ctx-sep { height: 1px; background: var(--border-soft, #eee); margin: 4px 6px; }
 
 .ctx-submenu {
     display: none;
@@ -553,8 +696,8 @@ body {
     min-width: 175px;
     max-height: 304px;
     overflow-y: auto;
-    background: #fff;
-    border: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e0e0e0);
     border-radius: 8px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
     padding: 5px;
@@ -570,15 +713,15 @@ body {
     gap: 8px;
     padding: 7px 9px;
     border-radius: 5px;
-    color: #333;
+    color: var(--text, #333);
     cursor: pointer;
     white-space: nowrap;
 }
 
-.ctx-sub-item:hover { background: #f3f0ff; }
+.ctx-sub-item:hover { background: var(--tsk-accent-soft, #f3f0ff); }
 .ctx-sub-item.current { font-weight: 600; }
 .ctx-sub-label { flex: 1; }
-.ctx-check { color: #7c3aed; font-weight: 700; }
+.ctx-check { color: var(--tsk-accent, #7c3aed); font-weight: 700; }
 
 .ctx-swatch {
     width: 10px;
@@ -587,7 +730,7 @@ body {
     flex-shrink: 0;
 }
 
-.ctx-sub-empty { padding: 7px 9px; color: #999; }
+.ctx-sub-empty { padding: 7px 9px; color: var(--text-dim, #999); }
 
 /* ── List view ── */
 .list-view {
@@ -599,42 +742,42 @@ body {
 .task-table {
     width: 100%;
     border-collapse: collapse;
-    background: #fff;
+    background: var(--surface, #fff);
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .task-table thead th {
-    background: #f8f9fa;
+    background: var(--surface-2, #f8f9fa);
     padding: 10px 16px;
     text-align: left;
     font-size: 12px;
     font-weight: 600;
-    color: #555;
+    color: var(--text-muted, #555);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    border-bottom: 2px solid #e0e0e0;
+    border-bottom: 2px solid var(--border, #e0e0e0);
     white-space: nowrap;
 }
 
 .task-table thead th.sortable { cursor: pointer; }
-.task-table thead th.sortable:hover { color: #7c3aed; }
-.task-table thead th.sorted { color: #7c3aed; }
+.task-table thead th.sortable:hover { color: var(--tsk-accent, #7c3aed); }
+.task-table thead th.sorted { color: var(--tsk-accent, #7c3aed); }
 
 .task-table tbody td {
     padding: 10px 16px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--border-soft, #eee);
     font-size: 13px;
-    color: #333;
+    color: var(--text, #333);
     vertical-align: middle;
 }
 
 .task-table tbody tr { cursor: pointer; transition: background 0.1s; }
-.task-table tbody tr:hover { background: #fafafa; }
+.task-table tbody tr:hover { background: var(--surface-hover, #fafafa); }
 .task-table tbody tr:last-child td { border-bottom: none; }
 
-/* Status pills in list */
+/* Status pills in list — data-coloured, dark overrides in the dark block below */
 .status-pill {
     display: inline-block;
     padding: 3px 10px;
@@ -656,6 +799,14 @@ body {
     font-size: 12px;
 }
 
+/* The pill placement carries the priority's name beside its dot. Muted rather
+ * than coloured text: the dot is the colour signal, and a second coloured
+ * element competes with it at card density. */
+.priority-pill-label {
+    color: var(--text-muted, #666);
+    white-space: nowrap;
+}
+
 /* ── Detail panel ── */
 .detail-overlay {
     display: none;
@@ -673,7 +824,7 @@ body {
     right: 0;
     width: 480px;
     height: 100vh;
-    background: #fff;
+    background: var(--surface, #fff);
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
     z-index: 1000;
     display: flex;
@@ -683,20 +834,34 @@ body {
 }
 
 .detail-panel.open { transform: translateX(0); }
+/* Raised off the page: a deeper shadow down the left edge. In dark mode a black
+   shadow on a dark page barely shows, so the edge also catches a faint light line. */
+.detail-panel.open { box-shadow: -14px 0 32px rgba(0, 0, 0, 0.22), -2px 0 6px rgba(0, 0, 0, 0.12); }
+[data-theme-mode="dark"] .detail-panel.open {
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.65), -2px 0 8px rgba(0, 0, 0, 0.5), inset 1px 0 0 rgba(255, 255, 255, 0.09);
+}
+.tq-open-full-btn { margin-top: 10px; }
+/* The quick panel in full mode (GH #219): the real task editor in a frame, given
+   the width the board's own panel has room for. */
+/* Wide enough for the editor's tabs (Details, Work, Subtasks, Time, Comments,
+   Links, Documents, History) to sit side by side rather than bunch up. */
+.detail-panel.tq-full { width: min(1100px, calc(100vw - 60px)); }
+.detail-panel.tq-full .detail-panel-body { padding: 0; overflow: hidden; }
+.tq-frame { display: block; width: 100%; height: 100%; border: 0; background: var(--surface, #fff); }
 
 .detail-panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border, #e0e0e0);
     flex-shrink: 0;
 }
 
 .detail-panel-header h3 {
     font-size: 15px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin: 0;
 }
 
@@ -708,12 +873,12 @@ body {
     padding: 6px;
     border-radius: 4px;
     cursor: pointer;
-    color: #888;
+    color: var(--text-dim, #888);
     display: flex;
     transition: all 0.15s;
 }
 
-.btn-icon:hover { background: #f0f0f0; color: #333; }
+.btn-icon:hover { background: var(--surface-hover, #f0f0f0); color: var(--text, #333); }
 
 .detail-panel-body {
     flex: 1;
@@ -730,7 +895,7 @@ body {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #999;
+    color: var(--text-dim, #999);
     margin-bottom: 5px;
 }
 
@@ -739,7 +904,8 @@ body {
     border: none;
     font-size: 18px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
+    background: transparent;
     padding: 4px 0;
     border-bottom: 2px solid transparent;
     outline: none;
@@ -747,20 +913,20 @@ body {
     font-family: inherit;
 }
 
-.detail-title-input:focus { border-bottom-color: #7c3aed; }
+.detail-title-input:focus { border-bottom-color: var(--tsk-accent, #7c3aed); }
 
 .detail-select, .detail-input {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
-    color: #333;
-    background: #fff;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     font-family: inherit;
 }
 
-.detail-select:focus, .detail-input:focus { outline: none; border-color: #7c3aed; }
+.detail-select:focus, .detail-input:focus { outline: none; border-color: var(--tsk-accent, #7c3aed); }
 
 .detail-row {
     display: flex;
@@ -777,7 +943,7 @@ body {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #999;
+    color: var(--text-dim, #999);
     margin-bottom: 10px;
 }
 
@@ -787,7 +953,7 @@ body {
 .parent-breadcrumb {
     margin-bottom: 16px;
     padding: 8px 12px;
-    background: #f8f9fa;
+    background: var(--surface-2, #f8f9fa);
     border-radius: 6px;
 }
 
@@ -795,7 +961,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: #7c3aed;
+    color: var(--tsk-accent, #7c3aed);
     text-decoration: none;
     font-size: 13px;
     font-weight: 500;
@@ -814,19 +980,19 @@ body {
     border: 1px solid transparent;
 }
 
-.subtask-item:hover { background: #f5f5f5; border-color: #e0e0e0; }
+.subtask-item:hover { background: var(--surface-hover, #f5f5f5); border-color: var(--border, #e0e0e0); }
 
 .subtask-item input[type="checkbox"] {
     width: 16px;
     height: 16px;
-    accent-color: #7c3aed;
+    accent-color: var(--tsk-accent, #7c3aed);
     cursor: pointer;
     flex-shrink: 0;
 }
 
 .subtask-item .subtask-title {
     font-size: 13px;
-    color: #333;
+    color: var(--text, #333);
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -836,7 +1002,7 @@ body {
 
 .subtask-item .subtask-title.completed {
     text-decoration: line-through;
-    color: #999;
+    color: var(--text-dim, #999);
 }
 
 .subtask-meta {
@@ -848,7 +1014,7 @@ body {
 
 .subtask-assignee {
     font-size: 11px;
-    color: #888;
+    color: var(--text-dim, #888);
     max-width: 80px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -864,13 +1030,56 @@ body {
 .subtask-add input {
     flex: 1;
     padding: 6px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     outline: none;
 }
 
-.subtask-add input:focus { border-color: #7c3aed; }
+.subtask-add input:focus { border-color: var(--tsk-accent, #7c3aed); }
+
+/* The Add button. Enter still works; this exists because picking a due date
+   moves focus out of the text box, and without it the only way to commit was
+   to click back into the box first. */
+.subtask-add-btn {
+    flex: none;
+    padding: 6px 14px;
+    border: 1px solid var(--tsk-accent, #7c3aed);
+    border-radius: 6px;
+    background: var(--tsk-accent, #7c3aed);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.subtask-add-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.subtask-add-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* The working state. The save is normally ~100ms so this is rarely seen, but a
+   slow connection is not a reason to leave somebody wondering whether their
+   click registered. Colour is never the only signal - the button is disabled
+   and dimmed too. */
+.subtask-add-btn.working { position: relative; color: transparent; }
+.subtask-add-btn.working::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 13px;
+    height: 13px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: subtaskSpin 0.6s linear infinite;
+}
+@keyframes subtaskSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .subtask-add-btn.working::after { animation-duration: 2.4s; }
+}
 
 /* Links section */
 .link-section { margin-top: 20px; }
@@ -880,7 +1089,7 @@ body {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #999;
+    color: var(--text-dim, #999);
     margin-bottom: 10px;
 }
 
@@ -889,10 +1098,10 @@ body {
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    background: #f8f9fa;
+    background: var(--surface-2, #f8f9fa);
     border-radius: 6px;
     font-size: 13px;
-    color: #555;
+    color: var(--text-muted, #555);
     margin-bottom: 6px;
 }
 
@@ -900,8 +1109,8 @@ body {
     font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
-    color: #7c3aed;
-    background: #f3f0ff;
+    color: var(--tsk-accent, #7c3aed);
+    background: var(--tsk-accent-soft, #f3f0ff);
     padding: 2px 6px;
     border-radius: 4px;
 }
@@ -910,34 +1119,45 @@ body {
     margin-left: auto;
     background: none;
     border: none;
-    color: #ccc;
+    color: var(--text-faint, #ccc);
     cursor: pointer;
     font-size: 16px;
     padding: 0 4px;
 }
 
-.link-item .link-remove:hover { color: #dc3545; }
+.link-item .link-remove:hover { color: var(--danger-accent, #dc3545); }
+
+/* A reference to another record, when there is somewhere to go (GH #91). Uses
+   the same accent the row's type badge does, with the same fallback, so it
+   reads as part of the row rather than as a pasted-in hyperlink. */
+.link-item .linked-record {
+    color: var(--tsk-accent, #7c3aed);
+    text-decoration: none;
+}
+.link-item .linked-record:hover { text-decoration: underline; }
 
 .link-search-container { position: relative; margin-top: 8px; }
 
 .link-search-input {
     width: 100%;
     padding: 7px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     outline: none;
 }
 
-.link-search-input:focus { border-color: #7c3aed; }
+.link-search-input:focus { border-color: var(--tsk-accent, #7c3aed); }
 
 .link-search-results {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
-    background: #fff;
-    border: 1px solid #ddd;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     max-height: 200px;
     overflow-y: auto;
@@ -951,35 +1171,35 @@ body {
 .link-search-result {
     padding: 8px 12px;
     font-size: 13px;
-    color: #333;
+    color: var(--text, #333);
     cursor: pointer;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--border-soft, #f0f0f0);
 }
 
 .link-search-result:last-child { border-bottom: none; }
-.link-search-result:hover { background: #f5f5f5; }
+.link-search-result:hover { background: var(--surface-hover, #f5f5f5); }
 
 .link-search-result .result-id {
     font-weight: 600;
-    color: #7c3aed;
+    color: var(--tsk-accent, #7c3aed);
     margin-right: 6px;
 }
 
 /* Comments section */
-.comments-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 16px; }
+.comments-section { margin-top: 20px; border-top: 1px solid var(--border-soft, #eee); padding-top: 16px; }
 
 .comments-section h4 {
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #999;
+    color: var(--text-dim, #999);
     margin-bottom: 12px;
 }
 
 .comment-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
 
-.comment-item { padding: 10px 12px; background: #f8f9fa; border-radius: 8px; }
+.comment-item { padding: 10px 12px; background: var(--surface-2, #f8f9fa); border-radius: 8px; }
 
 .comment-header {
     display: flex;
@@ -987,33 +1207,42 @@ body {
     margin-bottom: 6px;
 }
 
-.comment-author { font-size: 12px; font-weight: 600; color: #555; }
-.comment-time { font-size: 11px; color: #999; }
-.comment-body { font-size: 13px; color: #333; line-height: 1.5; white-space: pre-wrap; }
+.comment-author { font-size: 12px; font-weight: 600; color: var(--text-muted, #555); }
+.comment-time { font-size: 11px; color: var(--text-dim, #999); }
+.comment-body { font-size: 13px; color: var(--text, #333); line-height: 1.5; white-space: pre-wrap; }
 
+/* The box gets the full width and Post sits under it, on the right (Ed).
+   Side by side, the textarea lost roughly a quarter of the panel to a button
+   that is only pressed once, and a comment worth writing is usually longer
+   than the two lines that left room for. */
 .comment-add {
     display: flex;
+    flex-direction: column;
+    align-items: flex-end;
     gap: 8px;
 }
 
 .comment-add textarea {
-    flex: 1;
+    width: 100%;
+    box-sizing: border-box;
     padding: 8px 10px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 6px;
     font-size: 13px;
     font-family: inherit;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
     resize: vertical;
     min-height: 36px;
     max-height: 120px;
     outline: none;
 }
 
-.comment-add textarea:focus { border-color: #7c3aed; }
+.comment-add textarea:focus { border-color: var(--tsk-accent, #7c3aed); }
 
 .comment-add button {
     padding: 8px 14px;
-    background: #7c3aed;
+    background: var(--tsk-accent, #7c3aed);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -1023,21 +1252,21 @@ body {
     align-self: flex-end;
 }
 
-.comment-add button:hover { background: #6d28d9; }
+.comment-add button:hover { background: var(--tsk-accent-hover, #6d28d9); }
 
 /* Detail timestamps */
 .detail-timestamps {
     margin-top: 20px;
     padding-top: 12px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--border-soft, #eee);
     font-size: 11px;
-    color: #999;
+    color: var(--text-dim, #999);
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-/* Toast */
+/* Toast — dark pill, reads on both modes */
 .toast {
     position: fixed;
     bottom: 24px;
@@ -1060,7 +1289,7 @@ body {
 .board-empty {
     text-align: center;
     padding: 30px 20px;
-    color: #aaa;
+    color: var(--text-faint, #aaa);
     font-size: 13px;
 }
 
@@ -1088,8 +1317,8 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 15px 20px;
-    background: #fff;
-    border-bottom: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border-bottom: 1px solid var(--border, #e0e0e0);
     flex-shrink: 0;
 }
 
@@ -1098,12 +1327,12 @@ body {
 .cal-nav h2 {
     font-size: 20px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin: 0 0 0 10px;
 }
 
 .cal-nav-btn {
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     cursor: pointer;
     display: flex;
@@ -1114,50 +1343,50 @@ body {
 
 .cal-today-btn {
     padding: 10px 20px;
-    background: #e0e0e0;
-    color: #333;
-    border-color: #e0e0e0;
+    background: var(--surface-3, #e0e0e0);
+    color: var(--text, #333);
+    border-color: var(--border, #e0e0e0);
     font-size: 14px;
     font-weight: 500;
 }
 
-.cal-today-btn:hover { background: #d0d0d0; border-color: #d0d0d0; }
+.cal-today-btn:hover { background: var(--surface-hover, #d0d0d0); border-color: var(--surface-hover, #d0d0d0); }
 
 .cal-nav-arrow {
     width: 36px;
     height: 36px;
     padding: 0;
-    background: #f5f5f5;
-    color: #555;
+    background: var(--surface-hover, #f5f5f5);
+    color: var(--text-muted, #555);
     font-size: 18px;
     line-height: 1;
 }
 
-.cal-nav-arrow:hover { background: #e0e0e0; }
+.cal-nav-arrow:hover { background: var(--surface-3, #e0e0e0); }
 
 /* View toggle (Month / Week / Day) — matches Calendar module's pattern */
 .view-toggle {
     display: flex;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     overflow: hidden;
 }
 .view-btn {
     padding: 8px 16px;
     border: none;
-    background: #fff;
+    background: var(--surface, #fff);
     font-size: 13px;
     font-weight: 500;
-    color: #666;
+    color: var(--text-muted, #666);
     cursor: pointer;
     transition: all 0.15s;
 }
-.view-btn:not(:last-child) { border-right: 1px solid #ddd; }
-.view-btn:hover { background: #f5f5f5; }
-.view-btn.active { background: #7c3aed; color: #fff; }
+.view-btn:not(:last-child) { border-right: 1px solid var(--border, #ddd); }
+.view-btn:hover { background: var(--surface-hover, #f5f5f5); }
+.view-btn.active { background: var(--tsk-accent, #7c3aed); color: #fff; }
 
-.cal-mode-hint { font-size: 12px; color: #888; line-height: 1.5; }
-.cal-mode-hint a { color: #7c3aed; text-decoration: none; margin-left: 6px; font-weight: 500; }
+.cal-mode-hint { font-size: 12px; color: var(--text-dim, #888); line-height: 1.5; }
+.cal-mode-hint a { color: var(--tsk-accent, #7c3aed); text-decoration: none; margin-left: 6px; font-weight: 500; }
 .cal-mode-hint a:hover { text-decoration: underline; }
 
 .cal-wrap { flex: 1; overflow-y: auto; padding: 14px 18px; }
@@ -1167,7 +1396,7 @@ body {
     grid-template-columns: repeat(7, 1fr);
     position: sticky;
     top: 0;
-    background: #f5f7fa;
+    background: var(--app-bg, #f5f7fa);
     z-index: 2;
     padding-bottom: 6px;
 }
@@ -1178,19 +1407,19 @@ body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #999;
+    color: var(--text-dim, #999);
 }
 
 .cal-grid {
     display: flex;
     flex-direction: column;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--border, #e0e0e0);
     border-radius: 8px;
     overflow: hidden;
-    background: #fff;
+    background: var(--surface, #fff);
 }
 
-.cal-week { position: relative; border-bottom: 1px solid #e0e0e0; }
+.cal-week { position: relative; border-bottom: 1px solid var(--border, #e0e0e0); }
 .cal-week:last-child { border-bottom: none; }
 
 .cal-week-days {
@@ -1200,7 +1429,7 @@ body {
     grid-template-columns: repeat(7, 1fr);
 }
 
-.cal-day { border-right: 1px solid #eee; }
+.cal-day { border-right: 1px solid var(--border-soft, #eee); }
 .cal-day:last-child { border-right: none; }
 .cal-day.cal-out { background: #fafbfc; }
 .cal-day.cal-weekend { background: #fcfcfd; }
@@ -1214,13 +1443,13 @@ body {
     height: 22px;
     margin: 4px 4px 0;
     font-size: 12px;
-    color: #555;
+    color: var(--text-muted, #555);
 }
 
-.cal-out .cal-daynum { color: #bbb; }
+.cal-out .cal-daynum { color: var(--text-faint, #bbb); }
 
 .cal-today .cal-daynum {
-    background: #7c3aed;
+    background: var(--tsk-accent, #7c3aed);
     color: #fff;
     border-radius: 50%;
     font-weight: 700;
@@ -1238,8 +1467,8 @@ body {
 
 /* Day view — vertical list of tasks for the day */
 .cal-day-list {
-    background: #fff;
-    border: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e0e0e0);
     border-radius: 8px;
     padding: 14px;
 }
@@ -1249,12 +1478,12 @@ body {
     align-items: center;
     gap: 12px;
     padding: 12px 14px;
-    border: 1px solid #eee;
+    border: 1px solid var(--border-soft, #eee);
     border-radius: 6px;
     margin-bottom: 8px;
     cursor: pointer;
     transition: all 0.15s;
-    background: #fff;
+    background: var(--surface, #fff);
 }
 .cal-day-task:last-child { margin-bottom: 0; }
 .cal-day-task:hover {
@@ -1274,17 +1503,17 @@ body {
 .cal-day-task-title {
     font-size: 14px;
     font-weight: 500;
-    color: #333;
+    color: var(--text, #333);
 }
 
 .cal-day-task.cal-day-task-done .cal-day-task-title {
     text-decoration: line-through;
-    color: #999;
+    color: var(--text-dim, #999);
 }
 
 .cal-day-task-meta {
     font-size: 12px;
-    color: #888;
+    color: var(--text-dim, #888);
     margin-top: 3px;
     display: flex;
     align-items: center;
@@ -1300,7 +1529,7 @@ body {
 
 .cal-day-empty {
     text-align: center;
-    color: #999;
+    color: var(--text-dim, #999);
     padding: 60px 20px;
     font-size: 14px;
 }
@@ -1308,11 +1537,11 @@ body {
 /* Detail-panel description preview (calendar quick-look) */
 .cal-detail-desc-preview {
     padding: 10px 12px;
-    background: #fafafa;
-    border: 1px solid #eee;
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border-soft, #eee);
     border-radius: 6px;
     font-size: 13px;
-    color: #444;
+    color: var(--text-muted, #444);
     line-height: 1.5;
     max-height: 240px;
     overflow-y: auto;
@@ -1343,7 +1572,7 @@ body {
 .cal-bar-span.cont-l { border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .cal-bar-span.cont-r { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 
-.cal-loading { text-align: center; color: #aaa; font-size: 13px; padding: 40px; }
+.cal-loading { text-align: center; color: var(--text-faint, #aaa); font-size: 13px; padding: 40px; }
 
 .cal-legend { display: flex; flex-direction: column; gap: 5px; padding: 2px 8px; }
 
@@ -1352,7 +1581,7 @@ body {
     align-items: center;
     gap: 7px;
     font-size: 12px;
-    color: #666;
+    color: var(--text-muted, #666);
 }
 
 .cal-legend-dot {
@@ -1372,15 +1601,15 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 10px 18px;
-    background: #fff;
-    border-bottom: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border-bottom: 1px solid var(--border, #e0e0e0);
     flex-shrink: 0;
 }
 
 .tl-nav { display: flex; align-items: center; gap: 12px; }
-.tl-range { font-size: 13px; color: #666; font-weight: 500; }
+.tl-range { font-size: 13px; color: var(--text-muted, #666); font-weight: 500; }
 
-.tl-scroll { flex: 1; overflow: auto; background: #fff; position: relative; }
+.tl-scroll { flex: 1; overflow: auto; background: var(--surface, #fff); position: relative; }
 
 .tl-inner { position: relative; }
 
@@ -1389,15 +1618,15 @@ body {
     position: sticky;
     top: 0;
     z-index: 5;
-    background: #fff;
-    border-bottom: 2px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border-bottom: 2px solid var(--border, #e0e0e0);
 }
 
 .tl-head-label {
     position: sticky;
     left: 0;
     z-index: 6;
-    background: #fff;
+    background: var(--surface, #fff);
     flex: 0 0 auto;
     display: flex;
     align-items: flex-end;
@@ -1406,8 +1635,8 @@ body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #777;
-    border-right: 1px solid #e0e0e0;
+    color: var(--text-muted, #777);
+    border-right: 1px solid var(--border, #e0e0e0);
     box-sizing: border-box;
 }
 
@@ -1416,10 +1645,10 @@ body {
 
 .tl-month {
     flex-shrink: 0;
-    border-right: 1px solid #e0e0e0;
+    border-right: 1px solid var(--border, #e0e0e0);
     font-size: 11px;
     font-weight: 600;
-    color: #555;
+    color: var(--text-muted, #555);
     padding: 5px 8px;
     box-sizing: border-box;
     white-space: nowrap;
@@ -1430,23 +1659,23 @@ body {
 
 .tl-day {
     flex-shrink: 0;
-    border-right: 1px solid #f0f0f0;
+    border-right: 1px solid var(--border-soft, #f0f0f0);
     font-size: 10px;
-    color: #aaa;
+    color: var(--text-faint, #aaa);
     text-align: center;
     line-height: 24px;
     box-sizing: border-box;
 }
 
 .tl-day.tl-weekend { background: #f6f7f9; }
-.tl-day.tl-day-today { background: #7c3aed; color: #fff; font-weight: 700; }
+.tl-day.tl-day-today { background: var(--tsk-accent, #7c3aed); color: #fff; font-weight: 700; }
 
 .tl-body { position: relative; }
 
 .tl-group {
     height: 30px;
-    background: #eef0f4;
-    border-bottom: 1px solid #e0e0e0;
+    background: var(--surface-2, #eef0f4);
+    border-bottom: 1px solid var(--border, #e0e0e0);
     display: flex;
     align-items: center;
 }
@@ -1455,7 +1684,7 @@ body {
     position: sticky;
     left: 0;
     z-index: 3;
-    background: #eef0f4;
+    background: var(--surface-2, #eef0f4);
     height: 100%;
     display: flex;
     align-items: center;
@@ -1464,44 +1693,44 @@ body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #555;
-    border-right: 1px solid #e0e0e0;
+    color: var(--text-muted, #555);
+    border-right: 1px solid var(--border, #e0e0e0);
     box-sizing: border-box;
 }
 
 .tl-group-count {
     margin-left: 6px;
-    background: #d0d4dc;
-    color: #555;
+    background: var(--surface-3, #d0d4dc);
+    color: var(--text-muted, #555);
     border-radius: 10px;
     padding: 1px 7px;
     font-size: 10px;
     font-weight: 600;
 }
 
-.tl-row { height: 36px; display: flex; border-bottom: 1px solid #f0f0f0; }
+.tl-row { height: 36px; display: flex; border-bottom: 1px solid var(--border-soft, #f0f0f0); }
 
 .tl-row-label {
     position: sticky;
     left: 0;
     z-index: 2;
-    background: #fff;
+    background: var(--surface, #fff);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 7px;
     padding: 0 12px;
-    border-right: 1px solid #e0e0e0;
+    border-right: 1px solid var(--border, #e0e0e0);
     box-sizing: border-box;
     cursor: pointer;
     transition: background 0.1s;
 }
 
-.tl-row-label:hover { background: #f3f0ff; }
+.tl-row-label:hover { background: var(--tsk-accent-soft, #f3f0ff); }
 
 .tl-row-title {
     font-size: 13px;
-    color: #333;
+    color: var(--text, #333);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1559,7 +1788,7 @@ body {
     top: 48px;
     bottom: 0;
     background: rgba(124, 58, 237, 0.07);
-    border-left: 2px dashed #7c3aed;
+    border-left: 2px dashed var(--tsk-accent, #7c3aed);
     pointer-events: none;
 }
 
@@ -1567,7 +1796,7 @@ body {
     position: absolute;
     top: 0;
     left: -1px;
-    background: #7c3aed;
+    background: var(--tsk-accent, #7c3aed);
     color: #fff;
     font-size: 9px;
     font-weight: 700;
@@ -1575,3 +1804,965 @@ body {
     border-radius: 0 0 3px 0;
     white-space: nowrap;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Dark-mode overrides for data-coloured chips & pale grid tints.
+   These carry meaning (status) or are near-white cell washes that would
+   glow on a dark grid, so they stay hardcoded in light and flip here.
+   ══════════════════════════════════════════════════════════════════ */
+[data-theme-mode="dark"] .status-pill.todo { background: #1d3346; color: #93c5fd; }
+[data-theme-mode="dark"] .status-pill.in-progress { background: #3a2e12; color: #fcd34d; }
+[data-theme-mode="dark"] .status-pill.done { background: #16331f; color: #86efac; }
+[data-theme-mode="dark"] .status-pill.cancelled { background: #2a3039; color: #9aa3ad; }
+
+/* Calendar out-of-month / weekend cell washes (light-mode near-whites) */
+[data-theme-mode="dark"] .cal-day.cal-out { background: #191c22; }
+[data-theme-mode="dark"] .cal-day.cal-weekend { background: #191d24; }
+[data-theme-mode="dark"] .cal-day.cal-weekend.cal-out { background: #161a20; }
+[data-theme-mode="dark"] .tl-day.tl-weekend { background: #191d24; }
+
+/* ── Time on tasks (GH #112) ───────────────────────────────────────────────
+   The entry rows themselves reuse the ticket panel's .time-entry-* rules from
+   inbox.css, which this page already loads — one look for the same idea in both
+   modules. Only the two things that file has no rule for are declared here. */
+.detail-field .detail-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text, #333);
+    cursor: pointer;
+}
+.detail-field .detail-checkbox input {
+    accent-color: var(--tsk-accent, #7c3aed);
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+}
+/* inbox.css styles the rows but not their container. */
+.time-entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+/* ── Opening a task in a large window (System → Preferences) ───────────────
+   The SAME panel element as the side drawer, restyled. There is no second
+   panel: two of them would be two things to keep in step, and the one nobody
+   is looking at is the one that rots. */
+.detail-panel.as-modal {
+    top: 3vh;
+    bottom: 3vh;
+    left: 3vw;
+    right: 3vw;
+    width: auto;
+    height: auto;
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    /* The drawer slides in from the right; a centred window has nowhere to
+       slide from, so it rises and fades instead. */
+    transform: translateY(14px) scale(0.995);
+    opacity: 0;
+    /* 🔴 opacity:0 hides this window but STILL TAKES THE CLICKS. Unlike the
+       drawer, which closes by sliding itself off the screen, the closed large
+       window is still lying across 94% of the viewport at z-index 1000 — so
+       without these two lines every click on the board behind it is swallowed,
+       and the only way out is a page reload. It looked like "the board stops
+       responding after you delete a task", because closeDetailPanel() leaves
+       `as-modal` on the element and only removes `open`. */
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+}
+/* Three classes, so this beats `.detail-panel.open`'s translateX(0). */
+.detail-panel.as-modal.open {
+    transform: none;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Two columns: prose on the left with room to breathe, the short fields
+   stacked down the right. */
+.tdm-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 0 32px;
+    align-items: start;
+}
+.tdm-main { min-width: 0; }
+.tdm-side { min-width: 0; }
+
+/* The description is the reason for the large window, so let it use the height
+   the window now has rather than staying at its drawer size. */
+.detail-panel.as-modal .detail-description .tox-tinymce { min-height: 320px; }
+
+/* A narrow window is a drawer with extra steps — one column reads better than
+   two cramped ones. Also covers a phone, where the modal is full bleed. */
+@media (max-width: 1100px) {
+    .tdm-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (max-width: 700px) {
+    .detail-panel.as-modal { top: 0; bottom: 0; left: 0; right: 0; border-radius: 0; }
+}
+
+/* ── The large window as TABS, the alternative to the two columns above ──────
+   Chosen per analyst with the button in the panel header; columns stay the
+   default. The same blocks, regrouped — see applyModalTabs() in tasks.js.
+   ────────────────────────────────────────────────────────────────────────── */
+/* Folder tabs (Ed: "make them look more like tabs - and the same width"). Each
+   tab is a raised card on the rule below it; the open one takes the panel's own
+   background and drops its bottom edge, so it reads as the front of the stack.
+   flex: 1 1 0 shares the strip out evenly whatever each label says. */
+.tdm-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 4px 0 18px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--border, #e0e0e0);
+}
+.tdm-tab {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 9px 12px;
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border, #e0e0e0);
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    /* Sits over the strip's rule by its own 1px, so the active tab can hide it. */
+    margin-bottom: -1px;
+    color: var(--text-muted, #666);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tdm-tab:hover { color: var(--text, #333); background: var(--surface-hover, #f0f0f0); }
+.tdm-tab.active {
+    background: var(--surface, #fff);
+    color: var(--tsk-accent, #7c3aed);
+    /* The same size as every other tab - a border that only appears when active
+       would nudge the panel below by a pixel each time you switch. */
+    border-bottom: 1px solid var(--surface, #fff);
+    box-shadow: inset 0 2px 0 var(--tsk-accent, #7c3aed);
+}
+/* ⭐ The count is what stops a tab HIDING things: three subtasks behind a tab
+   with no number are indistinguishable from none. */
+.tdm-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--surface-3, #e9ecf1);
+    color: var(--text-muted, #666);
+    font-size: 11px;
+    font-weight: 700;
+}
+.tdm-tab.active .tdm-tab-count {
+    background: var(--tsk-accent, #7c3aed);
+    color: #fff;
+}
+
+.tdm-tabpanel { display: none; }
+.tdm-tabpanel.active { display: block; }
+
+/* The Details tab fills the window's width (Ed: "fit in more form fields per
+   row"). Two to a row left each dropdown ~860px wide for "Medium" on a wide
+   screen, and pushed the description below the fold. So the short fields flow
+   into as many columns as fit - at least 240px each - and the pairs (.detail-row)
+   dissolve into that grid. Prose and lists keep a whole row. A narrow window
+   simply gets fewer columns, down to one. Columns layout is unaffected: its
+   right-hand column is narrow on purpose. */
+#tdmTab-details.active {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    column-gap: 16px;
+    align-items: start;
+}
+#tdmTab-details > .detail-row { display: contents; }
+#tdmTab-details > .detail-description,
+#tdmTab-details > #involvedField,
+#tdmTab-details > #taskChecklistSection,
+#tdmTab-details > .detail-field:has(#detailTagSection),
+#tdmTab-details > .recur-section,
+#tdmTab-details > .recur-master-link,
+#tdmTab-details > .subtask-of,
+#tdmTab-details > :not(.detail-field):not(.detail-row) { grid-column: 1 / -1; }
+/* "All day" is a tick box with no label above it - sit it level with the boxes beside it. */
+#tdmTab-details > .detail-field:has(#detailWorkAllDay) { align-self: end; padding-bottom: 10px; }
+
+/* A tab panel holds blocks that were written to sit in a scrolling column, and
+   several of them open with their own heading. The first one loses its top
+   margin so the content starts against the tab strip rather than a gap. */
+.tdm-tabpanel.active > *:first-child { margin-top: 0; }
+.tdm-tabpanel .link-section,
+.tdm-tabpanel .subtask-section,
+.tdm-tabpanel .comments-section { border-top: none; padding-top: 0; }
+
+/* A phone: tabs beat columns here anyway, and the strip scrolls sideways rather
+   than wrapping into three rows that eat the screen the tabs were meant to save. */
+@media (max-width: 700px) {
+    .tdm-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .tdm-tabs::-webkit-scrollbar { display: none; }
+    .tdm-tab { flex: 0 0 auto; padding: 11px 14px; font-size: 14px; }
+}
+
+/* Subtask due dates (#90). A subtask has always been able to carry a deadline;
+   nothing asked for one at the point of creation, so none ever had one and the
+   calendar had nothing to show. */
+.subtask-add-due {
+    flex: 0 0 auto;
+    max-width: 150px;
+}
+/* Offered on a subtask row only while it has NO date. Once set, the row shows
+   the ordinary due badge instead, which carries the overdue colouring. */
+.subtask-due-set {
+    border: 1px dashed var(--border, #ddd);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted, #888);
+    font-size: 11px;
+    padding: 1px 4px;
+    max-width: 130px;
+    opacity: .55;
+}
+.subtask-item:hover .subtask-due-set { opacity: 1; }
+.subtask-due-set:focus {
+    opacity: 1;
+    border-style: solid;
+    border-color: var(--tsk-accent, #7c3aed);
+    outline: none;
+}
+
+/* Subtasks on the task calendar (#90). Deliberately the same colour as any
+   other task - the colour carries status or priority and must keep meaning
+   what it means - so a subtask is marked by a dashed edge and a slight inset
+   instead, which reads as "part of something bigger" rather than "different". */
+.cal-bar-subtask {
+    border: 1px dashed rgba(255, 255, 255, .85);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+}
+.cal-day-task-subtask {
+    border-left: 2px dashed var(--border, #ddd);
+    padding-left: 8px;
+}
+
+/* Recurring tasks (#94) */
+.recur-section { margin-top: 20px; }
+.recur-section h4 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted, #888);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+}
+.recur-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: var(--tsk-accent-soft, #efe9fd);
+    color: var(--tsk-accent, #7c3aed);
+}
+.recur-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text, #333);
+}
+.recur-master-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 8px;
+    width: 100%;
+    text-align: left;
+    font-size: 12px;
+    border: 1px dashed var(--border, #ddd);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--tsk-accent, #7c3aed);
+    cursor: pointer;
+}
+.recur-master-link:hover { background: var(--surface-2, #fafafa); }
+.recur-editor { margin-top: 12px; }
+.recur-grid {
+    display: grid;
+    grid-template-columns: 108px 1fr;
+    gap: 10px 12px;
+    /* Top-aligned, not centred (Ed). Several of these controls are two rows
+       tall — the weekday boxes, the carry-over boxes, the frequency and its
+       "every N" — and a centred label floated into the gap between the two
+       rows, pointing at neither of them. */
+    align-items: start;
+    font-size: 13px;
+}
+/* Nudged down to sit level with the FIRST line of text in the control beside
+   it, rather than with the top edge of its border: a select carries 1px of
+   border and 8px of padding above its text. */
+.recur-grid > label { color: var(--text-muted, #888); font-size: 12px; padding-top: 9px; }
+/* Checkbox groups have no border or padding of their own, so they need the
+   opposite correction to line up with the same label. */
+.recur-grid > .recur-days,
+.recur-grid > .recur-copy { padding-top: 9px; }
+.recur-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.recur-inline > span { color: var(--text-muted, #888); font-size: 12px; }
+.recur-n { width: 74px; }
+.recur-days, .recur-copy { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.recur-day {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text, #333);
+}
+.recur-day input { margin: 0; }
+.recur-dom small { display: block; color: var(--text-muted, #888); font-size: 11px; }
+.recur-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.recur-stop { color: var(--danger-text, #b42318); }
+.recur-icon { flex-shrink: 0; }
+
+/* On the calendar: a task that is one of a repeating series (#94). */
+.cal-bar-recur .recur-icon,
+.cal-day-task-recur .recur-icon { opacity: .9; margin-right: 3px; vertical-align: -2px; }
+
+/* "Subtask of ..." at the top of the detail panel (Ed). The old version had no
+   styling at all and sat below the fields, so it read as a stray link rather
+   than as the context it is. */
+.subtask-of {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin: 0 0 12px;
+    padding: 7px 10px;
+    text-align: left;
+    font-size: 12px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    background: var(--surface-2, #fafafa);
+    color: var(--text, #333);
+    cursor: pointer;
+}
+.subtask-of:hover { border-color: var(--tsk-accent, #7c3aed); }
+.subtask-of svg { flex-shrink: 0; color: var(--text-muted, #888); }
+.subtask-of-label { color: var(--text-muted, #888); flex-shrink: 0; }
+.subtask-of-title {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Text-style buttons in the Repeats section. Defined HERE rather than reaching
+   for a .btn-link — no such class exists anywhere in the product, so using it
+   left these as default browser buttons. */
+.recur-link {
+    padding: 2px 4px;
+    border: none;
+    background: none;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--tsk-accent, #7c3aed);
+    cursor: pointer;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.recur-link:hover { background: var(--surface-hover, #f0f0f0); text-decoration: underline; }
+.recur-link.recur-stop { color: var(--danger-text, #b42318); }
+/* .btn gives padding and radius; .btn-primary only sets the colours, so the two
+   are always used together. */
+.recur-actions .btn { padding: 7px 16px; font-size: 13px; }
+
+/* Projected occurrences of a fixed schedule (#94). No row exists behind these
+   yet — they are dates computed from the rule — so they are drawn as an outline
+   rather than a solid chip. A plan, not a fact. */
+.cal-bar-projected {
+    opacity: .55;
+    background-image: repeating-linear-gradient(
+        135deg, rgba(255,255,255,.28) 0 5px, transparent 5px 10px);
+    border: 1px dashed rgba(255,255,255,.8);
+}
+.cal-day-task-projected { opacity: .65; }
+.cal-day-task-projected .cal-day-task-dot {
+    background: transparent !important;
+    border: 2px dashed var(--text-muted, #888);
+    box-sizing: border-box;
+}
+
+/* Repeat preview (Ed's idea): every date the current settings would produce,
+   shown before committing to them. The overlay uses the shared .modal-overlay /
+   .modal-box shape from inbox.css, which the Tasks pages already load. */
+/* ⚠️ Everything the box needs is HERE. .modal-overlay comes from inbox.css,
+   which the Tasks pages load, but .modal-box does NOT exist in any stylesheet
+   they load - it lives in change-management.css and integrations.css. Leaning
+   on it gave a modal with NO background at all, which a headless computed-style
+   check caught (rgba(0,0,0,0)) and reading the markup never would. */
+.recur-prev-box {
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    border-radius: 10px;
+    box-shadow: 0 10px 40px var(--shadow, rgba(0,0,0,.3));
+    max-width: 460px;
+    width: 90%;
+    padding: 22px 24px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+.recur-prev-box h3 { font-size: 16px; margin: 0 0 4px; color: var(--text, #333); }
+.recur-prev-sub {
+    font-size: 13px;
+    color: var(--text-muted, #666);
+    margin: -6px 0 14px;
+}
+.recur-prev-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.recur-prev-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-faint, #999);
+    font-weight: 600;
+    padding: 0 8px 6px 0;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.recur-prev-table td {
+    padding: 7px 8px 7px 0;
+    border-bottom: 1px solid var(--border-soft, #f1f1f1);
+    color: var(--text, #333);
+    white-space: nowrap;
+}
+.recur-prev-table tr:last-child td { border-bottom: none; }
+.recur-prev-n {
+    color: var(--text-faint, #999);
+    font-variant-numeric: tabular-nums;
+    width: 22px;
+}
+/* The span is the quieter half: a task with no start date leaves it blank, and
+   a blank column should not look like something failed to load. */
+.recur-prev-span { color: var(--text-muted, #666); }
+.recur-prev-marks { width: 1%; text-align: right; }
+.recur-prev-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: var(--surface-3, #f0f0f0);
+    color: var(--text-muted, #666);
+}
+.recur-prev-tag-made {
+    background: var(--tsk-accent-soft, #eef2ff);
+    color: var(--tsk-accent, #4f46e5);
+}
+.recur-prev-made td { background: var(--surface-2, #fafafa); }
+.recur-prev-note {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted, #666);
+    margin: 12px 0 0;
+}
+.recur-prev-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+}
+/* A repeat that produces nothing is the most useful thing a preview can tell
+   you, so it is not styled as quiet supporting text. */
+.recur-prev-warn {
+    background: var(--warning-bg, #fff8e6);
+    border: 1px solid var(--warning-border, #f5d98a);
+    color: var(--warning-text, #7a5b00);
+    padding: 9px 11px;
+    border-radius: 6px;
+}
+
+/* ── Checklists on a task (discussion #138) ───────────────────────
+   Every colour is a theme variable that exists in theme.css, so the section
+   follows dark mode - the Telegram settings box shipped with two that did not
+   exist and showed a light panel in dark mode. */
+#taskChecklistSection .chk-card {
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: var(--surface, #fff);
+}
+#taskChecklistSection .chk-card-head { display: flex; align-items: center; gap: 8px; }
+#taskChecklistSection .chk-card-title { font-weight: 600; color: var(--text, #333); flex: 1; display: flex; align-items: center; gap: 6px; }
+#taskChecklistSection .chk-lock { color: var(--danger-text, #b91c1c); flex-shrink: 0; }
+#taskChecklistSection .chk-card-progress { font-size: 12px; color: var(--text-muted, #666); white-space: nowrap; }
+#taskChecklistSection .btn-link-small {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-size: 12px; color: var(--text-muted, #666); text-decoration: underline;
+}
+#taskChecklistSection .btn-link-small:hover { color: var(--danger-text, #b91c1c); }
+#taskChecklistSection .chk-bar { height: 4px; border-radius: 2px; background: var(--border-soft, #eef0f3); margin: 8px 0 6px; overflow: hidden; }
+#taskChecklistSection .chk-bar-fill { height: 100%; background: var(--success-text, #16a34a); }
+#taskChecklistSection .chk-step { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border-soft, #eef0f3); }
+#taskChecklistSection .chk-step:first-of-type { border-top: 0; }
+#taskChecklistSection .chk-step input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+#taskChecklistSection .chk-step-body { flex: 1; min-width: 0; }
+#taskChecklistSection .chk-step-title { font-size: 13px; color: var(--text, #333); }
+#taskChecklistSection .chk-step.done .chk-step-title { color: var(--text-muted, #666); text-decoration: line-through; }
+#taskChecklistSection .chk-mandatory {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .03em; margin-left: 6px;
+    padding: 1px 5px; border-radius: 3px;
+    background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e);
+}
+#taskChecklistSection .chk-role { font-size: 11px; color: var(--text-muted, #666); margin-left: 6px; }
+#taskChecklistSection .chk-step-value {
+    margin-top: 4px; width: 100%; box-sizing: border-box; font-size: 12px; padding: 4px 6px;
+    border: 1px solid var(--border, #e5e7eb); border-radius: 4px;
+    background: var(--surface, #fff); color: var(--text, #333);
+}
+#taskChecklistSection .chk-step-desc { font-size: 12px; color: var(--text-muted, #666); margin-top: 2px; white-space: pre-wrap; }
+#taskChecklistSection .chk-step-by { font-size: 11px; color: var(--text-muted, #666); margin-top: 2px; }
+#taskChecklistSection .chk-attach { display: flex; gap: 8px; align-items: center; }
+#taskChecklistSection .chk-attach .detail-select { flex: 1; min-width: 0; }
+#taskChecklistSection .chk-empty { font-size: 13px; color: var(--text-muted, #666); margin-bottom: 8px; }
+
+/* ── Forms a task needs (GH #190) ─────────────────────────────────
+   Shaped like the checklist cards above it, with the same theme variables. */
+#taskFormsSection .tf-card {
+    border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 10px; background: var(--surface, #fff);
+}
+#taskFormsSection .tf-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#taskFormsSection .tf-title { font-weight: 600; color: var(--text, #333); flex: 1; min-width: 140px; display: flex; align-items: center; gap: 6px; }
+#taskFormsSection .chk-lock { color: var(--danger-text, #b91c1c); flex-shrink: 0; }
+#taskFormsSection .tf-req { font-size: 12px; padding: 2px 4px; border: 1px solid var(--border, #e5e7eb); border-radius: 4px; background: var(--surface, #fff); color: var(--text, #333); }
+#taskFormsSection .btn-link-small { background: none; border: 0; padding: 0; cursor: pointer; font-size: 12px; color: var(--text-muted, #666); text-decoration: underline; }
+#taskFormsSection .btn-link-small:hover { color: var(--danger-text, #b91c1c); }
+#taskFormsSection .tf-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+#taskFormsSection .tf-state { font-size: 12px; color: var(--text-muted, #666); }
+#taskFormsSection .tf-done { color: var(--success-text, #16a34a); }
+#taskFormsSection .tf-draft { color: var(--warning-text, #92400e); }
+#taskFormsSection .tf-note { font-size: 12px; color: var(--text-muted, #666); font-style: italic; }
+#taskFormsSection .tf-answers { margin-top: 8px; font-size: 13px; }
+#taskFormsSection .tf-answers summary { cursor: pointer; color: var(--text-muted, #666); font-size: 12px; }
+#taskFormsSection .tf-answers table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+#taskFormsSection .tf-answers th { text-align: left; font-weight: 600; color: var(--text-muted, #666); padding: 4px 8px 4px 0; vertical-align: top; width: 40%; }
+#taskFormsSection .tf-answers td { padding: 4px 0; color: var(--text, #333); white-space: pre-wrap; word-break: break-word; }
+#taskFormsSection .tf-exception td { color: var(--danger-text, #b91c1c); font-weight: 600; }
+#taskFormsSection .tf-add { display: flex; gap: 8px; align-items: center; }
+#taskFormsSection .tf-add .detail-select { flex: 1; min-width: 0; }
+#taskFormsSection .tf-empty { font-size: 13px; color: var(--text-muted, #666); margin-bottom: 8px; }
+
+/* ── The Work view (GH #190 phase 2) ───────────────────────────────
+   One block: head (progress, Complete), instructions, procedures, checklists,
+   forms. Nested sections keep their own styles; this only frames them. */
+#taskWorkSection .work-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+#taskWorkSection .work-title { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 160px; }
+#taskWorkSection .work-title label { margin: 0; }
+#taskWorkSection .work-sub { font-size: 12px; color: var(--text-muted, #666); }
+#taskWorkSection .work-progress { display: flex; align-items: center; gap: 8px; min-width: 180px; flex: 1; }
+#taskWorkSection .work-progress .chk-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--border-soft, #eef0f3); overflow: hidden; margin: 0; }
+#taskWorkSection .work-progress .chk-bar-fill { height: 100%; background: var(--success-text, #16a34a); }
+#taskWorkSection .work-actions { display: flex; align-items: center; gap: 12px; }
+#taskWorkSection .work-open-pref { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted, #666); font-weight: normal; margin: 0; cursor: pointer; }
+/* GH #218 part B: an empty section folded to "Checklists (0)". Looks like the section's
+   own label, with the board card's subtask chevron, so the Work view reads the same. */
+#taskWorkSection .work-fold {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin: 0 0 5px -4px; padding: 2px 6px 2px 4px;
+    border: none; border-radius: 5px; background: none; cursor: pointer;
+    font-family: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-dim, #999);
+}
+#taskWorkSection .work-fold:hover { background: var(--surface-2, #f1f1f4); color: var(--text, #333); }
+#taskWorkSection .work-fold:focus-visible { outline: 2px solid var(--tsk-accent, #7c3aed); outline-offset: 1px; }
+#taskWorkSection .work-fold-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+#taskWorkSection .work-fold.is-open .work-fold-chevron { transform: rotate(90deg); }
+#taskWorkSection .work-load-error { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--danger-text, #b91c1c); margin-bottom: 8px; }
+#taskWorkSection .work-instructions { margin-bottom: 14px; }
+#taskWorkSection .work-instructions-body { font-size: 14px; color: var(--text, #333); line-height: 1.5; overflow-wrap: anywhere; }
+#taskWorkSection .work-instructions-body img { max-width: 100%; height: auto; }
+#taskProcedureSection .tp-card { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface, #fff); }
+#taskProcedureSection .tp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#taskProcedureSection .tp-title { font-weight: 600; color: var(--text, #333); flex: 1; min-width: 140px; }
+#taskProcedureSection .btn-link-small { background: none; border: 0; padding: 0; cursor: pointer; font-size: 12px; color: var(--text-muted, #666); text-decoration: underline; }
+#taskProcedureSection .tp-remove:hover { color: var(--danger-text, #b91c1c); }
+#taskProcedureSection .tp-body { margin-top: 8px; }
+#taskProcedureSection .tp-body summary { cursor: pointer; font-size: 12px; color: var(--text-muted, #666); }
+#taskProcedureSection .tp-article { margin-top: 8px; font-size: 14px; color: var(--text, #333); line-height: 1.5; max-height: 480px; overflow: auto; overflow-wrap: anywhere; }
+#taskProcedureSection .tp-article img { max-width: 100%; height: auto; }
+#taskProcedureSection .tp-add { position: relative; }
+#taskProcedureSection .tp-add input { width: 100%; box-sizing: border-box; }
+#taskProcedureSection .tp-results { display: flex; flex-direction: column; margin-top: 4px; }
+#taskProcedureSection .tp-result { text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border-soft, #eef0f3); padding: 6px 4px; cursor: pointer; color: var(--text, #333); font-size: 13px; }
+#taskProcedureSection .tp-result:hover { background: var(--accent-soft, #eef4ff); }
+#taskFormsSection .tf-inline { margin-top: 10px; }
+#taskFormsSection .tf-frame { width: 100%; height: 420px; border: 1px solid var(--border-soft, #eef0f3); border-radius: 6px; background: var(--surface, #fff); display: block; margin-bottom: 4px; }
+#taskFollowUpSection .fu-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border-soft, #eef0f3); font-size: 13px; flex-wrap: wrap; }
+#taskFollowUpSection .fu-num { font-weight: 600; white-space: nowrap; }
+#taskFollowUpSection .fu-title { flex: 1; min-width: 120px; color: var(--text, #333); }
+#taskFollowUpSection .fu-state { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--border-soft, #eef0f3); color: var(--text-muted, #666); }
+#taskFollowUpSection .fu-open { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+#taskFollowUpSection .fu-closed { background: var(--success-bg, #dcfce7); color: var(--success-text, #16a34a); }
+#taskFollowUpSection .btn-link-small, .chk-followup, .tf-followup { background: none; border: 0; padding: 0; cursor: pointer; font-size: 12px; color: var(--text-muted, #666); text-decoration: underline; }
+#taskFollowUpSection .fu-add { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+#taskFollowUpSection .fu-line { display: flex; gap: 8px; align-items: center; }
+#taskFollowUpSection .fu-line .detail-input { flex: 1; min-width: 0; }
+body.module-read-only .fu-add,
+body.module-read-only .fu-remove,
+body.module-read-only .chk-followup,
+body.module-read-only .tf-followup,
+body.module-read-only .work-complete,
+body.module-read-only .tp-add,
+body.module-read-only .tp-remove { display: none !important; }
+
+/* ── Board columns by status or by analyst (2.10.0) ─────────────── */
+.board-column--analyst .column-analyst-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    font-size: 10px; font-weight: 600;
+    background: var(--accent-soft, #e8f0fe); color: var(--accent, #2563eb);
+}
+/* The task's status, on the card, in the status's own colour (it is no longer the column). */
+.task-card-status {
+    display: inline-block; margin-bottom: 6px; padding: 1px 7px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; color: var(--st);
+    border: 1px solid var(--st);
+    background: color-mix(in srgb, var(--st) 12%, transparent);
+}
+
+/* ── Subtasks in the task window: columns, and dragging to re-order ─────────
+   One grid for the rows and the heading row above them, so Start and Due line
+   up down the list: handle | tick | name | who | start | due.
+   ────────────────────────────────────────────────────────────────────────── */
+.subtask-item,
+.subtask-head {
+    display: grid;
+    grid-template-columns: 14px 16px minmax(0, 1fr) minmax(0, 110px) 128px 128px;
+    align-items: center;
+    column-gap: 8px;
+}
+.subtask-head {
+    padding: 0 10px 2px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-dim, #999);
+}
+.subtask-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.subtask-item .subtask-assignee { max-width: none; }
+.subtask-handle {
+    color: var(--text-faint, #bbb);
+    font-size: 12px;
+    letter-spacing: -3px;
+    cursor: grab;
+    user-select: none;
+    text-align: center;
+}
+.subtask-item:hover .subtask-handle { color: var(--text-muted, #888); }
+.subtask-item.dragging {
+    opacity: 0.5;
+    background: var(--accent-soft, #ede9fe);
+}
+.subtask-date {
+    width: 100%;
+    padding: 3px 6px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text, #333);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.subtask-item:hover .subtask-date { border-color: var(--border, #e0e0e0); background: var(--surface, #fff); }
+.subtask-date:focus { outline: none; border-color: var(--tsk-accent, #7c3aed); background: var(--surface, #fff); }
+/* An unset date shows the browser's dd/mm/yyyy placeholder - faded until the
+   row is hovered, so a list of undated subtasks does not look like a form. */
+.subtask-date.is-empty { color: var(--text-faint, #bbb); }
+.subtask-item:hover .subtask-date.is-empty { color: var(--text-muted, #888); }
+
+@media (max-width: 700px) {
+    .subtask-item,
+    .subtask-head { grid-template-columns: 14px 16px minmax(0, 1fr) 112px 112px; }
+    .subtask-item .subtask-assignee,
+    .subtask-head > span:nth-child(4) { display: none; }
+}
+
+/* ── Subtasks in a NARROW space - the side panel (GH #184) ─────────────
+   The one-line grid needs ~330px for its fixed parts, and the 480px side panel
+   leaves ~440px - so the owner took what was left and the subtask's NAME got
+   nothing at all. The @media rule above never helped: it measures the WINDOW,
+   and the panel is narrow on the widest screen.
+
+   So this measures the subtask area itself (a container query) and, when it is
+   narrow, gives each row two lines: the handle, tick and name on the first -
+   the name with the whole width - and the owner and the two dates on the
+   second, under their headings. Nothing is hidden; the large task window, which
+   has the room, keeps the one-line row. */
+.subtask-section { container: subtasks / inline-size; }
+@container subtasks (max-width: 600px) {
+    .subtask-item,
+    .subtask-head {
+        grid-template-columns: 14px 16px minmax(0, 1fr) 118px 118px;
+        grid-template-areas:
+            "grip tick name name  name"
+            "grip .    who  start due";
+        row-gap: 2px;
+    }
+    .subtask-item > :nth-child(1), .subtask-head > :nth-child(1) { grid-area: grip; }
+    .subtask-item > :nth-child(2), .subtask-head > :nth-child(2) { grid-area: tick; }
+    .subtask-item > :nth-child(3), .subtask-head > :nth-child(3) { grid-area: name; }
+    .subtask-item > :nth-child(4), .subtask-head > :nth-child(4) { grid-area: who; }
+    .subtask-item > :nth-child(5), .subtask-head > :nth-child(5) { grid-area: start; }
+    .subtask-item > :nth-child(6), .subtask-head > :nth-child(6) { grid-area: due; }
+    .subtask-item .subtask-assignee { font-size: 11px; }
+    .subtask-item .subtask-date { font-size: 11px; padding: 2px 4px; }
+    /* The headings now sit on the second line, over the dates. */
+    .subtask-head { padding-bottom: 0; }
+
+    /* The add row: the name on a line of its own, then the dates and the button. */
+    .subtask-add #newSubtaskInput { flex: 1 1 100%; }
+}
+/* The add row never pushes the panel sideways: it wraps, and its boxes may shrink
+   below the browser's own minimum width for a date box (Mobile-Friendly-Tasks §20).
+   input.subtask-add-due outranks ".subtask-add input", which had been cancelling it. */
+.subtask-add { flex-wrap: wrap; }
+.subtask-add input { min-width: 0; }
+.subtask-add input.subtask-add-due { flex: 1 1 120px; max-width: 160px; }
+
+/* ── Subtasks listed under their card on the board ───────────────────────────
+   Drawn as branches of a tree (Ed): a trunk runs down from the card's meta row
+   and each subtask hangs off it on its own short branch. The last one ends the
+   trunk at its branch, like the └ in a file tree. Each row opens its subtask.
+   ────────────────────────────────────────────────────────────────────────── */
+.task-card-subtasks {
+    margin-top: 6px;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+}
+.task-card-subtask {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--text, #333);
+    cursor: pointer;
+}
+/* The trunk, full height on every row but the last... */
+.task-card-subtask::before {
+    content: '';
+    position: absolute;
+    left: -11px;
+    top: 0;
+    bottom: 0;
+    border-left: 1.5px solid var(--border, #e0e0e0);
+}
+.task-card-subtask:last-child::before { bottom: 50%; }
+/* ...and the branch out to the row. */
+.task-card-subtask::after {
+    content: '';
+    position: absolute;
+    left: -11px;
+    top: 50%;
+    width: 9px;
+    border-top: 1.5px solid var(--border, #e0e0e0);
+}
+.task-card-subtask:hover {
+    background: var(--surface-hover, #f0f0f0);
+    color: var(--tsk-accent, #7c3aed);
+}
+.task-card-subtask:hover .task-card-subtask-title { text-decoration: underline; }
+.task-card-subtask.is-done:hover .task-card-subtask-title { text-decoration: line-through underline; }
+/* The tick is a button that completes the subtask (the rest of the row opens it).
+   The box it draws is 11px; the button around it is 20px, so it is easy to hit. */
+.task-card-subtask-tick {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: -4px -2px -4px -5px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    cursor: pointer;
+}
+.task-card-subtask-tick::before {
+    content: '';
+    width: 11px;
+    height: 11px;
+    box-sizing: border-box;
+    border: 1.5px solid var(--text-faint, #bbb);
+    border-radius: 3px;
+}
+.task-card-subtask-tick:hover::before { border-color: var(--tsk-accent, #7c3aed); }
+.task-card-subtask-tick:focus-visible { outline: 2px solid var(--tsk-accent, #7c3aed); outline-offset: 0; }
+.task-card-subtask-tick:disabled { opacity: .5; cursor: progress; }
+.task-card-subtask.is-done .task-card-subtask-tick::before {
+    background: var(--tsk-accent, #7c3aed);
+    border-color: var(--tsk-accent, #7c3aed);
+}
+.task-card-subtask-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.task-card-subtask.is-done .task-card-subtask-title {
+    text-decoration: line-through;
+    color: var(--text-dim, #999);
+}
+.task-card-subtask .due-badge { font-size: 10px; padding: 1px 5px; }
+
+/* Drag handles on checklists and their steps (2.10.0). */
+#taskChecklistSection .chk-handle {
+    flex-shrink: 0;
+    color: var(--text-faint, #bbb);
+    font-size: 12px;
+    letter-spacing: -3px;
+    cursor: grab;
+    user-select: none;
+    padding-right: 3px;
+}
+#taskChecklistSection .chk-step .chk-handle { margin-top: 2px; }
+#taskChecklistSection .chk-card:hover > .chk-card-head > .chk-handle,
+#taskChecklistSection .chk-step:hover > .chk-handle { color: var(--text-muted, #888); }
+#taskChecklistSection .chk-card.dragging,
+#taskChecklistSection .chk-step.dragging { opacity: 0.5; background: var(--accent-soft, #ede9fe); }
+
+/* ---- Projects (3.2.0): the project a task is part of ------------------------
+   In the project's OWN colour (--pc, from its palette), so a board mixing
+   several projects can be read at a glance. */
+.task-card-project {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    font-size: 11px; font-weight: 650; color: var(--pc, #e11d48);
+    margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.task-card-contractor {
+    display: flex; align-items: center; gap: 5px; max-width: 100%;
+    font-size: 11px; font-weight: 600; color: var(--text-secondary, #555);
+    margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.task-card-contractor span { font-weight: 400; color: var(--text-dim, #888); }
+.task-card-project-dot { width: 8px; height: 8px; border-radius: 3px; background: var(--pc, #e11d48); flex-shrink: 0; display: inline-block; }
+.detail-project-open { margin-left: 8px; font-size: 12px; font-weight: 600; color: var(--prj-accent, #e11d48); text-decoration: none; }
+.detail-project-open:hover { text-decoration: underline; }
+.detail-project-readonly { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text, #333); }
+.detail-project-under { margin-top: 4px; font-size: 12px; color: var(--text-dim, #888); }
+.detail-project-stage { font-weight: 600; color: var(--text-muted, #555); }
+
+.detail-project-open { text-transform: none; letter-spacing: normal; }
+
+/* ── Repeating task evidence (#181) ─────────────────────────────── */
+.recur-scheduled { font-size: 12px; color: var(--text-muted, #666); margin-top: 6px; }
+.recur-evidence { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.recur-evidence a.recur-link { text-decoration: none; display: inline-block; }
+.recur-skip { margin-top: 8px; padding: 10px; border: 1px solid var(--border, #e5e7eb); border-radius: 6px; background: var(--surface-2, #f8f9fa); }
+.recur-skip label { display: block; font-size: 12px; color: var(--text-muted, #666); margin-bottom: 4px; }
+.recur-skip textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 8px;
+    border: 1px solid var(--border, #e5e7eb); border-radius: 4px; background: var(--surface, #fff); color: var(--text, #333); }
+.recur-skip-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+.history-section { margin-top: 20px; }
+.history-section h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted, #666); }
+.history-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--border-soft, #eef0f3); border-radius: 6px; }
+#tdmTab-history .history-list { max-height: none; }
+.history-item { padding: 7px 10px; border-top: 1px solid var(--border-soft, #eef0f3); }
+.history-item:first-child { border-top: 0; }
+.history-what { font-size: 13px; color: var(--text, #333); overflow-wrap: anywhere; }
+.history-meta { font-size: 11px; color: var(--text-muted, #666); margin-top: 2px; }
+.history-step .history-what { color: var(--text-secondary, #555); }
+.history-empty { padding: 10px; font-size: 13px; color: var(--text-muted, #666); }
+
+#taskChecklistSection .chk-result-spacer { width: 13px; flex-shrink: 0; }
+#taskChecklistSection .chk-results { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+#taskChecklistSection .chk-result {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border, #e5e7eb); background: var(--surface, #fff); color: var(--text, #333);
+}
+#taskChecklistSection .chk-result-pass.active { background: var(--success-bg, #dcfce7); border-color: var(--success-text, #16a34a); color: var(--success-text, #166534); }
+#taskChecklistSection .chk-result-fail.active { background: var(--danger-bg, #fee2e2); border-color: var(--danger-text, #b91c1c); color: var(--danger-text, #991b1b); }
+#taskChecklistSection .chk-result-na.active   { background: var(--surface-2, #f0f0f0); border-color: var(--text-muted, #666); color: var(--text, #333); }
+#taskChecklistSection .chk-exception { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; }
+#taskChecklistSection .chk-exception textarea { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 4px 6px;
+    border: 1px solid var(--border, #e5e7eb); border-radius: 4px; background: var(--surface, #fff); color: var(--text, #333); }
+#taskChecklistSection .chk-exception-note { font-size: 12px; color: var(--danger-text, #991b1b); margin-top: 4px; }
+#taskChecklistSection .chk-step.failed .chk-step-title { text-decoration: none; color: var(--danger-text, #991b1b); }
+
+/* Read only access to Tasks (#181 Part G): nothing that writes is offered. The
+   services and endpoints refuse regardless - this only stops the page offering
+   what will be refused. */
+body.module-read-only #detailPanelBody input:not([type="search"]),
+body.module-read-only #detailPanelBody select,
+body.module-read-only #detailPanelBody textarea,
+/* GH #219: the quick-look panel and the table's in-place editors were offered to a
+   read-only analyst too - every save was refused, but the page invited them. */
+body.module-read-only #tqBody input:not([type="search"]),
+body.module-read-only #tqBody select,
+body.module-read-only #tqBody textarea,
+body.module-read-only .dt-edit { pointer-events: none; opacity: .75; }
+body.module-read-only .column-add-btn,
+body.module-read-only .quick-add-container,
+body.module-read-only [onclick^="deleteCurrentTask"],
+body.module-read-only .subtask-add,
+body.module-read-only .comment-add,
+body.module-read-only .link-search-container,
+body.module-read-only .link-remove,
+body.module-read-only .chk-attach,
+body.module-read-only .tf-add,
+body.module-read-only .tf-req,
+body.module-read-only .tf-fill,
+body.module-read-only #taskFormsSection .btn-link-small,
+body.module-read-only .chk-results,
+body.module-read-only .chk-handle,
+body.module-read-only .subtask-handle,
+body.module-read-only #taskChecklistSection .btn-link-small,
+body.module-read-only #taskChecklistSection input[type="checkbox"],
+body.module-read-only .recur-link[onclick],
+body.module-read-only .recur-skip,
+body.module-read-only #ctxMenu .ctx-item:not([data-action="open"]):not([data-action="copylink"]),
+body.module-read-only #ctxMenu .ctx-sep { display: none !important; }
+
+/* GH #191: the note under Card order while cards are sorted by due date. */
+.sidebar-hint { font-size: 11px; line-height: 1.4; color: var(--text-muted, #666); margin-top: 6px; }
+
+/* GH #218: a note under a read-only field, e.g. a contractor kept while contractor fields are hidden. */
+.detail-field .detail-hint { margin-top: 4px; font-size: 12px; color: var(--text-muted, #666); }

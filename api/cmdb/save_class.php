@@ -8,6 +8,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -16,6 +20,15 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+requireModuleAccessJson('cmdb');
+requireCapabilityJson(Cap::CMDB_CLASSES);   // settings tab — see docs/design/rbac.md
+
+/**
+ * Turns a class name into a lower-case key of letters, digits and underscores, falling
+ * back to 'class' when nothing is left.
+ *
+ * @param mixed $name  the class name as typed
+ */
 function slugify($name) {
     $slug = strtolower(trim($name));
     $slug = preg_replace('/[^a-z0-9]+/', '_', $slug);
@@ -64,6 +77,7 @@ try {
         );
         $stmt->execute([$key, $name, $description ?: null, $iconId, $displayOrder, $isActive]);
         $newId = (int)$conn->lastInsertId();
+        wf_emit('cmdb_class', 'created', $newId, $name);
         echo json_encode(['success' => true, 'id' => $newId, 'class_key' => $key]);
     } else {
         // Refuse a key change that would collide with another class
@@ -79,6 +93,7 @@ try {
               WHERE id = ?"
         );
         $stmt->execute([$key, $name, $description ?: null, $iconId, $displayOrder, $isActive, $id]);
+        wf_emit('cmdb_class', 'updated', $id, $name);
         echo json_encode(['success' => true, 'id' => $id]);
     }
 } catch (Exception $e) {

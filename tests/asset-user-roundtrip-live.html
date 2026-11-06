@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><body><pre id="out">…</pre><script>
+/**
+ * Asset <-> person, both directions (#85 plus Ed's follow-up) — the LIVE run.
+ *
+ * Read-only: it opens pages and reads links, and writes nothing.
+ *
+ * ⚠️ Each "did it open the right record?" check looks for the record's OWN NAME
+ * in the panel, never merely that a panel exists — the panels have a "select
+ * something" empty state with plenty of text in it, and an earlier test passed
+ * on exactly that. Bogus ids are checked alongside to prove the tests can fail.
+ *
+ * HOW TO RUN — needs a signed-in analyst:
+ *   printf 'analyst_id|i:1;' > c:/wamp64/tmp/sess_rp85
+ *   .../tests/asset-user-roundtrip-live.html?sid=rp85&asset=15&user=128
+ */
+const P=new URLSearchParams(location.search);
+if(P.get('sid'))document.cookie='PHPSESSID='+P.get('sid')+'; path=/';
+const ASSET=P.get('asset')||'15', USER=P.get('user')||'128';
+const L=[];const log=s=>{L.push(s);document.getElementById('out').textContent=L.join('\n');};
+const ok=(w,c,d)=>log((c?'PASS  ':'FAIL  ')+w+(c||!d?'':'  <- '+d));
+const wait=(fn,ms)=>new Promise(r=>{const t0=Date.now();(function p(){let v=null;try{v=fn()}catch(e){}
+  if(v)return r(v); if(Date.now()-t0>ms)return r(null); setTimeout(p,250)})()});
+function frame(src){const x=document.createElement('iframe');
+  x.style.cssText='width:1500px;height:1000px;position:absolute;left:-9999px';
+  document.body.appendChild(x);x.src=src;return x;}
+async function open_(src){const g=frame(src);
+  await new Promise(r=>{g.onload=r;setTimeout(r,10000)});return g;}
+
+(async()=>{
+  // --- Asset -> person -------------------------------------------------
+  const g=await open_('../asset-management/index.php?asset_id='+ASSET);
+  const link=await wait(()=>g.contentDocument.querySelector('#assignedInfo a.user-name-link'),20000);
+  ok('the holder\'s name on an asset is a link', !!link,
+     'the assigned panel shows plain text');
+  if(!link){return;}
+  const href=link.getAttribute('href'), who=link.textContent.trim();
+  log('  "'+who+'" -> '+href);
+  ok('…and it points at users.php?user_id=<number>', /^users\.php\?user_id=\d+$/.test(href), href);
+
+  // Does it actually open that person?
+  const shows=async(src,needle,sel)=>{
+    const h=await open_(src);
+    const hit=await wait(()=>{const t=h.contentDocument.querySelector(sel);
+      return t && t.textContent.indexOf(needle)!==-1 ? true : null;},20000);
+    h.remove(); return !!hit;
+  };
+  ok('following it opens that person\'s record',
+     await shows('../asset-management/'+href, who, '#auDetail'));
+  ok('NEGATIVE CONTROL: a bogus user_id does not show them',
+     !(await shows('../asset-management/users.php?user_id=999999999', who, '#auDetail')));
+
+  // --- Person -> asset (the #85 direction), so the loop is closed -------
+  const u=await open_('../asset-management/users.php?user_id='+USER);
+  const alink=await wait(()=>u.contentDocument.querySelector('#auDetail td a.au-link'),20000);
+  ok('equipment listed against that person is a link', !!alink);
+  if(alink){
+    const ahref=alink.getAttribute('href'), what=alink.textContent.trim();
+    log('  "'+what+'" -> '+ahref);
+    ok('following it opens that asset',
+       await shows('../asset-management/'+ahref, what, '#assetDetail'));
+    ok('NEGATIVE CONTROL: a bogus asset_id does not show it',
+       !(await shows('../asset-management/index.php?asset_id=999999999', what, '#assetDetail')));
+  }
+  log('\ndone');
+})();
+</script></body>

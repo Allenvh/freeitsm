@@ -9,6 +9,9 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/rfp_docx_parser.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
@@ -16,6 +19,13 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+// The RFP Builder is part of the Contracts module — its PAGES have always checked
+// this, its endpoints never did. Any logged-in analyst could read, edit or delete
+// any RFP by calling the API directly. (Found by debug tool D005.)
+requireModuleAccessJson('contracts');
+// The RFP's company (3.5.0): one in a company this analyst cannot reach is "not found".
+require_once '../../includes/rfp_scope.php';
+rfpGate('rfp', 'rfp_id');
 const RFP_UPLOAD_MAX_BYTES = 20 * 1024 * 1024; // 20 MB
 $uploadDir = __DIR__ . '/../../contracts/rfp-builder/uploads/';
 
@@ -33,14 +43,18 @@ try {
     $file = $_FILES['file'];
 
     if ($file['error'] !== UPLOAD_ERR_OK) {
-        $msg = match ($file['error']) {
-            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'File too large (server limit)',
+        // TRAP: a lookup, not match(). A file the web server runs directly must
+        // parse on old PHP, or includes/php_version_guard.php never gets to say
+        // "this needs PHP 8.1" - PHP reads the whole file before running any of it.
+        $uploadErrors = [
+            UPLOAD_ERR_INI_SIZE   => 'File too large (server limit)',
+            UPLOAD_ERR_FORM_SIZE  => 'File too large (server limit)',
             UPLOAD_ERR_PARTIAL    => 'File only partially uploaded',
             UPLOAD_ERR_NO_FILE    => 'No file selected',
             UPLOAD_ERR_NO_TMP_DIR => 'Server has no temp directory',
             UPLOAD_ERR_CANT_WRITE => 'Server failed to write the file',
-            default               => 'Upload failed (error code ' . $file['error'] . ')',
-        };
+        ];
+        $msg = $uploadErrors[$file['error']] ?? ('Upload failed (error code ' . $file['error'] . ')');
         throw new Exception($msg);
     }
     if ($file['size'] > RFP_UPLOAD_MAX_BYTES) {

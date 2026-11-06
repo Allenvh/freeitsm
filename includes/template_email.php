@@ -6,7 +6,32 @@
  * Templates are configured in Tickets > Settings > Templates.
  */
 
+require_once __DIR__ . '/mailbox_provider.php';   // MailboxProvider
 require_once __DIR__ . '/encryption.php';
+require_once __DIR__ . '/email_log.php';
+require_once __DIR__ . '/public_url.php';   // publicAbsoluteUrl(), for the [ticket_url] merge code
+require_once __DIR__ . '/timezone.php';     // fmt_local(), for the [created_date] merge code (GH #126)
+
+/**
+ * Who an event's email is addressed to: 'requester' or 'analyst'.
+ *
+ * 🔑 THIS IS THE ONLY DEFINITION. The settings screen shows the audience in
+ * its "Sends to" column and must not keep a second copy of this map - a screen
+ * that says "Requester" while the sender picks the analyst is worse than no
+ * column at all. api/tickets/get_email_templates.php calls this and hands the
+ * answer to the browser.
+ *
+ * Everything except analyst_assigned goes to the requester, and that is the
+ * safe default for any event added later: an email that reaches the customer
+ * when it should not have is a bad day, but an internal notification quietly
+ * sent to nobody is a feature that looks broken.
+ *
+ * @param string $eventTrigger  the template event, e.g. 'new_ticket_email', 'analyst_assigned', 'ticket_closed'
+ */
+function templateEventAudience(string $eventTrigger): string
+{
+    return $eventTrigger === 'analyst_assigned' ? 'analyst' : 'requester';
+}
 
 /**
  * Main entry point — send a template email for a ticket event.
@@ -15,17 +40,47 @@ require_once __DIR__ . '/encryption.php';
  *
  * $extraMergeData allows callers (e.g. the CSAT flow) to inject additional
  * placeholders like `csat_link` that aren't derivable from the ticket alone.
+ *
+ * @param string $eventTrigger  the template event: 'new_ticket_email', 'ticket_assigned', 'analyst_assigned', 'ticket_closed',
+ *     'csat_request' or 'note_shared'
+ * @param array $extraMergeData  more merge codes the ticket alone cannot supply, as [code => value], e.g. ['csat_link' => url]
  */
 function sendTemplateEmail(PDO $conn, int $ticketId, string $eventTrigger, array $extraMergeData = []): void {
     try {
-        $template = getActiveTemplate($conn, $eventTrigger);
-        if (!$template) {
-            return; // No active template for this event
-        }
-
+        // ⚠️ Merge data FIRST, because which template applies now depends on who the
+        // email is going to (discussion #80). It used to be the other way round.
         $mergeData = buildTicketMergeData($conn, $ticketId);
         if (!$mergeData) {
             error_log("Template email: could not build merge data for ticket $ticketId");
+            return;
+        }
+
+        // 🔑 SELECTION IS ALWAYS KEYED ON THE REQUESTER, even for an event whose
+        // email goes to an analyst. Sender rules answer "which customers does
+        // this template cover" (#80) - scoping an analyst notification by the
+        // analyst's own domain would match every ticket or none of them.
+        $choice   = templateSelectForRecipient($conn, $eventTrigger, $mergeData['requester_email'] ?? '');
+        $template = $choice['template'];
+        if (!$template) {
+            // 'no_active_template' is the state every install has always been able to
+            // reach and is not worth a row — nobody configured a template, so nobody
+            // is expecting an email. 'no_match' is the new one and is the whole point
+            // of logging: templates exist, this sender matched none of them, and the
+            // only other evidence would be an email that never arrived.
+            if ($choice['reason'] === 'no_match') {
+                // Resolve the mailbox even though nothing is being sent, so the row
+                // files under the mailbox that took the email in. Logged against no
+                // mailbox at all it would land in the "sends with no mailbox" bucket,
+                // which is not where anybody asking "why did this mailbox not reply?"
+                // will look. One extra query, only on the path that sends nothing.
+                emailLogSkipped(
+                    $conn, templateGetMailboxForTicket($conn, $ticketId), 'template',
+                    (string)($mergeData['requester_email'] ?? ''),
+                    'Automatic email: ' . $eventTrigger,
+                    'No email template applies to this sender. Every template for this event is limited to particular senders, and none of them covers this one.',
+                    $ticketId
+                );
+            }
             return;
         }
 
@@ -34,6 +89,31 @@ function sendTemplateEmail(PDO $conn, int $ticketId, string $eventTrigger, array
         $mergeData = array_merge($mergeData, $extraMergeData);
 
         // Resolve merge codes in subject and body
+        // ⚠️ Decide plain-vs-HTML from the TEMPLATE, before anything is merged in.
+        //
+        // buildTemplateEmailBody() makes the same decision by testing the body it
+        // is handed — but by then the merge codes have been substituted, so a
+        // VALUE containing a tag flipped the verdict for the whole template. A
+        // note reading "use the <table> in the office" would have turned an
+        // otherwise plain-text template into an HTML one, and everything else in
+        // it would silently stop being escaped. Whether the template is HTML is a
+        // property of the template the administrator wrote, not of today's data.
+        $bodyIsHtml = strip_tags($template['body_template']) !== $template['body_template'];
+
+        // Caller-supplied values are free-form text — a note body, most of all —
+        // so they are escaped when they are about to land inside HTML. Values
+        // built from the ticket are left as they were: they already render
+        // correctly today and this is not the change to alter them in.
+        //
+        // When the template is PLAIN text nothing is escaped here, because
+        // buildTemplateEmailBody() escapes the whole body afterwards; escaping
+        // twice would show the customer literal &amp;lt; and &lt;br&gt;.
+        if ($bodyIsHtml) {
+            foreach ($extraMergeData as $k => $v) {
+                $mergeData[$k] = nl2br(htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'));
+            }
+        }
+
         $subject = resolveMergeCodes($template['subject_template'], $mergeData);
         $body = resolveMergeCodes($template['body_template'], $mergeData);
 
@@ -43,34 +123,56 @@ function sendTemplateEmail(PDO $conn, int $ticketId, string $eventTrigger, array
             return; // Manual ticket or no mailbox — skip silently
         }
 
-        if (empty($mailbox['token_data'])) {
-            error_log("Template email: mailbox {$mailbox['id']} has no token data");
-            return;
-        }
-
-        // Parse and validate token
-        $cleanedTokenData = preg_replace('/[\x00-\x1F\x7F]/', '', $mailbox['token_data']);
-        $tokenData = json_decode($cleanedTokenData, true);
-        if (!$tokenData || !isset($tokenData['access_token'])) {
-            error_log("Template email: invalid token data for mailbox {$mailbox['id']}");
-            return;
-        }
-
-        // Get valid access token (refresh if needed)
-        $provider = $mailbox['provider'] ?? 'microsoft';
-        if ($provider === 'google') {
+        $provider = MailboxProvider::fromMailbox($mailbox);
+        $accessToken = null;
+        $graphBase = '/me';
+        if ($provider === MailboxProvider::Imap) {
+            // Basic IMAP sends via SMTP — no OAuth token to validate/refresh.
+            require_once __DIR__ . '/mailbox_imap.php';
+        } elseif ($provider === MailboxProvider::Google) {
+            if (empty($mailbox['token_data'])) {
+                error_log("Template email: mailbox {$mailbox['id']} has no token data");
+                return;
+            }
+            $cleanedTokenData = preg_replace('/[\x00-\x1F\x7F]/', '', $mailbox['token_data']);
+            $tokenData = json_decode($cleanedTokenData, true);
+            if (!$tokenData || !isset($tokenData['access_token'])) {
+                error_log("Template email: invalid token data for mailbox {$mailbox['id']}");
+                return;
+            }
             require_once __DIR__ . '/gmail.php';
             $accessToken = gmailGetValidAccessToken($conn, $mailbox, $tokenData);
+            if (!$accessToken) {
+                error_log("Template email: failed to get access token for mailbox {$mailbox['id']}");
+                emailLogFailed($conn, $mailbox, 'template', $mergeData['requester_email'] ?? '',
+                    $subject, 'Could not obtain an access token for this mailbox', $ticketId);
+                return;
+            }
         } else {
-            $accessToken = templateGetValidAccessToken($conn, $mailbox, $tokenData);
-        }
-        if (!$accessToken) {
-            error_log("Template email: failed to get access token for mailbox {$mailbox['id']}");
-            return;
+            // Microsoft: token source AND endpoint both depend on auth_mode, so don't
+            // test for stored token_data here — an app-only mailbox legitimately has
+            // none until it first mints one.
+            $graph = templateGraphContext($conn, $mailbox);
+            if (!$graph) {
+                error_log("Template email: failed to get access token for mailbox {$mailbox['id']}");
+                emailLogFailed($conn, $mailbox, 'template', $mergeData['requester_email'] ?? '',
+                    $subject, 'Could not obtain an access token for this mailbox '
+                    . '(check the mailbox is authenticated, and that its authentication mode matches its stored token)',
+                    $ticketId);
+                return;
+            }
+            $accessToken = $graph['token'];
+            $graphBase   = $graph['base'];
         }
 
         // Get recipient (the ticket requester)
-        $recipientEmail = $mergeData['requester_email'] ?? '';
+        // The analyst address is read from the ASSIGNED ANALYST alone, never
+        // from [analyst_email] - that code is COALESCE(owner, analyst) and
+        // resolves to the owner whenever the two differ, which on real data is
+        // most tickets.
+        $recipientEmail = templateEventAudience($eventTrigger) === 'analyst'
+            ? ($mergeData['assigned_analyst_email'] ?? '')
+            : ($mergeData['requester_email'] ?? '');
         if (empty($recipientEmail)) {
             error_log("Template email: no requester email for ticket $ticketId");
             return;
@@ -82,10 +184,12 @@ function sendTemplateEmail(PDO $conn, int $ticketId, string $eventTrigger, array
         $fullSubject = "[SDREF:$ticketNumber] $subject";
 
         // Build HTML body with reply marker
-        $fullBody = buildTemplateEmailBody($body, $ticketNumber);
+        $fullBody = buildTemplateEmailBody($body, $ticketNumber, $bodyIsHtml);
 
         // Send via appropriate API
-        if ($provider === 'google') {
+        if ($provider === MailboxProvider::Imap) {
+            imapSmtpSend($mailbox, $recipientEmail, '', $fullSubject, $fullBody);
+        } elseif ($provider === MailboxProvider::Google) {
             $fromAddress = $mailbox['target_mailbox'] ?? '';
             gmailSendEmail($accessToken, $recipientEmail, $fullSubject, $fullBody, $fromAddress);
         } else {
@@ -102,29 +206,151 @@ function sendTemplateEmail(PDO $conn, int $ticketId, string $eventTrigger, array
                 ],
                 'saveToSentItems' => true
             ];
-            templateSendViaGraph($accessToken, $message);
+            templateSendViaGraph($accessToken, $message, $graphBase);
         }
 
-        // Save to emails table
-        templateSaveSentEmail($conn, $ticketId, $mailbox, $recipientEmail, $fullSubject, $body);
+        emailLogSent($conn, $mailbox, 'template', $recipientEmail, $fullSubject, $ticketId);
+
+        // Save to the conversation - only what went to the REQUESTER (GH #244).
+        // TRAP: an email to an analyst ("this ticket is now yours") is internal. Stored
+        // in the conversation it became the newest message, so Reply addressed the
+        // reply to the analyst, and a portal that shows third-party messages showed it
+        // to the requester. It is still in the email send log above, and the ticket's
+        // history says it was sent.
+        if (templateEventAudience($eventTrigger) === 'analyst') {
+            templateNoteAnalystEmail($conn, $ticketId, (string)($mergeData['assigned_analyst_name'] ?? ''), $recipientEmail);
+        } else {
+            templateSaveSentEmail($conn, $ticketId, $mailbox, $recipientEmail, $fullSubject, $body);
+        }
 
     } catch (Exception $e) {
         error_log("Template email error ($eventTrigger, ticket $ticketId): " . $e->getMessage());
+        // The error log alone is what made this class of failure invisible: an
+        // acknowledgement that silently never sends looks identical to one nobody
+        // happened to trigger.
+        emailLogFailed(
+            $conn, $mailbox ?? null, 'template',
+            $recipientEmail ?? '', $fullSubject ?? '', $e->getMessage(), $ticketId
+        );
     }
 }
 
 /**
  * Get the first active template for a given event trigger.
+ *
+ * @param string $eventTrigger  the template event, e.g. 'ticket_closed'
+ * @param ?string $recipientEmail  the requester's address, matched against sender rules; null or '' matches unrestricted templates only
  */
-function getActiveTemplate(PDO $conn, string $eventTrigger): ?array {
-    $sql = "SELECT * FROM ticket_email_templates
-            WHERE event_trigger = ? AND is_active = 1
-            ORDER BY display_order ASC, id ASC
-            LIMIT 1";
-    $stmt = $conn->prepare($sql);
+function getActiveTemplate(PDO $conn, string $eventTrigger, ?string $recipientEmail = null): ?array {
+    return templateSelectForRecipient($conn, $eventTrigger, $recipientEmail)['template'];
+}
+
+/**
+ * Choose the template for an event and a recipient, and say WHY it was chosen.
+ *
+ * ⚠️ SPECIFICITY DECIDES, NOT ORDER. This is the whole design of the sender rules
+ * (discussion #80) and the reason they are safe to hand to an administrator:
+ *
+ *      1. a rule naming this exact address      someone@a.com
+ *      2. a rule naming this domain             a.com
+ *      3. a template with no rules at all       everyone
+ *
+ * The alternative — evaluate top to bottom, first match wins — requires the admin
+ * to get the rules right AND the ordering right, and gives no sign when the second
+ * is wrong. Here, dragging rows cannot change which template is sent. `display_order`
+ * survives only as a tie-break between two rules of equal specificity, which is a
+ * genuine ambiguity the settings screen flags rather than resolves silently.
+ *
+ * ⚠️ NO RULES MEANS EVERYONE, not nobody. The permissive case is the empty case, so
+ * a template nobody has restricted keeps working and a fresh install always has a
+ * catch-all. Inverting that would make "forgot to add a rule" mean silence.
+ *
+ * Returns ['template' => ?array, 'reason' => string, 'matched' => ?array] — the
+ * reason is what the simulator shows and what is written to the send log when
+ * nothing matches, so the answer to "why did nobody get a reply?" survives the
+ * twelve months after everyone forgets this screen exists.
+ *
+ * @param string $eventTrigger  the template event, e.g. 'ticket_closed'
+ * @param ?string $recipientEmail  the requester's address, matched against sender rules; null or '' matches unrestricted templates only
+ */
+function templateSelectForRecipient(PDO $conn, string $eventTrigger, ?string $recipientEmail = null): array
+{
+    $stmt = $conn->prepare(
+        "SELECT * FROM ticket_email_templates
+          WHERE event_trigger = ? AND is_active = 1
+          ORDER BY display_order ASC, id ASC"
+    );
     $stmt->execute([$eventTrigger]);
-    $template = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $template ?: null;
+    $templates = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!$templates) {
+        return ['template' => null, 'reason' => 'no_active_template', 'matched' => null];
+    }
+
+    $rules = templateRulesByTemplate($conn, array_column($templates, 'id'));
+
+    $email  = strtolower(trim((string)$recipientEmail));
+    $domain = ($at = strrpos($email, '@')) !== false ? substr($email, $at + 1) : '';
+
+    $unrestricted = null;
+    $byDomain     = null;
+    foreach ($templates as $tpl) {
+        $mine = $rules[(int)$tpl['id']] ?? [];
+
+        if (!$mine) {
+            // Ordered by display_order already, so the first one found is the winner.
+            if ($unrestricted === null) $unrestricted = $tpl;
+            continue;
+        }
+        // Without a recipient there is nothing to match a rule against, so a
+        // restricted template can never be the answer.
+        if ($email === '') {
+            continue;
+        }
+        foreach ($mine as $rule) {
+            if ($rule['match_type'] === 'address' && $rule['match_value'] === $email) {
+                return ['template' => $tpl, 'reason' => 'address', 'matched' => $rule];
+            }
+            if ($rule['match_type'] === 'domain' && $domain !== '' && $rule['match_value'] === $domain
+                && $byDomain === null) {
+                $byDomain = ['template' => $tpl, 'reason' => 'domain', 'matched' => $rule];
+            }
+        }
+    }
+
+    if ($byDomain)     return $byDomain;
+    if ($unrestricted) return ['template' => $unrestricted, 'reason' => 'everyone', 'matched' => null];
+
+    return ['template' => null, 'reason' => 'no_match', 'matched' => null];
+}
+
+/**
+ * Sender rules for the given templates, keyed by template id, values lowercased.
+ *
+ * @param array $templateIds  ticket_email_templates ids
+ */
+function templateRulesByTemplate(PDO $conn, array $templateIds): array
+{
+    if (!$templateIds) return [];
+    try {
+        $in   = implode(',', array_fill(0, count($templateIds), '?'));
+        $stmt = $conn->prepare("SELECT template_id, match_type, match_value
+                                  FROM ticket_email_template_rules
+                                 WHERE template_id IN ($in)");
+        $stmt->execute(array_map('intval', $templateIds));
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $out[(int)$r['template_id']][] = [
+                'match_type'  => $r['match_type'],
+                'match_value' => strtolower(trim((string)$r['match_value'])),
+            ];
+        }
+        return $out;
+    } catch (Exception) {
+        // A part-upgraded install without the table has no rules, which means every
+        // template applies to everyone — exactly the behaviour before this existed.
+        return [];
+    }
 }
 
 /**
@@ -137,6 +363,12 @@ function buildTicketMergeData(PDO $conn, int $ticketId): ?array {
                    t.created_datetime, t.closed_datetime,
                    COALESCE(o.full_name, a.full_name) AS analyst_name,
                    COALESCE(o.email, a.email) AS analyst_email,
+                   -- The assigned analyst ONLY. [analyst_name]/[analyst_email]
+                   -- above prefer the OWNER, which is a different person on most
+                   -- tickets; an email telling somebody they have been assigned
+                   -- work cannot use a code that might name their colleague.
+                   a.full_name AS assigned_analyst_name,
+                   a.email AS assigned_analyst_email,
                    d.name AS department_name
             FROM tickets t
             LEFT JOIN ticket_statuses ts ON ts.id = t.status_id
@@ -156,6 +388,15 @@ function buildTicketMergeData(PDO $conn, int $ticketId): ?array {
 
     return [
         'ticket_reference' => $row['ticket_number'] ?? '',
+        // A clickable way back to the ticket, asked for in discussion #80. It points
+        // at the SELF-SERVICE view rather than the analyst one, because everything
+        // built from this data is addressed to the requester — an analyst link would
+        // land them on a login page they have no account for.
+        //
+        // publicAbsoluteUrl() is what makes it usable: these emails are usually sent
+        // by the mail collector from cron, where there is no request to read a host
+        // from, so a link built any other way would be a bare path.
+        'ticket_url' => publicAbsoluteUrl($conn, 'self-service/tickets.php?id=' . $ticketId),
         'ticket_subject' => $row['subject'] ?? '',
         'ticket_status' => $row['status'] ?? '',
         'ticket_priority' => $row['priority'] ?? '',
@@ -165,14 +406,37 @@ function buildTicketMergeData(PDO $conn, int $ticketId): ?array {
         'requester_email' => $row['requester_email'] ?? '',
         'analyst_name' => $row['analyst_name'] ?? '',
         'analyst_email' => $row['analyst_email'] ?? '',
+        'assigned_analyst_name' => $row['assigned_analyst_name'] ?? '',
+        'assigned_analyst_first_name' => trim(explode(' ', trim($row['assigned_analyst_name'] ?? ''))[0]),
+        'assigned_analyst_email' => $row['assigned_analyst_email'] ?? '',
+        // [ticket_url] points at the SELF-SERVICE view because everything else
+        // built from this data is addressed to the requester. An analyst has no
+        // account there, so an analyst-bound email needs the inbox link instead.
+        'ticket_url_analyst' => publicAbsoluteUrl($conn, 'tickets/index.php?ticket_id=' . $ticketId),
         'department_name' => $row['department_name'] ?? '',
-        'created_date' => $row['created_datetime'] ? date('d M Y H:i', strtotime($row['created_datetime'])) : '',
-        'closed_date' => $row['closed_datetime'] ? date('d M Y H:i', strtotime($row['closed_datetime'])) : '',
+        // 🔴 These were `date('d M Y H:i', strtotime($utc))` (GH #126). Both halves
+        // run in PHP's default zone — which config.php pins to Europe/London — so
+        // the value round-tripped through the same zone it went in by and came out
+        // as the UNCONVERTED digits of the stored UTC value. The email therefore
+        // showed a time converted for nobody: two hours BEHIND a reader in Vienna,
+        // which is the mirror image of the note bug in the same report.
+        //
+        // fmt_local() converts a stored UTC instant into the display zone, which is
+        // the analyst's own preference where there is a session and the install
+        // default where there is not. ⚠️ Most of this file's mail is sent by the
+        // collector from cron, so in practice that is usually the install default —
+        // which is the right answer available, but it is NOT the recipient's zone.
+        // A requester's timezone is not something FreeITSM stores.
+        'created_date' => fmt_local($row['created_datetime'] ?? null, 'd M Y H:i'),
+        'closed_date' => fmt_local($row['closed_datetime'] ?? null, 'd M Y H:i'),
     ];
 }
 
 /**
  * Replace [merge_code] placeholders with actual values.
+ *
+ * @param string $template  the template text (subject or body) holding [merge_code] placeholders
+ * @param array $mergeData  [code => value]; values are put in as they are, not escaped
  */
 function resolveMergeCodes(string $template, array $mergeData): string {
     foreach ($mergeData as $code => $value) {
@@ -184,9 +448,26 @@ function resolveMergeCodes(string $template, array $mergeData): string {
 /**
  * Build the full HTML body with reply marker for threading.
  */
-function buildTemplateEmailBody(string $bodyContent, string $ticketNumber): string {
-    // Convert newlines to <br> if the body appears to be plain text (no HTML tags)
-    if (strip_tags($bodyContent) === $bodyContent) {
+/**
+ * Wraps a template email body in the house HTML, the "Please reply above this
+ * line" marker and the hidden SDREF tag that threads a reply back to the ticket.
+ *
+ * Plain-text bodies are escaped and their newlines turned into <br>.
+ *
+ * @param string $bodyContent  the merged body - HTML, or plain text which is escaped here
+ * @param string $ticketNumber  the ticket number written into the hidden SDREF reply tag
+ * @param ?bool $isHtml Whether the TEMPLATE was HTML, decided before merge codes
+ *                      were substituted. Pass it whenever you know: sniffing the
+ *                      merged body means a data value containing a tag decides
+ *                      the question for the whole email. Null keeps the old
+ *                      sniff for callers that have no template to inspect.
+ */
+function buildTemplateEmailBody(string $bodyContent, string $ticketNumber, ?bool $isHtml = null): string {
+    // Convert newlines to <br> if the body is plain text (no HTML tags)
+    if ($isHtml === null) {
+        $isHtml = strip_tags($bodyContent) !== $bodyContent;
+    }
+    if (!$isHtml) {
         $bodyContent = nl2br(htmlspecialchars($bodyContent, ENT_QUOTES, 'UTF-8'));
     }
 
@@ -227,6 +508,9 @@ function templateGetMailboxForTicket(PDO $conn, int $ticketId): ?array {
 
 /**
  * Get a valid access token, refreshing if expired.
+ *
+ * @param array $mailbox  the target_mailboxes row, decrypted (azure_tenant_id, azure_client_id, azure_client_secret, oauth_scopes)
+ * @param array $tokenData  the mailbox's decoded token_data: access_token, refresh_token, expires_at
  */
 function templateGetValidAccessToken(PDO $conn, array $mailbox, array $tokenData): ?string {
     if (isset($tokenData['expires_at']) && $tokenData['expires_at'] < (time() + 300)) {
@@ -248,8 +532,7 @@ function templateGetValidAccessToken(PDO $conn, array $mailbox, array $tokenData
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, SSL_VERIFY_PEER ? 2 : 0);
+        sslApplyCurl($ch);
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -271,23 +554,92 @@ function templateGetValidAccessToken(PDO $conn, array $mailbox, array $tokenData
         // Save refreshed token
         $saveSql = "UPDATE target_mailboxes SET token_data = ? WHERE id = ?";
         $saveStmt = $conn->prepare($saveSql);
-        $saveStmt->execute([json_encode($tokenData), $mailbox['id']]);
+        // Encrypted at rest — see ENCRYPTED_MAILBOX_COLUMNS; decryptMailboxRow() reverses it.
+        $saveStmt->execute([encryptValue(json_encode($tokenData)), $mailbox['id']]);
     }
 
     return $tokenData['access_token'];
 }
 
 /**
- * Send an email message via Microsoft Graph API.
+ * Everything a Microsoft send needs for one mailbox: a valid access token and the
+ * Graph base path to send from. Returns null if no usable token could be obtained.
+ *
+ * The two auth modes differ in BOTH halves, which is what made issue #67 subtle:
+ *
+ *   delegated : a user signed in. token_data carries a refresh_token, and calls go
+ *               to /me — Graph resolves "me" from the user inside the token.
+ *   app_only  : client credentials. There is no user, so /me is meaningless and Graph
+ *               rejects it with "/me request is only valid with delegated
+ *               authentication flow" (HTTP 400). Calls go to /users/<target>, and
+ *               there is no refresh_token either — the token is re-minted from the
+ *               client secret.
+ *
+ * Correcting only the path leaves a slower bug behind: templateGetValidAccessToken()
+ * returns null for an app-only mailbox the moment its cached token expires, because it
+ * looks for a refresh_token that client credentials never issue. That failure is masked
+ * in normal use because the mail poller re-mints the cached token as a side effect of
+ * reading — so sends work until polling stops or an hour passes, then fail with a
+ * misleading "failed to get access token".
+ *
+ * @param array $mailbox  the target_mailboxes row, decrypted
  */
-function templateSendViaGraph(string $accessToken, array $message): void {
+function templateGraphContext(PDO $conn, array $mailbox): ?array {
+    require_once __DIR__ . '/mailbox_graph.php';
+
+    if (mailboxIsAppOnly($mailbox)) {
+        try {
+            // No refresh token exists for client credentials — mint (or reuse the
+            // cached) token. Throws on a bad secret / consent problem; that must not
+            // escape into callers that only expect a null.
+            $token = mailboxAppOnlyToken($conn, $mailbox);
+        } catch (Exception $e) {
+            error_log('Graph app-only token failed for mailbox '
+                . ($mailbox['id'] ?? '?') . ': ' . $e->getMessage());
+            return null;
+        }
+    } else {
+        $cleaned   = preg_replace('/[\x00-\x1F\x7F]/', '', (string)($mailbox['token_data'] ?? ''));
+        $tokenData = $cleaned !== '' ? json_decode($cleaned, true) : null;
+        if (!$tokenData || !isset($tokenData['access_token'])) {
+            return null;
+        }
+        // A token minted for app-only is NOT usable here. Switching a mailbox from
+        // app-only back to delegated used to leave the old token in place, and it is
+        // refused at /me with the very error this function exists to prevent — while
+        // looking like the original bug had come back. Refuse it and make the mailbox
+        // report itself unauthenticated, which prompts a real sign-in.
+        if (!empty($tokenData['app_only'])) {
+            error_log('Graph: mailbox ' . ($mailbox['id'] ?? '?')
+                . ' is delegated but holds an app-only token — re-authentication needed');
+            return null;
+        }
+        $token = templateGetValidAccessToken($conn, $mailbox, $tokenData);
+    }
+
+    return $token ? ['token' => $token, 'base' => mailboxResolveGraphBase($mailbox)] : null;
+}
+
+/**
+ * Send an email message via Microsoft Graph API.
+ *
+ * $graphBase is '/me' (delegated) or '/users/<addr>' (app-only) — get it from
+ * templateGraphContext(). It is deliberately REQUIRED rather than defaulting to '/me':
+ * a default would reproduce exactly the silent wrong-endpoint bug this argument exists
+ * to fix, and a missed caller should fail loudly at development time instead of quietly
+ * sending from the wrong mailbox.
+ *
+ * @param string $accessToken  a valid Microsoft Graph access token, from templateGraphContext()
+ * @param array $message  the Graph sendMail body: ['message' => [...], 'saveToSentItems' => bool]
+ * @param string $graphBase  '/me' (delegated) or '/users/<address>' (app-only), from templateGraphContext()
+ */
+function templateSendViaGraph(string $accessToken, array $message, string $graphBase): void {
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, 'https://graph.microsoft.com/v1.0/me/sendMail');
+    curl_setopt($ch, CURLOPT_URL, 'https://graph.microsoft.com/v1.0' . $graphBase . '/sendMail');
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($message));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, SSL_VERIFY_PEER);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, SSL_VERIFY_PEER ? 2 : 0);
+    sslApplyCurl($ch);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Authorization: Bearer ' . $accessToken,
         'Content-Type: application/json'
@@ -312,7 +664,114 @@ function templateSendViaGraph(string $accessToken, array $message): void {
 }
 
 /**
+ * Send an internal notification ABOUT a ticket to staff addresses - an SLA alert,
+ * a closure with fields missing - from the ticket's own mailbox, or the first
+ * active mailbox when the ticket has none (a ticket raised by hand or through the
+ * API never touched one).
+ *
+ * Not saved to the ticket's conversation and not saved to Sent Items: these go to
+ * staff, not to the requester. Every recipient is written to the email send log
+ * under $route, failures included.
+ *
+ * Every recipient is attempted even when one fails - one mistyped address on an
+ * escalation list must not stop the rest hearing about it - and the first failure
+ * is thrown once they have all been tried.
+ *
+ * @param string[] $recipients  the staff email addresses to send to, one email each
+ * @param string $subject  the email subject, plain text
+ * @param string $bodyHtml  the email body, HTML
+ * @param string $route  what the send log records it as, e.g. 'sla' or 'closure_alert'
+ * @throws Exception when no mailbox can send, or when any recipient failed
+ */
+function internalTicketEmail(PDO $conn, int $ticketId, array $recipients, string $subject, string $bodyHtml, string $route): void {
+    $mailbox = templateGetMailboxForTicket($conn, $ticketId);
+    if (!$mailbox) {
+        $row = $conn->query("SELECT * FROM target_mailboxes WHERE is_active = 1 ORDER BY id ASC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+        $mailbox = $row ? decryptMailboxRow($row) : null;
+    }
+    if (!$mailbox) {
+        throw new Exception('no mailbox available to send from');
+    }
+
+    $provider    = MailboxProvider::fromMailbox($mailbox);
+    $accessToken = null;
+    $graphBase   = '/me';
+    if ($provider === MailboxProvider::Imap) {
+        // Basic IMAP sends via SMTP - no OAuth token to validate or refresh.
+        require_once __DIR__ . '/mailbox_imap.php';
+    } elseif ($provider === MailboxProvider::Google) {
+        $tokenData = json_decode(preg_replace('/[\x00-\x1F\x7F]/', '', $mailbox['token_data'] ?? ''), true);
+        if (!$tokenData || !isset($tokenData['access_token'])) {
+            throw new Exception("invalid token data on mailbox {$mailbox['id']}");
+        }
+        require_once __DIR__ . '/gmail.php';
+        $accessToken = gmailGetValidAccessToken($conn, $mailbox, $tokenData);
+        if (!$accessToken) {
+            throw new Exception("failed to refresh access token for mailbox {$mailbox['id']}");
+        }
+    } else {
+        // Microsoft: auth_mode decides both the token source and the send endpoint.
+        $graph = templateGraphContext($conn, $mailbox);
+        if (!$graph) {
+            throw new Exception("failed to obtain an access token for mailbox {$mailbox['id']}");
+        }
+        $accessToken = $graph['token'];
+        $graphBase   = $graph['base'];
+    }
+
+    $firstError = null;
+    foreach ($recipients as $to) {
+        try {
+            if ($provider === MailboxProvider::Imap) {
+                imapSmtpSend($mailbox, $to, '', $subject, $bodyHtml);
+            } elseif ($provider === MailboxProvider::Google) {
+                gmailSendEmail($accessToken, $to, $subject, $bodyHtml, $mailbox['target_mailbox'] ?? '');
+            } else {
+                templateSendViaGraph($accessToken, [
+                    'message' => [
+                        'subject'      => $subject,
+                        'body'         => ['contentType' => 'HTML', 'content' => $bodyHtml],
+                        'toRecipients' => [['emailAddress' => ['address' => $to]]],
+                    ],
+                    'saveToSentItems' => false,   // internal notification, don't clutter Sent Items
+                ], $graphBase);
+            }
+            emailLogSent($conn, $mailbox, $route, $to, $subject, $ticketId);
+        } catch (Exception $e) {
+            emailLogFailed($conn, $mailbox, $route, $to, $subject, $e->getMessage(), $ticketId);
+            $firstError = $firstError ?? $e;
+        }
+    }
+    if ($firstError) {
+        throw $firstError;
+    }
+}
+
+/**
+ * A line in the ticket's history for an email that went to an analyst, not the
+ * requester (GH #244) - kept out of the conversation, but never invisible. No analyst
+ * is credited: the system sent it. Never throws.
+ *
+ * @param string $name  the analyst's name, '' when unknown
+ * @param string $to    the address it went to
+ */
+function templateNoteAnalystEmail(PDO $conn, int $ticketId, string $name, string $to): void {
+    try {
+        $conn->prepare("INSERT INTO ticket_audit (ticket_id, analyst_id, field_name, old_value, new_value, created_datetime)
+                        VALUES (?, NULL, 'Assignment email', NULL, ?, UTC_TIMESTAMP())")
+             ->execute([$ticketId, 'Sent to ' . ($name !== '' ? "$name <$to>" : $to)]);
+    } catch (Exception $e) {
+        error_log('Template email: failed to note the analyst email on ticket ' . $ticketId . ': ' . $e->getMessage());
+    }
+}
+
+/**
  * Save the sent template email to the emails table.
+ *
+ * @param array $mailbox  the target_mailboxes row it was sent from (id, target_mailbox, name)
+ * @param string $to  the recipient's address
+ * @param string $subject  the subject as sent
+ * @param string $body  the HTML body as sent
  */
 function templateSaveSentEmail(PDO $conn, int $ticketId, array $mailbox, string $to, string $subject, string $body): void {
     try {

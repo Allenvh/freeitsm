@@ -14,33 +14,66 @@ define('DB_PASSWORD', getenv('DB_PASSWORD') ?: 'freeitsm');
 $db_config_path = '/var/www/html/db_config.php';
 require_once($db_config_path);
 
-// Timezone
-date_default_timezone_set('UTC');
+// Encryption key file location: set via the ENCRYPTION_KEY_PATH environment
+// variable in docker-compose.yml (defaults to /var/www/encryption_keys/freeitsm.key,
+// stored on a persistent volume). Leave it to the env var here — do NOT define
+// ENCRYPTION_KEY_PATH in this file, or it would override the compose setting.
+
+// Timezone - the install's default: what an analyst sees until they choose their
+// own in Preferences, and what emails sent by scheduled jobs use. Set TZ in the
+// environment (docker-compose.yml), e.g. TZ=Europe/London. This used to be fixed
+// at UTC, so an install whose container was set to UTC+7 still showed UTC to every
+// analyst who had not picked a zone (GH #161). Dates are STORED in UTC either way.
+$tz = getenv('TZ');
+date_default_timezone_set(is_string($tz) && in_array($tz, timezone_identifiers_list(), true) ? $tz : 'UTC');
+
+// Behind a reverse proxy that terminates HTTPS?
+// ⚠️ The single most likely thing to need setting on this image. Almost nobody exposes
+// the container directly — TLS normally ends at nginx, Traefik, Caddy or Cloudflare and
+// plain HTTP is spoken to the container. PHP then sees an HTTP request, so the session
+// cookie ships WITHOUT its `Secure` flag unless this is on. Set TRUST_PROXY_HTTPS=1 in
+// the environment (docker-compose.yml) once such a proxy is the only route in.
+//
+// Off unless asked for, deliberately: X-Forwarded-Proto is a header any client can send,
+// so trusting it by default would let a visitor mark their own cookie Secure over plain
+// HTTP and lock themselves out of an install that has no TLS at all.
+if (getenv('TRUST_PROXY_HTTPS')) {
+    define('TRUST_PROXY_HTTPS', true);
+}
 
 // SSL Certificate Verification
-define('SSL_VERIFY_PEER', false);
+// Single global switch for outbound HTTPS certificate verification — see
+// includes/ssl.php and workflow/help-ssl.php. Leave ON in production. In the
+// Docker image (Debian php:8.4-apache) the OS ships a CA bundle that libcurl
+// finds automatically, so verification works out of the box with no cacert.pem.
+define('SSL_VERIFY_PEER', true);
 
-// Error reporting (set to 0 in production)
+// Load the shared SSL helper (sslApplyCurl) and resolve the CA bundle. REQUIRED:
+// every outbound curl handle calls sslApplyCurl(), which is defined here. This
+// config.php is copied to /var/www/html/config.php, so __DIR__ is the app root.
+require_once(__DIR__ . '/includes/ssl.php');
+if (!defined('SSL_CA_BUNDLE')) {
+    define('SSL_CA_BUNDLE', sslResolveCaBundle());
+}
+
+// Error reporting. Errors are always logged and never shown to visitors - a
+// warning printed into a page names server paths, before sign-in too. For a
+// development container set FREEITSM_DISPLAY_ERRORS=1 in the environment
+// (docker-compose.yml); the same switch as FREEITSM_DISPLAY_ERRORS in a hand
+// install's db_config.php. The command line always shows them.
+if (getenv('FREEITSM_DISPLAY_ERRORS')) {
+    define('FREEITSM_DISPLAY_ERRORS', true);
+}
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('log_errors', '1');
+ini_set('display_errors', (PHP_SAPI === 'cli' || defined('FREEITSM_DISPLAY_ERRORS')) ? '1' : '0');
 
 /**
  * BASE_URL — absolute URL path prefix for the app's deployment root.
- * Auto-detected from the filesystem location of this config.php relative to
- * the web server's DOCUMENT_ROOT. In the standard Docker image the app is at
- * /var/www/html and Apache's doc root is /var/www/html, so this resolves to '/'.
+ * Auto-detected by includes/base_url.php (shipped with the app) from where the
+ * app sits under the web server's DOCUMENT_ROOT. In the standard Docker image
+ * the app is at /var/www/html and Apache's doc root is /var/www/html, so this
+ * resolves to '/'.
  */
-if (!defined('BASE_URL')) {
-    $__appRoot = str_replace('\\', '/', realpath(__DIR__));
-    $__docRoot = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? ''));
-    $__rel = '';
-    if ($__docRoot && strpos($__appRoot, $__docRoot) === 0) {
-        $__rel = substr($__appRoot, strlen($__docRoot));
-    }
-    $__rel = '/' . trim($__rel, '/') . '/';
-    if ($__rel === '//') $__rel = '/';
-    define('BASE_URL', $__rel);
-    unset($__appRoot, $__docRoot, $__rel);
-}
-require_once __DIR__ . '/includes/ldap_session.php';
+require_once(__DIR__ . '/includes/base_url.php');
 ?>

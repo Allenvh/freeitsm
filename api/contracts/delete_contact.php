@@ -1,7 +1,18 @@
 <?php
+/**
+ * API: delete a supplier contact.
+ *
+ * Fires the supplier_contact 'deleted' workflow event with the contact's name.
+ *
+ * @input  id  the contact to delete (JSON body)
+ * @output {success}
+ */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -9,6 +20,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('contracts');
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);
@@ -20,9 +32,11 @@ try {
 
     $conn = connectToDatabase();
 
+    $row = $conn->query("SELECT CONCAT_WS(' ', first_name, surname) FROM contacts WHERE id = " . (int)$id)->fetchColumn();
     $stmt = $conn->prepare("DELETE FROM contacts WHERE id = ?");
     $stmt->execute([$id]);
 
+    wf_emit('supplier_contact', 'deleted', (int)$id, $row ?: null);
     echo json_encode(['success' => true]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

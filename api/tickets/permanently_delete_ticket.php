@@ -10,13 +10,16 @@
  * deleted explicitly and in the right order — otherwise a ticket whose emails
  * carry attachments fails with "1451 Cannot delete or update a parent row".
  * The remaining children (ticket_recordings, ticket_csat_responses,
- * ticket_cmdb_objects, sla_notifications_sent, tasks) have CASCADE / SET NULL
- * rules and clean themselves up.
+ * ticket_cmdb_objects, ticket_assets, sla_notifications_sent, tasks) have
+ * CASCADE / SET NULL rules and clean themselves up.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -24,6 +27,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data || !isset($data['ticket_id'])) {
@@ -57,7 +61,21 @@ try {
     $pathStmt->execute([$ticketId]);
     $attachmentPaths = $pathStmt->fetchAll(PDO::FETCH_COLUMN);
 
+    // Note ids read BEFORE the transaction deletes them — document_links is
+    // polymorphic, so no foreign key follows the notes out and once the rows are
+    // gone there is nothing to match the links against (discussion #69).
+    require_once '../../includes/documents.php';
+    $noteIdStmt = $conn->prepare("SELECT id FROM ticket_notes WHERE ticket_id = ?");
+    $noteIdStmt->execute([$ticketId]);
+    $noteIds = $noteIdStmt->fetchAll(PDO::FETCH_COLUMN);
+
     $conn->beginTransaction();
+
+    // 0. Document links on this ticket's notes, and on the ticket itself.
+    foreach ($noteIds as $noteId) {
+        documentsDetachParent($conn, 'ticket_note', (int) $noteId);
+    }
+    documentsDetachParent($conn, 'ticket', $ticketId);
 
     // 1. Email attachments (child of emails — must go before emails)
     $conn->prepare(
@@ -77,7 +95,15 @@ try {
     // 5. Time entries
     $conn->prepare("DELETE FROM ticket_time_entries WHERE ticket_id = ?")->execute([$ticketId]);
 
-    // 6. The ticket itself (CASCADE/SET NULL children go with it)
+    // 6. SOP checklist steps, then the checklists themselves (grandchild first).
+    //    Neither table has a foreign key to the ticket, so nothing here is cascaded.
+    $conn->prepare(
+        "DELETE FROM ticket_checklist_items
+          WHERE ticket_checklist_id IN (SELECT id FROM ticket_checklists WHERE ticket_id = ?)"
+    )->execute([$ticketId]);
+    $conn->prepare("DELETE FROM ticket_checklists WHERE ticket_id = ?")->execute([$ticketId]);
+
+    // 7. The ticket itself (CASCADE/SET NULL children go with it)
     $conn->prepare("DELETE FROM tickets WHERE id = ?")->execute([$ticketId]);
 
     $conn->commit();

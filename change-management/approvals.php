@@ -4,37 +4,44 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../auth/login.php');
     exit;
 }
+requireModuleAccess('changes');
 
 $current_page = 'approvals';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'change-management'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('change-management.page.approvals')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/change-management.css">
+    <title><?php echo htmlspecialchars(pageTitle('changes', t('change-management.nav.approvals'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/change-management.css?v=14">
     <style>
         .approvals-container {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
         }
 
         .approvals-sidebar {
             width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface, white);
+            border-right: 1px solid var(--border, #ddd);
             padding: 20px;
             display: flex;
             flex-direction: column;
@@ -44,7 +51,7 @@ $translationNamespaces = ['common', 'change-management'];
         .approvals-sidebar h3 {
             font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: var(--text-dim, #888);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin: 0 0 10px;
@@ -58,22 +65,22 @@ $translationNamespaces = ['common', 'change-management'];
             border-radius: 6px;
             cursor: pointer;
             font-size: 14px;
-            color: #333;
+            color: var(--text, #333);
             transition: background 0.15s;
         }
 
-        .approval-filter:hover { background: #f5f5f5; }
+        .approval-filter:hover { background: var(--surface-hover, #f5f5f5); }
 
         .approval-filter.active {
-            background: #e0f2f1;
-            color: #00897b;
+            background: var(--cm-accent-soft, #e0f2f1);
+            color: var(--cm-accent, #00897b);
             font-weight: 600;
         }
 
         .approval-filter .filter-count {
             font-size: 12px;
-            background: #eee;
-            color: #666;
+            background: var(--border-soft, #eee);
+            color: var(--text-muted, #666);
             padding: 2px 8px;
             border-radius: 10px;
             font-weight: 600;
@@ -82,8 +89,8 @@ $translationNamespaces = ['common', 'change-management'];
         }
 
         .approval-filter.active .filter-count {
-            background: #00897b;
-            color: white;
+            background: var(--cm-accent, #00897b);
+            color: var(--cm-on-accent, white);
         }
 
         .approvals-main {
@@ -102,22 +109,22 @@ $translationNamespaces = ['common', 'change-management'];
         .approvals-header h2 {
             margin: 0;
             font-size: 20px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .approval-card {
-            background: white;
+            background: var(--surface, white);
             border-radius: 8px;
             padding: 16px 20px;
             margin-bottom: 10px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px var(--shadow, rgba(0,0,0,0.06));
             cursor: pointer;
             transition: box-shadow 0.15s;
             border-left: 4px solid #e65100;
         }
 
         .approval-card:hover {
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 3px 10px var(--shadow, rgba(0,0,0,0.1));
         }
 
         .approval-card-top {
@@ -130,7 +137,7 @@ $translationNamespaces = ['common', 'change-management'];
         .approval-card-ref {
             font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: var(--text-dim, #888);
             font-family: monospace;
         }
 
@@ -142,7 +149,7 @@ $translationNamespaces = ['common', 'change-management'];
         .approval-card-title {
             font-size: 15px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 10px;
         }
 
@@ -151,7 +158,7 @@ $translationNamespaces = ['common', 'change-management'];
             flex-wrap: wrap;
             gap: 16px;
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .approval-card-meta span {
@@ -162,23 +169,23 @@ $translationNamespaces = ['common', 'change-management'];
 
         .meta-label {
             font-weight: 600;
-            color: #999;
+            color: var(--text-faint, #999);
         }
 
         .approval-empty {
             text-align: center;
             padding: 60px 20px;
-            color: #999;
+            color: var(--text-faint, #999);
         }
 
         .approval-empty svg {
             margin-bottom: 16px;
-            color: #ccc;
+            color: var(--border, #ccc);
         }
 
         .approval-empty h3 {
             font-size: 16px;
-            color: #666;
+            color: var(--text-muted, #666);
             margin: 0 0 6px;
         }
 
@@ -187,8 +194,11 @@ $translationNamespaces = ['common', 'change-management'];
             margin: 0;
         }
     </style>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/mobile.css?v=196">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
@@ -304,7 +314,7 @@ $translationNamespaces = ['common', 'change-management'];
                         <div class="approval-card-meta">
                             ${c.requester_name ? `<span><span class="meta-label">${window.t('change-management.approvals.requester')}</span> ${escapeHtml(c.requester_name)}</span>` : ''}
                             ${c.approver_name ? `<span><span class="meta-label">${window.t('change-management.approvals.approver')}</span> ${escapeHtml(c.approver_name)}</span>` : ''}
-                            ${c.work_start_datetime ? `<span><span class="meta-label">${window.t('change-management.approvals.work_start')}</span> ${formatDate(c.work_start_datetime)}</span>` : ''}
+                            ${c.work_start_datetime ? `<span><span class="meta-label">${window.t('change-management.approvals.work_start')}</span> ${formatNaiveDate(c.work_start_datetime)}</span>` : ''}
                             ${date ? `<span><span class="meta-label">${window.t('change-management.approvals.submitted')}</span> ${date}</span>` : ''}
                         </div>
                     </div>
@@ -316,12 +326,27 @@ $translationNamespaces = ['common', 'change-management'];
             window.location.href = '../change-management/?open=' + id;
         }
 
+        // "Submitted" = server-stamped UTC created timestamp → analyst zone.
+        // Read the wall-clock components as seen in that zone (parseUTCDate /
+        // tzOpts from tz.js) so the manual AM/PM format stays identical.
         function formatDate(dateStr) {
             if (!dateStr) return '';
-            const d = new Date(dateStr.replace(' ', 'T'));
+            // Was a hand-rolled "Aug 5, 2:07 PM" with a hardcoded English month
+            // array and a forced 12-hour clock. Both are now the analyst's
+            // choice (GH #105), and the month name follows their language.
+            return fmtDayMonth(dateStr) + ', ' + fmtTime(dateStr);
+        }
+
+        // "Work start" = NAIVE wall-clock scheduling value → shown exactly as
+        // typed, no zone conversion. parseNaiveDate (tz.js) yields a Date whose
+        // local components equal the typed values, so getHours()/etc read back
+        // as typed and the same manual AM/PM format is reused.
+        function formatNaiveDate(dateStr) {
+            if (!dateStr) return '';
+            const d = parseNaiveDate(dateStr);
             const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             let hours = d.getHours();
-            const mins = d.getMinutes().toString().padStart(2, '0');
+            const mins = String(d.getMinutes()).padStart(2, '0');
             const ampm = hours >= 12 ? 'PM' : 'AM';
             hours = hours % 12 || 12;
             return `${months[d.getMonth()]} ${d.getDate()}, ${hours}:${mins} ${ampm}`;
@@ -331,8 +356,9 @@ $translationNamespaces = ['common', 'change-management'];
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
     </script>
+    <script src="<?php echo BASE_URL; ?>assets/js/mobile.js?v=83"></script>
 </body>
 </html>

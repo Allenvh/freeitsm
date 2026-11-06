@@ -87,10 +87,7 @@ return [
 
     // Assign-user modal
     'assign' => [
-        'heading'                => 'ఆస్తికి వినియోగదారుని కేటాయించండి',
-        'search_label'           => 'వినియోగదారు కోసం శోధించండి',
         'search_placeholder'     => 'పేరు లేదా ఇమెయిల్ ద్వారా శోధించండి...',
-        'type_to_search'         => 'వినియోగదారుల కోసం శోధించడానికి టైప్ చేయండి',
         'min_chars'              => 'శోధించడానికి కనీసం 2 అక్షరాలు టైప్ చేయండి',
         'no_users'               => 'ఏ వినియోగదారులూ కనుగొనబడలేదు',
         'expected_return_label'  => 'ఆశించిన తిరిగి ఇవ్వవలసిన తేదీ (ఐచ్ఛికం)',
@@ -366,7 +363,6 @@ return [
         'tab_asset_statuses'   => 'ఆస్తి స్థితులు',
         'tab_locations'        => 'స్థానాలు',
         'tab_suppliers'        => 'సరఫరాదారులు',
-        'tab_warranty'         => 'వారంటీ హెచ్చరికలు',
         'tab_vcenter'          => 'vCenter',
         'tab_intune'           => 'InTune',
 

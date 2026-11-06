@@ -19,10 +19,12 @@
     let currentFilterAnalystId = null;
     let table = null;
 
+    // created_datetime is a stored UTC timestamp; render its date in the
+    // analyst's chosen display zone (parseUTCDate / tzOpts from assets/js/tz.js).
     function formatDate(iso) {
         if (!iso) return '';
-        const d = new Date(iso);
-        return isNaN(d.getTime()) ? iso : d.toLocaleDateString();
+        const d = parseUTCDate(iso);
+        return (!d || isNaN(d.getTime())) ? iso : fmtDate(d);
     }
 
     const COLUMNS = [
@@ -50,6 +52,7 @@
           display: t => (t.subtasks && t.subtasks.total > 0) ? `${t.subtasks.done}/${t.subtasks.total}` : '—' },
     ];
 
+    /** Loads the active task statuses and priorities for the table. */
     async function loadLookups() {
         try {
             const [sRes, pRes] = await Promise.all([
@@ -61,6 +64,7 @@
         } catch (e) { console.error('Failed to load lookups:', e); }
     }
 
+    /** Loads analysts and teams and fills the Analyst and Team filter drop-downs. */
     async function loadDropdowns() {
         try {
             const [aRes, tRes] = await Promise.all([
@@ -83,6 +87,10 @@
     }
 
     // --- Sidebar filters (My / Team / Analyst) ------------------------
+    /**
+     * Switches to a preset filter (my, all...), clears the team and analyst filters and reloads the
+     * table.
+     */
     window.setFilter = function (filter) {
         currentFilter = filter;
         currentFilterTeamId = null;
@@ -94,6 +102,7 @@
         document.getElementById('analystFilter').value = '';
         table.reload();
     };
+    /** Shows one team's tasks, or goes back to My tasks when cleared. */
     window.setTeamFilter = function (id) {
         if (!id) { setFilter('my'); return; }
         currentFilter = 'team';
@@ -103,6 +112,7 @@
         document.getElementById('analystFilter').value = '';
         table.reload();
     };
+    /** Shows one analyst's tasks, or goes back to My tasks when cleared. */
     window.setAnalystFilter = function (id) {
         if (!id) { setFilter('my'); return; }
         currentFilter = 'analyst';
@@ -113,6 +123,7 @@
         table.reload();
     };
 
+    /** HTML-escapes a value; null and undefined become an empty string. */
     function esc(s) {
         if (s === null || s === undefined) return '';
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -122,11 +133,23 @@
         accent: '#7c3aed',
         prefApi: '../../api/system/',
         prefKey: 'tasks_table_v1',
+        viewsKey: 'tasks',   // saved views (#96); viewsApi is derived from prefApi
         noun: 'task',
         exportName: 'tasks',
         defaultSort: { key: 'due_date', dir: 'asc' },
         columns: COLUMNS,
         getLookups: () => ({ analysts, teams, statuses, priorities }),
+
+        // GH #219: every cell is edited in place, so a row cannot also open the task
+        // on a click. An open link at the start of each row does: a plain click opens
+        // the quick-look panel the Calendar and Timeline use (the table and its
+        // filters stay where they are), and Ctrl- or middle-click opens the full task
+        // on the board in a new tab, like any link.
+        rowOpen: {
+            href: row => '../index.php?task=' + encodeURIComponent(row.id),
+            onOpen: row => TasksQuickPanel.open(row.id),
+            label: window.t('tasks.context.open'),
+        },
 
         load: async () => {
             // Lookups must be ready before the first render so the inline
@@ -169,13 +192,23 @@
         },
     });
 
-    // Shared right-click context menu (analyst / team / status / priority).
+    // The quick-look panel (GH #219) - the same one as the Calendar and Timeline,
+    // so the table, calendar and timeline all open a task the same way.
+    TasksQuickPanel.init({
+        apiBase: API_BASE,
+        getLookups: () => ({ analysts, teams, statuses, priorities }),
+        onUpdate: () => table.reload(),
+        fullEditUrl: id => '../index.php?task=' + id,
+    });
+
+    // Shared right-click context menu (open / analyst / team / status / priority).
     TasksCtxMenu.init({
         targetSelector: '.dt-row',
         getTaskId: el => parseInt(el.dataset.id, 10),
         getTask: id => table.findRow(id),
         getLookups: () => ({ analysts, teams, statuses, priorities }),
         onUpdate: () => table.reload(),
+        onOpen: id => TasksQuickPanel.open(id),   // GH #219
         apiBase: API_BASE,
     });
 })();

@@ -3,135 +3,140 @@
  * Workflows — Help guide.
  *
  * Full coverage: anatomy of a workflow, the visual canvas builder, condition
- * details (lookups, multi-select, operator-per-type filtering), the eight
- * action handlers, variable substitution, the AI co-author, Test fire, and
+ * details (lookups, multi-select, operator-per-type filtering), the action
+ * handlers, companies, variable substitution, the AI co-author, Test fire, and
  * what's still ahead.
  */
 session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
+require_once '../includes/tenancy.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
-if (!isset($_SESSION['analyst_id'])) { header('Location: ../login.php'); exit; }
+if (!isset($_SESSION['analyst_id'])) { header('Location: ../auth/login.php'); exit; }
+
+requireModuleAccess('workflow');
 
 $current_page = 'help';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'workflow'];
+// GH #209: the Companies section only means something once there are companies.
+$helpMultiCompany = isMultiTenant(connectToDatabase());
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('workflow.help.page_title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/workflow.css?v=4">
+    <title><?php echo htmlspecialchars(pageTitle('workflow', t('workflow.nav.help'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/workflow.css?v=11">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../assets/css/help.css?v=6">
     <style>
-        /* ---- Layout: sidebar + scrolling main, same shape as other modules' help pages ---- */
-        .wfh-container { display: flex; height: calc(100vh - 48px); background: #f5f5f5; }
-
-        .wfh-sidebar {
-            width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex-shrink: 0;
-            overflow-y: auto;
+        /* The only thing a help page should need to say for itself: its colour. */
+        body {
+            --accent:       var(--wf-accent);
+            --accent-hover: var(--wf-accent-hover);
+            --accent-soft:  var(--wf-accent-soft);
+            --on-accent:    var(--wf-on-accent);
         }
-        .wfh-sidebar h3 {
-            font-size: 12px; font-weight: 600;
-            color: #888; text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin: 0 0 12px;
-        }
-        .wfh-nav-link {
-            display: flex; align-items: center; gap: 10px;
-            padding: 10px 12px; border-radius: 6px;
-            font-size: 13px; color: #555;
-            text-decoration: none;
-            transition: background 0.15s, color 0.15s;
-        }
-        .wfh-nav-link:hover { background: #f5f5f5; color: #333; }
-        .wfh-nav-link.active { background: #fff7ed; color: #b45309; font-weight: 600; }
-        .wfh-nav-num {
-            display: flex; align-items: center; justify-content: center;
-            min-width: 22px; height: 22px;
-            border-radius: 50%;
-            background: #f5f5f5; color: #888;
-            font-size: 11px; font-weight: 700;
-        }
-        .wfh-nav-link.active .wfh-nav-num { background: #f59e0b; color: white; }
-
-        .wfh-main { flex: 1; overflow-y: auto; padding: 24px 32px 60px; }
-
-        /* ---- Per-section content styling (preserved from the original page) ---- */
-        .wf-help h2 { font-size: 22px; color: #333; margin: 0 0 4px; }
-        .wf-help p { color: #555; line-height: 1.6; }
-        .wf-help .lede { font-size: 15px; color: #444; }
-        .wf-help h3 { margin: 32px 0 10px; font-size: 16px; color: #333; padding-bottom: 6px; border-bottom: 1px solid #eee; scroll-margin-top: 20px; }
-        .wf-help h3:first-of-type { margin-top: 22px; }
-        .wf-help h4 { margin: 22px 0 6px; font-size: 14px; color: #444; }
-        .wf-help ul, .wf-help ol { color: #555; line-height: 1.7; padding-left: 22px; }
-        .wf-help li { margin-bottom: 6px; }
-        .wf-help code { background: #f4f4f4; padding: 1px 6px; border-radius: 3px; font-size: 12.5px; color: #b45309; }
-        .wf-help table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13px; }
-        .wf-help table th, .wf-help table td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
-        .wf-help table th { background: #f9fafb; font-weight: 600; color: #374151; }
-        .wf-help .callout { background: #fff7ed; border-left: 3px solid #f59e0b; padding: 10px 14px; margin: 14px 0; border-radius: 4px; font-size: 13.5px; color: #92400e; }
-        .wf-help .callout strong { color: #78350f; }
-        .wf-help .tip { background: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 10px 14px; margin: 14px 0; border-radius: 4px; font-size: 13.5px; color: #075985; }
     </style>
+    <!-- Mobile layer LAST, after this page's own stylesheet AND its inline
+         <style> block, or a rule at equal specificity loses on document order
+         (Techniques §9). -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="workflow" data-mobile-page="wf-help">
     <?php include 'includes/header.php'; ?>
 
-    <div class="wfh-container">
-        <aside class="wfh-sidebar">
+    <div class="help-container">
+        <aside class="help-sidebar">
             <h3><?php echo htmlspecialchars(t('workflow.help.guide')); ?></h3>
-            <a href="#anatomy" class="wfh-nav-link active" data-section="anatomy">
-                <span class="wfh-nav-num">1</span> <?php echo htmlspecialchars(t('workflow.help.nav_anatomy')); ?>
+            <a href="#templates" class="help-nav-link" data-section="templates">
+                <span class="help-nav-num">&#9733;</span> <?php echo htmlspecialchars(t('workflow.help.nav_templates')); ?>
             </a>
-            <a href="#canvas" class="wfh-nav-link" data-section="canvas">
-                <span class="wfh-nav-num">2</span> <?php echo htmlspecialchars(t('workflow.help.nav_canvas')); ?>
+            <a href="#anatomy" class="help-nav-link active" data-section="anatomy">
+                <span class="help-nav-num">1</span> <?php echo htmlspecialchars(t('workflow.help.nav_anatomy')); ?>
             </a>
-            <a href="#conditions" class="wfh-nav-link" data-section="conditions">
-                <span class="wfh-nav-num">3</span> <?php echo htmlspecialchars(t('workflow.help.nav_conditions')); ?>
+            <a href="#canvas" class="help-nav-link" data-section="canvas">
+                <span class="help-nav-num">2</span> <?php echo htmlspecialchars(t('workflow.help.nav_canvas')); ?>
             </a>
-            <a href="#actions" class="wfh-nav-link" data-section="actions">
-                <span class="wfh-nav-num">4</span> <?php echo htmlspecialchars(t('workflow.help.nav_actions')); ?>
+            <a href="#conditions" class="help-nav-link" data-section="conditions">
+                <span class="help-nav-num">3</span> <?php echo htmlspecialchars(t('workflow.help.nav_conditions')); ?>
             </a>
-            <a href="#variables" class="wfh-nav-link" data-section="variables">
-                <span class="wfh-nav-num">5</span> <?php echo htmlspecialchars(t('workflow.help.nav_variables')); ?>
+            <a href="#actions" class="help-nav-link" data-section="actions">
+                <span class="help-nav-num">4</span> <?php echo htmlspecialchars(t('workflow.help.nav_actions')); ?>
             </a>
-            <a href="#ai" class="wfh-nav-link" data-section="ai">
-                <span class="wfh-nav-num">6</span> <?php echo htmlspecialchars(t('workflow.help.nav_ai')); ?>
+            <a href="#variables" class="help-nav-link" data-section="variables">
+                <span class="help-nav-num">5</span> <?php echo htmlspecialchars(t('workflow.help.nav_variables')); ?>
             </a>
-            <a href="#testing" class="wfh-nav-link" data-section="testing">
-                <span class="wfh-nav-num">7</span> <?php echo htmlspecialchars(t('workflow.help.nav_testing')); ?>
+            <a href="#ai" class="help-nav-link" data-section="ai">
+                <span class="help-nav-num">6</span> <?php echo htmlspecialchars(t('workflow.help.nav_ai')); ?>
             </a>
-            <a href="#triggers" class="wfh-nav-link" data-section="triggers">
-                <span class="wfh-nav-num">8</span> <?php echo htmlspecialchars(t('workflow.help.nav_triggers')); ?>
+            <a href="#testing" class="help-nav-link" data-section="testing">
+                <span class="help-nav-num">7</span> <?php echo htmlspecialchars(t('workflow.help.nav_testing')); ?>
             </a>
-            <a href="#failures" class="wfh-nav-link" data-section="failures">
-                <span class="wfh-nav-num">9</span> <?php echo htmlspecialchars(t('workflow.help.nav_failures')); ?>
+            <a href="#triggers" class="help-nav-link" data-section="triggers">
+                <span class="help-nav-num">8</span> <?php echo htmlspecialchars(t('workflow.help.nav_triggers')); ?>
             </a>
-            <a href="#ahead" class="wfh-nav-link" data-section="ahead">
-                <span class="wfh-nav-num">10</span> <?php echo htmlspecialchars(t('workflow.help.nav_ahead')); ?>
+            <a href="#failures" class="help-nav-link" data-section="failures">
+                <span class="help-nav-num">9</span> <?php echo htmlspecialchars(t('workflow.help.nav_failures')); ?>
+            </a>
+            <?php if ($helpMultiCompany): ?>
+            <a href="#companies" class="help-nav-link" data-section="companies">
+                <span class="help-nav-num">&#127970;</span> <?php echo htmlspecialchars(t('workflow.help.nav_companies')); ?>
+            </a>
+            <?php endif; ?>
+            <a href="#ahead" class="help-nav-link" data-section="ahead">
+                <span class="help-nav-num">10</span> <?php echo htmlspecialchars(t('workflow.help.nav_ahead')); ?>
+            </a>
+            <a href="help-webhooks.php" class="help-nav-link" style="margin-top:10px; border-top:1px solid var(--border-soft, #eee); padding-top:14px; color:var(--warning-text, #b45309);">
+                <span class="help-nav-num">&#128279;</span> <?php echo htmlspecialchars(t('workflow.help.nav_webhooks_deepdive')); ?> &rarr;
+            </a>
+            <a href="help-ssl.php" class="help-nav-link">
+                <span class="help-nav-num">&#128274;</span> <?php echo htmlspecialchars(t('workflow.help.nav_ssl')); ?> &rarr;
+            </a>
+            <!-- The wiki carries the design reasoning this page deliberately
+                 leaves out (why the fire-once ledger exists, what it cost). -->
+            <a href="https://github.com/edmozley/freeitsm/wiki/Workflows" target="_blank" rel="noopener noreferrer"
+               class="help-nav-link" style="margin-top:10px; border-top:1px solid var(--border-soft, #eee); padding-top:14px;">
+                <span class="help-nav-num">&#128214;</span> <?php echo htmlspecialchars(t('workflow.help.nav_wiki')); ?> &#8599;
             </a>
         </aside>
 
-        <main class="wfh-main">
-            <div class="tab-content active wf-help">
-            <h2><?php echo htmlspecialchars(t('workflow.help.page_title')); ?></h2>
-            <p class="lede"><?php echo htmlspecialchars(t('workflow.help.intro')); ?></p>
+        <main class="help-main">
+            <div class="help-hero">
+                <h2><?php echo htmlspecialchars(t('workflow.help.page_title')); ?></h2>
+                <p><?php echo htmlspecialchars(t('workflow.help.intro')); ?></p>
+            </div>
+            <div class="help-content">
+            <div class="help-section" id="templates">
+                <div class="help-section-header">
+                    <span class="help-section-num">&#9733;</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.templates_heading')); ?></h3></div>
+                </div>
+            <p><?php echo t('workflow.help.templates_intro'); ?></p>
+            <p><?php echo t('workflow.help.templates_lookups'); ?></p>
+            <div class="help-note"><?php echo t('workflow.help.templates_scheduled'); ?></div>
+            <div class="help-note"><?php echo t('workflow.help.templates_callout'); ?></div>
 
-            <h3 id="anatomy"><?php echo htmlspecialchars(t('workflow.help.anatomy_heading')); ?></h3>
+            </div>
+
+            <div class="help-section" id="anatomy">
+                <div class="help-section-header">
+                    <span class="help-section-num">1</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.anatomy_heading')); ?></h3></div>
+                </div>
             <p><?php echo htmlspecialchars(t('workflow.help.anatomy_intro')); ?></p>
             <ul>
                 <li><?php echo t('workflow.help.anatomy_trigger'); ?></li>
@@ -140,7 +145,13 @@ $translationNamespaces = ['common', 'workflow'];
             </ul>
             <p><?php echo t('workflow.help.anatomy_exec'); ?></p>
 
-            <h3 id="canvas"><?php echo htmlspecialchars(t('workflow.help.canvas_heading')); ?></h3>
+            </div>
+
+            <div class="help-section" id="canvas">
+                <div class="help-section-header">
+                    <span class="help-section-num">2</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.canvas_heading')); ?></h3></div>
+                </div>
             <p><?php echo htmlspecialchars(t('workflow.help.canvas_intro')); ?></p>
             <ul>
                 <li><?php echo t('workflow.help.canvas_trigger'); ?></li>
@@ -150,7 +161,13 @@ $translationNamespaces = ['common', 'workflow'];
             <p><?php echo t('workflow.help.canvas_order'); ?></p>
             <p><?php echo t('workflow.help.canvas_panel'); ?></p>
 
-            <h3 id="conditions"><?php echo htmlspecialchars(t('workflow.help.conditions_heading')); ?></h3>
+            </div>
+
+            <div class="help-section" id="conditions">
+                <div class="help-section-header">
+                    <span class="help-section-num">3</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.conditions_heading')); ?></h3></div>
+                </div>
             <p><?php echo t('workflow.help.conditions_intro'); ?></p>
             <h4><?php echo htmlspecialchars(t('workflow.help.conditions_lookup_heading')); ?></h4>
             <p><?php echo t('workflow.help.conditions_lookup_body'); ?></p>
@@ -159,8 +176,15 @@ $translationNamespaces = ['common', 'workflow'];
             <h4><?php echo htmlspecialchars(t('workflow.help.conditions_num_heading')); ?></h4>
             <p><?php echo t('workflow.help.conditions_num_body'); ?></p>
 
-            <h3 id="actions"><?php echo htmlspecialchars(t('workflow.help.actions_heading')); ?></h3>
+            </div>
+
+            <div class="help-section" id="actions">
+                <div class="help-section-header">
+                    <span class="help-section-num">4</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.actions_heading')); ?></h3></div>
+                </div>
             <p><?php echo t('workflow.help.actions_intro'); ?></p>
+            <div class="help-table">
             <table>
                 <tr><th><?php echo htmlspecialchars(t('workflow.help.actions_th_type')); ?></th><th><?php echo htmlspecialchars(t('workflow.help.actions_th_does')); ?></th><th><?php echo htmlspecialchars(t('workflow.help.actions_th_args')); ?></th></tr>
                 <tr><td><code>log_message</code></td><td><?php echo t('workflow.help.actions_row1_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row1_args')); ?></td></tr>
@@ -171,11 +195,29 @@ $translationNamespaces = ['common', 'workflow'];
                 <tr><td><code>send_email</code></td><td><?php echo t('workflow.help.actions_row6_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row6_args')); ?></td></tr>
                 <tr><td><code>create_task</code></td><td><?php echo t('workflow.help.actions_row7_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row7_args')); ?></td></tr>
                 <tr><td><code>create_ticket</code></td><td><?php echo t('workflow.help.actions_row8_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row8_args')); ?></td></tr>
+                <tr><td><code>send_webhook</code></td><td><?php echo t('workflow.help.actions_row9_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row9_args')); ?></td></tr>
+                <tr><td><code>assign_ticket_team</code></td><td><?php echo t('workflow.help.actions_row10_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row10_args')); ?></td></tr>
+                <tr><td><code>set_ticket_department</code></td><td><?php echo t('workflow.help.actions_row11_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row11_args')); ?></td></tr>
+                <tr><td><code>set_ticket_category</code></td><td><?php echo t('workflow.help.actions_row12_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row12_args')); ?></td></tr>
+                <tr><td><code>set_ticket_type</code></td><td><?php echo t('workflow.help.actions_row13_does'); ?></td><td><?php echo htmlspecialchars(t('workflow.help.actions_row13_args')); ?></td></tr>
             </table>
+            </div>
             <p><?php echo t('workflow.help.actions_note'); ?></p>
+            <div class="help-note"><?php echo t('workflow.help.actions_webhook_callout'); ?></div>
+            <div class="help-note"><?php echo t('workflow.help.actions_forms_callout'); ?></div>
 
-            <h3 id="variables"><?php echo t('workflow.help.variables_heading'); ?></h3>
+            </div>
+
+            <div class="help-section" id="variables">
+                <div class="help-section-header">
+                    <span class="help-section-num">5</span>
+                    <div><h3><?php echo t('workflow.help.variables_heading'); ?></h3></div>
+                </div>
             <p><?php echo t('workflow.help.variables_intro'); ?></p>
+            <div class="help-note"><?php echo t('workflow.help.variables_scoped'); ?></div>
+            <div class="help-note"><?php echo t('workflow.help.variables_names'); ?></div>
+            <div class="help-note"><?php echo t('workflow.help.variables_number'); ?></div>
+            <p><?php echo t('workflow.help.variables_full'); ?></p>
             <p><?php echo htmlspecialchars(t('workflow.help.variables_common')); ?></p>
             <ul>
                 <li><?php echo t('workflow.help.variables_li1'); ?></li>
@@ -184,9 +226,23 @@ $translationNamespaces = ['common', 'workflow'];
                 <li><?php echo t('workflow.help.variables_li4'); ?></li>
                 <li><?php echo t('workflow.help.variables_li5'); ?></li>
             </ul>
-            <div class="tip"><?php echo t('workflow.help.variables_tip'); ?></div>
+            <div class="help-note"><?php echo t('workflow.help.variables_tip'); ?></div>
 
-            <h3 id="ai"><?php echo htmlspecialchars(t('workflow.help.ai_heading')); ?></h3>
+            <h4><?php echo htmlspecialchars(t('workflow.help.variables_chain_heading')); ?></h4>
+            <p><?php echo t('workflow.help.variables_chain_intro'); ?></p>
+            <ul>
+                <li><?php echo t('workflow.help.variables_chain_last'); ?></li>
+                <li><?php echo t('workflow.help.variables_chain_steps'); ?></li>
+            </ul>
+            <div class="help-note"><?php echo t('workflow.help.variables_chain_note'); ?></div>
+
+            </div>
+
+            <div class="help-section" id="ai">
+                <div class="help-section-header">
+                    <span class="help-section-num">6</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.ai_heading')); ?></h3></div>
+                </div>
             <p><?php echo t('workflow.help.ai_intro'); ?></p>
             <p><?php echo htmlspecialchars(t('workflow.help.ai_examples')); ?></p>
             <ul>
@@ -197,38 +253,86 @@ $translationNamespaces = ['common', 'workflow'];
             <p><?php echo t('workflow.help.ai_catalogue'); ?></p>
             <p><?php echo t('workflow.help.ai_config'); ?></p>
 
-            <h3 id="testing"><?php echo htmlspecialchars(t('workflow.help.testing_heading')); ?></h3>
+            </div>
+
+            <div class="help-section" id="testing">
+                <div class="help-section-header">
+                    <span class="help-section-num">7</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.testing_heading')); ?></h3></div>
+                </div>
             <p><?php echo t('workflow.help.testing_save'); ?></p>
+            <h4><?php echo htmlspecialchars(t('workflow.help.testing_dry_heading')); ?></h4>
+            <p><?php echo t('workflow.help.testing_dry_body'); ?></p>
+            <p><?php echo t('workflow.help.testing_dry_safe'); ?></p>
+            <h4><?php echo htmlspecialchars(t('workflow.help.testing_fire_heading')); ?></h4>
             <p><?php echo t('workflow.help.testing_fire'); ?></p>
             <p><?php echo t('workflow.help.testing_real'); ?></p>
+            <h4><?php echo htmlspecialchars(t('workflow.help.testing_log_heading')); ?></h4>
+            <p><?php echo t('workflow.help.testing_log_body'); ?></p>
+            <div class="help-note"><?php echo t('workflow.help.testing_log_why'); ?></div>
 
-            <h3 id="triggers"><?php echo htmlspecialchars(t('workflow.help.triggers_heading')); ?></h3>
+            </div>
+
+            <div class="help-section" id="triggers">
+                <div class="help-section-header">
+                    <span class="help-section-num">8</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.triggers_heading')); ?></h3></div>
+                </div>
             <p><?php echo t('workflow.help.triggers_intro'); ?></p>
-            <table>
-                <tr><th><?php echo htmlspecialchars(t('workflow.help.triggers_th_trigger')); ?></th><th><?php echo htmlspecialchars(t('workflow.help.triggers_th_wired')); ?></th><th><?php echo htmlspecialchars(t('workflow.help.triggers_th_notes')); ?></th></tr>
-                <tr><td><code>ticket.created</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_yes')); ?></td><td><?php echo t('workflow.help.triggers_row1_notes'); ?></td></tr>
-                <tr><td><code>ticket.status_changed</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_yes')); ?></td><td><?php echo t('workflow.help.triggers_row2_notes'); ?></td></tr>
-                <tr><td><code>ticket.priority_changed</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_yes')); ?></td><td><?php echo t('workflow.help.triggers_row3_notes'); ?></td></tr>
-                <tr><td><code>ticket.assigned</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_yes')); ?></td><td><?php echo t('workflow.help.triggers_row4_notes'); ?></td></tr>
-                <tr><td><code>form.submitted</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_soon')); ?></td><td><?php echo t('workflow.help.triggers_row5_notes'); ?></td></tr>
-                <tr><td><code>task.completed</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_soon')); ?></td><td><?php echo t('workflow.help.triggers_row6_notes'); ?></td></tr>
-                <tr><td><code>change.approved</code></td><td><?php echo htmlspecialchars(t('workflow.help.triggers_soon')); ?></td><td><?php echo t('workflow.help.triggers_row7_notes'); ?></td></tr>
-            </table>
+            <ul>
+                <li><?php echo t('workflow.help.triggers_family_domain'); ?></li>
+                <li><?php echo t('workflow.help.triggers_family_forms'); ?></li>
+                <li><?php echo t('workflow.help.triggers_family_crud'); ?></li>
+            </ul>
+            <p><?php echo t('workflow.help.triggers_picker'); ?></p>
 
-            <h3 id="failures"><?php echo htmlspecialchars(t('workflow.help.failures_heading')); ?></h3>
-            <div class="callout"><?php echo t('workflow.help.failures_callout'); ?></div>
+            <h4><?php echo htmlspecialchars(t('workflow.help.triggers_time_heading')); ?></h4>
+            <p><?php echo t('workflow.help.triggers_time_body'); ?></p>
+            <div class="help-note"><?php echo t('workflow.help.triggers_time_cron'); ?></div>
+            <p><?php echo t('workflow.help.triggers_time_once'); ?></p>
 
-            <h3 id="ahead"><?php echo htmlspecialchars(t('workflow.help.ahead_heading')); ?></h3>
+            <div class="help-note"><?php echo t('workflow.help.actions_webhook_callout'); ?></div>
+
+            </div>
+
+            <div class="help-section" id="failures">
+                <div class="help-section-header">
+                    <span class="help-section-num">9</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.failures_heading')); ?></h3></div>
+                </div>
+            <div class="help-note"><?php echo t('workflow.help.failures_callout'); ?></div>
+
+            </div>
+
+            <?php if ($helpMultiCompany): ?>
+            <div class="help-section" id="companies">
+                <div class="help-section-header">
+                    <span class="help-section-num">&#127970;</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.companies_heading')); ?></h3></div>
+                </div>
+            <p><?php echo t('workflow.help.companies_intro'); ?></p>
+            <ul>
+                <li><?php echo t('workflow.help.companies_shared'); ?></li>
+                <li><?php echo t('workflow.help.companies_own'); ?></li>
+                <li><?php echo t('workflow.help.companies_who'); ?></li>
+                <li><?php echo t('workflow.help.companies_runs'); ?></li>
+            </ul>
+            <div class="help-note"><?php echo t('workflow.help.companies_note'); ?></div>
+
+            </div>
+            <?php endif; ?>
+
+            <div class="help-section" id="ahead">
+                <div class="help-section-header">
+                    <span class="help-section-num">10</span>
+                    <div><h3><?php echo htmlspecialchars(t('workflow.help.ahead_heading')); ?></h3></div>
+                </div>
             <ul>
                 <li><?php echo t('workflow.help.ahead_li1'); ?></li>
-                <li><?php echo t('workflow.help.ahead_li2'); ?></li>
-                <li><?php echo t('workflow.help.ahead_li3'); ?></li>
-                <li><?php echo t('workflow.help.ahead_li4'); ?></li>
-                <li><?php echo t('workflow.help.ahead_li5'); ?></li>
-                <li><?php echo t('workflow.help.ahead_li6'); ?></li>
                 <li><?php echo t('workflow.help.ahead_li7'); ?></li>
                 <li><?php echo t('workflow.help.ahead_li8'); ?></li>
             </ul>
+            </div>
             </div>
         </main>
     </div>
@@ -236,8 +340,13 @@ $translationNamespaces = ['common', 'workflow'];
     <script>
     // Scroll-spy: highlight the active sidebar link as the user scrolls.
     (function () {
-        const helpMain = document.querySelector('.wfh-main');
-        const navLinks = document.querySelectorAll('.wfh-nav-link');
+        const helpMain = document.querySelector('.help-main');
+        // [data-section] ONLY — the sidebar also holds real page links (the
+        // Webhooks and HTTPS-certificates deep-dives). Selecting every
+        // .help-nav-link meant the click handler below preventDefault()'d those
+        // too, then tried to scroll to getElementById(undefined) — so they
+        // silently did nothing. Same selector help-webhooks.php already uses.
+        const navLinks = document.querySelectorAll('.help-nav-link[data-section]');
         const sections = [];
 
         navLinks.forEach(link => {
@@ -276,5 +385,6 @@ $translationNamespaces = ['common', 'workflow'];
         });
     })();
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

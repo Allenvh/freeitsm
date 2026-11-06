@@ -21,9 +21,11 @@
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
+require_once '../../includes/admin_api_guard.php'; // System admins only (issue #34)
 require_once '../../includes/functions.php';
 require_once '../../includes/encryption.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/mailbox_auth.php';
 
 header('Content-Type: application/json');
 
@@ -46,7 +48,7 @@ try {
     // The mailbox the mail arrives at (the "To" identity).
     $stmt = $conn->prepare(
         "SELECT id, name, target_mailbox, tenant_id, is_active,
-                CASE WHEN token_data IS NOT NULL AND token_data != '' THEN 1 ELSE 0 END AS is_authenticated
+                " . mailboxAuthenticatedSql() . " AS is_authenticated
          FROM target_mailboxes WHERE id = ?"
     );
     $stmt->execute([$mailboxId]);
@@ -73,14 +75,14 @@ try {
     // real routing function — which only extracts a domain when an "@" is
     // present — sees the same thing our trace does, and the two can't diverge.
     $fromForRouting = $fromAddress;
-    if ($fromAddress !== '' && strpos($fromAddress, '@') === false) {
+    if ($fromAddress !== '' && !str_contains($fromAddress, '@')) {
         $bare = normaliseEmailDomain($fromAddress);
         if ($bare !== '') $fromForRouting = 'test@' . $bare;
     }
 
     // Sender domain — extracted exactly as resolveTicketTenantForEmail() does.
     $fromDomain = '';
-    if (strpos($fromForRouting, '@') !== false) {
+    if (str_contains($fromForRouting, '@')) {
         $fromDomain = strtolower(trim(substr(strrchr($fromForRouting, '@'), 1)));
     }
     $isFreemail = $fromDomain !== '' && isFreemailDomain($conn, $fromDomain);

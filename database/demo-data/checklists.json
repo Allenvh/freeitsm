@@ -1,0 +1,110 @@
+{
+    "tier1": {
+        "analysts": [
+            {
+                "_ref": "admin",
+                "_skip_insert": true,
+                "_match_by": "username",
+                "_match_value": "admin"
+            }
+        ],
+        "checklist_categories": [
+            { "_ref": "cat_hrit",  "name": "HR & IT" },
+            { "_ref": "cat_infra", "name": "Infrastructure" },
+            { "_ref": "cat_net",   "name": "Network" },
+            { "_ref": "cat_sec",   "name": "Security" }
+        ],
+        "checklist_templates": [
+            {
+                "_ref": "tpl_onboard",
+                "title": "Employee onboarding provisioning",
+                "category": "HR & IT",
+                "scope": "both",
+                "keywords": "onboarding, new starter, new hire, joiner, provisioning, account",
+                "description": "Everything a new joiner needs on day one. Mandatory steps cover the things that stop somebody working; the badge and the welcome session do not.",
+                "closure_mode": "warn",
+                "is_active": 1,
+                "created_by_id": "@analysts.admin"
+            },
+            {
+                "_ref": "tpl_offboard",
+                "title": "Employee offboarding",
+                "category": "HR & IT",
+                "scope": "both",
+                "keywords": "offboarding, leaver, termination, revoke, return, exit",
+                "description": "Revoking access and recovering equipment when somebody leaves. Every access step is mandatory - this is the checklist an auditor will ask to see.",
+                "closure_mode": "block",
+                "is_active": 1,
+                "created_by_id": "@analysts.admin"
+            },
+            {
+                "_ref": "tpl_decom",
+                "title": "Server decommissioning",
+                "category": "Infrastructure",
+                "scope": "ticket",
+                "keywords": "decommission, retire, server, hypervisor, teardown, wipe",
+                "description": "Procedural gating before a server is retired. Nothing here is reversible once the storage is wiped, so the verification steps come first and are mandatory.",
+                "closure_mode": "block",
+                "is_active": 1,
+                "created_by_id": "@analysts.admin"
+            },
+            {
+                "_ref": "tpl_vpn",
+                "title": "VPN access and troubleshooting",
+                "category": "Network",
+                "scope": "ticket",
+                "keywords": "vpn, remote access, mfa, token, tunnel, gateway",
+                "description": "Standard first-line procedure for remote access problems, in the order that resolves the most tickets soonest.",
+                "closure_mode": "warn",
+                "is_active": 1,
+                "created_by_id": "@analysts.admin"
+            },
+            {
+                "_ref": "tpl_firewall",
+                "title": "Firewall rule change",
+                "category": "Security",
+                "scope": "both",
+                "keywords": "firewall, rule, port, acl, allow, change",
+                "description": "A firewall change is small, quick and occasionally catastrophic. The approval and the rollback note are mandatory; the rest is method.",
+                "closure_mode": "block",
+                "is_active": 1,
+                "created_by_id": "@analysts.admin"
+            }
+        ],
+        "checklist_template_items": [
+            { "template_id": "@checklist_templates.tpl_onboard", "title": "Confirm start date and line manager with HR", "suggested_role": "HR & IT", "is_mandatory": 1, "requires_input": 0, "sort_order": 1 },
+            { "template_id": "@checklist_templates.tpl_onboard", "title": "Create the account and add to the starter groups", "suggested_role": "Tier 1 Support", "is_mandatory": 1, "requires_input": 0, "sort_order": 2 },
+            { "template_id": "@checklist_templates.tpl_onboard", "title": "Assign a laptop and record the asset tag", "suggested_role": "Tier 1 Support", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Asset tag", "sort_order": 3 },
+            { "template_id": "@checklist_templates.tpl_onboard", "title": "Licence the mailbox and confirm mail flow", "suggested_role": "Systems Administrator", "is_mandatory": 1, "requires_input": 0, "sort_order": 4 },
+            { "template_id": "@checklist_templates.tpl_onboard", "title": "Issue a building access badge", "suggested_role": "HR & IT", "is_mandatory": 0, "requires_input": 1, "input_placeholder": "Badge number", "sort_order": 5 },
+            { "template_id": "@checklist_templates.tpl_onboard", "title": "Book the new-starter IT walkthrough", "suggested_role": "Tier 1 Support", "is_mandatory": 0, "requires_input": 0, "sort_order": 6 },
+
+            { "template_id": "@checklist_templates.tpl_offboard", "title": "Confirm the last working day with HR", "suggested_role": "HR & IT", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Last working day", "sort_order": 1 },
+            { "template_id": "@checklist_templates.tpl_offboard", "title": "Disable the account and revoke active sessions", "suggested_role": "Systems Administrator", "is_mandatory": 1, "requires_input": 0, "sort_order": 2 },
+            { "template_id": "@checklist_templates.tpl_offboard", "title": "Remove VPN and remote access", "suggested_role": "Network Admin", "is_mandatory": 1, "requires_input": 0, "sort_order": 3 },
+            { "template_id": "@checklist_templates.tpl_offboard", "title": "Reassign shared mailboxes and file ownership", "suggested_role": "Systems Administrator", "is_mandatory": 1, "requires_input": 0, "sort_order": 4 },
+            { "template_id": "@checklist_templates.tpl_offboard", "title": "Recover the laptop and any loan equipment", "suggested_role": "Tier 1 Support", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Items returned", "sort_order": 5 },
+            { "template_id": "@checklist_templates.tpl_offboard", "title": "Forward mail to the line manager for 30 days", "suggested_role": "Tier 1 Support", "is_mandatory": 0, "requires_input": 0, "sort_order": 6 },
+
+            { "template_id": "@checklist_templates.tpl_decom", "title": "Confirm the service owner has signed off the retirement", "suggested_role": "Systems Administrator", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Who signed off", "sort_order": 1 },
+            { "template_id": "@checklist_templates.tpl_decom", "title": "Verify a restorable backup exists and record its retention", "suggested_role": "Systems Administrator", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Backup set and retention", "sort_order": 2 },
+            { "template_id": "@checklist_templates.tpl_decom", "title": "Remove DNS entries and firewall policies", "suggested_role": "Network Admin", "is_mandatory": 1, "requires_input": 0, "sort_order": 3 },
+            { "template_id": "@checklist_templates.tpl_decom", "title": "Power off and leave it off for the agreed soak period", "suggested_role": "Systems Administrator", "is_mandatory": 1, "requires_input": 0, "sort_order": 4 },
+            { "template_id": "@checklist_templates.tpl_decom", "title": "Wipe storage to the agreed standard", "suggested_role": "Security Team", "is_mandatory": 1, "requires_input": 0, "sort_order": 5 },
+            { "template_id": "@checklist_templates.tpl_decom", "title": "Retire the CMDB record and close the asset", "suggested_role": "Systems Administrator", "is_mandatory": 0, "requires_input": 0, "sort_order": 6 },
+
+            { "template_id": "@checklist_templates.tpl_vpn", "title": "Confirm the account is not locked or expired", "suggested_role": "Tier 1 Support", "is_mandatory": 1, "requires_input": 0, "sort_order": 1 },
+            { "template_id": "@checklist_templates.tpl_vpn", "title": "Check the MFA token is enrolled and in date", "suggested_role": "Tier 1 Support", "is_mandatory": 1, "requires_input": 0, "sort_order": 2 },
+            { "template_id": "@checklist_templates.tpl_vpn", "title": "Review the gateway logs for the failed attempt", "suggested_role": "Network Admin", "is_mandatory": 0, "requires_input": 0, "sort_order": 3 },
+            { "template_id": "@checklist_templates.tpl_vpn", "title": "Confirm split-tunnel routing for the user's group", "suggested_role": "Network Admin", "is_mandatory": 0, "requires_input": 0, "sort_order": 4 },
+            { "template_id": "@checklist_templates.tpl_vpn", "title": "Test the connection with the user before closing", "suggested_role": "Tier 1 Support", "is_mandatory": 1, "requires_input": 0, "sort_order": 5 },
+
+            { "template_id": "@checklist_templates.tpl_firewall", "title": "Record who requested the rule and why", "suggested_role": "Tier 2 Support", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Requester and business reason", "sort_order": 1 },
+            { "template_id": "@checklist_templates.tpl_firewall", "title": "Obtain security approval", "suggested_role": "Security Team", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "Approved by", "sort_order": 2 },
+            { "template_id": "@checklist_templates.tpl_firewall", "title": "Note the exact source, destination and port", "suggested_role": "Network Admin", "is_mandatory": 1, "requires_input": 1, "input_placeholder": "src / dst / port", "sort_order": 3 },
+            { "template_id": "@checklist_templates.tpl_firewall", "title": "Write down how to reverse it before applying it", "suggested_role": "Network Admin", "is_mandatory": 1, "requires_input": 0, "sort_order": 4 },
+            { "template_id": "@checklist_templates.tpl_firewall", "title": "Apply the rule and confirm the traffic works", "suggested_role": "Network Admin", "is_mandatory": 1, "requires_input": 0, "sort_order": 5 },
+            { "template_id": "@checklist_templates.tpl_firewall", "title": "Schedule a review date if the rule is temporary", "suggested_role": "Security Team", "is_mandatory": 0, "requires_input": 1, "input_placeholder": "Review date", "sort_order": 6 }
+        ]
+    }
+}

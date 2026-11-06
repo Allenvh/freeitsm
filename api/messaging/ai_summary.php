@@ -13,12 +13,18 @@ require_once '../../includes/tenancy.php';
 require_once '../../includes/ai_settings.php';
 require_once '../../includes/messaging/messaging.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// AI summary in the inbox — everyday work, but it spends the AI budget.
+requireModuleAccessJson('tickets');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -32,9 +38,15 @@ try {
     if (!analystCanAccessTicket($conn, $analystId, $ticketId)) {
         throw new Exception('Ticket not found');
     }
+    // A confidential ticket is not sent to an AI provider unless Tickets -> Settings
+    // says so (discussion #62) - checked here, on the server, whatever the page does.
+    require_once __DIR__ . '/../../includes/ticket_sensitivity.php';
+    if (!ticketAiAllowed($conn, $ticketId)) {
+        throw new Exception(TICKET_AI_CONFIDENTIAL_ERROR);
+    }
 
     $cfg = aiSettingsLoad($conn, 'tickets_reply_cleanup');
-    if (($cfg['api_key'] ?? '') === '') {
+    if (!aiConfigured($cfg)) {
         throw new Exception('AI is not configured. Set up the provider and key in Tickets → Settings → Reply Cleanup.');
     }
 

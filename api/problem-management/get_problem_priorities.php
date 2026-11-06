@@ -1,9 +1,16 @@
 <?php
+/**
+ * API: the problem priorities, in display order.
+ *
+ * @input  manage  optional - when set, inactive priorities are included too (the settings screen)
+ * @output {success, priorities: [...]}
+ */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 header('Content-Type: application/json');
 if (!isset($_SESSION['analyst_id'])) { echo json_encode(['success' => false, 'error' => 'Not authenticated']); exit; }
+requireModuleAccessJson('problems');
 try {
     $conn = connectToDatabase();
     $sql = "SELECT id, name, colour, is_default, display_order, is_active FROM problem_priorities"

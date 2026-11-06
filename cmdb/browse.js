@@ -10,13 +10,16 @@ let activeClass = null;
 let objects = [];
 let searchTimer = null;
 
+/** Escapes text for safe use in HTML. */
 function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
+/** Shows a toast - an error toast when isError, otherwise a success toast. */
 function showInlineToast(msg, isError = false) {
     if (typeof showToast === 'function') showToast(msg, isError ? 'error' : 'success');
     else showToast(msg, 'error');
 }
+/** Posts a JSON body and returns the parsed JSON reply. */
 async function postJson(url, body) {
     const res = await fetch(url, {
         method: 'POST',
@@ -30,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadClasses();
 });
 
+/** Loads the active CMDB classes from get_classes.php into the sidebar, or a pointer to settings when there are none. */
 async function loadClasses() {
     const list = document.getElementById('classList');
     try {
@@ -49,6 +53,7 @@ async function loadClasses() {
     }
 }
 
+/** Draws the class sidebar with each class's object count, highlighting the selected one. */
 function renderClassList() {
     const list = document.getElementById('classList');
     list.innerHTML = classes.map(c => `
@@ -60,6 +65,7 @@ function renderClassList() {
     `).join('');
 }
 
+/** Selects a class - sets the title, enables New, clears the search and loads its objects. */
 function selectClass(id) {
     activeClass = classes.find(c => c.id === id);
     if (!activeClass) return;
@@ -70,6 +76,9 @@ function selectClass(id) {
     loadObjects();
 }
 
+/**
+ * Loads the selected class's objects from get_objects.php, filtered by the search box (or an override), and draws the table.
+ */
 async function loadObjects(searchOverride = null) {
     if (!activeClass) return;
     const list = document.getElementById('objectList');
@@ -87,13 +96,14 @@ async function loadObjects(searchOverride = null) {
     }
 }
 
+/** Draws the object table - name (with a Planned pill), parent, child count and last updated - or the empty state. */
 function renderObjects() {
     const list = document.getElementById('objectList');
     if (objects.length === 0) {
         list.innerHTML = `
             <div class="empty-state">
                 <h3>${window.t('cmdb.list.no_objects_heading', { name: `<em>${escapeHtml(activeClass.name)}</em>` })}</h3>
-                <p>${window.t('cmdb.list.no_objects_hint', { new: `<strong>${escapeHtml(window.t('cmdb.list.new'))}</strong>` })}</p>
+                <p>${window.t('cmdb.list.no_objects_hint', { new: `<strong>${escapeHtml(window.t('common.action_row.new'))}</strong>` })}</p>
             </div>`;
         return;
     }
@@ -123,19 +133,22 @@ function renderObjects() {
     `;
 }
 
+/** Formats a UTC timestamp in the analyst's zone and date format, or returns it unchanged if that fails. */
 function formatDate(s) {
     if (!s) return '';
     try {
-        const d = new Date(s.replace(' ', 'T') + 'Z');
-        return d.toLocaleString();
+        const d = parseUTCDate(s);
+        return fmtDateTime(d);
     } catch (e) { return s; }
 }
 
+/** Reloads the object list 200ms after the analyst stops typing in the search box. */
 function onSearchInput() {
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(() => loadObjects(), 200);
 }
 
+/** Opens an object's detail page. */
 function openObject(id) {
     window.location.href = 'object.php?id=' + id;
 }
@@ -145,6 +158,7 @@ function openObject(id) {
 
 let newObjectRequiredProps = []; // properties that must be filled to create
 
+/** Opens the New object modal for the selected class and adds inputs for any properties the class marks required. */
 async function openNewObjectModal() {
     if (!activeClass) return;
     document.getElementById('newObjectClassName').textContent = activeClass.name;
@@ -167,11 +181,13 @@ async function openNewObjectModal() {
     } catch (e) { /* silent — modal still works for non-required-field classes */ }
 }
 
+/** Closes the New object modal and forgets its required properties. */
 function closeNewObjectModal() {
     document.getElementById('newObjectModal').classList.remove('active');
     newObjectRequiredProps = [];
 }
 
+/** Renders an input for each required property in the New object modal and wires the object-reference look-ups. */
 function renderRequiredFieldEditors(reqProps) {
     const container = document.getElementById('newObjectReqFields');
     let html = `<div class="req-fields-divider">${escapeHtml(window.t('cmdb.new_object.required_fields', { name: activeClass.name }))}</div>`;
@@ -186,6 +202,9 @@ function renderRequiredFieldEditors(reqProps) {
     reqProps.forEach(p => { if (p.property_type === 'object_ref') wireRefAutocomplete(p); });
 }
 
+/**
+ * Returns the input HTML for one property by type - text, number, date, yes/no, drop-down, or an object-reference search box.
+ */
 function renderFieldEditor(p) {
     const id = 'newProp_' + p.id;
     switch (p.property_type) {
@@ -222,6 +241,9 @@ function renderFieldEditor(p) {
     }
 }
 
+/**
+ * Wires an object-reference input to search_objects.php (limited to the target class) with a keyboard-navigable result list; the picked id goes in a hidden input.
+ */
 function wireRefAutocomplete(prop) {
     const inputEl   = document.getElementById('newProp_' + prop.id);
     const idEl      = document.getElementById('newProp_' + prop.id + '_id');
@@ -231,6 +253,7 @@ function wireRefAutocomplete(prop) {
     let highlighted = -1;
     let current = [];
 
+    /** Draws the look-up results (or "no matches") with the highlighted row marked. */
     const renderResults = () => {
         if (current.length === 0) {
             resultsEl.innerHTML = `<div class="ac-empty">${escapeHtml(window.t('cmdb.new_object.no_matches'))}</div>`;
@@ -252,6 +275,7 @@ function wireRefAutocomplete(prop) {
         });
     };
 
+    /** Fills the input with the chosen object's name and its id into the hidden input, then closes the list. */
     const pick = (r) => {
         inputEl.value = r.name;
         idEl.value = r.id;
@@ -291,6 +315,9 @@ function wireRefAutocomplete(prop) {
     });
 }
 
+/**
+ * Reads the required property inputs into {property_id, value} pairs typed by property, and lists the labels of any left empty.
+ */
 function collectRequiredFieldValues() {
     const out = [];
     const missing = [];
@@ -315,6 +342,9 @@ function collectRequiredFieldValues() {
     return { values: out, missing };
 }
 
+/**
+ * Creates the object through save_object.php with its required property values and Planned flag, then opens its detail page.
+ */
 async function createObject() {
     const name = document.getElementById('newObjectName').value.trim();
     if (name === '') {

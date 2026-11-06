@@ -7,7 +7,8 @@
  *
  *   messagingProvider($channel)        → a MessagingProvider for a (decrypted) row
  *   loadMessagingChannel($conn, $id)   → a channel row with credentials decrypted
- *   normaliseChannelIdentifier($raw)   → a phone number as '+<digits>'
+ *   normaliseChannelIdentifier($raw, $type) → a sender id, normalised per channel
+ *                                        (phone as '+<digits>'; Slack as 'U…')
  *   channelWindowOpen($lastInboundAt)  → is the 24h service window still open?
  *
  * The credentials column is an encrypted JSON blob; loadMessagingChannel decrypts
@@ -16,8 +17,14 @@
  */
 
 require_once __DIR__ . '/MessagingProvider.php';
+require_once __DIR__ . '/MessagingProviderKind.php';
 require_once __DIR__ . '/TwilioProvider.php';
 require_once __DIR__ . '/MetaCloudProvider.php';
+require_once __DIR__ . '/SlackProvider.php';
+require_once __DIR__ . '/FreeitsmProvider.php';
+require_once __DIR__ . '/TelegramProvider.php';
+require_once __DIR__ . '/TeamsProvider.php';
+require_once __DIR__ . '/MattermostProvider.php';
 require_once __DIR__ . '/../encryption.php';
 
 /** The 24h provider service window, in seconds. */
@@ -28,23 +35,20 @@ if (!defined('MESSAGING_WINDOW_SECONDS')) {
 /**
  * Build the right provider for a channel row (credentials already decrypted into
  * an array by loadMessagingChannel). Throws on an unknown provider.
+ *
+ * @param array $channel  a messaging_channels row with credentials already decoded; 'provider' picks the class (default twilio)
  */
 function messagingProvider(array $channel): MessagingProvider
 {
-    switch ($channel['provider'] ?? 'twilio') {
-        case 'twilio':
-            return new TwilioProvider($channel);
-        case 'meta':
-            return new MetaCloudProvider($channel);
-        default:
-            throw new Exception('Unknown messaging provider: ' . ($channel['provider'] ?? '?'));
-    }
+    return MessagingProviderKind::fromChannel($channel)->create($channel);
 }
 
 /**
  * Load a messaging_channels row with its credentials decrypted + JSON-decoded.
  * Returns null if not found. Safe to call before db_verify has run the table
  * (returns null rather than throwing).
+ *
+ * @param mixed $channelId  the messaging_channels id (cast to int)
  */
 function loadMessagingChannel(PDO $conn, $channelId): ?array
 {
@@ -52,7 +56,7 @@ function loadMessagingChannel(PDO $conn, $channelId): ?array
         $stmt = $conn->prepare("SELECT * FROM messaging_channels WHERE id = ?");
         $stmt->execute([(int) $channelId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
+    } catch (Exception) {
         return null;
     }
     if (!$row) {
@@ -64,14 +68,18 @@ function loadMessagingChannel(PDO $conn, $channelId): ?array
     // empty rows still work (migration-safe).
     foreach (['verify_token', 'relay_secret'] as $secretCol) {
         if (isset($row[$secretCol]) && $row[$secretCol] !== null && $row[$secretCol] !== '') {
-            try { $row[$secretCol] = decryptValue($row[$secretCol]); } catch (Exception $e) { /* leave as-is */ }
+            try { $row[$secretCol] = decryptValue($row[$secretCol]); } catch (Exception) { /* leave as-is */ }
         }
     }
     $row['is_active'] = (bool) ($row['is_active'] ?? 1);
     return $row;
 }
 
-/** Decrypt + JSON-decode a stored credentials blob into an array (never throws). */
+/**
+ * Decrypt + JSON-decode a stored credentials blob into an array (never throws).
+ *
+ * @param mixed $stored  the credentials column as stored (encrypted JSON); null or '' gives an empty array
+ */
 function messagingDecodeCredentials($stored): array
 {
     if ($stored === null || $stored === '') {
@@ -79,7 +87,7 @@ function messagingDecodeCredentials($stored): array
     }
     try {
         $plain = decryptValue($stored);
-    } catch (Exception $e) {
+    } catch (Exception) {
         return [];
     }
     $decoded = json_decode((string) $plain, true);
@@ -100,8 +108,11 @@ function messagingPublicBaseUrl(PDO $conn): string
         if ($configured !== '') {
             return rtrim($configured, '/');
         }
-    } catch (Exception $e) { /* table missing → derive from request */ }
+    } catch (Exception) { /* table missing → derive from request */ }
 
+    // ⚠️ Deliberately NOT requestIsHttps() (GH #152): this is the address shown
+    // for the provider to call, and api/messaging/webhook.php rebuilds it the same
+    // way to check the provider's signature - the two must agree. See there.
     $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
     $host = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? ($_SERVER['HTTP_HOST'] ?? 'localhost');
@@ -111,34 +122,186 @@ function messagingPublicBaseUrl(PDO $conn): string
 /**
  * The full public webhook URL for a channel — what gets pasted into the provider.
  * The app root is derived from SCRIPT_NAME so it works under any sub-path.
+ *
+ * @param int $channelId  the messaging_channels id, put in the URL's ?channel= parameter
  */
 function messagingWebhookUrl(PDO $conn, int $channelId): string
 {
-    $base = messagingPublicBaseUrl($conn);
+    $base = rtrim(messagingPublicBaseUrl($conn), '/');
     $root = preg_replace('#/api/messaging/.*$#', '', $_SERVER['SCRIPT_NAME'] ?? '');
+
+    // ⚠️ The configured public base URL may ALREADY include the app's sub-path.
+    // Nothing stops an admin entering "https://example.com/freeitsm-app", and it
+    // is the natural thing to type — but the app root is derived separately from
+    // SCRIPT_NAME, so appending it produced ".../freeitsm-app/freeitsm-app/...".
+    //
+    // That URL is not merely cosmetic: it is what gets pasted into Slack or Meta
+    // as the request URL, and a 404 there fails their verification with an error
+    // that says nothing about a duplicated path. Found while setting up Slack on
+    // an install whose base URL had the sub-path in it; the same fault has always
+    // applied to WhatsApp.
+    if ($root !== '' && substr($base, -strlen($root)) === $root) {
+        $root = '';
+    }
+
     return $base . $root . '/api/messaging/webhook.php?channel=' . $channelId;
 }
 
 /**
- * Normalise a phone identifier to '+<digits>' for storage and matching. Strips a
- * "whatsapp:" prefix, spaces, dashes and brackets. Returns '' if nothing usable.
+ * A short-lived, unguessable URL to one outbound attachment's bytes — for a
+ * provider (Twilio) that fetches media itself rather than accepting an
+ * upload. NOT a general-purpose public file host: the token is bound to this
+ * ONE attachment id and expires quickly (checked in media.php), so it only
+ * stays reachable for the brief window between sending the message and the
+ * provider fetching it — not for as long as the ticket exists.
+ *
+ * @param int $attachmentId  the outbound attachment whose bytes the provider will fetch
  */
-function normaliseChannelIdentifier(string $raw): string
+function messagingOutboundMediaUrl(PDO $conn, int $attachmentId): string
+{
+    $base = rtrim(messagingPublicBaseUrl($conn), '/');
+    $root = preg_replace('#/api/messaging/.*$#', '', $_SERVER['SCRIPT_NAME'] ?? '');
+    if ($root !== '' && substr($base, -strlen($root)) === $root) {
+        $root = '';
+    }
+
+    // Comfortably longer than any provider takes to fetch (usually seconds),
+    // short enough that a URL sitting in a proxy/access log doesn't stay a
+    // live attack surface indefinitely.
+    $expires = time() + 3600;
+    $token = messagingOutboundMediaToken($attachmentId, $expires);
+
+    return $base . $root . '/api/messaging/media.php?id=' . $attachmentId . '&exp=' . $expires . '&token=' . $token;
+}
+
+/**
+ * HMAC binding one attachment id to one expiry — see messagingOutboundMediaUrl()
+ * and media.php.
+ *
+ * Keyed with a key DERIVED from the install's encryption key, not the encryption
+ * key itself: one key, one job. The AES key protects every stored secret, and a
+ * signing scheme should never be the thing that has to be reasoned about when
+ * asking what that key is exposed to. The label versions the scheme, so changing
+ * it later invalidates old links rather than silently accepting them.
+ *
+ * Throws if there is no encryption key (getEncryptionKey()); callers that face
+ * the internet catch that and answer 404 rather than a fatal.
+ *
+ * @param int $attachmentId  the attachment id the token is bound to
+ * @param int $expires  the Unix timestamp the link stops working
+ */
+function messagingOutboundMediaToken(int $attachmentId, int $expires): string
+{
+    require_once __DIR__ . '/../encryption.php';
+    $signingKey = hash_hmac('sha256', 'freeitsm/messaging-outbound-media/v1', getEncryptionKey(), true);
+    return hash_hmac('sha256', $attachmentId . ':' . $expires, $signingKey);
+}
+
+/**
+ * The category Meta's Media upload endpoint wants for a mime type ('image'|'video'|'audio'|'document').
+ *
+ * @param string $mime  a MIME type, parameters after ';' ignored
+ */
+function messagingMediaCategory(string $mime): string
+{
+    $mime = strtolower(trim(explode(';', $mime)[0]));
+    if (str_starts_with($mime, 'image/')) return 'image';
+    if (str_starts_with($mime, 'video/')) return 'video';
+    if (str_starts_with($mime, 'audio/')) return 'audio';
+    return 'document';
+}
+
+/**
+ * Normalise a sender identifier for storage and matching.
+ *
+ * ⚠️ This USED to be phone-only, and silently destroyed anything that wasn't a
+ * phone number: it stripped every non-digit, so a Slack user id like
+ * "U08ABCDEF" became "+08". Every Slack user whose id contained the same digits
+ * would then collapse onto ONE requester and thread into each other's tickets —
+ * a data leak, not a cosmetic bug. Hence the channel-type argument.
+ *
+ * The phone behaviour is unchanged and must stay that way: whatsapp is the
+ * default so every existing caller keeps its exact previous result.
+ *
+ * @param string $raw  the sender id as received or typed - a phone number, Slack/Mattermost user id, Teams or Telegram chat id
+ * @param string $channelType  the channel type (whatsapp, slack, mattermost, teams, telegram, ...); anything else is treated as a phone
+ */
+function normaliseChannelIdentifier(string $raw, string $channelType = 'whatsapp'): string
 {
     $s = trim($raw);
+
+    if ($channelType === 'slack') {
+        // A Slack user id: 'U' or 'W' (Enterprise Grid), then uppercase
+        // alphanumerics. Case-normalised because Slack is consistent about
+        // upper-case but a hand-typed value in settings might not be.
+        $s = strtoupper($s);
+        return preg_match('/^[UW][A-Z0-9]{2,}$/', $s) ? $s : '';
+    }
+
+    if ($channelType === 'mattermost') {
+        // A Mattermost user id: 26 lowercase letters and digits.
+        return preg_match('/^[a-z0-9]{26}$/', $s) ? $s : '';
+    }
+
+    if ($channelType === 'teams') {
+        // A Teams conversation id (a:…, 19:…@thread…): letters, digits and : _ - . @ =.
+        return preg_match('/^[A-Za-z0-9:_.@=-]{3,190}$/', $s) ? $s : '';
+    }
+
+    if ($channelType === 'telegram') {
+        // A Telegram chat id — a bare (optionally negative, for group chats)
+        // integer. NOT a phone number: running it through the digit-stripping
+        // rule below would silently drop a leading '-' and collapse a group
+        // chat id onto a different, positive one.
+        return preg_match('/^-?\d+$/', $s) ? $s : '';
+    }
+
+    // --- phone identifiers (whatsapp, and the default for anything else) ---
     if (stripos($s, 'whatsapp:') === 0) {
         $s = substr($s, strlen('whatsapp:'));
     }
-    $hasPlus = strpos(ltrim($s), '+') === 0;
     $digits = preg_replace('/\D+/', '', $s);
     if ($digits === '') {
         return '';
     }
-    return ($hasPlus ? '+' : '+') . $digits;
+    return '+' . $digits;
+}
+
+/**
+ * Map a raw client-reported language tag (e.g. Telegram's message.from.
+ * language_code — the user's own OS/app setting, "uk", "en", "pt-BR", never
+ * something they typed) onto one of this install's I18n::SUPPORTED_LOCALES
+ * keys. Unrecognised or empty input falls back to English — I18n::tFor()
+ * would do that anyway, but resolving it here keeps the fallback visible to
+ * the caller (e.g. for deciding whether to bother storing it).
+ *
+ * @param string $raw  the client-reported language tag, e.g. "en-US" or "pt-BR"; empty gives 'en'
+ */
+function messagingNormaliseLocale(string $raw): string
+{
+    require_once __DIR__ . '/../i18n.php';
+    $lower = strtolower(trim($raw));
+    if ($lower === '') {
+        return 'en';
+    }
+    // Our one locale whose key isn't a bare lowercase tag.
+    if ($lower === 'pt' || str_starts_with($lower, 'pt-br')) {
+        return 'pt-BR';
+    }
+    // Telegram (and browsers) may send the old generic "no" for Norwegian;
+    // bokmål is the majority written standard, so that's the sensible default
+    // — a reader who actually wants nynorsk can still switch in Settings.
+    if ($lower === 'no') {
+        return 'nb';
+    }
+    $base = strtok($lower, '-_'); // "en-US" -> "en", but "pt-BR" is handled above first
+    return array_key_exists($base, I18n::SUPPORTED_LOCALES) ? $base : 'en';
 }
 
 /**
  * A sensible file extension for a media MIME type (for naming downloaded media).
+ *
+ * @param string $mime  the media's MIME type, parameters after ';' ignored
  */
 function messagingExtForMime(string $mime): string
 {
@@ -159,7 +322,7 @@ function messagingExtForMime(string $mime): string
         return $map[$mime];
     }
     // Fallback: the subtype, stripped to something filesystem-safe.
-    $sub = strpos($mime, '/') !== false ? substr($mime, strpos($mime, '/') + 1) : $mime;
+    $sub = str_contains($mime, '/') ? substr($mime, strpos($mime, '/') + 1) : $mime;
     $sub = preg_replace('/[^a-z0-9]+/', '', $sub);
     return $sub !== '' ? substr($sub, 0, 8) : 'bin';
 }
@@ -167,6 +330,8 @@ function messagingExtForMime(string $mime): string
 /**
  * How many distinct {{n}} placeholders a template body uses (the highest index).
  * e.g. "Hi {{1}}, ref {{2}}" → 2.
+ *
+ * @param string $body  the template text with {{1}}, {{2}} ... placeholders
  */
 function messagingTemplateVarCount(string $body): int
 {
@@ -179,6 +344,9 @@ function messagingTemplateVarCount(string $body): int
 /**
  * Substitute {{1}}, {{2}}, … in a template body with the given ordered values, for
  * storing/showing what was actually sent. Missing values are left blank.
+ *
+ * @param string $body  the template text with {{1}}, {{2}} ... placeholders
+ * @param array $vars  the values in placeholder order ({{1}} takes the first); keys are ignored
  */
 function messagingRenderTemplate(string $body, array $vars): string
 {
@@ -222,6 +390,65 @@ function messagingBuildTranscript(PDO $conn, int $ticketId): string
  * (a 'Y-m-d H:i:s' UTC string, or null)? Outside the window, free-text replies
  * are blocked by the provider and only template messages are allowed.
  */
+/**
+ * Does this channel type have a provider reply window at all?
+ *
+ * Only WhatsApp does: it is a WhatsApp Business rule, not a general one. Web chat
+ * is self-hosted, Slack lets you answer a thread from last year, and a Telegram
+ * bot may message any chat that has ever messaged it.
+ *
+ * 🔴 The ONE place this list lives. It used to be written out by hand in
+ * send_message.php and get_ticket_thread.php (with a comment begging the two to
+ * agree), and PR #159 added a third copy in send_attachment.php. If the composer
+ * and the API disagree, the composer greys out a reply the API would accept, or
+ * offers one it will refuse, and it reads as a broken integration.
+ */
+/**
+ * Where a reply to a customer goes, given their latest inbound row
+ * (from_address + to_recipients).
+ *
+ * On a phone-like channel - WhatsApp, Telegram, web chat - you answer the
+ * sender, so the sender IS the address. On a threaded one you answer into the
+ * conversation the message came from, which ingest stored as to_recipients:
+ *   slack       "C08HELP:1719500000.000100"   channel + thread
+ *   teams       "<serviceUrl>|<conversationId>" - the serviceUrl is per conversation
+ *   mattermost  "<channelId>:<postId>"          the post to thread under
+ * Replying to the sender there would DM the person instead of answering where
+ * everybody else is reading. ONE function, so the composer and the in-chat CSAT
+ * request (PR #166) can never disagree about where an answer goes.
+ */
+const MESSAGING_THREADED_CHANNELS = ['slack', 'teams', 'mattermost'];
+
+/**
+ * The address to reply to on a conversation row - to_recipients on threaded channels
+ * (Slack, Teams, Mattermost), from_address elsewhere.
+ *
+ * @param string $channelType  the channel type, e.g. 'slack' or 'whatsapp'
+ * @param array $row  the customer's latest inbound emails row - needs from_address and to_recipients
+ */
+function messagingReplyAddress(string $channelType, array $row): string
+{
+    return in_array($channelType, MESSAGING_THREADED_CHANNELS, true)
+        ? trim((string)($row['to_recipients'] ?? ''))
+        : (string)($row['from_address'] ?? '');
+}
+
+/**
+ * True for channels with a reply window (WhatsApp); web chat, Slack, Telegram, Teams and
+ * Mattermost have none.
+ *
+ * @param string $channelType  the channel type, e.g. 'whatsapp' or 'slack'
+ */
+function channelHasServiceWindow(string $channelType): bool
+{
+    return !in_array($channelType, ['webchat', 'slack', 'telegram', 'teams', 'mattermost'], true);
+}
+
+/**
+ * True when the last inbound message (UTC) was under 24 hours ago, so a free-form reply is still allowed.
+ *
+ * @param ?string $lastInboundAt  the last inbound message time as a 'Y-m-d H:i:s' UTC string; null or empty means closed
+ */
 function channelWindowOpen(?string $lastInboundAt): bool
 {
     if (!$lastInboundAt) {
@@ -232,4 +459,37 @@ function channelWindowOpen(?string $lastInboundAt): bool
         return false;
     }
     return (time() - $ts) < MESSAGING_WINDOW_SECONDS;
+}
+
+/**
+ * Authorise a request that acts on ONE messaging channel.
+ *
+ * ⚠️ Two doors lead to these endpoints and they are gated differently:
+ *
+ *   Tickets → Settings → Messaging / Web chat  — RBAC, Cap::TICKETS_MESSAGING
+ *   System  → Integrations → Slack             — administrators only
+ *
+ * So an admin without the Tickets messaging capability must be able to
+ * administer a SLACK channel and nothing else. Widening the capability instead
+ * would hand them a WhatsApp channel's credentials, which is precisely what that
+ * capability exists to withhold.
+ *
+ * Returns true when the caller may act on this channel by virtue of being an
+ * admin working on Slack; false means "fall through to the normal capability
+ * check", which then produces the standard error.
+ *
+ * @param int $channelId  the messaging_channels id being acted on; 0 or less is always refused
+ */
+function messagingAdminMayAdministerChannel(PDO $conn, int $channelId): bool
+{
+    if ($channelId <= 0 || !sessionIsAdmin()) {
+        return false;
+    }
+    try {
+        $stmt = $conn->prepare("SELECT provider FROM messaging_channels WHERE id = ?");
+        $stmt->execute([$channelId]);
+        return ((string) $stmt->fetchColumn()) === 'slack';
+    } catch (Exception) {
+        return false;
+    }
 }

@@ -1,0 +1,136 @@
+/**
+ * Shared calendar GRID SKELETON — the week/day inner-body structure.
+ *
+ * Loaded by every calendar: the Tickets calendar (calendar.css), the standalone
+ * Calendar module + the Change calendar (itsm_calendar.css). It holds only the
+ * structure that is byte-identical across all of them — the week/day scroll
+ * containers, time columns, day columns and time slots. This is where the
+ * recurring layout bugs live (scroll-to-top, full-height today shading and
+ * gridlines), so keeping it in one place means each is fixed once, everywhere.
+ *
+ * Everything that legitimately DIFFERS per module stays in that module's own
+ * calendar stylesheet, layered on top: the month grid, the nav chrome, the
+ * header treatment (solid-accent vs plain), today/weekend tints, event/ticket
+ * pills, the slot click affordance, the sidebar, subscribe and event-popup.
+ * Colours here use shared tokens so each module themes the skeleton via its
+ * pinned --accent.
+ */
+
+/* ============================================================
+   Week view — inner-body structure
+   ============================================================ */
+.week-grid {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.week-header {
+    display: flex;
+    border-bottom: 1px solid var(--border, #e0e0e0);
+    flex-shrink: 0;
+    /* Reserve scrollbar space so the header columns align with the scrolling
+       body columns underneath. */
+    overflow-y: scroll;
+    scrollbar-color: transparent transparent;
+}
+.week-header::-webkit-scrollbar { width: 17px; background: transparent; }
+.week-header::-webkit-scrollbar-thumb,
+.week-header::-webkit-scrollbar-track { background: transparent; }
+
+.week-header-time { width: 60px; flex-shrink: 0; }
+.week-header-days { display: flex; flex-grow: 1; }
+
+.week-body {
+    display: flex;
+    flex-grow: 1;
+    overflow-y: scroll;
+    min-height: 0;
+    /* Grow the time + day columns to their full content height (24 x 60px
+       slots) instead of being stretched only to the visible scroll area —
+       otherwise the today/weekend column shading and the vertical gridlines
+       stop part-way down when you scroll. */
+    align-items: flex-start;
+    /* The first hour label is nudged up 8px (top: -8px) to straddle its
+       gridline; the padding stops it being clipped above the scroll area
+       ("can't quite scroll to the top"). */
+    padding-top: 8px;
+}
+.week-body::-webkit-scrollbar { width: 17px; }
+.week-body::-webkit-scrollbar-track { background: var(--app-bg, #f5f5f5); }
+.week-body::-webkit-scrollbar-thumb {
+    background: var(--border, #ccc);
+    border-radius: 8px;
+    border: 4px solid var(--app-bg, #f5f5f5);
+}
+.week-body::-webkit-scrollbar-thumb:hover { background: var(--text-faint, #aaa); }
+
+.week-time-column { width: 60px; flex-shrink: 0; }
+
+.week-time-slot-label {
+    height: 60px;
+    font-size: 11px;
+    color: var(--text-muted, #666);
+    text-align: right;
+    padding-right: 8px;
+    position: relative;
+    top: -8px;
+}
+
+.week-days-container {
+    display: flex;
+    flex-grow: 1;
+    position: relative;
+}
+
+.week-day-column {
+    flex: 1;
+    border-left: 1px solid var(--border, #e0e0e0);
+    position: relative;
+}
+
+.week-time-slot {
+    height: 60px;
+    border-bottom: 1px solid var(--border-soft, #f0f0f0);
+}
+
+/* ============================================================
+   Day view — inner-body structure
+   ============================================================ */
+.day-grid {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.day-body {
+    display: flex;
+    flex-grow: 1;
+    overflow-y: scroll;
+    min-height: 0;
+    /* Grow columns to full content height, not just the visible area
+       (see .week-body). */
+    align-items: flex-start;
+    padding-top: 8px;
+}
+.day-body::-webkit-scrollbar { width: 17px; }
+.day-body::-webkit-scrollbar-track { background: var(--app-bg, #f5f5f5); }
+.day-body::-webkit-scrollbar-thumb {
+    background: var(--border, #ccc);
+    border-radius: 8px;
+    border: 4px solid var(--app-bg, #f5f5f5);
+}
+.day-body::-webkit-scrollbar-thumb:hover { background: var(--text-faint, #aaa); }
+
+.day-time-column { width: 60px; flex-shrink: 0; }
+
+.day-events-column {
+    flex-grow: 1;
+    border-left: 1px solid var(--border, #e0e0e0);
+    position: relative;
+}
+
+.day-time-slot {
+    height: 60px;
+    border-bottom: 1px solid var(--border-soft, #f0f0f0);
+}

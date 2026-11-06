@@ -53,7 +53,7 @@ return [
     ],
 
     'search' => [
-        'page_title'           => 'Service Desk - Wiki Search',
+        'page_title'           => 'Wiki Search',
         'search_placeholder'   => 'Search files, functions, database tables...',
         'search_btn'           => 'Search',
         'tab_files'            => 'Files',
@@ -70,7 +70,7 @@ return [
     ],
 
     'scan' => [
-        'page_title'      => 'Service Desk - Scan Management',
+        'page_title'      => 'Scan Management',
         'heading'         => 'Scan Management',
         'subtitle'        => 'Run the PowerShell scanner to catalogue the codebase',
         'run_now'         => 'Run Scan Now',
@@ -91,7 +91,7 @@ return [
     ],
 
     'file' => [
-        'page_title'         => 'Service Desk - File Detail',
+        'page_title'         => 'File Detail',
         'loading'            => 'Loading file details...',
         'no_id'              => 'No file ID specified.',
         'error_prefix'       => 'Error: ',
@@ -125,7 +125,7 @@ return [
     ],
 
     'function' => [
-        'page_title'    => 'Service Desk - Function Detail',
+        'page_title'    => 'Function Detail',
         'loading'       => 'Loading function details...',
         'no_id'         => 'No function ID specified.',
         'error_prefix'  => 'Error: ',
@@ -141,7 +141,7 @@ return [
     ],
 
     'table' => [
-        'page_title'        => 'Service Desk - Table References',
+        'page_title'        => 'Table References',
         'loading'           => 'Loading table references...',
         'no_name'           => 'No table name specified.',
         'error_prefix'      => 'Error: ',
@@ -153,7 +153,7 @@ return [
     ],
 
     'tables' => [
-        'page_title'    => 'Service Desk - Database Tables',
+        'page_title'    => 'Database Tables',
         'heading'       => 'Database Tables',
         'loading'       => 'Loading...',
         'col_name'      => 'Table Name',

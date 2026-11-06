@@ -4,15 +4,26 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
 require_once '../../includes/ai_settings_panel.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 // Check if user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../../login.php');
+    header('Location: ../../auth/login.php');
     exit;
 }
+require_once '../../includes/settings_manifest.php';
+requireModuleAccess('knowledge');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered.
+$settingsManifest = settingsManifestFor('knowledge');
+$visibleTabs      = settingsVisibleTabs(connectToDatabase(), (int) $_SESSION['analyst_id'], $settingsManifest);
+$activeTabId      = settingsFirstTabId($visibleTabs);
 
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 $current_page = 'settings';
@@ -20,15 +31,19 @@ $path_prefix = '../../';  // Two levels up from knowledge/settings/
 $translationNamespaces = ['common', 'knowledge'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('knowledge.browser_title.settings')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('knowledge', t('knowledge.nav.settings'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
-    <script src="../../assets/js/ai-settings.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <script src="../../assets/js/ai-settings.js?v=4"></script>
     <style>
         /* Page-specific overrides for settings page */
         .container {
@@ -47,7 +62,7 @@ $translationNamespaces = ['common', 'knowledge'];
             display: block;
             font-weight: 500;
             margin-bottom: 6px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         /* Text-style inputs only — scoping by :not(...) so radios / checkboxes
@@ -56,7 +71,7 @@ $translationNamespaces = ['common', 'knowledge'];
         .form-group select {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 14px;
         }
@@ -64,14 +79,14 @@ $translationNamespaces = ['common', 'knowledge'];
         .form-group input:not([type="radio"]):not([type="checkbox"]):focus,
         .form-group select:focus {
             outline: none;
-            border-color: #8764b8;
+            border-color: var(--kb-accent, #8764b8);
             box-shadow: 0 0 0 2px rgba(135, 100, 184, 0.1);
         }
 
         .form-group small {
             display: block;
             margin-top: 4px;
-            color: #888;
+            color: var(--text-dim, #888);
             font-size: 12px;
         }
 
@@ -92,19 +107,19 @@ $translationNamespaces = ['common', 'knowledge'];
             align-items: flex-start;
             gap: 10px;
             padding: 15px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .radio-option:hover {
-            background: #f9f9f9;
+            background: var(--surface-2, #f9f9f9);
         }
 
         .radio-option.selected {
-            border-color: #8764b8;
-            background: #f8f5fb;
+            border-color: var(--kb-accent, #8764b8);
+            background: var(--kb-accent-soft, #f8f5fb);
         }
 
         .radio-option input[type="radio"] {
@@ -117,19 +132,19 @@ $translationNamespaces = ['common', 'knowledge'];
 
         .radio-option-title {
             font-weight: 500;
-            color: #333;
+            color: var(--text, #333);
             margin-bottom: 4px;
         }
 
         .radio-option-desc {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .smtp-settings {
             margin-top: 20px;
             padding-top: 20px;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--border, #e0e0e0);
             display: none;
         }
 
@@ -140,7 +155,7 @@ $translationNamespaces = ['common', 'knowledge'];
         .mailbox-settings {
             margin-top: 20px;
             padding-top: 20px;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--border, #e0e0e0);
             display: none;
         }
 
@@ -153,7 +168,7 @@ $translationNamespaces = ['common', 'knowledge'];
             gap: 12px;
             margin-top: 30px;
             padding-top: 20px;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--border, #e0e0e0);
         }
 
         .btn {
@@ -166,22 +181,22 @@ $translationNamespaces = ['common', 'knowledge'];
         }
 
         .btn-primary {
-            background: #8764b8;
-            color: white;
+            background: var(--kb-accent, #8764b8);
+            color: var(--kb-on-accent, white);
         }
 
         .btn-primary:hover {
-            background: #6b4fa2;
+            background: var(--kb-accent-hover, #6b4fa2);
         }
 
         .btn-secondary {
-            background: #f0f0f0;
-            color: #333;
-            border: 1px solid #ddd;
+            background: var(--surface-hover, #f0f0f0);
+            color: var(--text, #333);
+            border: 1px solid var(--border, #ddd);
         }
 
         .btn-secondary:hover {
-            background: #e0e0e0;
+            background: var(--border, #e0e0e0);
         }
 
         .btn-test {
@@ -194,13 +209,13 @@ $translationNamespaces = ['common', 'knowledge'];
         }
 
         .save-message {
-            color: #155724;
+            color: var(--success-text, #155724);
             margin-left: 15px;
             display: none;
         }
 
         .save-message.error {
-            color: #d13438;
+            color: var(--danger-accent, #d13438);
         }
 
         .test-result {
@@ -212,37 +227,57 @@ $translationNamespaces = ['common', 'knowledge'];
 
         .test-result.success {
             display: block;
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
+            background: var(--success-bg, #d4edda);
+            border: 1px solid var(--success-bg, #c3e6cb);
+            color: var(--success-text, #155724);
         }
 
         .test-result.error {
             display: block;
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
+            background: var(--danger-bg, #f8d7da);
+            border: 1px solid var(--danger-bg, #f5c6cb);
+            color: var(--danger-text, #721c24);
+        }
+
+        /* The blast-radius note on the folder-permission setting. Lives here
+           rather than in knowledge.css because this page does not link that
+           file — a rule written there would simply never have applied, which is
+           invisible rather than broken. Neutral by default; coloured only when
+           the change would WIDEN access, since that is the direction that
+           discloses rather than merely inconveniences. */
+        .kb-perm-preview {
+            margin: 14px 0;
+            padding: 10px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--border, #ddd);
+            background: var(--surface, #fff);
+            font-size: 13px;
+            color: var(--text, #333);
+        }
+        .kb-perm-preview.is-widening {
+            /* --danger-* , never a bare --danger: that token does not exist, and
+               a phantom just inherits and looks plausible in one theme. */
+            border-color: var(--danger-border, #f5c6cb);
+            background: var(--danger-bg, #f8d7da);
+            color: var(--danger-text, #721c24);
         }
     </style>
+    <!-- Mobile: LAYER 15e handles a settings page built on .container + renderSettingsTabBar, which is this one - hence the marker on <body>. -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="settings">
     <?php include '../includes/header.php'; ?>
 
     <div class="container">
-        <div class="tabs">
-            <button class="tab active" data-tab="email" onclick="switchTab('email')"><?php echo htmlspecialchars(t('knowledge.settings.tab_email')); ?></button>
-            <button class="tab" data-tab="ai" onclick="switchTab('ai')"><?php echo htmlspecialchars(t('knowledge.settings.tab_ai')); ?></button>
-            <button class="tab" data-tab="embeddings" onclick="switchTab('embeddings')"><?php echo htmlspecialchars(t('knowledge.settings.tab_embeddings')); ?></button>
-            <button class="tab" data-tab="recycle-bin" onclick="switchTab('recycle-bin')"><?php echo htmlspecialchars(t('knowledge.settings.tab_recycle')); ?></button>
-            <button class="tab" data-tab="left-panel" onclick="switchTab('left-panel')"><?php echo htmlspecialchars(t('knowledge.settings.tab_left_panel')); ?></button>
-        </div>
+        <?php renderSettingsTabBar($visibleTabs, $activeTabId); ?>
 
         <!-- Email Tab -->
-        <div class="tab-content active" id="email-tab">
+        <?php if (settingsTabVisible($visibleTabs, 'email')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'email' ? ' active' : ''; ?>" id="email-tab" data-capability="<?php echo capKey(Cap::KNOWLEDGE_EMAIL); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('knowledge.settings.email_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.email_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.email_intro')); ?></p>
 
             <form id="emailSettingsForm">
                 <div class="radio-group">
@@ -354,23 +389,65 @@ $translationNamespaces = ['common', 'knowledge'];
         </div>
 
         <!-- AI Assistant Tab -->
-        <div class="tab-content" id="ai-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'ai')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'ai' ? ' active' : ''; ?>" id="ai-tab" data-capability="<?php echo capKey(Cap::KNOWLEDGE_AI); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('knowledge.settings.ai_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.ai_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.ai_intro')); ?></p>
 
             <!-- Assistant provider/model/key — reusable block (Anthropic / OpenAI / OpenRouter). -->
             <h3 style="font-size: 16px; margin-bottom: 15px;"><?php echo htmlspecialchars(t('knowledge.settings.ai_chat_heading')); ?></h3>
             <?php renderAiSettingsPanel('knowledge_ai'); ?>
 
+            <!-- The assistant: judging whether a ticket contains an article, and
+                 drafting it. Its own provider/model/key so the spend is its own
+                 line on the bill — but it falls back to the chat key above if
+                 left blank, so nobody has to configure two things to get going
+                 (see writeupAiConfig() in includes/knowledge/writeup_ai.php). -->
+            <h3 style="font-size: 16px; margin: 25px 0 15px 0; padding-top: 20px; border-top: 1px solid var(--border, #e0e0e0);">Assistant</h3>
+            <p style="color: var(--text-muted, #666); margin-bottom: 15px; font-size: 13px;">
+                Finds the questions your service desk keeps answering that the knowledge base
+                does not cover, and drafts the article. Leave the key blank to reuse the one above.
+            </p>
+            <?php renderAiSettingsPanel('knowledge_writeup'); ?>
+
+            <h4 style="font-size: 14px; margin: 22px 0 12px 0;">When the assistant speaks up</h4>
+            <form id="assistantSettingsForm">
+                <div class="form-group">
+                    <label for="gapMinCluster">Ask the same question this many times before suggesting an article</label>
+                    <input type="number" id="gapMinCluster" min="2" max="50" step="1">
+                    <small>Lower it if you want an article for anything that comes up twice; raise it on a busy desk.</small>
+                </div>
+                <div class="form-group">
+                    <label for="gapLookback">How far back to read (days)</label>
+                    <input type="number" id="gapLookback" min="7" max="730" step="1">
+                    <small>Older than this and the answer has usually changed anyway.</small>
+                </div>
+                <div class="form-group">
+                    <label for="gapArticleThreshold">How close an existing article must be to count as covering a ticket</label>
+                    <input type="number" id="gapArticleThreshold" min="0.3" max="0.95" step="0.01">
+                    <small>Higher means stricter, so more tickets are treated as gaps. 0.75 is a sensible default. Only used when an OpenAI key is set.</small>
+                </div>
+                <div class="form-group">
+                    <label for="gapClusterThreshold">How alike two tickets must be to count as the same question</label>
+                    <input type="number" id="gapClusterThreshold" min="0.5" max="0.99" step="0.01">
+                    <small>Higher means tighter groups. Too low and unrelated tickets get lumped together. Only used when an OpenAI key is set.</small>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+
             <!-- OpenAI key for semantic-search embeddings — a separate concern from the chat provider. -->
-            <h3 style="font-size: 16px; margin: 25px 0 15px 0; padding-top: 20px; border-top: 1px solid #e0e0e0;"><?php echo htmlspecialchars(t('knowledge.settings.ai_openai_heading')); ?></h3>
+            <h3 style="font-size: 16px; margin: 25px 0 15px 0; padding-top: 20px; border-top: 1px solid var(--border, #e0e0e0);"><?php echo htmlspecialchars(t('knowledge.settings.ai_openai_heading')); ?></h3>
             <form id="aiSettingsForm">
                 <div class="form-group">
                     <label for="openaiApiKey"><?php echo htmlspecialchars(t('knowledge.settings.ai_openai_key')); ?></label>
                     <input type="password" id="openaiApiKey" placeholder="sk-proj-...">
-                    <small><?php echo t('knowledge.settings.ai_openai_help', ['link' => '<a href="https://platform.openai.com/api-keys" target="_blank" style="color:#8764b8;">platform.openai.com</a>']); ?></small>
+                    <small><?php echo t('knowledge.settings.ai_openai_help', ['link' => '<a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--kb-accent,#8764b8);">platform.openai.com</a>']); ?></small>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('knowledge.settings.save')); ?></button>
@@ -379,17 +456,20 @@ $translationNamespaces = ['common', 'knowledge'];
         </div>
 
         <!-- Embeddings Tab -->
-        <div class="tab-content" id="embeddings-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'embeddings')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'embeddings' ? ' active' : ''; ?>" id="embeddings-tab" data-capability="<?php echo capKey(Cap::KNOWLEDGE_EMBEDDINGS); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('knowledge.settings.embeddings_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.embeddings_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.embeddings_intro')); ?></p>
 
-            <div id="embeddingStatus" style="padding: 15px; background: #f9f9f9; border-radius: 6px; margin-bottom: 20px;">
+            <div id="embeddingStatus" style="padding: 15px; background: var(--surface-2, #f9f9f9); border-radius: 6px; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong><?php echo htmlspecialchars(t('knowledge.settings.embedding_status')); ?></strong>
-                        <div id="embeddingStats" style="margin-top: 5px; color: #666; font-size: 13px;"><?php echo htmlspecialchars(t('knowledge.settings.embed_loading')); ?></div>
+                        <div id="embeddingStats" style="margin-top: 5px; color: var(--text-muted, #666); font-size: 13px;"><?php echo htmlspecialchars(t('knowledge.settings.embed_loading')); ?></div>
                     </div>
                     <button type="button" class="btn btn-primary" id="generateEmbeddingsBtn" onclick="generateEmbeddings()"><?php echo htmlspecialchars(t('knowledge.settings.generate')); ?></button>
                 </div>
@@ -399,8 +479,8 @@ $translationNamespaces = ['common', 'knowledge'];
                 <div style="margin-bottom: 10px;">
                     <span id="embeddingProgressText"><?php echo htmlspecialchars(t('knowledge.settings.processing')); ?></span>
                 </div>
-                <div style="background: #e0e0e0; border-radius: 4px; height: 8px; overflow: hidden;">
-                    <div id="embeddingProgressBar" style="background: #8764b8; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                <div style="background: var(--border, #e0e0e0); border-radius: 4px; height: 8px; overflow: hidden;">
+                    <div id="embeddingProgressBar" style="background: var(--kb-accent, #8764b8); height: 100%; width: 0%; transition: width 0.3s;"></div>
                 </div>
             </div>
 
@@ -408,11 +488,14 @@ $translationNamespaces = ['common', 'knowledge'];
         </div>
 
         <!-- Recycle Bin Tab -->
-        <div class="tab-content" id="recycle-bin-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'recycle-bin')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'recycle-bin' ? ' active' : ''; ?>" id="recycle-bin-tab" data-capability="<?php echo capKey(Cap::KNOWLEDGE_RECYCLE_BIN); ?>">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('knowledge.settings.recycle_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.recycle_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.recycle_intro')); ?></p>
             <form id="recycleBinSettingsForm">
                 <div class="form-group">
                     <label for="recycleBinDays"><?php echo htmlspecialchars(t('knowledge.settings.recycle_days_label')); ?></label>
@@ -426,27 +509,92 @@ $translationNamespaces = ['common', 'knowledge'];
         </div>
 
         <!-- Left panel tab — per-analyst preference -->
-        <div class="tab-content" id="left-panel-tab">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'permissions')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'permissions' ? ' active' : ''; ?>" id="permissions-tab" data-capability="<?php echo capKey(Cap::KNOWLEDGE_MANAGE); ?>">
+            <div class="section-header">
+                <h2><?php echo htmlspecialchars(t('knowledge.settings.perm_model_heading')); ?></h2>
+            </div>
+            <p style="color: var(--text-muted, #666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.perm_model_intro')); ?></p>
+
+            <form id="permModelForm" autocomplete="off" onsubmit="event.preventDefault();">
+                <div class="form-group">
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                        <input type="radio" name="kbPermModel" value="containers" onchange="previewPermModel(this.value)">
+                        <strong><?php echo htmlspecialchars(t('knowledge.settings.perm_containers_title')); ?></strong>
+                        <span style="display: block; font-size: 12px; color: var(--text-dim, #777); margin-top: 4px; margin-left: 22px;">
+                            <?php echo htmlspecialchars(t('knowledge.settings.perm_containers_desc')); ?>
+                        </span>
+                    </label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; cursor: pointer;">
+                        <input type="radio" name="kbPermModel" value="filing" onchange="previewPermModel(this.value)">
+                        <strong><?php echo htmlspecialchars(t('knowledge.settings.perm_filing_title')); ?></strong>
+                        <span style="display: block; font-size: 12px; color: var(--text-dim, #777); margin-top: 4px; margin-left: 22px;">
+                            <?php echo htmlspecialchars(t('knowledge.settings.perm_filing_desc')); ?>
+                        </span>
+                    </label>
+                </div>
+
+                <!-- What the change would actually do, counted, BEFORE anything
+                     is written. This setting changes who can read live documents
+                     with no per-document change to point at, so a bare "are you
+                     sure?" would be asking about something nobody can see. -->
+                <div id="permModelPreview" class="kb-perm-preview" style="display:none;"></div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" id="permModelApply" style="display:none;" onclick="applyPermModel()">
+                        <?php echo htmlspecialchars(t('knowledge.settings.save')); ?>
+                    </button>
+                </div>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <!-- Left panel — per-analyst display preference; no capability. -->
+        <div class="tab-content<?php echo $activeTabId === 'left-panel' ? ' active' : ''; ?>" id="left-panel-tab" data-capability="none">
             <div class="section-header">
                 <h2><?php echo htmlspecialchars(t('knowledge.settings.left_panel_heading')); ?></h2>
             </div>
-            <p style="color: #666; margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.left_panel_intro')); ?></p>
+            <p style="color: var(--text-muted, #666); margin-bottom: 20px;"><?php echo htmlspecialchars(t('knowledge.settings.left_panel_intro')); ?></p>
 
             <form id="leftPanelForm" autocomplete="off" onsubmit="event.preventDefault();">
                 <div class="form-group">
-                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: #333;"><?php echo htmlspecialchars(t('knowledge.settings.visibility')); ?></label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: var(--text, #333);"><?php echo htmlspecialchars(t('knowledge.settings.visibility')); ?></label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
                         <input type="radio" name="kbSidebarMode" value="always" onchange="saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('knowledge.settings.always_title')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-dim, #777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('knowledge.settings.always_desc')); ?>
                         </span>
                     </label>
-                    <label style="display: block; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; cursor: pointer;">
                         <input type="radio" name="kbSidebarMode" value="hover" onchange="saveSidebarMode(this.value)">
                         <strong><?php echo htmlspecialchars(t('knowledge.settings.hover_title')); ?></strong>
-                        <span style="display: block; font-size: 12px; color: #777; margin-top: 4px; margin-left: 22px;">
+                        <span style="display: block; font-size: 12px; color: var(--text-dim, #777); margin-top: 4px; margin-left: 22px;">
                             <?php echo htmlspecialchars(t('knowledge.settings.hover_desc')); ?>
+                        </span>
+                    </label>
+                </div>
+
+                <!-- WHERE you browse folders. The left panel already carries
+                     search, folders, tags, buttons and the bin; folders are the
+                     newest and largest thing on it, so being able to move them
+                     out is the point of this setting. -->
+                <div class="form-group" style="margin-top: 24px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: 500; color: var(--text, #333);"><?php echo htmlspecialchars(t('knowledge.settings.browse_heading')); ?></label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; margin-bottom: 8px; cursor: pointer;">
+                        <input type="radio" name="kbBrowseMode" value="panel" onchange="saveBrowseMode(this.value)">
+                        <strong><?php echo htmlspecialchars(t('knowledge.settings.browse_panel_title')); ?></strong>
+                        <span style="display: block; font-size: 12px; color: var(--text-dim, #777); margin-top: 4px; margin-left: 22px;">
+                            <?php echo htmlspecialchars(t('knowledge.settings.browse_panel_desc')); ?>
+                        </span>
+                    </label>
+                    <label style="display: block; padding: 10px 14px; border: 1px solid var(--border, #ddd); border-radius: 6px; cursor: pointer;">
+                        <input type="radio" name="kbBrowseMode" value="explorer" onchange="saveBrowseMode(this.value)">
+                        <strong><?php echo htmlspecialchars(t('knowledge.settings.browse_explorer_title')); ?></strong>
+                        <span style="display: block; font-size: 12px; color: var(--text-dim, #777); margin-top: 4px; margin-left: 22px;">
+                            <?php echo htmlspecialchars(t('knowledge.settings.browse_explorer_desc')); ?>
                         </span>
                     </label>
                 </div>
@@ -465,7 +613,7 @@ $translationNamespaces = ['common', 'knowledge'];
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.getElementById(tab + '-tab').classList.add('active');
             // Lazy-load the Left panel preference the first time the tab opens.
-            if (tab === 'left-panel') loadSidebarMode();
+            if (tab === 'left-panel') { loadSidebarMode(); loadBrowseMode(); }
         }
 
         // --- Left panel preference ------------------------------------
@@ -489,6 +637,78 @@ $translationNamespaces = ['common', 'knowledge'];
             }
         }
 
+        // ── The folder permission model ────────────────────────────────────
+        // Nothing is saved by picking a radio. Choosing shows what the change
+        // would DO — counted, per person — and only then offers to apply it.
+        // This is the one setting in the module that changes who can read live
+        // documents, with no per-document change to point at afterwards, so a
+        // bare "are you sure?" would be asking about something invisible.
+        let permModelCurrent = 'containers';
+
+        async function loadPermModel() {
+            try {
+                const r = await fetch('../../api/knowledge/permission_model.php?action=get');
+                const d = await r.json();
+                if (!d.success) return;
+                permModelCurrent = d.model;
+                const el = document.querySelector(`input[name="kbPermModel"][value="${d.model}"]`);
+                if (el) el.checked = true;
+            } catch (e) { /* leave both unticked rather than showing a guess as fact */ }
+        }
+
+        async function previewPermModel(model) {
+            const box = document.getElementById('permModelPreview');
+            const btn = document.getElementById('permModelApply');
+            if (model === permModelCurrent) { box.style.display = 'none'; btn.style.display = 'none'; return; }
+
+            box.style.display = '';
+            box.className = 'kb-perm-preview';
+            box.textContent = '…';
+            btn.style.display = 'none';
+            try {
+                const r = await fetch('../../api/knowledge/permission_model.php?action=preview&model=' + encodeURIComponent(model));
+                const d = await r.json();
+                if (!d.success) { box.textContent = d.error || 'Could not work out what this would change.'; return; }
+
+                if (!d.gain && !d.lose) {
+                    box.textContent = '<?php echo addslashes(t('knowledge.settings.perm_preview_none')); ?>';
+                } else {
+                    const parts = [];
+                    if (d.gain) parts.push('<?php echo addslashes(t('knowledge.settings.perm_preview_gain')); ?>'.replace('{count}', d.gain));
+                    if (d.lose) parts.push('<?php echo addslashes(t('knowledge.settings.perm_preview_lose')); ?>'.replace('{count}', d.lose));
+                    box.textContent = parts.join(' ');
+                    // Gaining access is the direction worth colouring: it is the
+                    // one that discloses rather than merely inconveniences.
+                    box.className = 'kb-perm-preview' + (d.gain ? ' is-widening' : '');
+                }
+                if (d.capped) {
+                    box.textContent += ' <?php echo addslashes(t('knowledge.settings.perm_preview_capped')); ?>'.replace('{count}', d.sampled);
+                }
+                btn.style.display = '';
+            } catch (e) {
+                box.textContent = 'Could not work out what this would change.';
+            }
+        }
+
+        async function applyPermModel() {
+            const chosen = document.querySelector('input[name="kbPermModel"]:checked');
+            if (!chosen) return;
+            try {
+                const r = await fetch('../../api/knowledge/permission_model.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set', model: chosen.value })
+                });
+                const d = await r.json();
+                if (!d.success) { showToast(d.error || 'Could not save', 'error'); return; }
+                permModelCurrent = d.model;
+                document.getElementById('permModelPreview').style.display = 'none';
+                document.getElementById('permModelApply').style.display = 'none';
+                showToast('<?php echo addslashes(t('knowledge.settings.perm_saved')); ?>', 'success');
+            } catch (e) { showToast('Could not save', 'error'); }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadPermModel);
+
         async function saveSidebarMode(value) {
             if (value !== 'always' && value !== 'hover') return;
             try {
@@ -497,6 +717,36 @@ $translationNamespaces = ['common', 'knowledge'];
                     credentials: 'same-origin',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ key: SIDEBAR_MODE_KEY, value: value })
+                });
+                const d = await r.json();
+                if (d.success) showToast(window.t('knowledge.settings.toast_saved'), 'success');
+            } catch (e) { /* no-op */ }
+        }
+
+        // Where folders are browsed. Same shape as the sidebar mode above; both
+        // are per-analyst display preferences rather than install settings,
+        // because two people sharing a service desk genuinely disagree about
+        // this and neither is wrong.
+        const BROWSE_MODE_KEY = 'knowledge_browse_mode';
+        async function loadBrowseMode() {
+            try {
+                const r = await fetch('../../api/system/get_user_preference.php?key=' + encodeURIComponent(BROWSE_MODE_KEY), { credentials: 'same-origin' });
+                const d = await r.json();
+                const mode = (d.success && d.value === 'explorer') ? 'explorer' : 'panel';
+                document.querySelectorAll('input[name="kbBrowseMode"]').forEach(i => { i.checked = (i.value === mode); });
+            } catch (e) {
+                const first = document.querySelector('input[name="kbBrowseMode"][value="panel"]');
+                if (first) first.checked = true;
+            }
+        }
+        async function saveBrowseMode(value) {
+            if (value !== 'panel' && value !== 'explorer') return;
+            try {
+                const r = await fetch('../../api/system/set_user_preference.php', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: BROWSE_MODE_KEY, value: value })
                 });
                 const d = await r.json();
                 if (d.success) showToast(window.t('knowledge.settings.toast_saved'), 'success');
@@ -682,6 +932,61 @@ $translationNamespaces = ['common', 'knowledge'];
             }
         }
 
+        /* The assistant's tunables. Values are clamped server-side too — the
+           number inputs' min/max are a convenience, not the guard. */
+        (function initAssistantSettings() {
+            const form = document.getElementById('assistantSettingsForm');
+            if (!form) return;
+
+            const fields = {
+                gapMinCluster:       'knowledge_gap_min_cluster',
+                gapLookback:         'knowledge_gap_lookback_days',
+                gapArticleThreshold: 'knowledge_gap_article_threshold',
+                gapClusterThreshold: 'knowledge_gap_cluster_threshold'
+            };
+
+            fetch(API_BASE + 'assistant_settings.php')
+                .then(r => r.json())
+                .then(d => {
+                    if (!d.success) return;
+                    Object.entries(fields).forEach(([id, key]) => {
+                        const el = document.getElementById(id);
+                        if (el && d.settings[key] !== undefined) el.value = d.settings[key];
+                    });
+                })
+                .catch(() => { /* defaults still apply server-side */ });
+
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const payload = {};
+                Object.entries(fields).forEach(([id, key]) => {
+                    const el = document.getElementById(id);
+                    if (el && el.value !== '') payload[key] = el.value;
+                });
+                try {
+                    const res = await fetch(API_BASE + 'assistant_settings.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        // Reflect what the server actually stored — a value it
+                        // clamped must not keep showing the number you typed.
+                        Object.entries(fields).forEach(([id, key]) => {
+                            const el = document.getElementById(id);
+                            if (el && data.saved[key] !== undefined) el.value = data.saved[key];
+                        });
+                        showToast('Saved', 'success');
+                    } else {
+                        showToast(data.error || 'Could not save', 'error');
+                    }
+                } catch (err) {
+                    showToast('Could not save', 'error');
+                }
+            });
+        })();
+
         document.getElementById('aiSettingsForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -728,7 +1033,7 @@ $translationNamespaces = ['common', 'knowledge'];
                     if (total === 0) {
                         statsDiv.textContent = window.t('knowledge.settings.embed_none');
                     } else if (without_embeddings === 0) {
-                        statsDiv.innerHTML = `<span style="color: #155724;">${window.t('knowledge.settings.embed_all', { total: total })}</span>`;
+                        statsDiv.innerHTML = `<span style="color: var(--success-text, #155724);">${window.t('knowledge.settings.embed_all', { total: total })}</span>`;
                     } else {
                         statsDiv.innerHTML = window.t('knowledge.settings.embed_partial', { with: with_embeddings, total: total, missing: without_embeddings });
                     }
@@ -863,5 +1168,6 @@ $translationNamespaces = ['common', 'knowledge'];
             }
         });
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

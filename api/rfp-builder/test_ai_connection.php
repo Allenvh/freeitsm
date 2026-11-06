@@ -8,6 +8,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 require_once '../../includes/encryption.php';
 
 header('Content-Type: application/json');
@@ -17,6 +18,11 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+// The RFP Builder is part of the Contracts module — its PAGES have always checked
+// this, its endpoints never did. Any logged-in analyst could read, edit or delete
+// any RFP by calling the API directly. (Found by debug tool D005.)
+requireModuleAccessJson('contracts');
+requireCapabilityJson(Cap::CONTRACTS_RFP_AI);   // Contracts settings tab — see docs/design/rbac.md
 try {
     $data = json_decode(file_get_contents('php://input'), true);
     $provider  = $data['provider']   ?? '';
@@ -64,6 +70,16 @@ try {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
 
+/**
+ * Sends a tiny prompt to the Anthropic Messages API to prove the key and model work, and
+ * returns the reply text with the token counts.
+ *
+ * Throws with the provider's own error message (or the HTTP code) when the call fails.
+ *
+ * @param string $apiKey  the Anthropic API key to test, in plain text
+ * @param string $model  the model id to call
+ * @param bool $verifySsl  the "verify SSL" tick from the request - unused: sslApplyCurl() follows the global switch alone
+ */
 function rfpTestAnthropic(string $apiKey, string $model, bool $verifySsl): array {
     $body = json_encode([
         'model'      => $model,
@@ -82,9 +98,8 @@ function rfpTestAnthropic(string $apiKey, string $model, bool $verifySsl): array
         ],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 30,
-        CURLOPT_SSL_VERIFYPEER => $verifySsl,
-        CURLOPT_SSL_VERIFYHOST => $verifySsl ? 2 : 0,
     ]);
+    sslApplyCurl($ch);
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
@@ -114,6 +129,16 @@ function rfpTestAnthropic(string $apiKey, string $model, bool $verifySsl): array
     ];
 }
 
+/**
+ * Sends a tiny prompt to the OpenAI Chat Completions API to prove the key and model
+ * work, and returns the reply text with the token counts.
+ *
+ * Throws with the provider's own error message (or the HTTP code) when the call fails.
+ *
+ * @param string $apiKey  the OpenAI API key to test, in plain text
+ * @param string $model  the model id to call
+ * @param bool $verifySsl  the "verify SSL" tick from the request - unused: sslApplyCurl() follows the global switch alone
+ */
 function rfpTestOpenAI(string $apiKey, string $model, bool $verifySsl): array {
     $body = json_encode([
         'model'      => $model,
@@ -131,9 +156,8 @@ function rfpTestOpenAI(string $apiKey, string $model, bool $verifySsl): array {
         ],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 30,
-        CURLOPT_SSL_VERIFYPEER => $verifySsl,
-        CURLOPT_SSL_VERIFYHOST => $verifySsl ? 2 : 0,
     ]);
+    sslApplyCurl($ch);
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);

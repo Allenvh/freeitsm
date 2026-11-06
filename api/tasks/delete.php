@@ -1,11 +1,12 @@
 <?php
 /**
- * API: Tasks — Delete a task and its subtasks
- * POST — JSON body with {id}
+ * API: Tasks — Delete a task and its subtasks.
+ * Thin UI adapter over TasksService.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/services/tasks.php';
 
 header('Content-Type: application/json');
 
@@ -13,29 +14,14 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
-
-$input = json_decode(file_get_contents('php://input'), true);
-$id = isset($input['id']) ? (int)$input['id'] : 0;
-
-if (!$id) {
-    echo json_encode(['success' => false, 'error' => 'Missing task ID']);
-    exit;
-}
+requireModuleAccessJson('tasks');
+requireModuleWriteJson('tasks');
 
 try {
     $conn = connectToDatabase();
-
-    // Subtasks and comments cascade-delete via FK constraints
-    $stmt = $conn->prepare("DELETE FROM tasks WHERE id = ?");
-    $stmt->execute([$id]);
-
-    if ($stmt->rowCount() === 0) {
-        echo json_encode(['success' => false, 'error' => 'Task not found']);
-        exit;
-    }
-
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    TasksService::deleteTask($conn, ActorContext::fromSession($conn), (int)($input['id'] ?? 0));
     echo json_encode(['success' => true, 'message' => 'Task deleted']);
-
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

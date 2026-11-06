@@ -1,18 +1,44 @@
 <?php
+/**
+ * Problem Management -> Settings: the Statuses, Priorities and Problem AI tabs.
+ *
+ * Needs the problems module; each tab is shown only to analysts with its
+ * capability (settings_manifest.php). Statuses and priorities are listed, added,
+ * edited and deleted through api/problem-management/; the AI tab is the shared
+ * AI provider panel for "Draft root cause" and "Detect problems".
+ */
 session_start();
 require_once __DIR__ . '/../../config.php';
+require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/ai_settings_panel.php';
+require_once __DIR__ . '/../../includes/theme.php';
+require_once __DIR__ . '/../../includes/timezone.php';
+Tz::init();
+
+require_once __DIR__ . '/../../includes/settings_manifest.php';
+requireModuleAccess('problems');
+
+// RBAC Layer 2: only the tabs this analyst may see are rendered.
+$settingsManifest = settingsManifestFor('problems');
+$visibleTabs      = settingsVisibleTabs(connectToDatabase(), (int) $_SESSION['analyst_id'], $settingsManifest);
+$activeTabId      = settingsFirstTabId($visibleTabs);
+
 $current_page = 'settings';
 $path_prefix = '../../';
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - Problem Management Settings</title>
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('problems', 'Settings')); ?></title>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css?v=79">
     <style>
+        /* Pin the shared accent to the module red so the tabs, Add buttons,
+           toggles, modal primary button and focus rings read on-brand. */
+        body { --accent: var(--pm-accent, #dc2626); --accent-hover: var(--pm-accent-hover, #b91c1c); }
         /* Same shell pattern as tickets/settings: header pinned, .container scrolls,
            full width (no max-width cap). */
         .settings-shell { display: flex; flex-direction: column; height: 100vh; }
@@ -25,37 +51,44 @@ $path_prefix = '../../';
         .pms-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
         .tab-content .table-action-btn svg { width: 15px; height: 15px; }
     </style>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/mobile.css?v=196">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="<?php echo BASE_URL; ?>assets/js/tz.js?v=5"></script>
 </head>
-<body>
+<body data-mobile-page="settings">
     <div class="settings-shell">
     <?php include __DIR__ . '/../includes/header.php'; ?>
 
     <div class="container">
         <h1>Problem Management settings</h1>
 
-        <div class="tabs">
-            <button class="tab active" data-tab="statuses" onclick="pmsTab('statuses')">Statuses</button>
-            <button class="tab" data-tab="priorities" onclick="pmsTab('priorities')">Priorities</button>
-            <button class="tab" data-tab="ai" onclick="pmsTab('ai')">Problem AI</button>
-        </div>
+        <?php renderSettingsTabBar($visibleTabs, $activeTabId, 'pmsTab'); ?>
 
-        <div class="tab-content active" id="tab-statuses">
+        <?php if (settingsTabVisible($visibleTabs, 'statuses')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'statuses' ? ' active' : ''; ?>" id="tab-statuses" data-capability="<?php echo capKey(Cap::PROBLEMS_STATUSES); ?>">
             <div class="section-header"><h2>Statuses</h2><button class="add-btn" onclick="pmsOpen('status')">Add</button></div>
             <table><thead><tr><th>Name</th><th>Closed?</th><th>Default</th><th>Active</th><th>Actions</th></tr></thead>
             <tbody id="pmsStatusRows"><tr><td colspan="5">Loading…</td></tr></tbody></table>
         </div>
 
-        <div class="tab-content" id="tab-priorities">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'priorities')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'priorities' ? ' active' : ''; ?>" id="tab-priorities" data-capability="<?php echo capKey(Cap::PROBLEMS_PRIORITIES); ?>">
             <div class="section-header"><h2>Priorities</h2><button class="add-btn" onclick="pmsOpen('priority')">Add</button></div>
             <table><thead><tr><th>Name</th><th>Default</th><th>Active</th><th>Actions</th></tr></thead>
             <tbody id="pmsPriorityRows"><tr><td colspan="4">Loading…</td></tr></tbody></table>
         </div>
 
-        <div class="tab-content" id="tab-ai">
+        <?php endif; ?>
+
+        <?php if (settingsTabVisible($visibleTabs, 'ai')): ?>
+        <div class="tab-content<?php echo $activeTabId === 'ai' ? ' active' : ''; ?>" id="tab-ai" data-capability="<?php echo capKey(Cap::PROBLEMS_AI); ?>">
             <h2 style="margin-top:0;">Problem AI</h2>
-            <p style="color:#555;">Used by “Draft root cause” and “Detect problems”. Bring your own provider and key.</p>
+            <p style="color:var(--text-muted, #555);">Used by “Draft root cause” and “Detect problems”. Bring your own provider and key.</p>
             <?php renderAiSettingsPanel('problem_ai'); ?>
         </div>
+        <?php endif; ?>
     </div>
     </div><!-- /.settings-shell -->
 
@@ -81,7 +114,7 @@ $path_prefix = '../../';
 
     <script src="<?php echo BASE_URL; ?>assets/js/toast.js"></script>
     <script src="<?php echo BASE_URL; ?>assets/js/confirm.js"></script>
-    <script src="<?php echo BASE_URL; ?>assets/js/ai-settings.js"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/ai-settings.js?v=4"></script>
     <script>
     const PMS_API = '../../api/problem-management/';
     function pmsEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -148,4 +181,5 @@ $path_prefix = '../../';
     pmsLoad();
     </script>
 </body>
+    <script src="<?php echo BASE_URL; ?>assets/js/mobile.js?v=83"></script>
 </html>

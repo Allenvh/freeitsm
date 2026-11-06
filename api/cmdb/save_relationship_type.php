@@ -5,13 +5,21 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+require_once '../../includes/cmdb_impact.php';   // impact direction vocabulary
 
 header('Content-Type: application/json');
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+requireModuleAccessJson('cmdb');
+requireCapabilityJson(Cap::CMDB_RELATIONSHIP_TYPES);   // settings tab — see docs/design/rbac.md
 
 try {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -22,6 +30,25 @@ try {
     $displayOrder = isset($data['display_order']) ? (int)$data['display_order'] : 0;
     $isActive = !empty($data['is_active']) ? 1 : 0;
 
+    // Whether a failure travels along this relationship, and which way. Anything
+    // unrecognised falls back to 'none' rather than being stored — an unknown
+    // value would silently drop the edge from the blast radius with no clue why.
+    $impactDirection = (string)($data['impact_direction'] ?? CMDB_IMPACT_NONE);
+    if (!in_array($impactDirection, cmdbImpactDirections(), true)) {
+        $impactDirection = CMDB_IMPACT_NONE;
+    }
+
+    // GH #199 Part C: none | membership | placement. Only when sent, so an older caller
+    // cannot reset it. A redundancy rule shapes how a failure travels, so it needs one to.
+    $redundancy = null;
+    if (array_key_exists('redundancy', $data)) {
+        $redundancy = (string)$data['redundancy'];
+        if (!in_array($redundancy, ['none', 'membership', 'placement'], true)) $redundancy = 'none';
+        if ($redundancy !== 'none' && $impactDirection === CMDB_IMPACT_NONE) {
+            throw new Exception('A redundancy rule needs the relationship to spread impact - choose which way first.');
+        }
+    }
+
     if ($verb === '') throw new Exception('Verb is required');
     if ($inverse === '') throw new Exception('Inverse verb is required');
     if (mb_strlen($verb) > 100) throw new Exception('Verb too long (max 100 chars)');
@@ -29,27 +56,35 @@ try {
 
     $conn = connectToDatabase();
 
-    // Refuse duplicate verbs
-    $check = $conn->prepare("SELECT id FROM cmdb_relationship_types WHERE verb = ? AND ($id IS NULL OR id <> ?)");
-    $check->execute([$verb, $id ?: 0]);
+    // Refuse duplicate verbs - any OTHER type with this verb. On create there is no
+    // id yet, and 0 matches no row, so every existing type is compared (GH #163:
+    // this used to paste $id into the SQL, and a null id became "( IS NULL OR …",
+    // so adding a relationship type failed with a syntax error every time).
+    $check = $conn->prepare("SELECT id FROM cmdb_relationship_types WHERE verb = ? AND id <> ?");
+    $check->execute([$verb, $id ?? 0]);
     if ($check->fetch()) {
         throw new Exception('Another relationship type already uses that verb');
     }
 
     if ($id === null) {
         $stmt = $conn->prepare(
-            "INSERT INTO cmdb_relationship_types (verb, inverse_verb, description, display_order, is_active, created_datetime)
-             VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())"
+            "INSERT INTO cmdb_relationship_types (verb, inverse_verb, description, impact_direction, display_order, is_active, created_datetime)
+             VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())"
         );
-        $stmt->execute([$verb, $inverse, $description ?: null, $displayOrder, $isActive]);
-        echo json_encode(['success' => true, 'id' => (int)$conn->lastInsertId()]);
+        $stmt->execute([$verb, $inverse, $description ?: null, $impactDirection, $displayOrder, $isActive]);
+        $newId = (int)$conn->lastInsertId();
+        if ($redundancy !== null) { $conn->prepare("UPDATE cmdb_relationship_types SET redundancy = ? WHERE id = ?")->execute([$redundancy, $newId]); }
+        wf_emit('cmdb_relationship_type', 'created', $newId, $verb);
+        echo json_encode(['success' => true, 'id' => $newId]);
     } else {
         $stmt = $conn->prepare(
             "UPDATE cmdb_relationship_types
-                SET verb = ?, inverse_verb = ?, description = ?, display_order = ?, is_active = ?
+                SET verb = ?, inverse_verb = ?, description = ?, impact_direction = ?, display_order = ?, is_active = ?
               WHERE id = ?"
         );
-        $stmt->execute([$verb, $inverse, $description ?: null, $displayOrder, $isActive, $id]);
+        $stmt->execute([$verb, $inverse, $description ?: null, $impactDirection, $displayOrder, $isActive, $id]);
+        if ($redundancy !== null) { $conn->prepare("UPDATE cmdb_relationship_types SET redundancy = ? WHERE id = ?")->execute([$redundancy, $id]); }
+        wf_emit('cmdb_relationship_type', 'updated', $id, $verb);
         echo json_encode(['success' => true, 'id' => $id]);
     }
 } catch (Exception $e) {

@@ -1,0 +1,62 @@
+/*
+ * FreeITSM grouped list (GH #208) - assets/js/grouped-list.js.
+ *
+ * Theme variables only, so it follows light and dark. The tab bar is the shared
+ * settings `.tabs` / `.tab` from inbox.css, so tabs here look like every settings
+ * screen. The phone layer (jump nav becomes a dropdown) is in mobile.css.
+ */
+.gl-count {
+    display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; line-height: 1.6;
+    background: var(--surface-2, #f0f2f4); color: var(--text-muted, #666);
+}
+.gl-mini { padding: 5px 12px; font-size: 12px; }
+.gl-mini[disabled] { opacity: .45; cursor: default; }
+
+/* ── Tree ── */
+.gl-bar { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 10px; }
+.gl-node { border: 1px solid var(--border-soft, #eee); border-radius: 8px; margin-bottom: 8px; background: var(--surface, #fff); }
+.gl-node .gl-node { border: none; border-left: 3px solid var(--border-soft, #eee); border-radius: 0; margin: 0 0 6px 12px; }
+.gl-head {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px;
+    background: none; border: none; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600;
+    color: var(--text, #333); text-align: left; border-radius: 8px;
+}
+.gl-depth-2 > .gl-head { font-size: 13px; padding: 8px 10px; }
+.gl-head:hover { background: var(--surface-hover, #f5f5f5); }
+.gl-head:focus-visible { outline: 2px solid var(--accent, #546e7a); outline-offset: -2px; }
+.gl-chev { width: 14px; height: 14px; flex: 0 0 14px; color: var(--text-muted, #888); transition: transform .15s ease; }
+.gl-node.is-open > .gl-head .gl-chev { transform: rotate(90deg); }
+.gl-label { overflow-wrap: anywhere; }
+.gl-head .gl-count { margin-left: 0; }
+.gl-body { padding: 0 12px 10px; }
+.gl-depth-1 > .gl-body > .gl-node:last-child { margin-bottom: 2px; }
+
+/* ── Tabs: the panel under the shared tab bar ── */
+.gl-tabs .tab .gl-count { margin-left: 6px; }
+.gl-tabs .tab.active .gl-count { background: var(--accent-soft, #eef2f5); color: var(--accent, #546e7a); }
+.gl-section { margin-bottom: 22px; }
+.gl-section-title { font-size: 14px; font-weight: 600; color: var(--text, #333); margin: 0 0 8px; display: flex; align-items: center; }
+.gl-jump-section.gl-depth-2 > .gl-section-title { font-size: 13px; color: var(--text-muted, #666); }
+
+/* ── Jump nav ── */
+.gl-jump { display: flex; gap: 24px; align-items: flex-start; }
+.gl-jump-nav {
+    position: sticky; top: 0; flex: 0 0 220px; max-height: calc(100vh - 140px); overflow-y: auto;
+    border: 1px solid var(--border-soft, #eee); border-radius: 8px; padding: 6px; background: var(--surface, #fff);
+}
+.gl-jump-link {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 10px; border-radius: 6px; font-size: 13px; color: var(--text, #333); text-decoration: none;
+}
+.gl-jump-link.gl-depth-2 { padding-left: 24px; font-size: 12.5px; color: var(--text-muted, #666); }
+.gl-jump-link:hover { background: var(--surface-hover, #f5f5f5); }
+.gl-jump-link.active { background: var(--accent-soft, #eef2f5); color: var(--accent, #546e7a); font-weight: 600; }
+.gl-jump-select { display: none; }
+.gl-jump-body { flex: 1 1 auto; min-width: 0; }
+.gl-jump-section.gl-depth-1 { margin-bottom: 28px; }
+.gl-jump-section.gl-depth-2 { margin: 0 0 18px 12px; }
+
+/* ── Pager ── */
+.gl-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 0 4px; }
+.gl-range { font-size: 12px; color: var(--text-muted, #666); margin-right: 4px; }

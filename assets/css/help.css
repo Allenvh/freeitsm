@@ -1,0 +1,639 @@
+/* ==========================================================================
+   help.css — the house style for every module Help guide
+   --------------------------------------------------------------------------
+   One stylesheet, one look. Before this file every module carried its own
+   ~280-line copy of the same CSS under its own prefix (cmdb-help-*, tk-help-*,
+   ct-help-*, ...), and the copies drifted: panels applied to some sections and
+   not others, paragraphs left at level 1 while everything around them was
+   indented, sections bleeding wider than their neighbours.
+
+   THE HEADING MODEL (the rule that keeps a page tidy)
+
+     Level 1  .help-section            full width of the pane, never indented
+              .help-section-header       (number) + <h3> + lead <p>
+     Level 2  everything else in the section   indented to --help-indent
+     Level 3  .help-subsection         a titled block inside level 2
+              > h4                       sits at level 2
+              everything else            indented a further --help-indent-2
+
+   Indentation is done with padding on the PARENT and a negative margin on the
+   heading, not with margin-left on each child. That is deliberate: a new
+   element dropped into a section is indented correctly by default and there is
+   no way to forget. Never add margin-left to align something by hand.
+
+   NO DECORATIVE SECTION BANDS. Every section looks the same. If a section
+   needs to stand out, that is a job for its words, not a tint.
+
+   COLOUR. Everything here is drawn from four variables, so a module gets its
+   own accent by setting them once:
+
+       body { --accent:       var(--cmdb-accent);
+              --accent-hover: var(--cmdb-accent-hover);
+              --accent-soft:  var(--cmdb-accent-soft);
+              --on-accent:    var(--cmdb-on-accent); }
+
+   Requires: theme.css (surfaces, text, borders, per-module accent tokens).
+   ========================================================================== */
+
+.help-container {
+    --help-indent:   46px;   /* level 1 -> level 2 */
+    --help-indent-2: 24px;   /* level 2 -> level 3 */
+    --help-gutter:   32px;   /* page edge padding  */
+
+    display: flex;
+    height: calc(100vh - 48px);
+    background: var(--app-bg, #f5f5f5);
+}
+
+/* ------------------------------------------------------------------ sidebar */
+
+.help-sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface, #ffffff);
+    border-right: 1px solid var(--border, #ddd);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+}
+.help-sidebar h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim, #888);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 12px;
+}
+.help-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--text-muted, #555);
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+}
+.help-nav-link:hover  { background: var(--surface-hover, #f0f0f0); color: var(--accent); }
+.help-nav-link.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.help-nav-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--surface-3, #eee);
+    color: var(--text-dim, #888);
+    font-weight: 700;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+.help-nav-link.active .help-nav-num { background: var(--accent); color: var(--on-accent, #fff); }
+
+/* --------------------------------------------------------------- main + hero */
+
+.help-main { flex: 1; overflow-y: auto; min-width: 0; }
+
+.help-hero {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+    color: #ffffff;
+    padding: 40px var(--help-gutter, 32px) 36px;
+    text-align: center;
+}
+.help-hero h1,
+.help-hero h2 { margin: 0 0 8px; font-size: 26px; font-weight: 700; color: inherit; }
+.help-hero p  { margin: 0 auto; font-size: 15px; line-height: 1.6; opacity: 0.9; max-width: 780px; }
+
+/* On dark the module accent is lifted to read on dark surfaces, so using it
+   for a full-bleed banner would glare. Sit the hero on the tinted accent
+   instead and let the text take the normal body colour. */
+[data-theme-mode="dark"] .help-hero {
+    background: linear-gradient(135deg, var(--accent-soft) 0%, var(--surface-2, #232830) 100%);
+    color: var(--text, #e6e8eb);
+}
+
+/* ------------------------------------------------------------------ content */
+
+.help-content { padding: 0 var(--help-gutter) 48px; }
+
+/* ------------------------------------------------------------- level 1: section */
+
+.help-section {
+    padding: 28px 0 28px var(--help-indent);
+    border-bottom: 1px solid var(--border-soft, #eee);
+    scroll-margin-top: 20px;
+}
+.help-section:last-child { border-bottom: none; }
+
+.help-section-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin: 0 0 16px calc(var(--help-indent) * -1);  /* back out to full width */
+}
+.help-section-header h3 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.35;
+    color: var(--text, #333);
+}
+.help-section-header p {
+    margin: 6px 0 0;
+    font-size: 14px;
+    color: var(--text-muted, #666);
+    line-height: 1.6;
+}
+.help-section-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+/* A lead paragraph — the one sentence that sets up a whole guide. */
+.help-lede {
+    font-size: 15px;
+    color: var(--text, #444);
+    line-height: 1.65;
+    margin: 0 0 20px;
+}
+
+/* An aside within a paragraph — the "if it redirects you, go here instead"
+   sentence that matters to some readers and not to most. */
+.help-muted { color: var(--text-dim, #888); }
+
+/* "← Back to …" on a deep-dive page that hangs off another guide. */
+.help-back {
+    display: inline-block;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--accent);
+    text-decoration: none;
+}
+.help-back:hover { text-decoration: underline; }
+
+/* -------------------------------------------------------- level 2: body copy */
+
+.help-section > p,
+.help-section > ul,
+.help-section > ol {
+    font-size: 14px;
+    color: var(--text-muted, #555);
+    line-height: 1.7;
+    margin: 0 0 14px;
+}
+.help-section > h4 {
+    margin: 20px 0 8px;
+    font-size: 15px;
+    color: var(--text, #333);
+}
+.help-section > h5,
+.help-note h5 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--text, #333);
+}
+.help-section > ul,
+.help-section > ol { padding-left: 20px; }
+.help-section > ul li,
+.help-section > ol li { margin-bottom: 6px; }
+.help-section > :last-child { margin-bottom: 0; }
+
+/* --------------------------------------------------- level 3: sub-section */
+
+.help-subsection {
+    padding-left: var(--help-indent-2);
+    margin-top: 20px;
+}
+.help-subsection > h4 {
+    margin: 0 0 10px calc(var(--help-indent-2) * -1);
+    font-size: 15px;
+    color: var(--text, #333);
+}
+.help-subsection > p {
+    font-size: 14px;
+    color: var(--text-muted, #555);
+    line-height: 1.7;
+    margin: 0 0 12px;
+}
+.help-subsection > :last-child { margin-bottom: 0; }
+
+/* ------------------------------------------------------------------- cards */
+
+.help-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin: 0 0 14px;
+}
+.help-cards.cols-1 { grid-template-columns: minmax(0, 1fr); }
+.help-cards.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.help-cards.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.help-card {
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border, #e0e0e0);
+    background: var(--surface, #ffffff);
+}
+.help-card h4 { margin: 0 0 6px; font-size: 14px; color: var(--text, #333); }
+.help-card p  { margin: 0 0 6px; font-size: 12.5px; color: var(--text-muted, #666); line-height: 1.55; }
+.help-card > :last-child { margin-bottom: 0; }
+.help-card-eg { font-size: 12px; color: var(--text-dim, #888); font-style: italic; }
+
+/* Cards whose title/body are a <strong> and loose text rather than h4 + p —
+   the shape most module guides were already written in. Same look either way. */
+.help-card > strong,
+.help-card strong:first-child {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #333);
+    margin-bottom: 4px;
+}
+.help-card > span { font-size: 12.5px; color: var(--text-muted, #666); line-height: 1.55; }
+/* ⚠️ Emphasis inside a card BODY is not a card title. The rule above matches
+   `.help-card strong:first-child` as a DESCENDANT, and :first-child counts
+   elements only - so a lone <strong> anywhere in a body, however much text
+   precedes it, was the first element child and went display:block. The words
+   either side of it then fell onto their own lines and the card read as three
+   broken fragments. */
+/* The `:first-child` is not decoration: without it this selector scores lower
+   than the rule above and loses on specificity, changing nothing at all. */
+.help-card > span strong:first-child,
+.help-card > span em:first-child { display: inline; }
+
+/* The one sanctioned card variant: icon on the left rather than above. Use it
+   when the icon is an emoji standing in for a heading, not decoration. */
+.help-card.row { display: flex; align-items: flex-start; gap: 12px; font-size: 13px; color: var(--text-muted, #555); line-height: 1.55; }
+.help-card.row .help-card-icon { margin-bottom: 0; }
+
+.help-card-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-bottom: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+/* An emoji needs no tinted tile behind it. */
+.help-card-icon.plain { width: auto; height: auto; background: none; font-size: 22px; line-height: 1; padding-top: 2px; }
+
+/* ---------------------------------------------------------------- pill tag */
+
+/* A small status tag shown inline in running text. The variants are named for
+   what they mean, not for a colour, so they follow the theme. */
+.help-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    vertical-align: middle;
+    background: var(--surface-3, #f5f5f5);
+    color: var(--text-muted, #666);
+    border: 1px solid var(--border, #e0e0e0);
+}
+.help-pill.ok   { background: var(--success-bg, #dcfce7); color: var(--success-text, #166534); border-color: var(--success-border, #86efac); }
+.help-pill.warn { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); border-color: var(--warning-border, #fcd34d); }
+.help-pill.bad  { background: var(--danger-bg, #fee2e2);  color: var(--danger-text, #991b1b);  border-color: var(--danger-border, #fca5a5); }
+.help-pill.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+/* A small coloured status dot, coloured by the page that uses it. */
+.help-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--accent);
+}
+
+/* ------------------------------------------------------------------- steps */
+
+.help-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 14px;
+}
+.help-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--surface-2, #fafafa);
+    font-size: 14px;
+    color: var(--text, #444);
+    line-height: 1.55;
+}
+.help-step-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent, #fff);
+    font-weight: 700;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+/* --------------------------------------------------------- plain tinted list */
+
+.help-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+    list-style: none;
+}
+.help-list > div,
+.help-list > li {
+    padding: 8px 14px;
+    background: var(--surface-2, #fafafa);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-muted, #555);
+    line-height: 1.55;
+}
+.help-list strong { color: var(--text, #333); }
+
+/* ------------------------------------------------------------ flow / chain */
+
+.help-flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 14px;
+}
+.help-flow-step {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    background: var(--surface-2, #fafafa);
+    color: var(--text, #333);
+    border: 1px solid var(--border, #e0e0e0);
+}
+.help-flow-step.accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.help-flow-arrow { padding: 0 6px; color: var(--text-faint, #bbb); font-size: 15px; }
+
+/* ----------------------------------------------------- definitions (term/desc) */
+
+.help-defs { margin: 0 0 14px; }
+.help-def {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: var(--surface-2, #fafafa);
+    border-radius: 8px;
+    border-left: 3px solid var(--accent);
+}
+.help-def:last-child { margin-bottom: 0; }
+.help-def-term { font-weight: 700; font-size: 14px; color: var(--accent); }
+.help-def-desc { font-size: 13px; color: var(--text-muted, #555); line-height: 1.6; }
+.help-def-desc em { color: var(--accent); font-style: normal; font-weight: 500; }
+
+/* -------------------------------------------------------------- note callout */
+
+.help-note {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-muted, #555);
+    background: var(--accent-soft);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border-left: 3px solid var(--accent);
+    margin: 0 0 14px;
+}
+.help-note strong { color: var(--accent); }
+
+.help-note.warn {
+    background: var(--warning-bg, #fef3c7);
+    border-left-color: var(--warning-border, #f0d9a8);
+    color: var(--warning-text, #92400e);
+}
+.help-note.warn strong { color: var(--warning-text, #92400e); }
+
+/* For the thing that will actually cost someone their data. Use it sparingly —
+   a page where everything is a warning has no warnings. */
+.help-note.bad {
+    background: var(--danger-bg, #fee2e2);
+    border-left-color: var(--danger-accent, #ef4444);
+    color: var(--danger-text, #991b1b);
+}
+.help-note.bad strong { color: var(--danger-text, #991b1b); }
+
+.help-note.ok {
+    background: var(--success-bg, #dcfce7);
+    border-left-color: var(--success-accent, #22c55e);
+    color: var(--success-text, #166534);
+}
+.help-note.ok strong { color: var(--success-text, #166534); }
+
+/* ---------------------------------------------------------------- timeline */
+
+/* A worked example told in order — "09:00 raised · 09:12 first reply · …". */
+.help-timeline {
+    background: var(--surface-2, #fafafa);
+    border-left: 3px solid var(--border, #94a3b8);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--text-muted, #555);
+    line-height: 1.7;
+}
+.help-timeline strong { color: var(--accent); }
+
+/* ----------------------------------------------------------------- diagram */
+
+.help-diagram {
+    font-family: 'Consolas', 'Monaco', monospace;
+    background: var(--surface-2, #fafafa);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--text, #333);
+    line-height: 1.8;
+    overflow-x: auto;
+}
+.help-diagram-node {
+    display: inline-block;
+    background: var(--surface, #ffffff);
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border, #e0e0e0);
+    color: var(--accent);
+    font-weight: 600;
+}
+.help-diagram-line { color: var(--text-faint, #d1d5db); }
+
+/* -------------------------------------------------------------- code block */
+
+/* Deliberately the same dark scheme in both themes — a command someone will
+   paste into a terminal should look like a terminal either way. */
+.help-code,
+.help-content pre {
+    background: #263238;
+    color: #eeffff;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 0 0 14px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+}
+.help-code .comment  { color: #546e7a; }
+.help-code .param    { color: #82aaff; }
+.help-code .string   { color: #c3e88d; }
+.help-code .flag     { color: #ffcb6b; }
+.help-code .optional { color: #b2ccd6; font-style: italic; }
+
+/* --------------------------------------------------------------------- kbd */
+
+/* ------------------------------------------------------------------ table */
+
+/* Wrapped so a wide table scrolls inside the section instead of stretching it. */
+.help-table { overflow-x: auto; margin: 0 0 14px; }
+.help-content table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+}
+.help-content table th,
+.help-content table td {
+    border: 1px solid var(--border, #e5e7eb);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+    color: var(--text-muted, #555);
+    line-height: 1.55;
+}
+.help-content table th {
+    background: var(--surface-2, #f9fafb);
+    font-weight: 600;
+    color: var(--text, #374151);
+}
+
+.help-content code {
+    background: var(--surface-2, #f5f5f5);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+}
+
+.help-content kbd,
+.help-kbd {
+    display: inline-block;
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #d1d5db);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    color: var(--text-muted, #4b5563);
+}
+
+/* ------------------------------------------------------------------ narrow */
+
+/* ------------------------------------------------------------------ tabs */
+/* One guide per product inside a section (system/help/sso-groups.php): a row of
+   buttons, one panel showing. Panels without JavaScript all show, stacked. */
+.help-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 16px var(--help-indent);
+             border-bottom: 1px solid var(--border, #ddd); }
+.help-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+                    padding: 10px 14px; font-size: 14px; cursor: pointer; color: var(--text-muted, #666); }
+.help-tabs button:hover { color: var(--accent); }
+.help-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.help-tab-panel { margin-left: var(--help-indent); font-size: 14px; color: var(--text-muted, #555); line-height: 1.7; }   /* body copy, as .help-section > ul */
+.help-tab-panel[hidden] { display: none; }
+
+/* ------------------------------------------------------------- checklist */
+/* Tick-as-you-go steps. Ticks are remembered in this browser only. */
+.help-checklist { list-style: none; margin: 0 0 14px; padding: 0; }
+.help-checklist li { margin: 0 0 8px; }
+.help-check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; cursor: pointer;
+              border: 1px solid var(--border, #ddd); border-radius: 8px; background: var(--surface, #fff); }
+.help-check:hover { border-color: var(--accent); }
+.help-check input { margin: 3px 0 0; width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
+.help-check-body { flex: 1; min-width: 0; line-height: 1.5; }
+.help-check-title { display: block; margin-bottom: 2px; font-weight: 700; }
+.help-check-body .help-muted { font-size: 13px; }
+.help-check.done { background: var(--accent-soft); }
+.help-check.done .help-check-title { text-decoration: line-through; opacity: 0.7; }
+.help-progress { display: flex; align-items: center; gap: 12px; margin: 0 0 16px var(--help-indent); font-size: 13px; color: var(--text-muted, #666); }
+.help-progress-bar { flex: 1; max-width: 320px; height: 8px; border-radius: 4px; background: var(--border, #ddd); overflow: hidden; }
+.help-progress-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.help-ext::after { content: " \2197"; font-size: 0.85em; }
+@media (max-width: 900px) {
+    /* The heading model holds at every width — the indent just gets smaller,
+       along with the badge that sets it, so level 2 still lines up under the
+       heading instead of collapsing to the left edge. */
+    .help-container {
+        --help-indent: 32px;
+        --help-indent-2: 14px;
+        --help-gutter: 16px;
+        flex-direction: column;
+        height: auto;
+    }
+    .help-sidebar {
+        width: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border, #ddd);
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 12px 16px;
+    }
+    .help-sidebar h3 { display: none; }
+    .help-nav-link { white-space: nowrap; }
+    .help-main { overflow-y: visible; }
+    .help-hero { padding: 28px 16px 24px; }
+    .help-hero h2 { font-size: 21px; }
+    .help-section { padding-top: 22px; padding-bottom: 22px; }
+    .help-section-header { gap: 6px; }
+    .help-section-num { min-width: 26px; height: 26px; font-size: 13px; }
+    .help-section-header h3 { font-size: 17px; }
+    .help-cards,
+    .help-cards.cols-3,
+    .help-cards.cols-4 { grid-template-columns: minmax(0, 1fr); }
+    .help-def { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .help-flow { flex-direction: column; align-items: stretch; }
+    .help-flow-arrow { text-align: center; transform: rotate(90deg); }
+}

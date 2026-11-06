@@ -1,0 +1,83 @@
+<?php
+/**
+ * GET - what the Projects forms draw from: analysts, companies the analyst can
+ * reach, methodologies, statuses, the colour palette and icon keys, and task
+ * statuses and priorities for adding tasks.
+ */
+require_once __DIR__ . '/../../includes/projects/api_bootstrap.php';
+require_once __DIR__ . '/../../includes/i18n.php';
+I18n::initFromSession();
+require_once __DIR__ . '/../../includes/projects/templates.php';
+
+projectApiRun(function () use ($conn, $analystId) {
+    $analysts = $conn->query("SELECT id, full_name FROM analysts WHERE is_active = 1 ORDER BY full_name")->fetchAll(PDO::FETCH_ASSOC);
+    $companies = [];
+    if (isMultiTenant($conn)) {
+        $ids = getAccessibleTenantIds($conn, $analystId);
+        foreach (getAllTenants($conn) as $t) {
+            if (in_array((int)$t['id'], $ids, true)) $companies[] = ['id' => (int)$t['id'], 'name' => $t['name']];
+        }
+    }
+    $methods = [];
+    foreach (projectMethodologies() as $k => $m) {
+        $methods[] = ['key' => $k, 'label' => t($m['label_key']), 'description' => t($m['desc_key']), 'timebox' => $m['timebox']];
+    }
+    $roles = [];
+    try { $roles = $conn->query("SELECT id, name, description FROM project_roles WHERE is_active = 1 ORDER BY display_order, name")->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) {}
+    $teams = $conn->query("SELECT id, name FROM teams ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+    // GH #210: which companies each analyst, and each team, gives access to - so
+    // the People picker and the project manager list offer only those who can
+    // see the project's company. The server refuses anyone else anyway.
+    $analystCompanies = null; $teamCompanies = null;
+    if (isMultiTenant($conn)) {
+        $all = array_map(fn($t) => (int)$t['id'], getAllTenants($conn));
+        $analystCompanies = [];
+        foreach ($analysts as $a) $analystCompanies[(int)$a['id']] = getAccessibleTenantIds($conn, (int)$a['id']);
+        $teamCompanies = [];
+        try {
+            foreach ($conn->query("SELECT id, can_access_all_tenants FROM teams") as $t) $teamCompanies[(int)$t['id']] = (int)$t['can_access_all_tenants'] === 1 ? $all : [];
+            foreach ($conn->query("SELECT team_id, tenant_id FROM team_tenant_access") as $r) {
+                if (isset($teamCompanies[(int)$r['team_id']]) && !in_array((int)$r['tenant_id'], $teamCompanies[(int)$r['team_id']], true)) $teamCompanies[(int)$r['team_id']][] = (int)$r['tenant_id'];
+            }
+        } catch (Throwable $e) { $teamCompanies = null; }   // not migrated: offer every team, the server decides
+    }
+    $colours = [];
+    foreach (projectColours() as $k => $c) $colours[] = ['key' => $k, 'from' => $c[0], 'to' => $c[1]];
+    projectApiOk([
+        'analysts'        => $analysts,
+        'companies'       => $companies,
+        'active_company'  => isMultiTenant($conn) ? getActiveTenantId($conn, $analystId) : null,
+        'multi_company'   => isMultiTenant($conn),
+        'default_company' => isMultiTenant($conn) ? getDefaultTenantId($conn) : null,
+        'analyst_companies' => $analystCompanies,   // {analyst id: [company ids]}, null on a single-company install
+        'team_companies'    => $teamCompanies,      // {team id: [company ids]}
+        'default_method'  => projectSetting($conn, 'project_default_method'),
+        'roles'           => $roles,
+        'teams'           => $teams,
+        'tools'           => projectToolDefinitions(),
+        'probability_labels' => projectScaleLabels($conn, 'probability'),
+        'impact_labels'      => projectScaleLabels($conn, 'impact'),
+        // 3.3.0: the four priority words, the portfolio's default order, what the burn-up counts.
+        'priorities'         => projectPriorities(),
+        'priority_labels'    => projectScaleLabels($conn, 'priority'),
+        // The Toolbox on the Overview (3.3.0).
+        'toolbox'            => projectSetting($conn, 'project_toolbox') === '1',
+        // Stakeholder map (3.3.0): the People tab draws it once the columns exist.
+        'stake_ready'        => (function () use ($conn) { require_once __DIR__ . '/../../includes/services/project_tools.php'; return ProjectToolsService::stakeReady($conn); })(),
+        // Members-only (3.3.0): what a new project starts as; null before Verification hides the field.
+        'default_visibility' => (function () use ($conn) { require_once __DIR__ . '/../../includes/projects/visibility.php'; return projectVisibilityReady($conn) ? projectSetting($conn, 'project_default_visibility') : null; })(),
+        'portfolio_sort'     => projectSetting($conn, 'project_portfolio_sort'),
+        'burnup_measure'     => projectSetting($conn, 'project_burnup_measure'),
+        'templates'          => projectTemplateList($conn),
+        'can_manage_templates' => analystHasCapability($conn, $analystId, Cap::PROJECTS_TEMPLATES),
+        // RAID: a lesson -> Knowledge, an issue -> a new ticket. Only offered with the module.
+        'can_knowledge'   => analystCanAccessModule($conn, $analystId, 'knowledge'),
+        'can_tickets'     => analystCanAccessModule($conn, $analystId, 'tickets'),
+        'methodologies'   => $methods,
+        'statuses'        => projectStatuses(),
+        'colours'         => $colours,
+        'icons'           => projectIcons(),
+        'task_statuses'   => $conn->query("SELECT id, name, colour, is_closed FROM task_statuses WHERE is_active = 1 ORDER BY display_order, id")->fetchAll(PDO::FETCH_ASSOC),
+        'task_priorities' => $conn->query("SELECT id, name, colour, is_default FROM task_priorities WHERE is_active = 1 ORDER BY display_order, id")->fetchAll(PDO::FETCH_ASSOC),
+    ]);
+});

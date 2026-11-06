@@ -6,6 +6,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -14,8 +18,17 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+requireModuleAccessJson('cmdb');
+requireCapabilityJson(Cap::CMDB_CLASSES);   // settings tab — see docs/design/rbac.md
+
 const VALID_PROPERTY_TYPES = ['text', 'number', 'date', 'boolean', 'dropdown', 'object_ref'];
 
+/**
+ * Turns a property name into a lower-case key of letters, digits and underscores,
+ * falling back to 'property' when nothing is left.
+ *
+ * @param mixed $name  the property name as typed
+ */
 function slugifyProp($name) {
     $slug = strtolower(trim($name));
     $slug = preg_replace('/[^a-z0-9]+/', '_', $slug);
@@ -32,6 +45,7 @@ try {
     $type = trim((string)($data['property_type'] ?? ''));
     $targetClassId = isset($data['target_class_id']) && $data['target_class_id'] !== '' ? (int)$data['target_class_id'] : null;
     $isRequired = !empty($data['is_required']) ? 1 : 0;
+    $spreadsImpact = !empty($data['spreads_impact']) ? 1 : 0;
     $displayOrder = isset($data['display_order']) ? (int)$data['display_order'] : 0;
     $options = $data['options'] ?? [];
 
@@ -42,6 +56,10 @@ try {
         throw new Exception('Object reference properties need a target class');
     }
     if ($type !== 'object_ref') $targetClassId = null;
+    // Only an object reference can be a dependency. Clearing the flag when the
+    // type changes stops a stale 1 from quietly feeding the blast radius from a
+    // property that no longer points at anything.
+    if ($type !== 'object_ref') $spreadsImpact = 0;
 
     if ($key === '') {
         $key = slugifyProp($label);
@@ -67,10 +85,10 @@ try {
 
         $stmt = $conn->prepare(
             "INSERT INTO cmdb_class_properties
-                 (class_id, property_key, label, property_type, target_class_id, is_required, display_order, created_datetime)
-             VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())"
+                 (class_id, property_key, label, property_type, target_class_id, is_required, spreads_impact, display_order, created_datetime)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())"
         );
-        $stmt->execute([$classId, $key, $label, $type, $targetClassId, $isRequired, $displayOrder]);
+        $stmt->execute([$classId, $key, $label, $type, $targetClassId, $isRequired, $spreadsImpact, $displayOrder]);
         $newId = (int)$conn->lastInsertId();
     } else {
         // Refuse a key change that would collide
@@ -82,10 +100,10 @@ try {
 
         $stmt = $conn->prepare(
             "UPDATE cmdb_class_properties
-                SET property_key = ?, label = ?, property_type = ?, target_class_id = ?, is_required = ?, display_order = ?
+                SET property_key = ?, label = ?, property_type = ?, target_class_id = ?, is_required = ?, spreads_impact = ?, display_order = ?
               WHERE id = ? AND class_id = ?"
         );
-        $stmt->execute([$key, $label, $type, $targetClassId, $isRequired, $displayOrder, $id, $classId]);
+        $stmt->execute([$key, $label, $type, $targetClassId, $isRequired, $spreadsImpact, $displayOrder, $id, $classId]);
         $newId = $id;
     }
 
@@ -118,6 +136,7 @@ try {
     }
 
     $conn->commit();
+    wf_emit('cmdb_property', $id === null ? 'created' : 'updated', $newId, $label);
     echo json_encode(['success' => true, 'id' => $newId, 'property_key' => $key]);
 } catch (Exception $e) {
     if (isset($conn) && $conn->inTransaction()) $conn->rollBack();

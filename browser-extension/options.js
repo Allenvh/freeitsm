@@ -93,6 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
+/** Shows a success or error message under the settings form. */
 function showStatus(msg, type) {
     const el = document.getElementById('statusMsg');
     el.textContent = msg;

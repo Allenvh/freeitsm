@@ -15,6 +15,87 @@
 return [
     'title' => 'Watchtower',
 
+    // Settings screen. Everything here TRIMS a dashboard that is already correct
+    // — leaving it alone shows every card and counts every status.
+    'settings' => [
+        'title'          => 'Settings',
+        'loading'        => 'Loading…',
+        'saved'          => 'Saved',
+        'save_failed'    => 'Failed to save',
+        'load_failed'    => 'Failed to load settings',
+
+        'tab_cards'      => 'Cards',
+        'tab_counts'     => 'Counts',
+
+        'cards_heading'  => 'Which cards appear',
+        'cards_intro'    => 'Watchtower shows every card by default. Turn off the ones your team does not watch — nothing is lost, and each module still shows everything in its own screens.',
+        // Card order (GH #187) - shared by everybody, saved with the tick boxes.
+        'order_intro'    => 'The order here is the order on Watchtower, for everybody. Drag a card by its handle, use the arrows, or select one and press Alt with the up or down arrow. Each person still only sees the cards they have access to, in this order.',
+        'order_label'    => 'Watchtower cards, in order',
+        'order_reset'    => 'Reset order',
+        'order_reset_pending' => 'Back in the default order - press Save to keep it',
+
+        'counts_heading' => 'What each count includes',
+        'counts_intro'   => 'Each of these counts every status you have, which is why a status you rename or add keeps working without being listed anywhere in here. Narrow one only if a card is showing more than you want to read at a glance.',
+
+        'choose_specific'      => 'Choose specific ones',
+        'choose_specific_desc' => 'Leave this off to include everything, now and anything added later. Turn it on and only the ones ticked below are counted.',
+
+        'item_tickets_status'       => 'Ticket statuses shown',
+        'item_tickets_status_why'   => 'One figure per open status, plus a total. The total always matches what is listed beside it.',
+        'item_tickets_priority'     => 'Priorities counted as high priority',
+        'item_tickets_priority_why' => 'The red "high priority tickets" line. Left alone, it means any priority ranked above your default one — so a new priority added above it is included automatically.',
+        'item_service_levels'       => 'Impact levels shown on the card',
+        'item_service_levels_why'   => 'Which impact levels put a service on Watchtower. Left alone, anything other than your healthy level does. Untick planned maintenance, say, to keep it off an attention board without pretending it is not happening.',
+        'item_service_serious'      => 'Impact levels that turn the light red',
+        'item_service_serious_why'  => 'Everything else shows amber. Left alone, this follows the levels you have marked as counting towards downtime — but it is kept separate on purpose, because that setting decides your uptime percentages and you should not have to distort those to change a colour here.',
+        'item_changes_status'       => 'Change statuses shown',
+        'item_changes_status_why'   => 'One figure per open change status, plus a total. The three lines below it — scheduled, awaiting approval, in progress now — are worked out from dates and approvals rather than from statuses, so they are not affected by this.',
+        'item_tasks_status'         => 'Task statuses shown',
+        'item_tasks_status_why'     => 'One figure per open task status, plus a total.',
+        'item_mc_attention'         => 'Morning check statuses that need attention',
+        'item_mc_attention_why'     => 'Nothing in FreeITSM records which of your morning-check statuses is a pass and which is a problem. Until you say, the card treats only the first status in your order as good, and never claims checks have passed — just that they are done.',
+
+        'paused_heading' => 'Paused too long',
+        'paused_why'     => 'How long a ticket may sit with its SLA clock stopped before Watchtower mentions it.',
+        'paused_unit'    => 'hours',
+
+        'card_morning_checks'      => 'Morning Checks',
+        'card_morning_checks_desc' => 'Whether today\'s round has been done, and how it went.',
+        'card_tickets'             => 'Tickets',
+        'card_tickets_desc'        => 'Open tickets by status, high priority, unassigned and paused.',
+        'card_changes'             => 'Changes',
+        'card_changes_desc'        => 'Awaiting approval, in progress now, and scheduled in the next 7 days.',
+        'card_calendar'            => 'Calendar',
+        'card_calendar_desc'       => 'Today\'s events and the week ahead.',
+        'card_service_status'      => 'Service Status',
+        'card_service_status_desc' => 'Degraded services and open incidents.',
+        'card_contracts'           => 'Contracts',
+        'card_contracts_desc'      => 'Contracts expiring and notice periods running out.',
+        'card_software'            => 'Software',
+        'card_software_desc'       => 'Licence renewals coming up and notice periods running out.',
+        'card_domains'             => 'Domains',
+        'card_domains_desc'        => 'Domain registrations and certificates about to lapse, and domains without a transfer lock.',
+        'card_knowledge'           => 'Knowledge',
+        'card_knowledge_desc'      => 'Recent articles and reviews now overdue.',
+        'card_assets'              => 'Assets',
+        'card_assets_desc'         => 'Warranties and leases expiring, and assets not seen recently.',
+        'card_tasks'               => 'Tasks',
+        'card_tasks_desc'          => 'Open tasks by status, overdue and due today.',
+        'card_projects'            => 'Projects',
+        'card_projects_desc'       => 'Live projects off track or at risk, by name, and stages ending in the next 7 days.',
+        'card_workflows'           => 'Workflows',
+        'card_workflows_desc'      => 'Failed or aborted runs, and webhooks that have stopped delivering.',
+
+        // Some figures on a card are switched on in the module that owns them,
+        // because the same setting also controls the calendar - so it cannot
+        // move here without splitting one decision across two screens. These
+        // lines are the signpost: one place to look, still one place to set.
+        'configured_elsewhere_assets'   => 'Warranty and lease figures are set in Assets → Settings → Expiry alerts',
+        'configured_elsewhere_software' => 'Renewal figures are set in Software → Settings → Renewals',
+        'configured_elsewhere_domains'  => 'Whether this card shows is set in Domains → Settings → Alerts',
+    ],
+
     'nav' => [
         'dashboard' => 'Dashboard',
         'help'      => 'Help',
@@ -34,31 +115,49 @@ return [
         'calendar'       => 'Calendar',
         'service_status' => 'Service Status',
         'contracts'      => 'Contracts',
+        'software'       => 'Software',
+        'domains'        => 'Domains',
         'knowledge'      => 'Knowledge',
         'assets'         => 'Assets',
         'tasks'          => 'Tasks',
+        'projects'       => 'Projects',
+        'workflows'      => 'Workflows',
+    ],
+
+    // Workflows card. The engine swallows its own errors by design (so a broken
+    // workflow can't break the ticket save that triggered it) — which means a
+    // failing workflow is silent. This card is what breaks that silence.
+    'workflows' => [
+        'all_clear'     => 'No workflow failures',
+        'failed'        => '<span class="wt-attention-bold">{count}</span> workflow run(s) failed in the last 24h',
+        'aborted'       => '<span class="wt-attention-bold">{count}</span> run(s) aborted by loop protection in the last 24h',
+        'dead_webhooks' => '<span class="wt-attention-bold">{count}</span> webhook(s) gave up retrying — the message never arrived',
+        'failures'      => '{count} failure(s)',
     ],
 
     // Morning Checks card.
     'mc' => [
         'metric_done' => 'Done',
-        'metric_ok'   => 'OK',
-        'metric_warn' => 'Warn',
-        'metric_fail' => 'Fail',
+        // metric_ok / metric_warn / metric_fail are gone: the card now labels each
+        // count with the status's own name from morningChecks_Statuses, so it reads
+        // correctly whatever the statuses are called and in whatever language.
         'not_started'      => 'Checks not started today',
         'pending'          => '{count} checks still pending',
-        'failed'           => '{count} check(s) failed',
-        'warnings'         => '{count} check(s) with warnings',
-        'all_passing'      => 'All checks completed and passing',
+        // Was "All checks completed and passing" — which claimed something nothing
+        // records. Nothing marks a morning-check status as a pass or a failure, and
+        // the old test relied on status names that have never existed, so this was
+        // shown even when every check was red. It now states only what is known.
+        'all_completed'    => 'All checks completed',
     ],
 
     // Tickets card.
     'tickets' => [
+        // metric_open is the TOTAL across every open status. The per-status metrics
+        // beside it are labelled with the statuses' own names, so metric_new /
+        // metric_active / metric_hold are gone — they hardcoded three of them, and
+        // called the status "Open" by the different word "New".
         'metric_open'   => 'Open',
-        'metric_new'    => 'New',
-        'metric_active' => 'Active',
-        'metric_hold'   => 'Hold',
-        'urgent_high'   => '<span class="wt-attention-bold">{count}</span> urgent/high priority tickets',
+        'urgent_high'   => '<span class="wt-attention-bold">{count}</span> high priority tickets',
         'unassigned'    => '<span class="wt-attention-bold">{count}</span> unassigned tickets',
         'paused_one'    => '<span class="wt-attention-bold">{count}</span> ticket paused over {hours}h (SLA clock stopped)',
         'paused_many'   => '<span class="wt-attention-bold">{count}</span> tickets paused over {hours}h (SLA clock stopped)',
@@ -67,11 +166,18 @@ return [
 
     // Changes card.
     'changes' => [
-        'metric_next_7d' => 'Next 7d',
-        'metric_active'  => 'Active',
-        'metric_pending' => 'Pending',
+        // The metric row is now a total plus one figure per open status, under
+        // its own name — as on Tickets and Tasks. metric_next_7d / metric_active
+        // / metric_pending are gone: they repeated the three lines below them.
+        'metric_open'    => 'Open',
         'awaiting'       => '<span class="wt-attention-bold">{count}</span> change(s) awaiting approval',
-        'in_progress'    => '{count} change(s) in progress now',
+        'emergency_unapproved' => '<span class="wt-attention-bold">{count}</span> emergency change(s) awaiting retrospective approval',
+        // Deliberately NOT "in progress now". There is a status called In
+        // Progress sitting inches away in the metric row, and the two count
+        // different things — where changes are, versus what is happening this
+        // minute — so sharing a name made them look like a contradiction.
+        'in_progress'    => '{count} change(s) inside their work window now',
+        'overrunning'    => '<span class="wt-attention-bold">{count}</span> change(s) past their scheduled window and still open',
         'scheduled'      => '{count} change(s) scheduled this week',
         'all_clear'      => 'No upcoming changes',
     ],
@@ -100,6 +206,49 @@ return [
         'all_clear'      => 'No contracts requiring attention',
     ],
 
+    // Software card (#1550). Deliberately the same three windows as Contracts
+    // above, so the two can be read against each other.
+    'software' => [
+        'metric_30d'     => '30 days',
+        'metric_90d'     => '90 days',
+        'metric_notices' => 'Notices',
+        'expiring'       => '<span class="wt-attention-bold">{count}</span> software licence(s) renewing within 30 days',
+        'notices'        => '<span class="wt-attention-bold">{count}</span> notice period(s) approaching',
+        'all_clear'      => 'No software renewals requiring attention',
+        // Not the same as all_clear: nothing is due BECAUSE nothing is recorded.
+        // Reporting "all clear" on an empty list is how a dashboard lies quietly.
+        'none'           => 'No renewal dates recorded against your licences',
+    ],
+
+    // Domains card (#154).
+    'domains' => [
+        'metric_30d' => '30 days',
+        'metric_90d' => '90 days',
+        'metric_ssl' => 'Certificates',
+        'expired'    => '<span class="wt-attention-bold">{count}</span> domain(s) have EXPIRED',
+        'expiring'   => '<span class="wt-attention-bold">{count}</span> domain(s) expiring within 30 days',
+        'unlocked'   => '<span class="wt-attention-bold">{count}</span> domain(s) without a transfer lock',
+        'weak'       => '<span class="wt-attention-bold">{count}</span> domain(s) with a D or F security grade',
+        'services_at_risk' => '<span class="wt-attention-bold">{count}</span> Service Status service(s) at risk from a domain problem',
+        'all_clear'  => 'All {count} domains in good order',
+        'none'       => 'No domains in the register yet',
+    ],
+
+    // Projects card (3.2.0). {name} is a link, already escaped.
+    'projects' => [
+        'metric_red'     => 'Off track',
+        'metric_amber'   => 'At risk',
+        'metric_week'    => 'Dates this week',
+        'off_track'      => '{name} is off track',
+        'more_off_track' => '<span class="wt-attention-bold">{count}</span> more project(s) off track',
+        'breaches'       => '<span class="wt-attention-bold">{count}</span> project(s) beyond a tolerance',
+        'stages_week'    => '<span class="wt-attention-bold">{count}</span> stage(s) end in the next 7 days',
+        'milestones_week'   => '<span class="wt-attention-bold">{count}</span> milestone(s) due in the next 7 days',
+        'milestones_missed' => '<span class="wt-attention-bold">{count}</span> milestone(s) missed',
+        'all_clear'      => 'All {count} live projects on track',
+        'none'           => 'No live projects',
+    ],
+
     // Knowledge card.
     'knowledge' => [
         'overdue'         => '<span class="wt-attention-bold">{count}</span> article(s) overdue for review',
@@ -111,16 +260,18 @@ return [
     'assets' => [
         'metric_total'    => 'Total',
         'metric_offline'  => 'Offline',
+        'metric_lease'    => 'Lease',
         'metric_warranty' => 'Warranty',
         'warranty'        => '<span class="wt-attention-bold">{count}</span> asset(s) with warranty expired or expiring within {days} days',
+        'lease'           => '<span class="wt-attention-bold">{count}</span> asset(s) with a lease ended or ending within {days} days',
         'offline'         => '<span class="wt-attention-bold">{count}</span> asset(s) not seen in 7+ days',
         'all_active'      => 'All assets recently active',
     ],
 
     // Tasks card.
     'tasks' => [
-        'metric_todo'   => 'To Do',
-        'metric_active' => 'Active',
+        // As with tickets: a total, then one per open status under its own name.
+        'metric_open'   => 'Open',
         'overdue'       => '<span class="wt-attention-bold">{count}</span> overdue task(s)',
         'due_today'     => '<span class="wt-attention-bold">{count}</span> due today',
         'all_clear'     => 'No overdue tasks',
@@ -136,9 +287,21 @@ return [
         'nav_overview'  => 'Overview',
         'nav_layout'    => 'The dashboard layout',
         'nav_dots'      => 'Understanding status dots',
+        'nav_whose'            => 'Whose work',
+        's_whose_title'        => 'Mine, my team, or everyone',
+        's_whose_p1'           => 'A toggle at the top of the dashboard narrows the board to your own responsibilities. Your choice is <strong>remembered</strong>, so Watchtower opens the way you left it.',
+        's_whose_mine'         => '<strong>Mine</strong> &mdash; work assigned to you.',
+        's_whose_team'         => '<strong>My team</strong> &mdash; work assigned to anyone on a team you belong to.',
+        's_whose_all'          => '<strong>Everyone</strong> &mdash; the whole installation. This is the default, and what Watchtower has always shown, so nothing changes unless you ask it to.',
+        's_whose_narrows'      => 'Four cards narrow: <strong>Tickets</strong>, <strong>Tasks</strong>, <strong>Changes</strong> and <strong>Morning Checks</strong>. Every figure on them follows the toggle &mdash; your open tickets by status, your overdue tasks, the changes assigned to you.',
+        's_whose_impersonal'   => '<strong>Eight cards cannot narrow, and are labelled <em>everyone</em> so you are never reading a team-wide number as a personal one.</strong> A degraded service and a failed workflow belong to nobody. Equipment is assigned to <em>end users</em> rather than to analysts, so &ldquo;my equipment&rdquo; would be empty for almost everybody. The Calendar card is the shared team calendar. Contracts and Knowledge do record an owner, but a contract about to expire needs chasing whoever owns it, and an article overdue review is a gap in the library rather than in one person&rsquo;s workload. Software licences and Domains are the same: a renewal needs handling whoever is named on it.',
+        's_whose_unassigned'   => '<strong>Unassigned tickets never narrow</strong>, on any setting. An unassigned ticket is by definition not yours, so &ldquo;mine&rdquo; would report nought for ever &mdash; and nought there reads as <em>the queue is clear</em>, which is the opposite of what an unclaimed pile means.',
+        's_whose_checks'       => '<strong>Morning checks are matched through their group.</strong> A check is routed by putting it in a group and pointing that group at a team or a person, so <em>mine</em> means checks assigned to you, checks in a group pointed at you, or checks in a group pointed at a team you are in.',
+        's_whose_setting'      => 'What happens to those eight cards while you are on <strong>Mine</strong> is your own choice, under <strong>Preferences &rarr; General</strong>: keep showing them, or hide them for a strictly personal board. They are kept by default, because a degraded service is the last thing that should disappear because you switched to your own work.',
         'nav_cards'     => 'Module cards explained',
         'nav_refresh'   => 'Auto-refresh',
         'nav_tips'      => 'Quick tips',
+        'nav_settings'  => 'Settings',
 
         // Section 1 — Overview
         's1_title' => 'Overview',
@@ -184,7 +347,7 @@ return [
 
         // Section 4 — Module cards explained
         's4_title' => 'Module cards explained',
-        's4_intro' => 'Watchtower monitors eight modules. Each card is tailored to show the most relevant information for that area. Here is what each card displays and what triggers its status dot colour.',
+        's4_intro' => 'Watchtower has thirteen cards, one for each area it watches. Each card is tailored to show the most relevant information for that area. Here is what the main cards display and what triggers their status dot colour.',
         's4_mc_title'    => 'Morning Checks',
         's4_mc_desc'     => 'Shows completion progress (e.g. 8/10 done) plus counts of OK, Warning, and Fail results. Attention items flag when checks have not been started or when any have failed.',
         's4_mc_triggers' => '<strong>Red:</strong> Checks not started today, or any checks failed. <strong>Amber:</strong> Checks incomplete or warnings present. <strong>Green:</strong> All checks completed and passing.',
@@ -203,6 +366,10 @@ return [
         's4_ct_title'    => 'Contracts',
         's4_ct_desc'     => 'Displays contracts expiring within 30 days, within 90 days, and notice periods approaching. Attention items warn about imminent expirations and upcoming notice deadlines.',
         's4_ct_triggers' => '<strong>Red:</strong> Contracts expiring within 30 days. <strong>Amber:</strong> Contracts expiring within 90 days or notice periods approaching. <strong>Green:</strong> No contracts requiring attention.',
+        // Software card (#1550). Same three windows as Contracts above, deliberately.
+        's4_sw_title'    => 'Software',
+        's4_sw_desc'     => 'Displays software licences renewing within 30 days, within 90 days, and notice periods running out. Licence renewal dates have always been on the record; this is what makes one visible before it lapses.',
+        's4_sw_triggers' => '<strong>Red:</strong> Licences renewing within 30 days. <strong>Amber:</strong> Licences renewing within 90 days or notice periods approaching. <strong>Green:</strong> No software renewals requiring attention. The card says so plainly when no renewal dates are recorded at all, rather than reporting all-clear on an empty list.',
         's4_kb_title'    => 'Knowledge',
         's4_kb_desc'     => 'Shows the number of articles overdue for review and lists recently published articles from this week. When no reviews are overdue and the knowledge base is current, the card shows an all-clear message.',
         's4_kb_triggers' => '<strong>Amber:</strong> Articles overdue for review. <strong>Green:</strong> Knowledge base up to date.',
@@ -232,5 +399,31 @@ return [
         's6_tip5_desc'  => 'Project Watchtower onto a screen during stand-ups or operational review meetings. The colour-coded dots make it easy to discuss which areas need attention and assign ownership of amber or red items.',
         's6_tip6_title' => 'Green means all clear',
         's6_tip6_desc'  => 'When every dot on the dashboard is green, your IT operations are in good shape. No urgent tickets, no failed checks, no expiring contracts, and all services operational. That is the goal.',
+
+        // Section 7 — Settings
+        's7_title'  => 'Settings',
+        's7_intro'  => 'Watchtower → Settings decides which cards appear, in what order, and what each figure is counting. Everything there trims a dashboard that is already correct: leave the whole screen alone and every card is drawn and every status counted, so nothing needs configuring for the numbers to be right.',
+        's7_cards_title'  => 'Cards',
+        's7_cards_desc'   => 'Turn off any of the thirteen cards your team does not watch, and put the rest in the order your team reads them - drag a card by its handle, use the arrows, or select one and press Alt with an arrow key. The order is the same for everybody; each person still sees only the cards they have access to. Reset order puts the built-in order back. Nothing is lost - each module still shows everything in its own screens.',
+        's7_counts_title' => 'Counts',
+        's7_counts_desc'  => 'Each count includes every status you have, which is why renaming or adding one keeps working without being listed anywhere. Narrow one only if a card is showing more than you want to read at a glance. Each row is tagged with the module it affects, in that module\'s colour.',
+        's7_mc_title'     => 'Which morning checks count as a problem',
+        's7_mc_desc'      => 'Nothing in FreeITSM records which of your morning-check statuses is a pass and which is a failure — they are your labels. Until you say, the card treats only the first status in your own order as good, and reports that checks are completed rather than that they passed. Name the ones that mean trouble and it will use that instead.',
+        's7_red_title'    => 'Which service problems turn the light red',
+        's7_red_desc'     => 'Chosen separately from each impact level\'s "counts as downtime" setting, on purpose: that one decides your uptime percentages, so you should never have to distort your reporting to change a colour here. Left alone it follows those levels, so nothing changes until you say otherwise.',
+        's7_paused_title' => 'Paused too long',
+        's7_paused_desc'  => 'How many hours a ticket may sit with its SLA clock stopped before Watchtower mentions it. The default is 24.',
     ],
+    // Whose work the dashboard is answering about (#58).
+    'scope' => [
+        'mine'                 => 'Mine',
+        'team'                 => 'My team',
+        'all'                  => 'Everyone',
+        'everyone_tag'         => 'everyone',
+        'impersonal_heading'   => 'On “Mine”, cards that have no owner',
+        'impersonal_show'      => 'Keep showing them',
+        'impersonal_hide'      => 'Hide them',
+        'impersonal_note'      => 'Service status, workflows, equipment, the shared calendar, contracts, knowledge, software licences and domains belong to the team rather than to a person, so they cannot narrow to you. Keeping them is the safer answer: a degraded service is the last thing that should disappear because you switched to a personal view.',
+    ],
+
 ];

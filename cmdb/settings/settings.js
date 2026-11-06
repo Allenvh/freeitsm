@@ -13,14 +13,17 @@ let activeClassForProps = null; // class object whose properties are open in the
 
 // ---------- Utilities ----------
 
+/** Escapes text for safe use in HTML. */
 function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
+/** Turns a name into a lower-case key with underscores ("Web Server" -> "web_server"). */
 function slugify(s) {
     return String(s ?? '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+/** Shows a toast - an error toast when isError, otherwise a success toast. */
 function showInlineToast(msg, isError = false) {
     if (typeof showToast === 'function') {
         showToast(msg, isError ? 'error' : 'success');
@@ -29,6 +32,7 @@ function showInlineToast(msg, isError = false) {
     }
 }
 
+/** Posts a JSON body and returns the parsed JSON reply. */
 async function postJson(url, body) {
     const res = await fetch(url, {
         method: 'POST',
@@ -40,6 +44,7 @@ async function postJson(url, body) {
 
 // ---------- Tabs ----------
 
+/** Switches settings tab and loads that tab's data. */
 function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -51,6 +56,8 @@ function switchTab(tab) {
     if (tab === 'classes') loadClasses();
     else if (tab === 'relationship-types') loadRelTypes();
     else if (tab === 'ai') loadCmdbAiExtras();
+    else if (tab === 'asset-card') loadAssetCard();
+    else if (tab === 'impact') loadImpactSettings();
     else if (tab === 'left-panel') loadSidebarMode();
 }
 
@@ -60,6 +67,7 @@ function switchTab(tab) {
 // .browse-container. Also editable under System → Preferences.
 const SIDEBAR_MODE_KEY = 'cmdb_sidebar_mode';
 let sidebarModeLoaded = false;
+/** Loads the analyst's cmdb_sidebar_mode preference ('always' or 'hover') into the left-panel radios, once. */
 async function loadSidebarMode() {
     if (sidebarModeLoaded) return;
     sidebarModeLoaded = true;
@@ -73,6 +81,7 @@ async function loadSidebarMode() {
         if (first) first.checked = true;
     }
 }
+/** Saves the analyst's left-panel preference through set_user_preference.php. */
 async function saveSidebarMode(value) {
     if (value !== 'always' && value !== 'hover') return;
     try {
@@ -89,6 +98,7 @@ async function saveSidebarMode(value) {
 
 // ---------- Classes ----------
 
+/** Loads every CMDB class from get_classes.php and draws the Classes table. */
 async function loadClasses() {
     const tbody = document.getElementById('classesTableBody');
     tbody.innerHTML = `<tr><td colspan="7" class="empty-row">${escapeHtml(window.t('cmdb.settings.loading'))}</td></tr>`;
@@ -103,6 +113,9 @@ async function loadClasses() {
     }
 }
 
+/**
+ * Draws the Classes table - name, key, description, property count (opens the properties modal), order, status, edit and delete.
+ */
 function renderClasses() {
     const tbody = document.getElementById('classesTableBody');
     if (!classes.length) {
@@ -129,6 +142,7 @@ function renderClasses() {
     `).join('');
 }
 
+/** Opens the class modal, filled from an existing class or blank for a new one. */
 function openClassModal(id = null) {
     const cls = id ? classes.find(c => c.id === id) : null;
     document.getElementById('classModalTitle').textContent = cls ? window.t('cmdb.settings.class_modal_edit') : window.t('cmdb.settings.class_modal_add');
@@ -142,8 +156,10 @@ function openClassModal(id = null) {
     setTimeout(() => document.getElementById('className').focus(), 0);
 }
 
+/** Closes the class modal. */
 function closeClassModal() { document.getElementById('classModal').classList.remove('active'); }
 
+/** Saves the class modal through save_class.php and reloads the table. */
 async function saveClass(ev) {
     if (ev) ev.preventDefault();
     const payload = {
@@ -165,6 +181,7 @@ async function saveClass(ev) {
     }
 }
 
+/** Asks for confirmation, deletes a class through delete_class.php and reloads the table. */
 async function deleteClass(id, name) {
     if (!(await showConfirm({ title: window.t('cmdb.settings.class_delete_title'), message: window.t('cmdb.settings.class_delete_confirm', { name }), okLabel: window.t('cmdb.settings.class_delete_ok'), okClass: 'danger' }))) return;
     try {
@@ -195,6 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ---------- Properties (per-class, in nested modal) ----------
 
+/** Opens the properties modal for one class and loads its properties. */
 async function openPropsModal(classId) {
     activeClassForProps = classes.find(c => c.id === classId);
     if (!activeClassForProps) return;
@@ -203,6 +221,7 @@ async function openPropsModal(classId) {
     await loadPropsForClass();
 }
 
+/** Closes the properties modal and reloads the classes, since property counts may have changed. */
 function closePropsModal() {
     document.getElementById('propsModal').classList.remove('active');
     activeClassForProps = null;
@@ -211,6 +230,7 @@ function closePropsModal() {
     loadClasses();
 }
 
+/** Loads the open class's properties from get_class_properties.php and draws them. */
 async function loadPropsForClass() {
     const tbody = document.getElementById('propsTableBody');
     tbody.innerHTML = `<tr><td colspan="7" class="empty-row">${escapeHtml(window.t('cmdb.settings.loading'))}</td></tr>`;
@@ -225,6 +245,7 @@ async function loadPropsForClass() {
     }
 }
 
+/** Draws the properties table - label, key, type, target class, required, order, edit and delete. */
 function renderProps() {
     const tbody = document.getElementById('propsTableBody');
     if (!propsForClass.length) {
@@ -251,6 +272,9 @@ function renderProps() {
     `).join('');
 }
 
+/**
+ * Opens the property modal, filled from an existing property or blank, with the target-class list and the options editor.
+ */
 function openPropertyModal(id = null) {
     const prop = id ? propsForClass.find(p => p.id === id) : null;
     document.getElementById('propertyModalTitle').textContent = prop ? window.t('cmdb.settings.prop_modal_edit') : window.t('cmdb.settings.prop_modal_add');
@@ -261,6 +285,7 @@ function openPropertyModal(id = null) {
     document.getElementById('propertyType').value = prop ? prop.property_type : 'text';
     document.getElementById('propertyDisplayOrder').value = prop ? prop.display_order : 0;
     document.getElementById('propertyIsRequired').checked = prop ? prop.is_required : false;
+    document.getElementById('propertySpreadsImpact').checked = prop ? !!Number(prop.spreads_impact) : false;
 
     // Populate the target class dropdown
     const tcSel = document.getElementById('propertyTargetClass');
@@ -278,11 +303,19 @@ function openPropertyModal(id = null) {
     setTimeout(() => document.getElementById('propertyLabel').focus(), 0);
 }
 
+/** Closes the property modal. */
 function closePropertyModal() { document.getElementById('propertyModal').classList.remove('active'); }
 
+/**
+ * Shows the target-class and spreads-impact fields only for object references, and the options editor only for drop-downs.
+ */
 function onPropertyTypeChange() {
     const t = document.getElementById('propertyType').value;
+    // Only an object reference can be a dependency, so the impact toggle follows
+    // the target-class field. The server also clears the flag on a type change,
+    // so a hidden tick can never keep feeding the blast radius.
     document.getElementById('targetClassGroup').style.display = t === 'object_ref' ? 'block' : 'none';
+    document.getElementById('spreadsImpactGroup').style.display = t === 'object_ref' ? 'block' : 'none';
     document.getElementById('dropdownOptionsGroup').style.display = t === 'dropdown' ? 'block' : 'none';
 }
 
@@ -301,6 +334,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+/**
+ * Validates and saves the property through save_class_property.php - an object reference needs a target class, a drop-down at least one option.
+ */
 async function saveProperty(ev) {
     if (ev) ev.preventDefault();
     if (!activeClassForProps) return;
@@ -319,6 +355,7 @@ async function saveProperty(ev) {
         property_type: type,
         target_class_id: type === 'object_ref' ? (targetClassId || null) : null,
         is_required: document.getElementById('propertyIsRequired').checked,
+        spreads_impact: type === 'object_ref' && document.getElementById('propertySpreadsImpact').checked,
         display_order: parseInt(document.getElementById('propertyDisplayOrder').value, 10) || 0,
         options
     };
@@ -343,6 +380,7 @@ async function saveProperty(ev) {
     }
 }
 
+/** Asks for confirmation, deletes a property through delete_class_property.php and reloads the list. */
 async function deleteProperty(id, label) {
     if (!(await showConfirm({ title: window.t('cmdb.settings.prop_delete_title'), message: window.t('cmdb.settings.prop_delete_confirm', { label }), okLabel: window.t('cmdb.settings.prop_delete_ok'), okClass: 'danger' }))) return;
     try {
@@ -357,6 +395,7 @@ async function deleteProperty(id, label) {
 
 // ---------- Relationship Types ----------
 
+/** Loads the relationship types from get_relationship_types.php and draws them. */
 async function loadRelTypes() {
     const tbody = document.getElementById('relTypesTableBody');
     tbody.innerHTML = `<tr><td colspan="6" class="empty-row">${escapeHtml(window.t('cmdb.settings.loading'))}</td></tr>`;
@@ -371,10 +410,26 @@ async function loadRelTypes() {
     }
 }
 
+/**
+ * At-a-glance impact setting for the list. Reads with the row's own verbs so a
+ * scan of the table answers "which of these actually spread a failure?".
+ */
+function relTypeImpactCell(r) {
+    const dir = r.impact_direction || 'none';
+    if (dir === 'none') {
+        return `<span style="color: #9ca3af;">${escapeHtml(window.t('cmdb.settings.impact_cell_none'))}</span>`;
+    }
+    const word = dir === 'to_from' ? (r.verb || '') : (r.inverse_verb || '');
+    const extra = r.redundancy === 'membership' || r.redundancy === 'placement'
+        ? ` <span class="badge">${escapeHtml(window.t('cmdb.settings.rel_type_redundancy_' + r.redundancy))}</span>` : '';
+    return `<span class="badge active">${escapeHtml(window.t('cmdb.settings.impact_cell_spreads', { verb: word }))}</span>` + extra;
+}
+
+/** Draws the relationship types table - verb, inverse verb, description, impact, order, status, edit and delete. */
 function renderRelTypes() {
     const tbody = document.getElementById('relTypesTableBody');
     if (!relTypes.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-row">${window.t('cmdb.settings.no_rel_types')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-row">${window.t('cmdb.settings.no_rel_types')}</td></tr>`;
         return;
     }
     tbody.innerHTML = relTypes.map(r => `
@@ -382,6 +437,7 @@ function renderRelTypes() {
             <td><strong>${escapeHtml(r.verb)}</strong></td>
             <td>${escapeHtml(r.inverse_verb)}</td>
             <td style="color: #6b7280;">${escapeHtml(r.description || '')}</td>
+            <td>${relTypeImpactCell(r)}</td>
             <td>${r.display_order}</td>
             <td><span class="badge ${r.is_active ? 'active' : 'inactive'}">${r.is_active ? escapeHtml(window.t('cmdb.settings.active')) : escapeHtml(window.t('cmdb.settings.inactive'))}</span></td>
             <td>
@@ -396,6 +452,28 @@ function renderRelTypes() {
     `).join('');
 }
 
+/**
+ * Rewrite the impact-direction options using whatever is currently typed in the
+ * verb fields, so the choice reads as a sentence about the analyst's own estate
+ * ("everything that depends on it is affected") rather than as jargon. Both
+ * impact options share one frame — the only difference is which verb reads
+ * correctly from the affected object's side.
+ */
+function syncRelTypeImpactOptions() {
+    const sel = document.getElementById('relTypeImpactDirection');
+    if (!sel) return;
+    const verb = document.getElementById('relTypeVerb').value.trim()
+        || window.t('cmdb.settings.rel_type_impact_verb_fallback');
+    const inverse = document.getElementById('relTypeInverseVerb').value.trim()
+        || window.t('cmdb.settings.rel_type_impact_inverse_fallback');
+    sel.querySelector('option[value="none"]').textContent = window.t('cmdb.settings.rel_type_impact_none');
+    sel.querySelector('option[value="to_from"]').textContent = window.t('cmdb.settings.rel_type_impact_to_from', { verb: verb });
+    sel.querySelector('option[value="from_to"]').textContent = window.t('cmdb.settings.rel_type_impact_from_to', { verb: inverse });
+}
+
+/**
+ * Opens the relationship type modal, filled from an existing type or blank, with the impact options worded from its verbs.
+ */
 function openRelTypeModal(id = null) {
     const r = id ? relTypes.find(x => x.id === id) : null;
     document.getElementById('relTypeModalTitle').textContent = r ? window.t('cmdb.settings.rel_type_modal_edit') : window.t('cmdb.settings.rel_type_modal_add');
@@ -403,14 +481,19 @@ function openRelTypeModal(id = null) {
     document.getElementById('relTypeVerb').value = r ? r.verb : '';
     document.getElementById('relTypeInverseVerb').value = r ? r.inverse_verb : '';
     document.getElementById('relTypeDescription').value = r ? (r.description || '') : '';
+    document.getElementById('relTypeImpactDirection').value = (r && r.impact_direction) ? r.impact_direction : 'none';
+    document.getElementById('relTypeRedundancy').value = (r && r.redundancy) ? r.redundancy : 'none';
     document.getElementById('relTypeDisplayOrder').value = r ? r.display_order : 0;
     document.getElementById('relTypeIsActive').checked = r ? r.is_active : true;
+    syncRelTypeImpactOptions();
     document.getElementById('relTypeModal').classList.add('active');
     setTimeout(() => document.getElementById('relTypeVerb').focus(), 0);
 }
 
+/** Closes the relationship type modal. */
 function closeRelTypeModal() { document.getElementById('relTypeModal').classList.remove('active'); }
 
+/** Saves the relationship type, including its impact direction, through save_relationship_type.php and reloads the list. */
 async function saveRelType(ev) {
     if (ev) ev.preventDefault();
     const payload = {
@@ -418,6 +501,8 @@ async function saveRelType(ev) {
         verb: document.getElementById('relTypeVerb').value,
         inverse_verb: document.getElementById('relTypeInverseVerb').value,
         description: document.getElementById('relTypeDescription').value,
+        impact_direction: document.getElementById('relTypeImpactDirection').value,
+        redundancy: document.getElementById('relTypeRedundancy').value,
         display_order: parseInt(document.getElementById('relTypeDisplayOrder').value, 10) || 0,
         is_active: document.getElementById('relTypeIsActive').checked
     };
@@ -432,6 +517,7 @@ async function saveRelType(ev) {
     }
 }
 
+/** Asks for confirmation, deletes a relationship type through delete_relationship_type.php and reloads the list. */
 async function deleteRelType(id, verb) {
     if (!(await showConfirm({ title: window.t('cmdb.settings.rel_type_delete_title'), message: window.t('cmdb.settings.rel_type_delete_confirm', { verb }), okLabel: window.t('cmdb.settings.rel_type_delete_ok'), okClass: 'danger' }))) return;
     try {
@@ -449,6 +535,7 @@ async function deleteRelType(id, verb) {
 // (renderAiSettingsPanel('cmdb_ai') + assets/js/ai-settings.js). This file only
 // manages the CMDB-specific custom-instructions textarea.
 
+/** Loads the CMDB's custom AI instructions into the AI tab; the provider settings belong to the shared AI panel. */
 async function loadCmdbAiExtras() {
     try {
         const res = await fetch(API + 'get_ai_settings.php');
@@ -460,6 +547,7 @@ async function loadCmdbAiExtras() {
     }
 }
 
+/** Saves the CMDB's custom AI instructions through save_ai_settings.php. */
 async function saveCmdbAiExtras(ev) {
     if (ev) ev.preventDefault();
     try {
@@ -480,6 +568,7 @@ let aiSuggestAnswers = [];     // [{question, answer}]
 let aiSuggestSuggestions = []; // [{label, property_key, property_type, is_required, why, options?, target_class_hint?}]
 let aiSuggestStage = null;     // 'loading_questions' | 'questions' | 'loading_suggestions' | 'suggestions' | 'error'
 
+/** Shows one stage of the AI suggest wizard and sets the primary and cancel buttons to suit it. */
 function setAiStage(stage) {
     aiSuggestStage = stage;
     document.querySelectorAll('#aiSuggestModal .ai-stage').forEach(el => el.classList.remove('active'));
@@ -525,6 +614,7 @@ function setAiStage(stage) {
     }
 }
 
+/** Opens the AI suggest wizard for the open class and fetches its clarifying questions from ai_suggest_questions.php. */
 async function openAiSuggestModal() {
     if (!activeClassForProps) return;
     document.getElementById('aiSuggestClassName').textContent = activeClassForProps.name;
@@ -549,11 +639,13 @@ async function openAiSuggestModal() {
     }
 }
 
+/** Closes the AI suggest wizard. */
 function closeAiSuggestModal() {
     document.getElementById('aiSuggestModal').classList.remove('active');
     aiSuggestStage = null;
 }
 
+/** Draws the AI's questions, each with its examples and an answer box. */
 function renderAiQuestions() {
     const list = document.getElementById('aiQuestionsList');
     list.innerHTML = aiSuggestQuestions.map((q, i) => `
@@ -565,6 +657,7 @@ function renderAiQuestions() {
     `).join('');
 }
 
+/** Reads the answered questions into aiSuggestAnswers, skipping blanks. */
 function collectAiAnswers() {
     aiSuggestAnswers = aiSuggestQuestions.map((q, i) => ({
         question: q.question,
@@ -572,6 +665,9 @@ function collectAiAnswers() {
     })).filter(qa => qa.answer !== '');
 }
 
+/**
+ * The wizard's main button - from questions, fetch suggestions from ai_suggest_properties.php; from suggestions, add the ticked ones; from the result, close and reload.
+ */
 async function aiPrimaryAction() {
     if (aiSuggestStage === 'questions') {
         // Move to stage 2: ask AI for suggestions
@@ -602,6 +698,9 @@ async function aiPrimaryAction() {
     }
 }
 
+/**
+ * Draws the suggested properties as ticked checkboxes with type, required flag, options count, target class and the AI's reason.
+ */
 function renderAiSuggestions() {
     const list = document.getElementById('aiSuggestionsList');
     list.innerHTML = aiSuggestSuggestions.map((p, i) => {
@@ -626,6 +725,9 @@ function renderAiSuggestions() {
     }).join('');
 }
 
+/**
+ * Saves each ticked suggestion as a property of the open class; an object reference to a class that does not exist yet creates that class first.
+ */
 async function applyAiSuggestions() {
     const checked = Array.from(document.querySelectorAll('#aiSuggestionsList input[type="checkbox"]:checked'))
         .map(cb => parseInt(cb.dataset.idx, 10));
@@ -714,6 +816,7 @@ async function applyAiSuggestions() {
     setAiStage('result');
 }
 
+/** Shows what was added, which classes were created on the way, and anything that failed. */
 function renderAiResult(added, created, errors) {
     const summary = document.getElementById('aiResultSummary');
     const details = document.getElementById('aiResultDetails');
@@ -777,8 +880,54 @@ function renderAiResult(added, created, errors) {
     details.innerHTML = html;
 }
 
+// ---------- Asset card (GH #201) ----------
+// Which details of a linked asset the CI's Asset card shows. A view setting only: the
+// server never sends an asset's details to someone who cannot open Assets, ticked or not.
+
+/** Ticks the asset details the card currently shows. */
+async function loadAssetCard() {
+    try {
+        const data = await (await fetch(API + 'asset_card_settings.php')).json();
+        if (!data.success) { showInlineToast(data.error || '', true); return; }
+        document.querySelectorAll('input[name="assetCardField"]').forEach(cb => { cb.checked = (data.fields || []).includes(cb.value); });
+    } catch (e) { /* the ticks stay as drawn */ }
+}
+
+/** Saves the ticked asset details. */
+async function saveAssetCard(ev) {
+    ev.preventDefault();
+    const fields = Array.from(document.querySelectorAll('input[name="assetCardField"]:checked')).map(cb => cb.value);
+    const data = await postJson(API + 'asset_card_settings.php', { fields: fields });
+    if (!data.success) { showInlineToast(data.error || '', true); return; }
+    showInlineToast(window.t('cmdb.settings.asset_card_saved'));
+}
+
+// ---------- Impact (GH #199 Part C) ----------
+// What "If this failed" assumes about a redundant group's other members when nothing
+// records their state. Either way the assumption is listed under the analysis.
+
+/** Selects the current choice. */
+async function loadImpactSettings() {
+    try {
+        const data = await (await fetch(API + 'impact_settings.php')).json();
+        if (!data.success) { showInlineToast(data.error || '', true); return; }
+        document.querySelectorAll('input[name="impactUnknown"]').forEach(r => { r.checked = r.value === data.unknown_members; });
+    } catch (e) { /* the radios stay as drawn */ }
+}
+
+/** Saves the choice. */
+async function saveImpactSettings(ev) {
+    ev.preventDefault();
+    const v = (document.querySelector('input[name="impactUnknown"]:checked') || {}).value || 'assume';
+    const data = await postJson(API + 'impact_settings.php', { unknown_members: v });
+    if (!data.success) { showInlineToast(data.error || '', true); return; }
+    showInlineToast(window.t('cmdb.settings.asset_card_saved'));
+}
+
 // ---------- Init ----------
 
 document.addEventListener('DOMContentLoaded', () => {
     loadClasses(); // First tab is Classes — load immediately
+    if (document.getElementById('asset-card-tab') && document.getElementById('asset-card-tab').classList.contains('active')) loadAssetCard();
+    if (document.getElementById('impact-tab') && document.getElementById('impact-tab').classList.contains('active')) loadImpactSettings();
 });

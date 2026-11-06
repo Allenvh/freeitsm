@@ -12,7 +12,7 @@ $ssoProviderId = $_SESSION['ss_sso_provider_id'] ?? null;
 $ssoIdToken    = $_SESSION['ss_sso_id_token'] ?? null;
 
 unset(
-    $_SESSION['ss_user_id'], $_SESSION['ldap_user_provider_id'], $_SESSION['mfa_pending_ss_ldap_provider_id'],
+    $_SESSION['ss_user_id'],
     $_SESSION['ss_user_email'],
     $_SESSION['ss_user_name'],
     $_SESSION['ss_sso_provider_id'],
@@ -31,7 +31,7 @@ if ($ssoProviderId) {
         if ($provider) {
             $disco = oidcDiscover($provider['issuer_url']);
             if (!empty($disco['end_session_endpoint'])) {
-                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                $scheme = requestScheme();
                 $postLogout = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . BASE_URL . 'self-service/login.php';
                 $params = ['post_logout_redirect_uri' => $postLogout];
                 if ($ssoIdToken) { $params['id_token_hint'] = $ssoIdToken; }

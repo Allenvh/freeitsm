@@ -24,7 +24,7 @@ return [
     ],
 
     'sidebar' => [
-        'new_event'   => 'New Event',
+        'new_event'   => 'New event',
         'categories'  => 'Categories',
         'none'        => 'No categories found',
     ],
@@ -50,16 +50,16 @@ return [
     ],
 
     'event' => [
-        'modal_new'      => 'New Event',
-        'modal_edit'     => 'Edit Event',
+        'modal_new'      => 'New event',
+        'modal_edit'     => 'Edit event',
         'title'          => 'Title',
         'title_ph'       => 'Event title...',
         'category'       => 'Category',
         'category_none'  => '-- Select category --',
-        'start_date'     => 'Start Date',
-        'start_time'     => 'Start Time',
-        'end_date'       => 'End Date',
-        'end_time'       => 'End Time',
+        'start_date'     => 'Start date',
+        'start_time'     => 'Start time',
+        'end_date'       => 'End date',
+        'end_time'       => 'End time',
         'all_day'        => 'All day event',
         'location'       => 'Location',
         'location_ph'    => 'Location (optional)',
@@ -126,6 +126,15 @@ return [
         'left_panel_hover_desc'   => 'Collapse the left panel to a thin strip that expands when you hover over it, giving the calendar more room.',
     ],
 
+    // ── Strings only the script says (assets/js/itsm_calendar.js) ───────
+    // Everything else it shows comes from event.*, sidebar.* and toast.*
+    // above, and the month and weekday names from common.calendar.
+    'js' => [
+        'all_day'       => 'All day',
+        'uncategorised' => 'Uncategorized',
+        'move_failed'   => 'Failed to move',
+        'error_prefix'  => 'Error: {message}',
+    ],
     'toast' => [
         'saved'         => 'Saved',
         'deleted'       => 'Deleted',
@@ -176,8 +185,8 @@ return [
 
         // Section 3 — Creating events
         'creating_heading' => 'Creating events',
-        'creating_intro'   => 'Adding events to the calendar is straightforward. Click the <strong>+ New Event</strong> button in the sidebar to open the event form. Fill in the details and save &mdash; the event appears on the calendar immediately.',
-        'creating_step1'   => '<strong>Click + New Event</strong> &mdash; the button is in the calendar sidebar on the left. This opens the event creation modal.',
+        'creating_intro'   => 'Adding events to the calendar is straightforward. Click <strong>New</strong> at the top right to open the event form. Fill in the details and save &mdash; the event appears on the calendar immediately.',
+        'creating_step1'   => '<strong>Click New</strong> &mdash; the button is at the top right, on the calendar and in the Table view. This opens the event creation modal.',
         'creating_step2'   => '<strong>Enter a title</strong> &mdash; give the event a clear, descriptive name. For example: "SSL certificate renewal &mdash; webserver01" or "Monthly patching window".',
         'creating_step3'   => '<strong>Choose a category</strong> &mdash; select from the dropdown to colour-code the event. Categories are configured in Settings and help you filter the calendar later.',
         'creating_step4'   => '<strong>Set the dates and times</strong> &mdash; pick a start date and optionally an end date. Add start and end times for timed events, or tick "All day event" for deadlines and full-day entries.',
@@ -189,6 +198,7 @@ return [
         'categories_heading' => 'Event categories',
         'categories_intro'   => 'Categories are the backbone of calendar organisation. Each category has a name and a colour, so events are instantly recognisable at a glance. The sidebar shows all available categories with checkboxes &mdash; untick a category to hide those events from the calendar.',
         'categories_certificates' => '<strong>Certificates</strong> &mdash; track SSL/TLS certificate expiry dates, code signing certificates, and other credentials that need periodic renewal',
+        'categories_projects'     => '<strong>Projects</strong> &mdash; filled by the Projects module: each live project\'s target end date and the end of each open stage, phase or sprint, kept in step with the plan',
         'categories_contracts'    => '<strong>Contracts</strong> &mdash; log vendor contract renewal dates, licence expiry, and SLA review milestones so nothing lapses unexpectedly',
         'categories_maintenance'  => '<strong>Maintenance</strong> &mdash; schedule planned maintenance windows for servers, network equipment, and infrastructure. Your team and stakeholders can see exactly when downtime is expected',
         'categories_meetings'     => '<strong>Meetings</strong> &mdash; record team stand-ups, CAB meetings, vendor calls, and other recurring appointments relevant to IT operations',

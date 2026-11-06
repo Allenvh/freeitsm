@@ -1,0 +1,46 @@
+# The developer test suite. NEVER reachable over HTTP.
+#
+# These scripts ship in the repository because the wiki's developer guides refer
+# to them by path and because a contributor needs them. They are not part of the
+# application, and nobody who merely RUNS FreeITSM has any use for a file in here.
+#
+# Why this matters more than "tidiness": the tests exercise the real code against
+# the real database. They create forms, assets, contracts, documents and working
+# analyst accounts — with passwords that are published in a public repository —
+# and each one deletes what it made only if it reaches its last few lines. Served
+# by a web server they become unauthenticated write endpoints that anyone can
+# trigger, and an HTTP request can be cut off, or hit the 30-second limit a web
+# SAPI imposes and a command line does not, leaving those rows behind. Their
+# failure messages print real records back to whoever asked.
+#
+# ⚠️ This file only does anything on Apache, and only where AllowOverride permits
+# it. See web.config beside it for IIS, and deploy/nginx/freeitsm.conf for nginx,
+# which has no in-directory equivalent at all. The defence that works on EVERY
+# server is the one inside each script: a `PHP_SAPI !== 'cli'` guard on the first
+# line, which travels with the file. tests/web-exposure-guard.php asserts every
+# one of them still carries it. This directory-level block is the second layer,
+# and it is the only layer that covers the .html and .sh files, which cannot
+# refuse for themselves.
+
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
+
+# Belt and braces for a server that ignores the deny above: even if something in
+# here is reachable, it must not run.
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py .jsp .asp .aspx .shtml
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py
+# TRAP: php_flag / php_value only ever inside <IfModule mod_php*.c>. Unguarded, Apache running PHP through PHP-FPM does not know the command and refuses EVERY file in this folder with a 500 (GH #115).
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php5.c>
+  php_flag engine off
+</IfModule>

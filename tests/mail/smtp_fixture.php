@@ -1,4 +1,5 @@
 <?php
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 // Local protocol fixture only. Credentials are ephemeral and supplied by the runner.
 $config = json_decode(file_get_contents($argv[1]), true);
 $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $error);

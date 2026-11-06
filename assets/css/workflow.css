@@ -3,7 +3,18 @@
    -------------------------------------------------------------
    Theme colour: amber #f59e0b (associative with automation tools
    like Zapier / n8n / Make).
+
+   Dark mode: the editor CHROME (toolbar, detail panel, AI modal,
+   buttons) themes via var(--token, #light-fallback); the CANVAS +
+   dot-grid + nodes stay a LIGHT worksheet in both modes (draw.io /
+   Process-Mapper style — the nodes are colour-coded data tuned for
+   a light surface). Fallbacks = the original light values, so light
+   mode is pixel-identical and un-themed pages are unaffected.
    ============================================================= */
+
+/* Workflow pages pin the shared --accent to amber so inbox.css
+   primitives (modals, .add-btn, tabs, focus rings) are on-brand. */
+body { --accent: var(--wf-accent, #f59e0b); }
 
 /* Nav width/centring rules live in assets/css/inbox.css alongside the
    other module-header overrides — keep this file focused on layout. */
@@ -17,7 +28,7 @@
     flex-direction: column;
     height: calc(100vh - 48px);
     overflow: hidden;
-    background: #fafafa;
+    background: var(--app-bg, #fafafa);
 }
 
 .wf-toolbar {
@@ -25,8 +36,8 @@
     justify-content: space-between;
     align-items: center;
     padding: 6px 12px;
-    background: #fff;
-    border-bottom: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border-bottom: 1px solid var(--border, #e0e0e0);
     min-height: 44px;
     gap: 8px;
     flex-shrink: 0;
@@ -38,9 +49,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #f5f5f5;
-    color: #333;
-    border: 1px solid #ddd;
+    background: var(--surface-3, #f5f5f5);
+    color: var(--text, #333);
+    border: 1px solid var(--border, #ddd);
     padding: 6px 12px;
     border-radius: 4px;
     cursor: pointer;
@@ -50,8 +61,8 @@
     transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .wf-tool-btn:hover {
-    background: #ececec;
-    border-color: #c4c4c4;
+    background: var(--surface-hover, #ececec);
+    border-color: var(--border, #c4c4c4);
 }
 .wf-tool-btn:disabled {
     opacity: 0.45;
@@ -60,6 +71,8 @@
 .wf-tool-btn svg {
     flex-shrink: 0;
 }
+/* Saturated amber primary — white text reads on both modes, so kept
+   hardcoded (not the light-in-dark --wf-accent token). */
 .wf-tool-btn.wf-tool-primary {
     background: #f59e0b;       /* amber primary */
     color: #fff;
@@ -70,29 +83,29 @@
 .wf-tool-sep {
     width: 1px;
     height: 22px;
-    background: #ddd;
+    background: var(--border, #ddd);
     margin: 0 4px;
 }
 
 /* Status pip beside the Save button. */
 .wf-status {
     font-size: 12px;
-    color: #888;
+    color: var(--text-muted, #888);
     margin-right: 6px;
     display: inline-flex;
     align-items: center;
     gap: 4px;
     min-height: 18px;
 }
-.wf-status-unsaved  { color: #b45309; }
-.wf-status-saving   { color: #92400e; }
-.wf-status-saved    { color: #2e7d32; }
+.wf-status-unsaved  { color: var(--warning-text, #b45309); }
+.wf-status-saving   { color: var(--warning-text, #92400e); }
+.wf-status-saved    { color: var(--success-text, #2e7d32); }
 .wf-status-tick     { font-weight: 600; }
 .wf-status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #f59e0b;
+    background: var(--wf-accent, #f59e0b);
     animation: wf-pulse 0.9s infinite;
 }
 @keyframes wf-pulse {
@@ -102,6 +115,9 @@
 
 /* =============================================================
    Main split — canvas on the left, detail panel on the right
+   -------------------------------------------------------------
+   CANVAS IS CONTENT: the worksheet + dot-grid + nodes stay LIGHT in
+   both modes (nodes are colour-coded pills tuned for a white surface).
    ============================================================= */
 
 .wf-main {
@@ -114,7 +130,7 @@
 .wf-canvas-wrap {
     flex: 1;
     overflow: hidden;
-    background: #fafafa;
+    background: #fafafa;          /* light worksheet — intentional in dark too */
     position: relative;
 }
 
@@ -140,7 +156,7 @@
 }
 
 /* =============================================================
-   Nodes — trigger / condition / action
+   Nodes — trigger / condition / action (CONTENT — stay light/coloured)
    ============================================================= */
 
 .wf-node {
@@ -223,14 +239,14 @@
 }
 
 /* =============================================================
-   Detail panel — slide-in from the right
+   Detail panel — slide-in from the right (CHROME — themed)
    ============================================================= */
 
 .wf-detail {
     width: 340px;
     min-width: 340px;
-    background: #fff;
-    border-left: 1px solid #e0e0e0;
+    background: var(--surface, #fff);
+    border-left: 1px solid var(--border, #e0e0e0);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -238,14 +254,14 @@
 
 .wf-detail-header {
     padding: 14px 18px;
-    border-bottom: 1px solid #e0e0e0;
-    background: #fafafa;
+    border-bottom: 1px solid var(--border, #e0e0e0);
+    background: var(--surface-2, #fafafa);
 }
 .wf-detail-header h3 {
     margin: 0;
     font-size: 15px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
 }
 
 .wf-detail-body {
@@ -259,7 +275,7 @@
     display: block;
     font-size: 12px;
     font-weight: 600;
-    color: #555;
+    color: var(--text-muted, #555);
     margin-bottom: 6px;
 }
 .wf-detail-body input[type="text"],
@@ -267,7 +283,9 @@
 .wf-detail-body textarea {
     width: 100%;
     padding: 8px 10px;
-    border: 1px solid #ddd;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     font-size: 13px;
     font-family: inherit;
@@ -281,16 +299,16 @@
 .wf-detail-body select:focus,
 .wf-detail-body textarea:focus {
     outline: none;
-    border-color: #f59e0b;
+    border-color: var(--wf-accent, #f59e0b);
 }
 
 .wf-detail-delete {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #fff;
-    color: #c62828;
-    border: 1px solid #f4c5c5;
+    background: var(--surface, #fff);
+    color: var(--danger-text, #c62828);
+    border: 1px solid #f4c5c5;    /* pale red — dark override below */
     padding: 7px 14px;
     border-radius: 4px;
     cursor: pointer;
@@ -299,15 +317,16 @@
     margin-top: 8px;
 }
 .wf-detail-delete:hover {
-    background: #fdf3f3;
-    border-color: #c62828;
+    background: #fdf3f3;           /* pale red wash — dark override below */
+    border-color: var(--danger-text, #c62828);
 }
 
 /* =============================================================
-   AI co-author modal + toolbar button
+   AI co-author modal + toolbar button (CHROME — themed)
    ============================================================= */
 
-/* Toolbar AI button — amber-tinted so it stands out as the "magic" action. */
+/* Toolbar AI button — amber-tinted so it stands out as the "magic" action.
+   Pale-amber tints kept hardcoded for light + flipped via the dark block. */
 .wf-tool-btn.wf-tool-ai {
     background: #fff7ed;
     border-color: #fed7aa;
@@ -318,7 +337,7 @@
     border-color: #fdba74;
     color: #92400e;
 }
-.wf-tool-btn.wf-tool-ai svg { color: #f59e0b; }
+.wf-tool-btn.wf-tool-ai svg { color: var(--wf-accent, #f59e0b); }
 
 /* Modal content override — wider than the default tickets-settings modal
    because the AI result panel is content-heavy (explanation + preview +
@@ -332,7 +351,7 @@
 }
 
 /* Amber primary buttons for the AI flow so they stand out from the
-   blue .btn-primary used elsewhere. */
+   blue .btn-primary used elsewhere. Saturated → kept hardcoded. */
 .btn.wf-ai-primary {
     background: #f59e0b;
     border-color: #f59e0b;
@@ -350,4 +369,513 @@
 @keyframes wf-spark {
     0%, 100% { transform: rotate(-4deg) scale(1); }
     50%      { transform: rotate(4deg)  scale(1.08); }
+}
+
+/* =============================================================
+   Dark-mode overrides for pale-amber / pale-red tints that don't map
+   to a token (keep light values above so light mode is identical).
+   ============================================================= */
+[data-theme-mode="dark"] .wf-tool-btn.wf-tool-ai {
+    background: #3a2e12;
+    border-color: #5a4718;
+    color: #fcd34d;
+}
+[data-theme-mode="dark"] .wf-tool-btn.wf-tool-ai:hover {
+    background: #4a3a16;
+    border-color: #6b5520;
+    color: #fde68a;
+}
+[data-theme-mode="dark"] .wf-detail-delete {
+    border-color: #5a2a2a;
+}
+[data-theme-mode="dark"] .wf-detail-delete:hover {
+    background: #3a1c1c;
+}
+
+/* =========================================================
+   Starter-template gallery (workflow/index.php)
+   ========================================================= */
+
+/* Category + search, sitting above the card grid. Mirrors the execution-log
+   filter bar (.wfx-filters) so the two read as the same control. */
+.wf-tpl-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border, #e0e0e0);
+}
+.wf-tpl-filters label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #666);
+    margin-bottom: 4px;
+}
+.wf-tpl-filters .form-input {
+    min-width: 180px;
+}
+.wf-tpl-count {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-dim, #777);
+    padding-bottom: 8px;
+    white-space: nowrap;
+}
+
+.wf-tpl-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 8px;
+    padding: 14px;
+    background: var(--surface, #fff);
+}
+.wf-tpl-card:hover {
+    border-color: var(--wf-accent, #f59e0b);
+}
+.wf-tpl-cat {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--wf-accent-hover, #d97706);
+    margin-bottom: 6px;
+}
+.wf-tpl-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #333);
+    margin-bottom: 6px;
+}
+.wf-tpl-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted, #666);
+    margin-bottom: 10px;
+}
+.wf-tpl-meta {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-dim, #777);
+    background: var(--surface-2, #fafafa);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: auto;
+}
+.wf-tpl-meta strong {
+    color: var(--text-muted, #666);
+}
+
+/* Banner shown in the editor when a cloned template left args for the user. */
+.wf-needs-config {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border: 1px solid var(--warning-border, #fcd34d);
+}
+.wf-needs-config ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+/* Dry-run run rows + step log in the editor's Recent runs panel. */
+.wf-dry-pill {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--surface-3, #eef2ff);
+    color: var(--text-muted, #3730a3);
+}
+.wf-dry-steps {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-muted, #666);
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border-soft, #eee);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+.wf-dry-steps code {
+    font-size: 11px;
+    color: var(--text-dim, #777);
+    word-break: break-word;
+}
+
+/* =========================================================
+   Merge codes ({{variables}}) — the arg bar + the big editor modal
+   ========================================================= */
+.wf-arg-varbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 5px;
+}
+.wf-arg-varbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    font-size: 11.5px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted, #6b7280);
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border, #e0e0e0);
+}
+.wf-arg-varbtn:hover {
+    color: var(--text, #333);
+    border-color: var(--wf-accent, #f59e0b);
+}
+.wf-arg-varwarn {
+    display: block;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--warning-text, #92400e);
+}
+
+.wf-var-modal {
+    max-width: 900px;
+    width: 92%;
+}
+.wf-var-body {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 16px;
+    align-items: start;
+}
+.wf-var-editor textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 10px;
+    border-radius: 6px;
+    resize: vertical;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #d0d0d0);
+}
+.wf-var-editor textarea:focus {
+    outline: none;
+    border-color: var(--wf-accent, #f59e0b);
+}
+.wf-var-warn {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border: 1px solid var(--warning-border, #fcd34d);
+}
+.wf-var-preview-wrap {
+    margin-top: 12px;
+}
+.wf-var-preview-wrap label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim, #888);
+    margin-bottom: 5px;
+}
+.wf-var-preview {
+    font-size: 13px;
+    line-height: 1.7;
+    padding: 10px;
+    border-radius: 6px;
+    min-height: 40px;
+    word-break: break-word;
+    color: var(--text, #333);
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border-soft, #eee);
+}
+.wf-var-chip {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--wf-accent-soft, #fef3c7);
+    color: var(--wf-accent-hover, #d97706);
+}
+.wf-var-chip.bad {
+    background: var(--danger-bg, #fee2e2);
+    color: var(--danger-text, #991b1b);
+    text-decoration: line-through;
+}
+
+.wf-var-picker > label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim, #888);
+    margin-bottom: 5px;
+}
+.wf-var-picker-hint {
+    margin: 0 0 8px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-muted, #666);
+}
+.wf-var-picker input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 9px;
+    font-size: 12.5px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    color: var(--text, #333);
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #d0d0d0);
+}
+.wf-var-picker input:focus {
+    outline: none;
+    border-color: var(--wf-accent, #f59e0b);
+}
+.wf-var-list {
+    max-height: 340px;
+    overflow-y: auto;
+    border: 1px solid var(--border-soft, #eee);
+    border-radius: 6px;
+}
+.wf-var-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 7px 10px;
+    border: none;
+    border-bottom: 1px solid var(--border-soft, #f0f0f0);
+    cursor: pointer;
+    background: var(--surface, #fff);
+}
+.wf-var-item:last-child { border-bottom: none; }
+.wf-var-item:hover { background: var(--wf-accent-soft, #fef3c7); }
+.wf-var-item-label {
+    display: block;
+    font-size: 12.5px;
+    color: var(--text, #333);
+}
+.wf-var-item-code {
+    display: block;
+    font-size: 11px;
+    margin-top: 1px;
+    word-break: break-all;
+    color: var(--text-dim, #888);
+}
+.wf-var-item-note {
+    display: block;
+    font-size: 11px;
+    line-height: 1.5;
+    margin-top: 3px;
+    color: var(--text-muted, #666);
+}
+.wf-var-empty {
+    display: block;
+    padding: 10px;
+    font-size: 12px;
+    color: var(--text-faint, #999);
+}
+
+@media (max-width: 760px) {
+    .wf-var-body { grid-template-columns: 1fr; }
+    .wf-var-list { max-height: 200px; }
+}
+
+/* Message-format hints in the webhook action panel. */
+.wf-fmt-hint {
+    display: block;
+    margin-top: 5px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-muted, #6b7280);
+}
+.wf-fmt-mismatch {
+    display: block;
+    margin-top: 5px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    background: var(--warning-bg, #fef3c7);
+    color: var(--warning-text, #92400e);
+    border: 1px solid var(--warning-border, #fcd34d);
+}
+
+/* =========================================================
+   Execution log (workflow/executions.php)
+   ========================================================= */
+.wfx-tally {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+.wfx-tally-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    min-width: 92px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e0e0e0);
+}
+.wfx-tally-item:hover { border-color: var(--wf-accent, #f59e0b); }
+.wfx-tally-item.active {
+    border-color: var(--wf-accent, #f59e0b);
+    box-shadow: inset 0 0 0 1px var(--wf-accent, #f59e0b);
+}
+.wfx-tally-n { font-size: 18px; font-weight: 700; color: var(--text, #333); }
+.wfx-tally-l { font-size: 11px; color: var(--text-muted, #666); }
+.wfx-tally-item.failed  .wfx-tally-n { color: var(--danger-text, #b91c1c); }
+.wfx-tally-item.aborted .wfx-tally-n { color: var(--danger-text, #b91c1c); }
+.wfx-tally-item.skipped .wfx-tally-n { color: var(--warning-text, #92400e); }
+.wfx-tally-item.success .wfx-tally-n { color: var(--success-text, #1e7e34); }
+
+.wfx-filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: end;
+    margin-bottom: 16px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border-soft, #eee);
+}
+.wfx-filters label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-dim, #888);
+    margin-bottom: 3px;
+}
+.wfx-filters .form-input { min-width: 150px; }
+
+.wfx-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 16px 0 40px;
+}
+.wfx-pager-info { font-size: 12.5px; color: var(--text-muted, #666); }
+
+.wfx-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-soft, #eee);
+    font-size: 13px;
+    color: var(--text, #333);
+}
+.wfx-h {
+    margin: 18px 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim, #888);
+}
+.wfx-steps { display: flex; flex-direction: column; gap: 6px; }
+.wfx-step {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border-soft, #eee);
+}
+.wfx-step-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text, #333);
+}
+.wfx-step-status {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--surface-3, #eee);
+    color: var(--text-muted, #666);
+}
+.wfx-step-status.ok  { background: var(--success-bg, #e6f4ea); color: var(--success-text, #1e7e34); }
+.wfx-step-status.bad { background: var(--danger-bg, #fee2e2);  color: var(--danger-text, #991b1b); }
+.wfx-step-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-muted, #666);
+    word-break: break-word;
+}
+.wfx-step-err {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--danger-text, #b91c1c);
+    word-break: break-word;
+}
+.wfx-pre {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    max-height: 260px;
+    overflow: auto;
+    background: #263238;
+    color: #eceff1;
+}
+
+/* =========================================================
+   Summary-panel box tints — JS-injected (workflow-editor.js)
+   =========================================================
+   workflow-editor.js builds the workflow-summary boxes (trigger / condition /
+   action) and the send-test result panel with INLINE styles. An inline style
+   beats a [data-theme-mode="dark"] rule, so these can't be overridden the usual
+   way — the JS reads these tokens via var(--token, #fallback) instead.
+
+   The three summary tints are TYPE-CODED (amber = trigger, orange = condition,
+   blue = action): the hue carries meaning, so dark keeps the hue and sinks the
+   wash rather than replacing it. */
+:root,
+[data-theme="default"] {
+    --wf-sum-trigger:      #fef3c7;  --wf-sum-trigger-text: inherit;
+    --wf-sum-condition:    #ffedd5;  --wf-sum-condition-text: inherit;
+    --wf-sum-action:       #dbeafe;  --wf-sum-action-text:  inherit;
+    --wf-test-surface:     #f8fafb;
+}
+[data-theme-mode="dark"] {
+    --wf-sum-trigger:      #3a2e12;  --wf-sum-trigger-text: #fcd34d;
+    --wf-sum-condition:    #3a2312;  --wf-sum-condition-text: #fdba74;
+    --wf-sum-action:       #1d3346;  --wf-sum-action-text:  #93c5fd;
+    --wf-test-surface:     #22293a;
 }

@@ -21,8 +21,32 @@
     let priorities = [], impacts = [], types = [], analysts = [];
     let lookupsLoaded = false;
 
-    function fmt(raw) { return raw ? String(raw).replace('T', ' ').slice(0, 16) : ''; }
+    // Server-stamped UTC timestamp (created / modified) → analyst display zone,
+    // in the analyst's chosen date and time format (parseUTCDate / fmtDateTime
+    // from assets/js/tz.js, loaded before this file). Only the display text is
+    // zoned and formatted; the column's `value` (used for sorting) stays the raw
+    // UTC string, so neither the zone nor the format can reorder the table.
+    function fmt(raw) {
+        if (!raw) return '';
+        const d = parseUTCDate(raw);
+        if (!d || isNaN(d.getTime())) return String(raw).replace('T', ' ').slice(0, 16);
+        // ISO here was a DISPLAY choice, not a machine format - the column's
+        // sort `value` is the raw UTC string, set separately - so it follows the
+        // analyst's chosen format like every other date on screen.
+        return fmtDateTime(d);
+    }
 
+    // NAIVE wall-clock scheduling datetime (planned work start / end) — shown
+    // exactly as typed for every analyst, NO zone conversion (parseNaiveDate
+    // from tz.js). Same shape as fmt().
+    function fmtNaive(raw) {
+        if (!raw) return '';
+        const d = parseNaiveDate(raw);
+        if (!d || isNaN(d.getTime())) return String(raw).replace('T', ' ').slice(0, 16);
+        return fmtNaiveDateTime(d);
+    }
+
+    /** Translates a key under change-management.table, or returns the key when i18n.js is not loaded. */
     const T = (k) => (window.t ? window.t('change-management.table.' + k) : k);
 
     const COLUMNS = [
@@ -44,7 +68,11 @@
           display: c => c.impact || '',
           editable: { kind: 'lookup', listKey: 'impacts', valueKey: 'name', labelKey: 'name', colourKey: 'colour' } },
         { key: 'risk_level', label: T('col_risk'), type: 'string', defaultVisible: true, defaultOrder: 6,
-          display: c => c.risk_level || '' },
+          // Stored as its policy's word; a built-in word is shown in the reader's language
+          // (GH #231), a policy's own word as typed (#246, assets/js/change-risk.js).
+          display: c => c.risk_level
+              ? window.ChangeRisk.resultName(window.ChangeRisk.resultByLabel(window.ChangeRisk.policy(c.risk_policy_version_id), c.risk_level), c.risk_level)
+              : '' },
         { key: 'assigned_to_id', label: T('col_assigned_to'), type: 'string', defaultVisible: true, defaultOrder: 7,
           display: c => c.assigned_to_name || '',
           editable: { kind: 'lookup', listKey: 'analysts', valueKey: 'id', labelKey: 'name', allowNull: true, nullLabel: '—' } },
@@ -53,15 +81,20 @@
         { key: 'category', label: T('col_category'), type: 'string', defaultVisible: false, defaultOrder: 9,
           display: c => c.category || '' },
         { key: 'work_start_datetime', label: T('col_work_start'), type: 'date', defaultVisible: true, defaultOrder: 10,
-          value: c => c.work_start_datetime || '', display: c => fmt(c.work_start_datetime) },
+          value: c => c.work_start_datetime || '', display: c => fmtNaive(c.work_start_datetime) },
         { key: 'work_end_datetime', label: T('col_work_end'), type: 'date', defaultVisible: false, defaultOrder: 11,
-          value: c => c.work_end_datetime || '', display: c => fmt(c.work_end_datetime) },
+          value: c => c.work_end_datetime || '', display: c => fmtNaive(c.work_end_datetime) },
         { key: 'created_datetime', label: T('col_created'), type: 'date', defaultVisible: false, defaultOrder: 12,
           value: c => c.created_datetime || '', display: c => fmt(c.created_datetime) },
         { key: 'modified_datetime', label: T('col_modified'), type: 'date', defaultVisible: false, defaultOrder: 13,
           value: c => c.modified_datetime || '', display: c => fmt(c.modified_datetime) },
     ];
 
+    /**
+     * Loads the active priorities, impacts and types plus the analyst list that the inline edit drop-downs offer.
+     *
+     * Failures are logged and leave the lists empty rather than stopping the table loading.
+     */
     async function loadLookups() {
         try {
             const [pRes, iRes, tRes, aRes] = await Promise.all([
@@ -81,6 +114,7 @@
         accent: '#00897b',
         prefApi: '../api/system/',
         prefKey: 'change_table_v1',
+        viewsKey: 'changes',   // saved views (#96); viewsApi is derived from prefApi
         noun: 'change',
         exportName: 'changes',
         defaultSort: { key: 'modified_datetime', dir: 'desc' },

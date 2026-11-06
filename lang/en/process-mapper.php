@@ -34,8 +34,27 @@ return [
 
     'sidebar' => [
         'new_process'        => '+ New',
+        'new_process_tip'    => 'New process',
         'search_placeholder' => 'Search processes...',
         'no_processes_yet'   => 'No processes yet',
+        'search_key_tip'     => 'Press / or Alt+Shift+O from anywhere on the page to search processes',
+    ],
+
+    // The card beside a sidebar item on hover or keyboard focus (#202).
+    'preview' => [
+        'steps'      => 'Steps',
+        'lanes'      => 'Lanes',
+        'created_by' => 'Created by',
+        'created'    => 'Created',
+        'updated'    => 'Last updated',
+    ],
+
+    'new_modal' => [
+        'title'       => 'New process',
+        'field_title' => 'Process name',
+        'placeholder' => 'e.g. Incident triage',
+        'create'      => 'Create',
+        'failed'      => 'Could not create the process.',
     ],
 
     'toolbar' => [
@@ -241,11 +260,11 @@ return [
         // 2. Creating a process
         'creating_heading' => 'Creating a process',
         'creating_intro'   => 'A process is one diagram &mdash; usually a single workflow with a start, a few steps, maybe a decision or two, and an end. Start by creating an empty process from the sidebar, then build it up step by step on the canvas.',
-        'creating_step1'   => '<strong>Click "+ New Process"</strong> &mdash; the button at the top of the left sidebar creates a new, empty process and selects it. You will be prompted for a title; keep it short and recognisable, e.g. "Incident triage" or "New starter onboarding".',
+        'creating_step1'   => '<strong>Click New</strong> &mdash; the button at the top right creates a new, empty process and selects it. You will be prompted for a title; keep it short and recognisable, e.g. "Incident triage" or "New starter onboarding".',
         'creating_step2'   => '<strong>Add the first step</strong> &mdash; click any of the shape buttons in the toolbar (Process, Decision, Terminal, Document) to drop a new step on the canvas. Most processes start with a Terminal labelled "Start" or describing the trigger event.',
         'creating_step3'   => '<strong>Set its label</strong> &mdash; double-click the step to rename it inline, or single-click to open the slide-in detail panel on the right where you can change label, type, description, and colour.',
         'creating_step4'   => '<strong>Build out the rest</strong> &mdash; keep adding steps and connectors until the diagram tells the full story. Use Decision diamonds for any "yes/no" or branching points, and Document shapes for outputs like reports, certificates, or sign-offs.',
-        'creating_step5'   => '<strong>Save</strong> &mdash; press <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span> or click the Save button in the toolbar. The whole process is sent to the server in one go &mdash; steps, connectors, positions, and all.',
+        'creating_step5'   => '<strong>Save</strong> &mdash; press <span class="help-kbd">Ctrl</span>+<span class="help-kbd">S</span> or click the Save button in the toolbar. The whole process is sent to the server in one go &mdash; steps, connectors, positions, and all.',
         'creating_tip'     => 'If you have already imported the demo data, the sidebar comes pre-populated with six worked examples (incident triage, onboarding, change approval, major incident response, asset disposal, and password reset) that you can open and tweak as starting points.',
 
         // 3. Step types
@@ -268,8 +287,8 @@ return [
         'connectors_intro'   => 'Connectors are the arrows between steps. Process Mapper offers a few ways to draw them, plus a rich right-click menu on each step that surfaces the quickest editing shortcuts &mdash; rename, connect, recolour, clipboard &mdash; without leaving the canvas.',
         'connectors_drawing_heading' => 'Drawing arrows',
         'connectors_draw_step1' => '<strong>Drag from an edge handle</strong> &mdash; hover over any step and small handles appear on its top, bottom, left and right edges. Click and drag from a handle to the target step; release to drop the connector. Quickest way for one-off arrows.',
-        'connectors_draw_step2' => '<strong>Use the Connect tool</strong> &mdash; click the Connect button in the toolbar to enter connect mode. Click the source step, then the target step, and a connector is drawn between them. Click Connect again (or press <span class="pm-help-kbd">Esc</span>) to leave the mode.',
-        'connectors_draw_step3' => '<strong>Right-click &rarr; Connect to&hellip;</strong> &mdash; a click-to-connect mode: the cursor turns to a crosshair and a blue prompt appears at the bottom. The next click on any step pairs them up; a click on empty canvas or a lane background, a right-click, or pressing <span class="pm-help-kbd">Esc</span> cancels.',
+        'connectors_draw_step2' => '<strong>Use the Connect tool</strong> &mdash; click the Connect button in the toolbar to enter connect mode. Click the source step, then the target step, and a connector is drawn between them. Click Connect again (or press <span class="help-kbd">Esc</span>) to leave the mode.',
+        'connectors_draw_step3' => '<strong>Right-click &rarr; Connect to&hellip;</strong> &mdash; a click-to-connect mode: the cursor turns to a crosshair and a blue prompt appears at the bottom. The next click on any step pairs them up; a click on empty canvas or a lane background, a right-click, or pressing <span class="help-kbd">Esc</span> cancels.',
         'connectors_draw_step4' => '<strong>Add a label</strong> &mdash; double-click any connector to add or edit a short text label. Useful on Decision branches (Yes / No, Approved / Rejected, P1 / P2 / P3) and any time the meaning of an arrow is not obvious from context. You do not need to pick a specific edge on the target step &mdash; Process Mapper picks the closest edge automatically and re-routes whenever either end moves.',
         'connectors_menu_heading' => 'Right-click menu',
         'connectors_menu_intro'   => 'Right-click any step for a menu grouped into four sections.',
@@ -280,29 +299,29 @@ return [
         'connectors_menu_card3_title' => 'Reverse connection&hellip; · Delete all connections',
         'connectors_menu_card3_body'  => '<em>Reverse connection</em> opens a submenu listing every arrow into or out of the step with the direction arrow + the other end\'s name &mdash; pick one to flip its direction. <em>Delete all connections</em> wipes every arrow incident to the step (with confirm). Both are greyed when the step has no connectors.',
         'connectors_menu_card4_title' => 'Cut · Copy · Paste · Duplicate',
-        'connectors_menu_card4_body'  => '<em>Cut</em> fades the source on the canvas and removes it only when you <em>Paste</em> &mdash; cut+paste behaves like a move. <em>Copy</em> keeps the clipboard live so you can paste repeatedly. Paste drops the new step at the right-click cursor position. <em>Duplicate</em> offsets a copy 40px down-right. <span class="pm-help-kbd">Esc</span> un-cuts a pending source.',
+        'connectors_menu_card4_body'  => '<em>Cut</em> fades the source on the canvas and removes it only when you <em>Paste</em> &mdash; cut+paste behaves like a move. <em>Copy</em> keeps the clipboard live so you can paste repeatedly. Paste drops the new step at the right-click cursor position. <em>Duplicate</em> offsets a copy 40px down-right. <span class="help-kbd">Esc</span> un-cuts a pending source.',
         'connectors_menu_card5_title' => 'Copy formatting · Apply formatting',
         'connectors_menu_card5_body'  => 'Just the &ldquo;paint job&rdquo; &mdash; <em>Copy formatting</em> stashes the right-clicked step\'s colour and gradient. Every other step\'s menu then shows <em>Apply formatting</em>, which paints those values onto the next step you right-click. Position, label, type and size aren\'t copied. Saves a lot of trips to the colour picker.',
         'connectors_menu_card6_title' => 'Delete&hellip;',
-        'connectors_menu_card6_body'  => 'Red-highlighted destructive action at the bottom &mdash; asks for confirmation, then removes the step and every connector attached to it. (For multi-select bulk delete, use the <span class="pm-help-kbd">Delete</span> key instead.)',
+        'connectors_menu_card6_body'  => 'Red-highlighted destructive action at the bottom &mdash; asks for confirmation, then removes the step and every connector attached to it. (For multi-select bulk delete, use the <span class="help-kbd">Delete</span> key instead.)',
         'connectors_tip' => 'Connector routing is recomputed every time you drag a step, so arrows always run to the nearest edges. You never need to redraw an arrow just because you moved a box around.',
 
         // 5. Arranging & editing
         'arranging_heading' => 'Arranging &amp; editing',
         'arranging_intro'   => 'Once the steps are in place, the canvas behaves like any other diagramming tool &mdash; drag, multi-select, nudge, recolour, delete. Everything snaps to the underlying 20-pixel grid so the diagram stays neat without any fiddling.',
         'arranging_step1' => '<strong>Drag to move</strong> &mdash; click and drag any step to reposition it. The step snaps to the dot grid on release. Connected arrows reroute automatically.',
-        'arranging_step2' => '<strong>Multi-select</strong> &mdash; <span class="pm-help-kbd">Ctrl</span>+click toggles individual steps in and out of the selection, or rubber-band by dragging across the canvas. Rubber-band works on the dot-grid background <em>and</em> over lane backgrounds, so it still works on processes that fill the canvas with swimlanes. Press <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">A</span> to select everything. Once a group of steps is selected, drag any one of them and the rest follow.',
+        'arranging_step2' => '<strong>Multi-select</strong> &mdash; <span class="help-kbd">Ctrl</span>+click toggles individual steps in and out of the selection, or rubber-band by dragging across the canvas. Rubber-band works on the dot-grid background <em>and</em> over lane backgrounds, so it still works on processes that fill the canvas with swimlanes. Press <span class="help-kbd">Ctrl</span>+<span class="help-kbd">A</span> to select everything. Once a group of steps is selected, drag any one of them and the rest follow.',
         'arranging_step3' => '<strong>Nudge with arrow keys</strong> &mdash; once steps are selected, use the arrow keys to nudge them one grid square at a time. Handy for fine adjustments after a rough drag.',
         'arranging_step4' => '<strong>The detail panel</strong> &mdash; clicking a single step slides in a panel from the right with everything you can edit: label, type, description, link URL, colour, and exact x/y coordinates. Updates apply instantly as you type. The panel only opens on click-release (not on mousedown), so picking a step up to drag it doesn\'t flash the panel in.',
-        'arranging_step5' => '<strong>Delete</strong> &mdash; press <span class="pm-help-kbd">Delete</span> or <span class="pm-help-kbd">Backspace</span> to remove the current selection. Connectors attached to a deleted step are removed with it.',
-        'arranging_tip'   => 'Inline edit shortcut: double-click any step to rename it without opening the detail panel. Press <span class="pm-help-kbd">Enter</span> to commit or <span class="pm-help-kbd">Esc</span> to cancel.',
+        'arranging_step5' => '<strong>Delete</strong> &mdash; press <span class="help-kbd">Delete</span> or <span class="help-kbd">Backspace</span> to remove the current selection. Connectors attached to a deleted step are removed with it.',
+        'arranging_tip'   => 'Inline edit shortcut: double-click any step to rename it without opening the detail panel. Press <span class="help-kbd">Enter</span> to commit or <span class="help-kbd">Esc</span> to cancel.',
 
         // 6. Saving & loading
         'saving_heading' => 'Saving &amp; loading',
         'saving_intro'   => 'Every process is stored on the server and accessible from the sidebar. Saving is a single round-trip that captures the whole diagram &mdash; steps, connectors, positions and labels &mdash; in one transaction.',
-        'saving_step1' => '<strong>Save the current process</strong> &mdash; click the Save button in the toolbar or press <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span>. The process reloads from the server after saving so any IDs assigned by the database are reflected in the canvas.',
-        'saving_step2' => '<strong>Switch processes</strong> &mdash; click any item in the sidebar to load it into the canvas. Use the search box at the top of the sidebar to filter the list when you have lots of processes.',
-        'saving_step3' => '<strong>Bookmarkable URLs</strong> &mdash; the address bar updates to <span class="pm-help-kbd">process-mapper/?id=N</span> whenever you open a process, so each diagram has a URL you can share or bookmark. Pasting a deep-link straight into the browser jumps to that diagram. The browser <strong>back / forward</strong> buttons navigate between processes you\'ve opened in the current session.',
+        'saving_step1' => '<strong>Save the current process</strong> &mdash; click the Save button in the toolbar or press <span class="help-kbd">Ctrl</span>+<span class="help-kbd">S</span>. The process reloads from the server after saving so any IDs assigned by the database are reflected in the canvas.',
+        'saving_step2' => '<strong>Switch processes</strong> &mdash; click any item in the sidebar to load it into the canvas. From the keyboard, press <span class="help-kbd">/</span> or <span class="help-kbd">Alt</span>+<span class="help-kbd">Shift</span>+<span class="help-kbd">O</span> anywhere on the page to jump to the search box (Alt+Shift+O works even while you are typing in a box), then <span class="help-kbd">&darr;</span> into the list, <span class="help-kbd">&uarr;</span> <span class="help-kbd">&darr;</span> to move and <span class="help-kbd">Enter</span> to open; <span class="help-kbd">Esc</span> takes you back to where you were. <span class="help-kbd">Tab</span> also moves from one process to the next, and <span class="help-kbd">Delete</span> on a row deletes that process (after asking). Rest the pointer on an item (or move to it with the keyboard) to see a preview with its full name, description, how many steps and lanes it has, who created it and when it was last updated &mdash; handy when two names start the same way. The open process\'s full name is shown at the top of the page, next to <strong>Processes</strong>. Use the search box at the top of the sidebar to filter the list when you have lots of processes.',
+        'saving_step3' => '<strong>Bookmarkable URLs</strong> &mdash; the address bar updates to <span class="help-kbd">process-mapper/?id=N</span> whenever you open a process, so each diagram has a URL you can share or bookmark. Pasting a deep-link straight into the browser jumps to that diagram. The browser <strong>back / forward</strong> buttons navigate between processes you\'ve opened in the current session.',
         'saving_step4' => '<strong>Delete a process</strong> &mdash; hover over a process in the sidebar and click the &times; that appears. You will be asked to confirm; the process and all its steps and connectors are removed permanently.',
         'saving_tip'   => 'Save replaces all the steps and connectors for a process in one transaction, so the database always matches what is on screen. There is no partial-save state to worry about.',
 
@@ -324,6 +343,6 @@ return [
         'tip1' => '<strong>Use shapes consistently</strong><br>Reserve diamonds for actual decisions, ovals for entry/exit points, and documents for tangible artefacts. Mixing shapes makes diagrams harder to scan.',
         'tip2' => '<strong>Label every Decision branch</strong><br>An unlabelled diamond with two outgoing arrows leaves the reader guessing. "Yes / No", "Approved / Rejected", "P1 / P2-3 / P4-5" &mdash; spell it out.',
         'tip3' => '<strong>Left-to-right flows scan best</strong><br>People read left-to-right, top-to-bottom. Lay out the happy path along a horizontal axis and branch decisions vertically &mdash; the demo data follows this convention.',
-        'tip4' => '<strong>Turn on autosave</strong><br>The toolbar has an autosave toggle that debounces a save ~2 seconds after the last edit, with a live status pip beside it. If you prefer manual saves the shortcut is <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span>.',
+        'tip4' => '<strong>Turn on autosave</strong><br>The toolbar has an autosave toggle that debounces a save ~2 seconds after the last edit, with a live status pip beside it. If you prefer manual saves the shortcut is <span class="help-kbd">Ctrl</span>+<span class="help-kbd">S</span>.',
     ],
 ];

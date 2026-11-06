@@ -6,6 +6,9 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
+require_once '../../includes/knowledge/visibility.php';
+require_once '../../includes/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -14,19 +17,29 @@ if (!isset($_SESSION['analyst_id'])) {
     exit;
 }
 
+// Settings-only: reached from the Embeddings tab and nowhere else. It had no module
+// check at all — any logged-in analyst could enumerate the knowledge base this way.
+requireModuleAccessJson('knowledge');
+requireCapabilityJson(Cap::KNOWLEDGE_EMBEDDINGS);
+
 try {
     $conn = connectToDatabase();
 
+    // Must agree with get_articles_for_embedding.php, which is scoped — otherwise
+    // the progress bar counts articles the backfill will never offer, and the
+    // totals leak how many articles other companies have.
+    [$tenantSql, $tenantParams] = knowledgeVisibilitySql($conn, KnowledgeViewer::forAnalyst($conn, (int)$_SESSION["analyst_id"]), "", ["lifecycle" => "live"]);
+
     // Get total published articles
-    $totalSql = "SELECT COUNT(*) as total FROM knowledge_articles WHERE is_published = 1 AND (is_archived = 0 OR is_archived IS NULL)";
+    $totalSql = "SELECT COUNT(*) as total FROM knowledge_articles WHERE 1=1" . $tenantSql;
     $totalStmt = $conn->prepare($totalSql);
-    $totalStmt->execute();
+    $totalStmt->execute($tenantParams);
     $total = $totalStmt->fetch(PDO::FETCH_ASSOC)['total'];
 
     // Get articles with embeddings
-    $withSql = "SELECT COUNT(*) as count FROM knowledge_articles WHERE is_published = 1 AND (is_archived = 0 OR is_archived IS NULL) AND embedding IS NOT NULL AND LENGTH(embedding) > 0";
+    $withSql = "SELECT COUNT(*) as count FROM knowledge_articles WHERE embedding IS NOT NULL AND LENGTH(embedding) > 0" . $tenantSql;
     $withStmt = $conn->prepare($withSql);
-    $withStmt->execute();
+    $withStmt->execute($tenantParams);
     $withEmbeddings = $withStmt->fetch(PDO::FETCH_ASSOC)['count'];
 
     echo json_encode([

@@ -14,6 +14,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('knowledge');
 
 try {
     $conn = connectToDatabase();
@@ -32,6 +33,19 @@ try {
         // Method needs to be returned as email_method to match JavaScript expectations
         if ($key === 'method') {
             $key = 'email_method';
+        }
+        // ⚠️ Never hand a secret back to the browser. This returned the SMTP password
+        // verbatim — plaintext before the wider secret rule, ciphertext after it, and
+        // wrong either way: one leaked the password into a settings screen, the other
+        // showed the administrator "ENC:…" and invited them to save it back. Masked
+        // here, and save_email_settings.php ignores the mask when it comes back.
+        if (isEncryptedSettingKey($row['setting_key'])) {
+            try {
+                $settings[$key] = maskSecret(decryptValue($row['setting_value']));
+            } catch (Exception $e) {
+                $settings[$key] = '';
+            }
+            continue;
         }
         $settings[$key] = $row['setting_value'];
     }

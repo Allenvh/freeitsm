@@ -1,0 +1,22 @@
+# PHP extensions the official image must have (GH #207).
+#
+# The base image (php:8.4-apache) ships only the extensions PHP builds in by
+# default - curl, mbstring, openssl, sodium, dom, simplexml, fileinfo and the
+# rest. Anything FreeITSM needs beyond those is listed here. The Dockerfile
+# installs every one, then REFUSES TO FINISH THE BUILD if any of them does not
+# load, so a broken image can never be published.
+#
+# tests/docker-php-extensions.php checks the other direction: every extension the
+# code calls is either in this list or under "not in the image" below, with the
+# reason. Add a feature that needs a new extension and that test fails until the
+# image has it.
+#
+# One extension per line; # starts a comment.
+
+pdo_mysql   # the database
+ldap        # LDAP / Active Directory sign-in and directory sync
+zip         # LMS SCORM course upload, RFP Builder .docx text, document search in .docx/.xlsx
+intl        # Domains: international domain names (xn--)
+
+# Fork requirement: generic IMAP intake must also work in Podman/Docker.
+imap        # PECL 1.0.3 with TLS and Kerberos, built on Debian bookworm

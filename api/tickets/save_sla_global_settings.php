@@ -12,12 +12,20 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
+// GH #217: refused while the sla feature is switched off for the install.
+requireModuleOnJson(connectToDatabase(), 'sla');
+requireCapabilityJson(Cap::TICKETS_SLA);   // settings tab — see docs/design/rbac.md
 
 try {
     $data = json_decode(file_get_contents('php://input'), true);
@@ -65,8 +73,8 @@ try {
 
     $conn = connectToDatabase();
     $upsert = $conn->prepare("INSERT INTO system_settings (setting_key, setting_value, updated_datetime)
-                              VALUES (?, ?, NOW())
-                              ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_datetime = NOW()");
+                              VALUES (?, ?, UTC_TIMESTAMP())
+                              ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_datetime = UTC_TIMESTAMP()");
 
     foreach ($values as $key => $val) {
         $upsert->execute([$key, $val]);

@@ -6,7 +6,12 @@ session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('process-mapper');
 
 $current_page = 'process-mapper';
 $path_prefix = '../';
@@ -42,27 +47,35 @@ try {
 }
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active('process-mapper')); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode('process-mapper')); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('process-mapper.title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/process-mapper.css?v=10">
+    <title><?php echo htmlspecialchars(pageTitle('process-mapper')); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/process-mapper.css?v=13">
+    <link rel="stylesheet" href="../assets/css/hover-preview.css?v=1">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <!-- Mobile layer: linked AFTER this page's own CSS so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="process-mapper">
     <?php include 'includes/header.php'; ?>
+    <?php /* The action row (#185): New moved here from the top of the process list. */ ?>
+    <?php require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('process-mapper.nav.processes'), [actionRowNew('PM.createProcess()', t('process-mapper.sidebar.new_process_tip'))], ['accent' => 'pmap', 'title_id' => 'pmTitle']); ?>
 
     <div class="pm-layout">
         <!-- Sidebar: process list -->
         <div class="pm-sidebar" id="pmSidebar">
-            <div class="pm-sidebar-header">
-                <button class="btn btn-primary btn-full" onclick="PM.createProcess()"><?php echo htmlspecialchars(t('process-mapper.sidebar.new_process')); ?></button>
-            </div>
             <div class="pm-sidebar-search">
-                <input type="text" id="processSearch" placeholder="<?php echo htmlspecialchars(t('process-mapper.sidebar.search_placeholder')); ?>" oninput="PM.filterProcesses(this.value)">
+                <input type="text" id="processSearch" aria-keyshortcuts="/ Alt+Shift+O" placeholder="<?php echo htmlspecialchars(t('process-mapper.sidebar.search_placeholder')); ?>" oninput="PM.filterProcesses(this.value)">
+                <kbd class="pm-search-key" aria-hidden="true" title="<?php echo htmlspecialchars(t('process-mapper.sidebar.search_key_tip')); ?>">/</kbd>
             </div>
             <div class="pm-process-list" id="processList">
                 <div class="pm-empty"><?php echo htmlspecialchars(t('process-mapper.sidebar.no_processes_yet')); ?></div>
@@ -103,6 +116,13 @@ try {
                     <button class="pm-tool-btn" onclick="PM.deleteSelected()" title="<?php echo htmlspecialchars(t('common.delete')); ?> (Del)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
+                    <?php /* Documents attached to the PROCESS itself — not to a
+                             step. Its own slide-in, because the step detail panel
+                             belongs to whatever is selected and these belong to
+                             the process either way. */ ?>
+                    <button class="pm-tool-btn" onclick="PM.toggleProcessDocs()" title="<?php echo htmlspecialchars(t('common.documents.heading')); ?>">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    </button>
                     <div class="pm-tool-sep"></div>
                     <span class="pm-status" id="pmStatus" aria-live="polite"></span>
                     <label class="pm-autosave-toggle" title="<?php echo htmlspecialchars(t('process-mapper.autosave.tooltip')); ?>">
@@ -124,6 +144,18 @@ try {
                 <div class="pm-canvas-empty" id="canvasEmpty">
                     <p>Select a process from the sidebar or create a new one</p>
                 </div>
+            </div>
+        </div>
+
+        <!-- Documents attached to the process (discussion #76). Reuses the detail
+             panel's slide-in styling so it behaves like the rest of the module. -->
+        <div class="pm-detail-panel" id="processDocsPanel">
+            <div class="pm-detail-header">
+                <h3><?php echo htmlspecialchars(t('common.documents.heading')); ?></h3>
+                <button class="pm-detail-close" onclick="PM.closeProcessDocs()">&times;</button>
+            </div>
+            <div class="pm-detail-body">
+                <div id="processDocuments"></div>
             </div>
         </div>
 
@@ -371,6 +403,33 @@ try {
         </div>
     </div>
 
+    <!-- New process. Was a browser prompt(), which names the host, blocks the
+         page and cannot be styled or translated. Built on the same
+         .pm-modal shell as the export dialog below, so the two dialogs on this
+         page are the same object, and on the same .form-group / .btn classes
+         every settings screen already uses for its Add dialog. -->
+    <div class="pm-modal-overlay" id="newProcessModal" style="display: none;" onclick="if (event.target === this) PM.closeNewProcess()">
+        <div class="pm-modal" style="max-width: 460px;">
+            <div class="pm-modal-header">
+                <h3><?php echo htmlspecialchars(t('process-mapper.new_modal.title')); ?></h3>
+                <button class="pm-modal-close" onclick="PM.closeNewProcess()" title="<?php echo htmlspecialchars(t('common.close')); ?>">&times;</button>
+            </div>
+            <form id="newProcessForm" autocomplete="off" onsubmit="event.preventDefault(); PM.submitNewProcess();">
+                <div class="pm-modal-body">
+                    <div class="form-group">
+                        <label for="newProcessTitle"><?php echo htmlspecialchars(t('process-mapper.new_modal.field_title')); ?></label>
+                        <input type="text" id="newProcessTitle" maxlength="255" autocomplete="off" required
+                               placeholder="<?php echo htmlspecialchars(t('process-mapper.new_modal.placeholder')); ?>">
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="PM.closeNewProcess()"><?php echo htmlspecialchars(t('common.cancel')); ?></button>
+                        <button type="submit" class="btn btn-primary" id="newProcessSubmit"><?php echo htmlspecialchars(t('process-mapper.new_modal.create')); ?></button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast -->
     <!-- Export modal — three formats: PNG image, PDF document, Mermaid markup -->
     <div class="pm-modal-overlay" id="exportModal" style="display: none;" onclick="if (event.target === this) PM.closeExportModal()">
@@ -448,7 +507,9 @@ try {
     <!-- Vendored locally so PNG/PDF export works offline and doesn't depend on a
          CDN at print time. Same versions used by Network Mapper (#257). -->
     <script src="../assets/js/vendor/html2canvas.min.js"></script>
-    <script src="../assets/js/vendor/jspdf.umd.min.js"></script>
-    <script src="../assets/js/process-mapper.js?v=10"></script>
+    <script src="../assets/js/vendor/jspdf.umd.min.js?v=4.2.1"></script>
+    <script src="../assets/js/hover-preview.js?v=1"></script>
+    <script src="../assets/js/process-mapper.js?v=20"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

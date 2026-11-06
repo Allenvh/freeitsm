@@ -19,6 +19,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+// A GET that writes (an EventSource stream that regenerates and saves): it must
+// carry the session's CSRF token, which assets/js/csrf.js adds to EventSource URLs.
+// Without this a plain link could start AI generation and overwrite the section. (S4)
+csrfRequireToken();
 require_once '../../includes/rfp_ai.php';
 
 // Disable output buffering at every level so SSE events flush immediately.
@@ -37,6 +41,9 @@ set_time_limit(0);
 
 /**
  * Send one SSE event to the browser. Always flushes.
+ *
+ * @param string $event  the event name the browser listens for: 'phase', 'complete' or 'error'
+ * @param array $data  the payload, sent as one JSON line
  */
 function sse(string $event, array $data): void
 {
@@ -47,6 +54,21 @@ function sse(string $event, array $data): void
 
 if (!isset($_SESSION['analyst_id'])) {
     sse('error', ['error' => 'Not authenticated']);
+    exit;
+}
+
+// The RFP Builder is part of the Contracts module. These are STREAMING (SSE)
+// endpoints, so the refusal has to go down the stream as an SSE error event —
+// requireModuleAccessJson() would emit JSON and corrupt it. (Found by D005.)
+if (!analystCanAccessModule(connectToDatabase(), (int) $_SESSION['analyst_id'], 'contracts')) {
+    sse('error', ['error' => 'You do not have access to the Contracts module']);
+    exit;
+}
+// The RFP's company (3.5.0): one this analyst cannot reach is "not found" - as an event,
+// since rfpGate()'s JSON would corrupt the stream.
+require_once '../../includes/rfp_scope.php';
+if (isset($_GET['rfp_id']) && $_GET['rfp_id'] !== '' && !rfpCanView(connectToDatabase(), (int)$_SESSION['analyst_id'], (int)$_GET['rfp_id'])) {
+    sse('error', ['error' => 'RFP not found']);
     exit;
 }
 

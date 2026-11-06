@@ -7,9 +7,22 @@ $path_prefix = $path_prefix ?? '../';
 $current_module = 'system';
 $module_title = function_exists('t') ? t('system.title') : 'System';
 
+// Guarantee the admin helper is available for the gate below, regardless of what
+// the including page has loaded.
+require_once $path_prefix . 'includes/functions.php';
+
 // Ensure user is logged in
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
+    exit;
+}
+
+// The System module is administrators-only — EXCEPT per-user Preferences, which
+// every analyst manages for themselves. Non-admins are bounced to the landing.
+// (Hard enforcement still lives on each System API via requireAdminJson(); this
+// page gate is the UX layer so non-admins never see the admin screens.)
+if (($current_page ?? '') !== 'preferences' && !sessionIsAdmin()) {
+    header('Location: ' . BASE_URL);
     exit;
 }
 
@@ -32,3 +45,28 @@ require_once $path_prefix . 'includes/waffle-menu.php';
 </div>
 
 <?php renderWaffleMenuJS(); ?>
+<?php /* Arriving from a System search result - system/branding/#system-name
+         (#2293). Bring the setting into view below the header and flash its card
+         so the eye lands on it. Every System page includes this header, so the
+         ids added to their headings work without each page doing anything. */ ?>
+<style>
+    .system-setting-flash { animation: systemSettingFlash 2.4s ease-out; border-radius: 10px; }
+    @keyframes systemSettingFlash {
+        0%, 35% { box-shadow: 0 0 0 3px var(--sys-accent, #546e7a); }
+        100%    { box-shadow: 0 0 0 3px transparent; }
+    }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var id = decodeURIComponent((location.hash || '').slice(1));
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (!el || !/^H[23]$/.test(el.tagName)) return;
+    var box = el.closest('.settings-card, .card, .settings-section, section') || el;
+    setTimeout(function () {
+        box.style.scrollMarginTop = '74px';   // clear of the header
+        box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        box.classList.add('system-setting-flash');
+    }, 60);
+});
+</script>

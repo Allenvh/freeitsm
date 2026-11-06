@@ -11,35 +11,45 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once __DIR__ . '/../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+requireModuleAccess('contracts');
 
 $current_page = 'rfp-builder';
 $path_prefix  = '../../';
 $translationNamespaces = ['common', 'contracts'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('contracts.rfp.audit.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('contracts', t('contracts.nav.rfp_builder'), t('contracts.rfp.audit.page_title'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
-        .page-wrap { padding: 30px 40px; background: #f5f5f5; height: calc(100vh - 48px); overflow-y: auto; box-sizing: border-box; }
+        body { --accent: var(--con-accent, #f59e0b); }
+        .page-wrap { padding: 30px 40px; background: var(--app-bg, #f5f5f5); height: calc(100vh - 48px); overflow-y: auto; box-sizing: border-box; }
 
-        .breadcrumb { font-size: 13px; color: #888; margin-bottom: 8px; }
-        .breadcrumb a { color: #666; text-decoration: none; }
-        .breadcrumb a:hover { color: #f59e0b; }
-        .breadcrumb span.sep { margin: 0 6px; color: #ccc; }
+        .breadcrumb { font-size: 13px; color: var(--text-dim, #888); margin-bottom: 8px; }
+        .breadcrumb a { color: var(--text-muted, #666); text-decoration: none; }
+        .breadcrumb a:hover { color: var(--con-accent, #f59e0b); }
+        .breadcrumb span.sep { margin: 0 6px; color: var(--text-faint, #ccc); }
 
         .page-header {
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 20px;
         }
-        .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; color: #222; }
+        .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--text, #222); }
         .page-actions { display: flex; gap: 8px; }
 
         .btn {
@@ -48,17 +58,17 @@ $translationNamespaces = ['common', 'contracts'];
             text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
             transition: all 0.15s; font-family: inherit;
         }
-        .btn-secondary { background: white; color: #333; border-color: #ddd; }
-        .btn-secondary:hover { background: #f5f5f5; }
+        .btn-secondary { background: var(--surface, #fff); color: var(--text, #333); border-color: var(--border, #ddd); }
+        .btn-secondary:hover { background: var(--surface-hover, #f5f5f5); }
 
         .stats-strip {
             display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px;
             margin-bottom: 18px;
         }
         .stat-card {
-            background: white; border-radius: 8px; padding: 12px 14px;
+            background: var(--surface, #fff); border-radius: 8px; padding: 12px 14px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            border-left: 4px solid #ddd;
+            border-left: 4px solid var(--border, #ddd);
         }
         .stat-card.runs   { border-left-color: #6b7280; }
         .stat-card.ok     { border-left-color: #10b981; }
@@ -66,36 +76,36 @@ $translationNamespaces = ['common', 'contracts'];
         .stat-card.tin    { border-left-color: #3b82f6; }
         .stat-card.tout   { border-left-color: #8b5cf6; }
         .stat-card.cache  { border-left-color: #f59e0b; }
-        .stat-card .stat-value { font-size: 18px; font-weight: 700; color: #222; line-height: 1; font-variant-numeric: tabular-nums; }
-        .stat-card .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 5px; }
+        .stat-card .stat-value { font-size: 18px; font-weight: 700; color: var(--text, #222); line-height: 1; font-variant-numeric: tabular-nums; }
+        .stat-card .stat-label { font-size: 11px; color: var(--text-dim, #888); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 5px; }
 
         .filter-card {
-            background: white; border-radius: 10px; padding: 12px 18px;
+            background: var(--surface, #fff); border-radius: 10px; padding: 12px 18px;
             margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
             display: flex; gap: 14px; align-items: end; flex-wrap: wrap;
         }
         .filter-card .field { display: flex; flex-direction: column; }
         .filter-card label {
-            font-size: 11px; font-weight: 600; color: #555;
+            font-size: 11px; font-weight: 600; color: var(--text-muted, #555);
             margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px;
         }
         .filter-card select, .filter-card input[type="text"] {
             padding: 6px 10px; font-size: 13px;
-            border: 1px solid #d1d5db; border-radius: 5px;
+            border: 1px solid var(--border, #d1d5db); border-radius: 5px;
             font-family: inherit; min-width: 160px;
         }
         .filter-card .clear-link {
-            font-size: 13px; color: #888; cursor: pointer;
+            font-size: 13px; color: var(--text-dim, #888); cursor: pointer;
             padding: 8px 0;
         }
-        .filter-card .clear-link:hover { color: #f59e0b; }
+        .filter-card .clear-link:hover { color: var(--con-accent, #f59e0b); }
         .filter-card .row-count {
-            font-size: 12px; color: #666;
+            font-size: 12px; color: var(--text-muted, #666);
             margin-left: auto;
         }
 
         .audit-card {
-            background: white; border-radius: 10px;
+            background: var(--surface, #fff); border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;
         }
         .audit-table {
@@ -103,18 +113,18 @@ $translationNamespaces = ['common', 'contracts'];
         }
         .audit-table thead th {
             text-align: left; padding: 10px 14px; font-weight: 600;
-            color: #888; border-bottom: 1px solid #eee;
+            color: var(--text-dim, #888); border-bottom: 1px solid var(--border-soft, #eee);
             text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;
-            background: #fafbfc;
+            background: var(--surface-2, #fafbfc);
             position: sticky; top: 0;
         }
         .audit-table tbody td {
-            padding: 9px 14px; border-bottom: 1px solid #f5f5f5;
-            color: #333; vertical-align: top;
+            padding: 9px 14px; border-bottom: 1px solid var(--border-soft, #f5f5f5);
+            color: var(--text, #333); vertical-align: top;
         }
         .audit-table tbody tr:last-child td { border-bottom: none; }
         .audit-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-        .audit-table .target em { color: #999; font-style: normal; }
+        .audit-table .target em { color: var(--text-dim, #999); font-style: normal; }
         .audit-table .err {
             color: #b91c1c; font-size: 12px; margin-top: 3px;
             white-space: normal; overflow-wrap: anywhere;
@@ -127,15 +137,17 @@ $translationNamespaces = ['common', 'contracts'];
         .status-pill.error   { background: #fee2e2; color: #991b1b; }
         .action-pill {
             display: inline-block; padding: 2px 8px; border-radius: 10px;
-            background: #e5e7eb; color: #374151;
+            background: var(--surface-3, #e5e7eb); color: var(--text-muted, #374151);
             font-size: 11px; font-weight: 500;
         }
         .empty-state {
-            padding: 40px; text-align: center; color: #999; font-size: 13px;
+            padding: 40px; text-align: center; color: var(--text-dim, #999); font-size: 13px;
         }
     </style>
+    <!-- Mobile layer: linked AFTER this page's own <style> so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="contracts">
     <?php include '../includes/header.php'; ?>
 
     <div class="page-wrap">
@@ -365,9 +377,9 @@ $translationNamespaces = ['common', 'contracts'];
         }
         function formatDateTime(s) {
             if (!s) return '—';
-            const d = new Date(s.replace(' ', 'T'));
+            const d = parseUTCDate(s);
             if (isNaN(d)) return s;
-            return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return fmtDateTime(d);
         }
         function showError(html) {
             document.getElementById('loadingEl').style.display = 'none';
@@ -382,5 +394,6 @@ $translationNamespaces = ['common', 'contracts'];
                 .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ $current_module = 'problems';
 $module_title = 'Problem Management';
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
@@ -16,7 +16,7 @@ $current_page = $current_page ?? '';
 
 require_once __DIR__ . '/../../includes/waffle-menu.php';
 ?>
-<div class="header">
+<div class="header problems-header">
     <div class="waffle-menu-container">
         <?php renderWaffleMenuButton(); ?>
         <?php renderWaffleMenuPanel($modules, $current_module, $path_prefix); ?>

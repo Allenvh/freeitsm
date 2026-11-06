@@ -1,0 +1,1141 @@
+/**
+ * Self-service portal — the shared chrome.
+ *
+ * Until now every portal page carried its own copy of the header, nav, cards,
+ * badges and table CSS inline: ~926 lines across four pages, with the nav block
+ * duplicated verbatim four times. Adding a page meant a fifth copy. This is that
+ * CSS, once.
+ *
+ * Everything is expressed in THEME TOKENS (assets/css/theme.css), so the portal
+ * now follows light/dark like every analyst module. The tokens it leans on —
+ * --ss-accent, --ss-accent-hover, --ss-accent-soft, --ss-on-accent — already
+ * existed in theme.css for both schemes; the portal simply never used them.
+ *
+ * ⚠️ Every var() below must exist in theme.css. A missing token doesn't error,
+ * it silently falls back to the second argument — so a typo looks "fine" and
+ * quietly ignores dark mode. Each var() here carries a sensible light-mode
+ * fallback deliberately, but that is a safety net, not the design.
+ */
+
+/* inbox.css sets a fixed app-shell height; the portal is a normal scrolling page. */
+body {
+    overflow: auto;
+    height: auto;
+    background: var(--app-bg, #f5f5f5);
+    color: var(--text, #333);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+/* Matches the analyst modules: a 135° brand gradient, .nav-btn pills, and the
+ * same translucent-black wash in dark mode. The modules get all of this from
+ * waffle-menu.php's emitted <style> block — which the portal deliberately does
+ * not include (no waffle for customers) — so the equivalent rules live here. */
+.portal-header {
+    /* --ss-header-bg is set on <body> only when an administrator has chosen a
+       header colour (System → Self-service portal). Unset, this is exactly the
+       gradient it always was. */
+    background: var(--ss-header-bg, linear-gradient(135deg, var(--ss-accent, #0078d4), var(--ss-accent-hover, #005a9e)));
+    color: var(--ss-on-accent, #fff);
+    padding: 0 20px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+/* The dark wash. Same rule the modules use (waffle-menu.php): an inset shadow
+ * big enough to cover the bar, so it reads as dark while keeping a hint of the
+ * brand colour underneath. Nav content sits above it and stays crisp. */
+[data-theme="dark"] .portal-header {
+    box-shadow: inset 0 0 0 2000px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+.portal-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ss-on-accent, #fff);
+}
+/* The logo is a dark-on-transparent PNG; force it white against the accent bar. */
+/* The BUNDLED mark is a single-colour logo drawn to sit on a coloured header,
+   so it is forced to white. An UPLOADED logo is not: keeping your own colours
+   is the entire reason for uploading one, and brightness(0) invert(1) flattens
+   any artwork to a white silhouette. */
+.portal-brand img { height: 28px; filter: brightness(0) invert(1); }
+.portal-brand.has-custom-logo img { filter: none; }
+
+/* The logo across the top of the PAGE rather than in the bar.
+   Never filtered: it is only ever a logo somebody uploaded, and it sits on the
+   page background rather than the coloured header, so it needs no help to read.
+   Height-capped so a tall image cannot push the whole page down. */
+.portal-page-logo {
+    padding: 20px 24px 0;
+    display: flex;
+    align-items: center;
+    /* A FIXED height (padding + the image cap), not whatever the image comes
+       to, so --ss-chrome below can be exact. */
+    height: 76px;
+    box-sizing: border-box;
+}
+.portal-page-logo img {
+    max-height: 56px;
+    max-width: 260px;
+    filter: none;
+}
+@media (max-width: 640px) {
+    .portal-page-logo { padding: 14px 16px 0; height: 54px; }
+    .portal-page-logo img { max-height: 40px; max-width: 180px; }
+}
+
+/* Everything above .portal-layout: the 48px bar, plus the logo band when the
+   logo is on the page. The app-shell pages size themselves as
+   `calc(100vh - var(--ss-chrome))` - one number, so a page cannot forget the
+   band again (it did: New Ticket, My Tickets and the course player all
+   subtracted 48px and lost their bottom edge to a scroll-locked shell). */
+body { --ss-chrome: 48px; }
+body.ss-page-logo { --ss-chrome: 124px; }            /* 48 + 76 */
+@media (max-width: 640px) {
+    body.ss-page-logo { --ss-chrome: 102px; }        /* 48 + 54 */
+}
+
+/* The nav uses inbox.css's shared .nav-btn (the portal already loads that
+ * stylesheet), so the buttons are literally the same component the modules use —
+ * the rgba(255,255,255,.1/.2/.25) ladder, the 1px translucent border and the
+ * scale(.97) press. Only the layout is set here. */
+.portal-nav { display: flex; align-items: center; gap: 8px; margin-left: 40px; }
+.portal-nav .nav-btn { min-width: 104px; justify-content: center; }
+.portal-user { display: flex; align-items: center; position: relative; }
+/* The right-hand group: notification bell (includes/notification_bell.php),
+   the phone menu button and the account menu, together - so the bar stays
+   brand | nav | this, and the nav stays centred. */
+.portal-right { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.portal-right .nb-wrap { margin-right: 6px; }
+/* Phone-only control; the @media block near the bottom of this file reveals it. */
+.ss-nav-btn, .ss-nav-overlay { display: none; }
+
+/* ── App-shell pages ────────────────────────────────────────────────────── */
+/* Most portal pages scroll normally (the body override above undoes inbox.css's
+ * app-shell rules). My Tickets is the exception: it wants the analyst-inbox
+ * behaviour back — the window fixed, each pane scrolling itself — so it opts in
+ * with this class rather than every page paying for it. */
+body.portal-app { height: 100vh; overflow: hidden; }
+body.portal-app .portal-layout { padding: 0; max-width: none; margin: 0; }
+
+/* ── Brand the shared primitives ────────────────────────────────────────── */
+/* inbox.css's .btn-primary, .form-input focus ring, .icon-btn etc. all key off
+ * the GENERIC accent tokens. Pointing those at the portal's own accent inside
+ * the content area means every shared component comes out portal-green for
+ * free, exactly as each module does it (`body { --accent: var(--wf-accent) }`).
+ *
+ * Scoped to .portal-layout, NOT body, on purpose: the header's .nav-btn uses
+ * --on-accent for its hover/active ink, and it sits on the dark-washed brand
+ * bar where that ink must stay white. */
+.portal-layout {
+    --accent:        var(--ss-accent, #10b981);
+    --accent-hover:  var(--ss-accent-hover, #059669);
+    --accent-soft:   var(--ss-accent-soft, #d1fae5);
+    --on-accent:     var(--ss-on-accent, #fff);
+}
+/* ⚠️ In dark, --ss-accent is a LIGHT green (#34d399) and --ss-on-accent is
+ * white — around 1.9:1, unreadable on a filled button. The header gets away
+ * with white because the black wash sits over the gradient; a button has no
+ * wash, so it needs dark ink. Same trap System's help page documents. */
+[data-theme="dark"] .portal-layout { --on-accent: #04241a; }
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+/* FULL WIDTH, edge to edge — the portal used to cap at 1200px and centre.
+ * ⚠️ `max-width: none` alone is NOT enough here: inbox.css puts a
+ * `margin: … auto` on shared containers, and that auto-margin silently cancels
+ * the stretch. Both must be reset, which is why `margin: 0` is explicit.
+ * Verify with a screenshot, not by reading the CSS — this one looks right and
+ * isn't. */
+.portal-layout {
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 28px 32px;
+    box-sizing: border-box;
+}
+
+.welcome-section { margin-bottom: 24px; }
+.welcome-section h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text, #333);
+    margin: 0 0 4px;
+}
+.welcome-section p { color: var(--text-muted, #888); font-size: 14px; margin: 0; }
+
+.portal-grid {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 24px;
+    align-items: start;
+    /* ⚠️ `gap` spaces the columns from EACH OTHER and does nothing below the
+       grid, so Popular articles sat flush against the bottom of the System
+       Status panel with the two borders touching. 22px is this page's rhythm for
+       stacked blocks — the summary cards, Your requests and the training panel
+       all use it — rather than the 24px gap beside, which is a different
+       measurement doing a different job. Spotted by Ed. */
+    margin-bottom: 22px;
+}
+
+.portal-section {
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.section-header h2 { font-size: 15px; font-weight: 600; color: var(--text, #333); margin: 0; }
+.section-header a {
+    font-size: 12px;
+    color: var(--ss-accent, #0078d4);
+    text-decoration: none;
+    font-weight: 500;
+}
+.section-header a:hover { text-decoration: underline; }
+
+/* ── Screen recording modal ─────────────────────────────────────────────── */
+/* Shared by the compose screen and the reply composer — see
+ * self-service/includes/record-modal.php and assets/js/screen-recorder.js.
+ * Its own surface, so the video preview has room and opening it doesn't shove
+ * the rest of the form around. */
+.rec-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+.rec-modal.active { display: flex; }
+.rec-modal-box {
+    background: var(--surface, #fff);
+    border-radius: 10px;
+    width: 92%;
+    max-width: 640px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.rec-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.rec-modal-head h2 { font-size: 15px; font-weight: 600; margin: 0; color: var(--text, #333); }
+.rec-modal-x {
+    border: none; background: none; cursor: pointer;
+    font-size: 22px; line-height: 1; padding: 0 4px;
+    color: var(--text-muted, #777);
+}
+.rec-modal-x:hover { color: var(--text, #333); }
+.rec-modal-body { padding: 16px 18px; overflow-y: auto; }
+.rec-modal-foot {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--border, #e5e7eb);
+}
+.rec-modal-foot .btn-cancel { margin-left: auto; }
+.rec-modal .mic-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-muted, #555);
+    margin-bottom: 12px;
+}
+.rec-modal video {
+    width: 100%;
+    max-height: 360px;
+    background: #000;
+    border-radius: 4px;
+    margin-top: 10px;
+}
+.rec-modal-foot button {
+    padding: 8px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.btn-rec-start { background: #dc2626; color: white; }
+.btn-rec-start:hover { background: #b91c1c; }
+.btn-rec-stop { background: #1f2937; color: white; }
+.btn-rec-stop:hover { background: #111827; }
+.btn-rec-use { background: var(--ss-accent, #0078d4); color: white; }
+.btn-rec-use:hover { background: var(--ss-accent-hover, #005a9e); }
+.btn-rec-discard { background: var(--surface-hover, #f3f4f6); color: var(--text, #333); border-color: var(--border, #ddd); }
+.btn-rec-discard:hover { background: var(--surface-hover, #e5e7eb); }
+.rec-status {
+    font-size: 13px;
+    color: var(--text-muted, #555);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.rec-status.recording { color: var(--danger-text, #dc2626); font-weight: 600; }
+.rec-status .pulse {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #dc2626;
+    animation: rec-pulse 1.2s infinite;
+}
+@keyframes rec-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* ── Recording playback in a ticket thread ──────────────────────────────── */
+.tk-recording {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 6px;
+    background: var(--surface-2, #fafafa);
+}
+.tk-recording video {
+    width: 100%;
+    max-height: 320px;
+    background: #000;
+    border-radius: 4px;
+    display: block;
+}
+.tk-recording-meta {
+    font-size: 12px;
+    color: var(--text-muted, #666);
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ── Popular articles (dashboard) ───────────────────────────────────────── */
+/* Same auto-fill track sizing as .portal-actions and .summary-cards so the
+ * three grids on the dashboard line up down the page rather than each choosing
+ * its own column width. */
+.article-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    padding: 16px 20px;
+}
+.article-card {
+    display: block;
+    padding: 14px 16px;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 6px;
+    background: var(--surface-2, #fafafa);
+    text-decoration: none;
+    transition: border-color 0.15s, transform 0.15s;
+}
+.article-card:hover {
+    border-color: var(--ss-accent, #0078d4);
+    transform: translateY(-1px);
+}
+.article-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text, #333);
+    margin-bottom: 6px;
+}
+/* The preview is a whole paragraph of body text; clamp it so one long article
+ * cannot make its card three times the height of its neighbours. */
+.article-card-preview {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted, #666);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ── Summary cards ──────────────────────────────────────────────────────── */
+/* The cards are DYNAMIC — one per active ticket status, plus a total — so the
+ * count varies per install (six statuses = seven cards). A fixed four-column
+ * grid wrapped them onto two rows of oversized tiles. auto-fit keeps them on one
+ * row for as many as will fit at a readable size, and degrades sensibly when
+ * someone configures a lot of statuses. */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 22px;
+}
+.summary-card {
+    background: var(--surface, #fff);
+    border-radius: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--border, #e5e7eb);
+    transition: box-shadow 0.2s;
+}
+.summary-card:hover { box-shadow: var(--shadow, 0 2px 8px rgba(0, 0, 0, 0.08)); }
+.summary-card .card-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 2px;
+    color: var(--text-muted, #666);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.summary-card .card-value { font-size: 20px; font-weight: 700; line-height: 1.1; color: var(--text, #333); }
+/* Status cards colour themselves from the DB `colour` column at render time —
+   these are only the fallbacks for the Total card and any uncoloured status. */
+.card-total .card-label { color: var(--text-muted, #555); }
+.card-total .card-value { color: var(--text, #333); }
+.card-total { border-top: 3px solid var(--text-faint, #6b7280); }
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+/* inbox.css gives tables a margin, which showed as an empty band between a
+   section header and its first row. Reset it inside portal sections. */
+.portal-section .ticket-table { margin: 0; }
+.ticket-table { width: 100%; border-collapse: collapse; }
+.ticket-table th {
+    /* Same pattern: the admin colour wins if set, otherwise the theme token. */
+    background: var(--ss-table-header-bg, var(--surface-hover, #f9fafb));
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted, #666);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.ticket-table td {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text, #333);
+    border-bottom: 1px solid var(--border-soft, #f3f4f6);
+}
+.ticket-table tr:last-child td { border-bottom: none; }
+.ticket-table tr:hover { background: var(--surface-hover, #f8fafc); }
+.ticket-table .ticket-link { color: var(--ss-accent, #0078d4); text-decoration: none; font-weight: 500; }
+.ticket-table .ticket-link:hover { text-decoration: underline; }
+.ticket-number {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text-muted, #888);
+}
+.ticket-date { font-size: 12px; color: var(--text-faint, #999); white-space: nowrap; }
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.priority-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+}
+/* Fallbacks, used when a lookup row has no colour of its own.
+ *
+ * Semantic pairs (--*-bg with its matching --*-text) flip together, so a pill
+ * becomes dark-bg + light-text in dark mode rather than staying pale. The BLUE
+ * ones stay literal on purpose: there is no --info-* pair in theme.css, and per
+ * the theming guidance you reach for an existing token rather than invent one —
+ * a self-coloured badge reads fine on either surface. */
+.status-open        { background: #dbeafe;                    color: #1e40af; }
+.status-in-progress { background: var(--warning-bg, #fff7ed); color: var(--warning-text, #c2410c); }
+.status-on-hold     { background: var(--warning-bg, #fef3c7); color: var(--warning-text, #92400e); }
+.status-closed      { background: var(--success-bg, #d1fae5); color: var(--success-text, #065f46); }
+.priority-high      { background: var(--danger-bg, #fee2e2);  color: var(--danger-text, #991b1b); }
+.priority-normal    { background: var(--surface-hover, #f3f4f6); color: var(--text-muted, #6b7280); }
+.priority-low       { background: #e0e7ff;                    color: #3730a3; }
+
+/* ── Service status ─────────────────────────────────────────────────────── */
+.service-list { padding: 8px 0; }
+.service-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border-soft, #f3f4f6);
+}
+.service-item:last-child { border-bottom: none; }
+.service-item .svc-name { font-size: 13px; font-weight: 500; color: var(--text, #333); }
+
+.impact-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.impact-operational    { background: var(--success-bg, #d1fae5); color: var(--success-text, #065f46); }
+.impact-degraded       { background: var(--warning-bg, #fff7ed); color: var(--warning-text, #c2410c); }
+.impact-partial-outage { background: var(--danger-bg, #fff1f2);  color: var(--danger-text, #be123c); }
+.impact-major-outage   { background: var(--danger-bg, #fee2e2);  color: var(--danger-text, #991b1b); }
+.impact-maintenance    { background: #dbeafe;                    color: #1e40af; }  /* blue: no --info-* pair */
+
+.all-operational {
+    text-align: center;
+    padding: 16px 20px;
+    color: var(--success-text, #065f46);
+    font-size: 13px;
+    font-weight: 600;
+}
+.all-operational svg { vertical-align: middle; margin-right: 6px; }
+
+/* ── Dashboard actions ──────────────────────────────────────────────────── */
+/* Raising a ticket and requesting something moved OUT of the nav and onto the
+ * page you land on. They are the two things people come here to do, so they are
+ * the most prominent thing on the dashboard rather than two words in a bar. */
+/* Deliberately the SAME grid definition as .summary-cards below, so the two
+ * rows share identical column tracks and line up down the page.
+ *
+ * auto-FILL, not auto-fit: auto-fit COLLAPSES the empty tracks, so two buttons
+ * would stretch to half the width each and stop lining up with the six cards
+ * underneath. auto-fill keeps the empty tracks, so a button is exactly one card
+ * wide whatever the viewport. The explanatory
+ * subtitle became a hover tooltip — it was what forced these wider than a card. */
+.portal-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.portal-action {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border, #e5e7eb);
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    text-decoration: none;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s ease-out;
+}
+.portal-action:hover {
+    border-color: var(--ss-accent, #10b981);
+    box-shadow: var(--shadow, 0 2px 8px rgba(0, 0, 0, 0.08));
+}
+.portal-action:active { transform: scale(0.99); }
+.portal-action-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: var(--ss-accent-soft, #d1fae5);
+    color: var(--ss-accent, #10b981);
+    flex-shrink: 0;
+}
+.portal-action-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text, #333);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── States ─────────────────────────────────────────────────────────────── */
+.empty-state   { text-align: center; padding: 40px 20px; color: var(--text-faint, #999); font-size: 14px; }
+.loading-state { text-align: center; padding: 30px 20px; color: var(--text-faint, #999); font-size: 13px; }
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .portal-grid { grid-template-columns: 1fr; }
+    .summary-cards { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+    .portal-header { padding: 0 14px; }
+    .portal-layout { padding: 20px 14px; }
+    .portal-brand span { display: none; }   /* logo only, to buy nav room */
+    .portal-nav a { padding: 6px 10px; }
+}
+@media (max-width: 500px) {
+    /* THREE across, not one. At one card per row these six counts took 412px of
+       a 360px screen — the whole of the first screenful was spent on numbers
+       nobody scrolls to read, and the things you came to do were below the fold.
+       They are counts of two or three digits, so they do not need a full width
+       each; three across fits at ~100px per card and puts the actions back on
+       the first screen.
+       ⚠️ The label is what constrains this, not the number: it already
+       truncates with an ellipsis, so a longer status name shortens rather than
+       wrapping the card taller than its neighbours. */
+    .summary-cards {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+    /* ⚠️ `min-width: 0`, or the three columns are NOT equal. A grid item
+       defaults to `min-width: auto`, which is its CONTENT's minimum — so
+       "Awaiting Response" made its column 116px while the others got 96px and
+       the rows did not line up. The ellipsis alone does not fix it: the label
+       truncates happily, but the item still refuses to shrink below the width
+       the untruncated text wants. */
+    .summary-card { padding: 8px 9px; min-width: 0; }
+    .summary-card .card-label { font-size: 9px; letter-spacing: 0.2px; }
+    .summary-card .card-value { font-size: 17px; }
+    /* Table rows get cramped; hide the least important columns rather than
+       letting the table scroll sideways — see the mobile-friendly guidance. */
+    .ticket-table .col-optional { display: none; }
+}
+
+/* ── Phone layout ────────────────────────────────────────────────────────────
+ *
+ * The portal keeps its OWN mobile layer rather than opting into the analyst
+ * app's `mobile.css`. The ten module rounds so far all began by opting in,
+ * because those modules share the app shell — the same `nav.header-nav`, the
+ * same waffle menu, the same 1144px overflow. The portal shares none of it:
+ * it has `.portal-header`, `.portal-nav`, `.portal-brand` and its own layout.
+ * Pulling in ~4,200 lines written against analyst markup would drag the
+ * §15 hazard across a public-facing surface, and `.summary-cards`,
+ * `.search-box`, `.form-input` and `.modal-content` already exist on BOTH
+ * sides. The techniques come from the wiki; the stylesheet stays local.
+ *
+ * ⚠️ This block sits AFTER the 900/640/500 blocks above deliberately. At
+ * 360px all of them apply, so where they disagree this one wins on document
+ * order at equal specificity. That is load-bearing in one place — see the
+ * brand wordmark below.
+ * ──────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+    /* ---- the header, which was the whole 633px ----
+     *
+     * All six signed-in pages measured 633px on a 360px screen, identically,
+     * because the cause is the one shared header rather than any page:
+     *
+     *     4 nav buttons x 104px min-width  = 416
+     *   + 3 gaps x 8px                     =  24
+     *   + .portal-nav margin-left          =  40
+     *                                        ---
+     *                                        480   before brand or avatar
+     *
+     * 🔴 The 640px block above already tried: `.portal-nav a { padding: 6px
+     * 10px }`. That was INERT — padding cannot shrink a button held open by
+     * `min-width: 104px`. The floor is the constraint, and releasing it is
+     * the fix. Same family as the Tasks board (Techniques 14): a flex item
+     * will not go below its floor however little room you leave it. */
+    .portal-header {
+        height: 48px;
+        padding: 0 12px;
+    }
+    .portal-brand { flex: 1 1 auto; min-width: 0; gap: 8px; }
+    .portal-user  { flex: 0 0 auto; }
+
+    /* ---- the nav becomes a right-side drawer ----
+     *
+     * The same move the ten analyst modules make. `mobile.js`'s
+     * `injectViewsHamburger()` turns `.header-nav` — a bar of destinations in
+     * the module header — into a ☰ drawer at top right, and `.portal-nav` is
+     * structurally the same thing, so it behaves the same way. (The scrolling
+     * chip rows elsewhere in the rollout are for FILTERS, which is a
+     * different job: a filter row is worth its vertical space because you
+     * change filters constantly; you pick a destination once.)
+     *
+     * Built here rather than by opting into mobile.js, for the reason at the
+     * top of this block — but deliberately to the same dimensions, so the
+     * portal and the app feel like one product on a phone. */
+    .portal-nav {
+        position: fixed;
+        top: 0;
+        right: 0;
+        left: auto;
+        margin-left: 0;
+        height: 100dvh;
+        width: 74vw;
+        max-width: 300px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        background: var(--surface, #fff);
+        box-shadow: -4px 0 30px rgba(0, 0, 0, 0.35);
+        padding: 58px 12px 16px;        /* top pad clears the bar */
+        overflow-y: auto;
+        z-index: 3000;
+        transform: translateX(100%);
+        visibility: hidden;
+        transition: transform .22s ease, visibility .22s;
+    }
+    body.ss-nav-open .portal-nav { transform: translateX(0); visibility: visible; }
+
+    /* 🔴 In the white drawer these need dark text. `.nav-btn` comes from
+     * inbox.css and is written light-on-accent for the header bar, so without
+     * this it is white text on white — invisible but tappable, which is the
+     * worst failure mode. `!important` because inbox.css's `.nav-btn:link`
+     * carries the colour and out-specifies a bare class. */
+    .portal-nav .nav-btn,
+    .portal-nav .nav-btn:link,
+    .portal-nav .nav-btn:visited {
+        color: var(--text, #333) !important;
+        background: none !important;
+        border: none !important;
+        min-width: 0;              /* the floor that made the header 633px */
+        justify-content: flex-start;
+        padding: 12px 14px;
+        font-size: 15px;
+        min-height: 44px;
+    }
+    .portal-nav .nav-btn.active {
+        background: var(--ss-accent-soft, #d1fae5) !important;
+        font-weight: 600;
+    }
+
+    .ss-nav-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        margin-right: 6px;
+        border: none;
+        background: none;
+        /* ⚠️ NOT `inherit`. On the analyst side that mistake produced a
+         * near-black glyph on a near-black bar — tappable but invisible. The
+         * avatar beside this states its own colour and was never affected;
+         * this states its own for the same reason. */
+        color: #fff;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        border-radius: 6px;
+    }
+    .ss-nav-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, .35);
+        z-index: 2999;
+        display: none;
+    }
+    body.ss-nav-open .ss-nav-overlay { display: block; }
+
+    /* ---- keep the wordmark: it is the branding ----
+     *
+     * The 640px block hides `.portal-brand span` outright to buy nav room.
+     * With the nav on its own row that room is no longer needed, and hiding
+     * it is actively wrong for a branded portal: the wordmark IS the
+     * customer's identity, so deleting it on the device most requesters use
+     * removes the branding exactly where it matters. It truncates instead.
+     *
+     * This rule only works because this block comes after the 640px one. */
+    .portal-brand span {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+    }
+    /* 🔑 Sized by max-height AND max-width, never by an assumed aspect ratio.
+     * The stock logo is 1124x301 (a wide wordmark), but a customer swapping
+     * `assets/images/CompanyLogo.png` could hand us a square badge or a tall
+     * crest. `object-fit: contain` keeps whatever they supply inside the bar
+     * instead of stretching it or pushing the header wide. */
+    .portal-brand img {
+        height: 24px;
+        max-width: 120px;
+        object-fit: contain;
+    }
+
+    /* ---- iOS anti-zoom, portal-wide ----
+     *
+     * iOS zooms into any field whose text is under 16px and does NOT zoom
+     * back out, so one tap on a search box leaves the whole portal
+     * magnified. Every portal page had at least one: 12px on the ticket
+     * filter, 13.3px on the new-ticket description, 14px on the reply box
+     * and the mailbox picker, 15px on the subject and the help search.
+     *
+     * ⚠️ `!important` is load-bearing, not laziness. Page CSS arrives via
+     * `$pageStyles`, which header.php emits in a <style> AFTER this
+     * stylesheet, so `.compose-top input` (0,1,1) and `.tk-filter` (0,1,0)
+     * both beat anything of equal weight written here. mobile.css's
+     * settings-page rule carries `!important` for exactly this reason.
+     *
+     * 🔑 Written as an EXCLUSION rather than a list of the types that need
+     * it — a field type added to the portal later is covered by default
+     * instead of quietly missed, which is how the settings rule once let a
+     * `datetime-local` through at the browser default. */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]):not([type="color"]):not([type="submit"]):not([type="button"]),
+    select,
+    textarea {
+        font-size: 16px !important;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    /* A native date field ignores the width it is given on iOS and sizes
+     * itself to the date it draws — and iOS spells the month out. Techniques
+     * 20; the sixth place in this product to need it. */
+    input[type="date"],
+    input[type="time"],
+    input[type="datetime-local"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        min-width: 0;
+    }
+    input[type="date"]::-webkit-date-and-time-value,
+    input[type="time"]::-webkit-date-and-time-value {
+        margin: 0;
+        text-align: left;
+    }
+
+    /* ---- the dashboard's ticket tables become a card feed ----
+     *
+     * The tickets table is Ticket / Subject / Status / Priority / Updated —
+     * 542px of it on a 360px screen. The Subject column holds prose, which
+     * is the tell for a feed rather than a sideways scroller (Techniques 11).
+     *
+     * 🔴 The 500px block above intends to handle this: `.ticket-table
+     * .col-optional { display: none }`. That class appears NOWHERE in the
+     * markup, so the rule has never matched anything and the table has been
+     * 542px the whole time. Second inert rule in this file, after the nav
+     * padding one — both look like the problem is handled when it is not.
+     *
+     * Hiding columns would have been the wrong answer anyway: it decides FOR
+     * the requester that priority does not matter to them. The feed keeps
+     * every value and gives the subject the room to be read. */
+    .ticket-table thead { display: none; }
+    .ticket-table,
+    .ticket-table tbody,
+    .ticket-table tr { display: block; width: 100%; }
+    .ticket-table tbody tr {
+        border: 1px solid var(--border, #e5e7eb);
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+        background: var(--surface, #fff);
+    }
+    .ticket-table tbody td {
+        display: inline;
+        border: none;
+        padding: 0;
+    }
+    /* The reference leads on its own line, the subject gets the next, and
+     * the badges and date read as one run underneath — three lines per
+     * ticket rather than five stacked cells.
+     *
+     * 🔴 SCOPED WITH `:not(.req-table)`, because `.ticket-table` is TWO
+     * tables on the dashboard: recent tickets (five columns — reference,
+     * subject, status, priority, updated) and **Your requests** (three —
+     * request, status, submitted). These rules key on column INDEX, so the
+     * requests table was having its STATUS cell styled as a subject: a
+     * pill and a ticket-number link given a subject's own line and 8px of
+     * margin under it, which is the blank line in that card.
+     *
+     * 🔑 The same fault as the two log tables in [Reporting], and the same
+     * answer: the renderer now stamps a class, because a selector had no
+     * other way to know which table it was looking at. LAYER 15b's comment
+     * in mobile.css said `nothing here may depend on a column INDEX` for
+     * exactly this reason — and this file did depend on one. */
+    .ticket-table:not(.req-table) tbody td:first-child { display: block; margin-bottom: 2px; }
+    .ticket-table:not(.req-table) tbody td:nth-child(2) {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        line-height: 1.35;
+    }
+    .ticket-table tbody td:nth-child(n+3) { margin-right: 8px; }
+    .ticket-table tbody td:nth-child(n+3) .ticket-date { font-size: 13px; }
+
+    /* ---- Your requests: three columns, so its own shape ----
+     * The form's title leads, then the approval pill and (when the request
+     * has become one) the ticket reference read as one run beside it, with
+     * the submitted date underneath. */
+    .req-table tbody td:first-child {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        line-height: 1.35;
+    }
+    /* ⚠️ `display: block` on both, and NOT `inline-flex` on the status cell,
+     * which is what the first attempt used. The base rule leaves a `td`
+     * `display: inline`, so an inline-flex status cell and an inline date
+     * cell share ONE line box — and once the date joined it the flex box was
+     * handed a narrower available width and wrapped internally, putting the
+     * pill on one line, the reference on the next, and the date beside the
+     * reference. Three items, three places, none of them chosen.
+     * A block per cell has no such interaction. */
+    .req-table tbody td:nth-child(2) {
+        display: block;
+        margin-bottom: 4px;
+    }
+    .req-table tbody td:nth-child(2) .req-pill { vertical-align: middle; }
+    .req-table tbody td:nth-child(2) .ticket-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        width: auto;
+        vertical-align: middle;
+    }
+    .req-table tbody td:nth-child(3) {
+        display: block;
+        margin-right: 0;
+    }
+    /* ⚠️ Do not swallow the empty state — "no tickets" is one cell spanning
+     * the row and must stay a centred sentence, not a subject-styled card. */
+    .ticket-table tbody td[colspan] {
+        display: block;
+        text-align: center;
+        font-weight: normal;
+        margin: 0;
+    }
+
+    /* A tap target has to be reachable, not just present. */
+    .portal-nav .nav-btn,
+    .portal-action { min-height: 24px; }
+    .portal-action { min-height: 44px; }
+
+    /* 🔴🔴 AND `min-height` ON `.ticket-link` HAD NEVER APPLIED TO ANYTHING —
+     * the THIRD inert rule found in this module, joining the 640px padding
+     * that could not beat a `min-width` floor and the `.col-optional` that
+     * appears nowhere in the markup.
+     *
+     * `min-height` is inert on an `display: inline` box, and an `<a>` wrapping
+     * text is inline. Measured on the portal dashboard: **90x17**, with the
+     * rule computing to `min-height: 24px` and changing nothing.
+     *
+     * 🔑 That matters here more than the number suggests, because the `<tr>`
+     * has NO click handler: these two anchors are the ONLY way to open a
+     * ticket from the dashboard, so a 17px-tall line of text was the whole
+     * tap target on the page a requester lands on.
+     *
+     * The fix is the display type, not a bigger number.
+     *
+     * 🔴 AND IT IS NOT 44px ON BOTH OF THEM, which is what the first version
+     * did — and a screenshot is the only thing that showed why. There are TWO
+     * anchors per card (the reference and the subject, in separate cells), so
+     * forcing a 44px block on each added ~50px of empty space to every card
+     * and left the reference floating above a gap. Every measurement was
+     * happier and the card looked broken.
+     *
+     * So the height goes where the TARGET is. The subject is what a person
+     * aims at, so it takes a full-width 44px row; the reference above it is a
+     * short identifier and takes a comfortable 32px inline box. One generous
+     * target per card, and the card keeps its shape. */
+    .ticket-table tbody td:first-child .ticket-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+    }
+    .ticket-table tbody td:nth-child(2) .ticket-link {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+        width: 100%;
+    }
+
+    /* 🔴 The drawer lives inside `.portal-header`, which is `position: sticky`
+     * with `z-index: 100` — and that creates a STACKING CONTEXT. So the nav's
+     * `z-index: 3000` is resolved INSIDE the header and the whole drawer
+     * paints at the header's level 100, underneath the overlay at 2999.
+     *
+     * The drawer still slid in, still measured on screen, still had the right
+     * colours — it was only untappable, because the overlay was in front of
+     * it. `elementFromPoint` on a nav link returned `.ss-nav-overlay`, which
+     * is the only check that catches this; every geometry assertion passed.
+     *
+     * Raising the header only while the drawer is open keeps the change to
+     * the moment it is needed, rather than re-stacking a sticky header for
+     * every page all the time. */
+    body.ss-nav-open .portal-header { z-index: 3000; }
+
+    /* ── The portal's user guide ───────────────────────────────────────────
+     * 🔴🔴 IT COULD NOT BE SCROLLED AT ALL: 7118px of guide, and the probe
+     * reported both `<html>` and `body.portal-app` as unreachable. Ten of
+     * its eleven sections were simply not gettable-to on a phone.
+     *
+     * THREE files interact, and each is individually right:
+     *   · `self-service.css`  `body.portal-app { height: 100vh; overflow:
+     *                          hidden }` — the app shell, correct, because
+     *                          on every other portal page a pane scrolls;
+     *   · `help.css` @900px    `.help-container { height: auto }` and
+     *                          `.help-main { overflow-y: visible }` — also
+     *                          correct, handing the scroll to the document;
+     *   · and nothing gives the document permission to take it.
+     *
+     * 🔑 The analyst guides hit exactly this and were fixed by LAYER 16h in
+     * `mobile.css`. **The portal cannot use that file** — Ed's call, because
+     * it shares none of the analyst shell — so the same shape is written
+     * here instead. That is the cost of a separate layer, and it is the
+     * right cost: the alternative was dragging 12,500 lines of rules
+     * written against analyst markup onto a public-facing surface.
+     *
+     * Scoped to `body.portal-help`, because making `<body>` a flex column is
+     * not something any other portal page wants.
+     *
+     * ⚠️ AND IT IS THREE ELEMENTS, NOT TWO. The first version made `<body>` a
+     * flex column and gave `.help-container` `flex: 1 1 auto` — and nothing
+     * changed, because `.help-container` IS NOT A CHILD OF BODY. The header
+     * include wraps every portal page in a `.portal-layout`, which stayed
+     * `display: block` and grew to its content:
+     *
+     *     DIV.help-container   flex: 1 1 auto   height 7069px   <- resolved
+     *     DIV.portal-layout    display: block   height 7069px   <- against THIS
+     *     BODY.portal-help     display: flex    height  740px
+     *
+     * A `flex: 1` is measured against its own parent, so every element
+     * between the viewport-height box and the scroller has to pass the height
+     * down. Dumping the whole ancestor chain — display, height, min-height,
+     * flex and overflow for each — is what showed it; measuring the
+     * container alone said `flex: 1 1 auto` and looked correct. */
+    body.portal-help {
+        display: flex;
+        flex-direction: column;
+    }
+    body.portal-help .portal-layout {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    body.portal-help .help-container {
+        flex: 1 1 auto;
+        min-height: 0;                 /* 🔴 or the shell grows past the
+                                          viewport and nothing can scroll */
+        overflow-y: auto;
+        overflow-x: hidden;            /* name both axes, or the other
+                                          computes to auto and the next wide
+                                          thing hides instead of reporting */
+        -webkit-overflow-scrolling: touch;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;                  /* the contents strip below is
+                                          `nowrap`, and a flex item's
+                                          automatic minimum is its content */
+        box-sizing: border-box;
+    }
+    /* The numbered contents strip already scrolls sideways in help.css. Hide
+     * its scrollbar — it sits directly under the header and reads as a stray
+     * rule — and stop the swipe chaining to the page behind it. */
+    body.portal-help .help-sidebar {
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    body.portal-help .help-sidebar::-webkit-scrollbar { display: none; }
+    body.portal-help .help-nav-link {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+    }
+}
+
+/* ══ Incidents on the status panel (discussion #99) ════════════════════════
+   Shown only when an administrator has switched this on AND somebody has
+   written an external update, so most portals never render any of it. */
+.inc-card-note { margin: 6px 0 0; font-size: 13px; white-space: pre-wrap; }   /* planned maintenance (3.2.0) */
+.inc-list-heading {
+    margin: 18px 0 10px;
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--text-dim, #999);
+}
+.inc-card {
+    border: 1px solid var(--border, #e5e7eb);
+    border-left: 3px solid var(--danger-accent, #d13438);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: var(--surface, #fff);
+}
+/* Resolved loses the red edge. A page full of red bars is a page nobody reads
+   carefully, and the whole point of keeping resolved entries is reassurance. */
+.inc-card.is-resolved { border-left-color: var(--success-accent, #16a34a); }
+.inc-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.inc-card-title { font-size: 14px; font-weight: 600; color: var(--text, #333); }
+.inc-card-state { font-size: 12px; color: var(--text-muted, #666); white-space: nowrap; }
+.inc-card-svcs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.inc-svc {
+    font-size: 11px; padding: 1px 8px; border-radius: 10px;
+    background: var(--surface-3, #eee); color: var(--text-muted, #666);
+}
+.inc-card-toggle {
+    margin-top: 9px; padding: 0; border: none; background: none; cursor: pointer;
+    font: inherit; font-size: 12.5px; color: var(--ss-accent, #0078d4); text-decoration: underline;
+}
+.inc-card-updates[hidden] { display: none !important; }
+.inc-card-updates { margin-top: 10px; border-top: 1px solid var(--border-soft, #f1f1f1); padding-top: 10px; }
+.inc-upd-loading { font-size: 12.5px; color: var(--text-dim, #999); }
+
+/* A table with timestamps, as the request asked for — the story of the outage
+   read top to bottom, oldest first. */
+.inc-upd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.inc-upd-table td { padding: 6px 0; vertical-align: top; border-top: 1px solid var(--border-soft, #f5f5f5); }
+.inc-upd-table tr:first-child td { border-top: none; }
+.inc-upd-when { width: 1%; white-space: nowrap; padding-right: 14px !important; color: var(--text-muted, #666); font-size: 12px; }
+.inc-upd-status {
+    display: inline-block; margin-right: 8px;
+    font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
+    background: var(--surface-3, #eee); color: var(--text-muted, #666);
+}
+.inc-upd-text { color: var(--text, #333); }
+
+@media (max-width: 600px) {
+    /* The timestamp goes above the text rather than beside it — a date column
+       plus a sentence in 320px leaves no room for the sentence. */
+    .inc-upd-table, .inc-upd-table tr, .inc-upd-table td { display: block; width: auto; }
+    .inc-upd-when { padding-right: 0 !important; padding-bottom: 2px !important; }
+    .inc-upd-table td.inc-upd-body { border-top: none; padding-top: 0; }
+}
+
+/* ---- Request catalogue: field widths, in twelfths -------------------------
+   See docs/design/form-layout-and-grid.md. 12 divides by 1, 2, 3, 4 and 6, so
+   full / three-quarters / two-thirds / half / third / quarter are all whole
+   columns, as are the asymmetric pairs a real document wants (8+4).
+
+   ⚠️ minmax(0, 1fr), not 1fr: a grid track's default minimum is `auto`, so one
+   long unbroken word would push its track past its share and break the row. */
+.cat-form-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0 18px;
+    align-items: start;
+}
+/* No width means the whole row — every field that predates this, and anything
+   in the form that is not a field. */
+.cat-form-grid > * { grid-column: span 12; }
+.cat-form-grid > [data-width="9"] { grid-column: span 9; }
+.cat-form-grid > [data-width="8"] { grid-column: span 8; }
+.cat-form-grid > [data-width="6"] { grid-column: span 6; }
+.cat-form-grid > [data-width="4"] { grid-column: span 4; }
+.cat-form-grid > [data-width="3"] { grid-column: span 3; }
+
+/* 🔴 ONE COLUMN ON A PHONE, always — and this is the portal, so a phone is the
+   likely case, not the edge case. Two controls side by side on 360px is worse
+   than one, and at quarter width a label wraps to three lines before its input
+   is even narrow. Later in the file at equal specificity, so no !important. */
+@media (max-width: 768px) {
+    .cat-form-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .cat-form-grid > *,
+    .cat-form-grid > [data-width="9"],
+    .cat-form-grid > [data-width="8"],
+    .cat-form-grid > [data-width="6"],
+    .cat-form-grid > [data-width="4"],
+    .cat-form-grid > [data-width="3"] { grid-column: span 1; }
+}

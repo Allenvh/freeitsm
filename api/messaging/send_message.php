@@ -15,12 +15,18 @@ require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
 require_once '../../includes/messaging/messaging.php';
 
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+
+// Replying to a WhatsApp message from the inbox — everyday work.
+requireModuleAccessJson('tickets');
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -44,7 +50,7 @@ try {
     // The conversation: most recent inbound channel message gives us the recipient
     // phone (from_address) and the channel row to reply from (channel_id).
     $stmt = $conn->prepare(
-        "SELECT from_address, channel, channel_id
+        "SELECT from_address, to_recipients, channel, channel_id
          FROM emails
          WHERE ticket_id = ? AND channel <> 'email' AND direction = 'Inbound'
          ORDER BY received_datetime DESC, id DESC
@@ -56,8 +62,20 @@ try {
         throw new Exception('This ticket has no inbound channel message to reply to.');
     }
 
-    $recipient   = $conv['from_address'];
     $channelType = $conv['channel'];
+
+    // Who to answer. On a phone channel you reply to the sender, so the sender's
+    // own address is the destination. Slack is not like that: you reply into the
+    // channel and thread the message came from, which the ingest stored as the
+    // inbound row's to_recipients ("C08HELP:1719500000.000100"). Replying to the
+    // sender there would send a DM to the person instead of answering in the
+    // thread everyone else is reading.
+    // Teams and Mattermost (PR #166) are threaded the same way - see
+    // messagingReplyAddress(), the one place this rule lives.
+    $recipient = messagingReplyAddress($channelType, $conv);
+    if ($recipient === '') {
+        throw new Exception('This ticket has no conversation to reply into.');
+    }
     $channel = loadMessagingChannel($conn, (int) $conv['channel_id']);
     if (!$channel) {
         throw new Exception('The channel this ticket arrived on no longer exists.');
@@ -67,10 +85,15 @@ try {
     }
 
     // 24h service window — free-text replies are only allowed inside it.
-    $win = $conn->prepare("SELECT last_inbound_at FROM tickets WHERE id = ?");
-    $win->execute([$ticketId]);
-    if (!channelWindowOpen($win->fetchColumn() ?: null)) {
-        throw new Exception('The 24-hour reply window has closed. A pre-approved template message is required to reopen the conversation (coming in a later release).');
+    //
+    // ⚠️ A WhatsApp Business rule, not a general one. Which channels have it is
+    // decided in ONE place, channelHasServiceWindow() - see why there.
+    if (channelHasServiceWindow($channelType)) {
+        $win = $conn->prepare("SELECT last_inbound_at FROM tickets WHERE id = ?");
+        $win->execute([$ticketId]);
+        if (!channelWindowOpen($win->fetchColumn() ?: null)) {
+            throw new Exception('The 24-hour reply window has closed. A pre-approved template message is required to reopen the conversation (coming in a later release).');
+        }
     }
 
     // Send via the provider.

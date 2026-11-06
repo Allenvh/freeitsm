@@ -4,27 +4,48 @@
  */
 session_start();
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
+require_once __DIR__ . '/../includes/theme.php';
+require_once __DIR__ . '/../includes/timezone.php';
+requireModuleAccess('changes');
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'changes';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'change-management'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('change-management.page.changes')); ?></title>
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css">
-    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/change-management.css?v=4">
+    <title><?php echo htmlspecialchars(pageTitle('changes')); ?></title>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/change-management.css?v=14">
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/mobile.css?v=196">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="<?php echo BASE_URL; ?>assets/js/i18n.js"></script>
-    <script src="<?php echo BASE_URL; ?>assets/js/tinymce/tinymce.min.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="<?php echo BASE_URL; ?>assets/js/tz.js?v=5"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/record-preview.css?v=1">
+    <script src="<?php echo BASE_URL; ?>assets/js/record-preview.js?v=1"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/tinymce/tinymce.min.js?v=8.10.0"></script>
+    <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/project-links.css?v=1">
 </head>
-<body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
+<?php $cmLevel = analystModuleLevel(connectToDatabase(), (int)($_SESSION['analyst_id'] ?? 0), 'changes'); /* #180: 'full' or 'read' */ ?>
+<body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>"<?php echo $cmLevel === 'read' ? ' class="module-read-only"' : ''; ?>>
     <?php include __DIR__ . '/includes/header.php'; ?>
+    <?php /* The action row (#185): New change was at the foot of the list's
+             sidebar and missing from the Calendar and Table views. Read only
+             access (#180) gets the row without New. */
+          require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('change-management.nav.changes'),
+              $cmLevel !== 'read' ? [actionRowNew(BASE_URL . 'change-management/new/', t('change-management.sidebar.new_change_tip'), true)] : [],
+              ['accent' => 'cm']); ?>
 
     <div class="changes-container">
         <!-- Sidebar with search and status filters -->
@@ -43,9 +64,6 @@ $translationNamespaces = ['common', 'change-management'];
                         <span class="filter-count" id="countAll">0</span>
                     </div>
                 </div>
-            </div>
-            <div class="sidebar-section">
-                <a class="btn btn-primary btn-full" href="new/"><?php echo htmlspecialchars(t('change-management.sidebar.new_change')); ?></a>
             </div>
         </div>
 
@@ -94,6 +112,13 @@ $translationNamespaces = ['common', 'change-management'];
                     <div class="cm-form-section" data-section-id="1" data-section-key="general">
                         <h3 class="form-section-title"><?php echo htmlspecialchars(t('change-management.editor.section_general')); ?></h3>
 
+                        <!-- From a template (#180 §8): shown on a NEW change when approved templates exist. -->
+                        <div id="templatePickerWrap" class="form-group" style="display:none;">
+                            <label class="form-label" for="templatePicker"><?php echo htmlspecialchars(t('change-management.templates.from_template')); ?></label>
+                            <select class="form-input" id="templatePicker" onchange="applyChangeTemplate(this.value)"></select>
+                            <input type="hidden" id="templateVersionId" value="">
+                            <div id="templateScope" class="approval-note"></div>
+                        </div>
                         <div class="cm-field-wrap" data-field-key="title">
                             <div class="form-group">
                                 <label class="form-label"><?php echo htmlspecialchars(t('change-management.editor.title_label')); ?></label>
@@ -251,31 +276,56 @@ $translationNamespaces = ['common', 'change-management'];
                         <div class="cm-field-wrap" data-field-key="risk">
                             <div class="form-row risk-scoring-row">
                                 <div class="form-group">
-                                    <label class="form-label"><?php echo htmlspecialchars(t('change-management.editor.risk_likelihood')); ?></label>
+                                    <?php /* GH #231: the ? opens the rating guide below the row. */ ?>
+                                    <div class="cm-risk-label">
+                                        <label class="form-label" for="riskLikelihood"><?php echo htmlspecialchars(t('change-management.editor.risk_likelihood')); ?></label>
+                                        <button type="button" class="cm-risk-help-btn" data-risk-help="likelihood" aria-expanded="false" aria-controls="riskGuide"
+                                                aria-label="<?php echo htmlspecialchars(t('change-management.editor.risk_help_likelihood_btn')); ?>" title="<?php echo htmlspecialchars(t('change-management.editor.risk_help_likelihood_btn')); ?>">?</button>
+                                    </div>
                                     <select class="form-input" id="riskLikelihood" onchange="updateRiskScore()">
                                         <option value=""><?php echo htmlspecialchars(t('change-management.editor.not_assessed')); ?></option>
-                                        <option value="1"><?php echo htmlspecialchars(t('change-management.editor.rl_1')); ?></option>
-                                        <option value="2"><?php echo htmlspecialchars(t('change-management.editor.rl_2')); ?></option>
-                                        <option value="3"><?php echo htmlspecialchars(t('change-management.editor.rl_3')); ?></option>
-                                        <option value="4"><?php echo htmlspecialchars(t('change-management.editor.rl_4')); ?></option>
-                                        <option value="5"><?php echo htmlspecialchars(t('change-management.editor.rl_5')); ?></option>
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label"><?php echo htmlspecialchars(t('change-management.editor.risk_impact')); ?></label>
+                                    <div class="cm-risk-label">
+                                        <label class="form-label" for="riskImpactScore"><?php echo htmlspecialchars(t('change-management.editor.risk_impact')); ?></label>
+                                        <button type="button" class="cm-risk-help-btn" data-risk-help="impact" aria-expanded="false" aria-controls="riskGuide"
+                                                aria-label="<?php echo htmlspecialchars(t('change-management.editor.risk_help_impact_btn')); ?>" title="<?php echo htmlspecialchars(t('change-management.editor.risk_help_impact_btn')); ?>">?</button>
+                                    </div>
                                     <select class="form-input" id="riskImpactScore" onchange="updateRiskScore()">
                                         <option value=""><?php echo htmlspecialchars(t('change-management.editor.not_assessed')); ?></option>
-                                        <option value="1"><?php echo htmlspecialchars(t('change-management.editor.rl_1')); ?></option>
-                                        <option value="2"><?php echo htmlspecialchars(t('change-management.editor.rl_2')); ?></option>
-                                        <option value="3"><?php echo htmlspecialchars(t('change-management.editor.rl_3')); ?></option>
-                                        <option value="4"><?php echo htmlspecialchars(t('change-management.editor.rl_4')); ?></option>
-                                        <option value="5"><?php echo htmlspecialchars(t('change-management.editor.rl_5')); ?></option>
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label"><?php echo htmlspecialchars(t('change-management.editor.risk_score')); ?></label>
+                                    <div class="cm-risk-label"><label class="form-label"><?php echo htmlspecialchars(t('change-management.editor.risk_score')); ?></label></div>
                                     <div class="risk-score-display" id="riskScoreDisplay">-</div>
                                 </div>
+                            </div>
+                            <?php /* GH #246: a change rated under an earlier risk policy keeps that scale until somebody re-assesses it. */ ?>
+                            <div class="cm-risk-older" id="riskOlderPolicy" hidden>
+                                <span id="riskOlderPolicyText"></span>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="reassessRisk()"><?php echo htmlspecialchars(t('change-management.risk_policy.reassess')); ?></button>
+                            </div>
+                            <?php /* GH #231: how to choose the two ratings. Inline rather than a floating popover:
+                                     it works the same by mouse, keyboard and touch, and on a phone it simply sits
+                                     under the fields. Guidance only - the scale, score and bands are unchanged. */ ?>
+                            <div class="cm-risk-guide" id="riskGuide" role="region" aria-labelledby="riskGuideTitle" tabindex="-1" hidden>
+                                <div class="cm-risk-guide-head">
+                                    <strong id="riskGuideTitle"><?php echo htmlspecialchars(t('change-management.editor.risk_help_title')); ?></strong>
+                                    <button type="button" class="cm-risk-guide-close" aria-label="<?php echo htmlspecialchars(t('common.close')); ?>">&times;</button>
+                                </div>
+                                <p data-risk-part="likelihood"><strong><?php echo htmlspecialchars(t('change-management.editor.risk_likelihood')); ?></strong> - <?php echo htmlspecialchars(t('change-management.editor.risk_help_likelihood')); ?></p>
+                                <p data-risk-part="impact"><strong><?php echo htmlspecialchars(t('change-management.editor.risk_impact')); ?></strong> - <?php echo htmlspecialchars(t('change-management.editor.risk_help_impact')); ?></p>
+                                <p><?php echo htmlspecialchars(t('change-management.editor.risk_help_same')); ?></p>
+                                <div class="cm-risk-guide-scroll">
+                                    <table class="cm-risk-guide-table">
+                                        <thead><tr><th></th><th scope="col"><?php echo htmlspecialchars(t('change-management.risk.likelihood')); ?></th><th scope="col"><?php echo htmlspecialchars(t('change-management.risk.impact')); ?></th></tr></thead>
+                                        <?php /* GH #246: the rows are the policy's own levels and criteria, drawn by setEditorRiskScale(). */ ?>
+                                        <tbody id="riskGuideRows"></tbody>
+                                    </table>
+                                </div>
+                                <p id="riskGuideExample"><?php echo htmlspecialchars(t('change-management.editor.risk_help_example')); ?></p>
+                                <p class="cm-risk-guide-note" id="riskGuideNote"><?php echo htmlspecialchars(t('change-management.editor.risk_help_note')); ?></p>
                             </div>
                         </div>
 
@@ -384,6 +434,49 @@ $translationNamespaces = ['common', 'change-management'];
         </div>
     </div>
 
+    <!-- Right-click context menu for change cards. Positioned in JS at cursor.
+         Reuses the tickets menu's CSS classes (inbox.css is loaded above). Each
+         submenu is (re)populated at open time from the active lookups so newly
+         added entries + the current-value tick appear without a page refresh. -->
+    <div class="ticket-context-menu" id="changeContextMenu" role="menu">
+        <div class="ticket-context-menu-header" id="changeContextMenuHeader"></div>
+        <!-- Status submenu parent — populated from active change_statuses. -->
+        <div class="ticket-context-menu-item ticket-context-menu-parent" role="menuitem" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span><?php echo htmlspecialchars(t('change-management.context.set_status')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxChangeStatusSubmenu" role="menu"></div>
+        </div>
+        <!-- Priority submenu parent — populated from active change_priorities. -->
+        <div class="ticket-context-menu-item ticket-context-menu-parent" role="menuitem" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            <span><?php echo htmlspecialchars(t('change-management.context.set_priority')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxChangePrioritySubmenu" role="menu"></div>
+        </div>
+        <!-- Type submenu parent — populated from active change_types. -->
+        <div class="ticket-context-menu-item ticket-context-menu-parent" role="menuitem" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            <span><?php echo htmlspecialchars(t('change-management.context.set_type')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxChangeTypeSubmenu" role="menu"></div>
+        </div>
+        <!-- Impact submenu parent — populated from active change_impacts. -->
+        <div class="ticket-context-menu-item ticket-context-menu-parent" role="menuitem" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            <span><?php echo htmlspecialchars(t('change-management.context.set_impact')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxChangeImpactSubmenu" role="menu"></div>
+        </div>
+        <!-- Move-to-company submenu parent. Multi-company installs only; hidden at N=1. -->
+        <div class="ticket-context-menu-item ticket-context-menu-parent" id="ctxChangeCompanyParent" role="menuitem" tabindex="0" style="display:none;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M19 21V9a2 2 0 0 0-2-2h-2"/><path d="M9 7h2"/><path d="M9 11h2"/><path d="M9 15h2"/></svg>
+            <span><?php echo htmlspecialchars(t('change-management.context.move_company')); ?></span>
+            <svg class="ctx-sub-arrow" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+            <div class="ticket-context-submenu" id="ctxChangeCompanySubmenu" role="menu"></div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <!-- Search Modal (Draggable) -->
     <div class="search-modal" id="searchModal">
@@ -449,8 +542,60 @@ $translationNamespaces = ['common', 'change-management'];
         </div>
     </div>
 
-    <!-- html2pdf for PDF generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Link incident picker modal. Searches list_linkable_tickets.php
+         (company-scoped, excludes already-linked); clicking a result links it. -->
+    <div class="modal" id="linkIncidentModal">
+        <div class="modal-content" style="max-width: 560px;">
+            <div class="modal-header">
+                <h3><?php echo htmlspecialchars(t('change-management.detail.link_incident')); ?></h3>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="form-input" id="linkIncidentSearch" placeholder="<?php echo htmlspecialchars(t('change-management.detail.link_search_placeholder')); ?>" oninput="linkIncidentSearchDebounced()">
+                <div id="linkIncidentList" class="link-incident-list"><div class="link-incident-empty"><?php echo htmlspecialchars(t('change-management.detail.loading')); ?></div></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeLinkIncidentModal()"><?php echo htmlspecialchars(t('change-management.editor.cancel')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text history viewer (#180 Part 2) - assets/js/change-revisions.js. A .modal-content,
+         so mobile.css LAYER 3 makes it a full-screen sheet on a phone. -->
+    <div class="modal" id="revisionModal">
+        <div class="modal-content rev-modal">
+            <div class="modal-header">
+                <h3 id="revisionTitle"></h3>
+            </div>
+            <div class="modal-body rev-layout">
+                <div class="rev-sidebar">
+                    <div class="rev-sidebar-head"><?php echo htmlspecialchars(t('change-management.revisions.versions')); ?></div>
+                    <div id="revisionList" class="rev-list"></div>
+                </div>
+                <div class="rev-main">
+                    <div class="rev-toolbar">
+                        <div class="rev-tabs">
+                            <button type="button" class="rev-tab active" data-tab="changes" onclick="revisionTab('changes')"><?php echo htmlspecialchars(t('change-management.revisions.tab_changes')); ?></button>
+                            <button type="button" class="rev-tab" data-tab="side" onclick="revisionTab('side')"><?php echo htmlspecialchars(t('change-management.revisions.tab_side')); ?></button>
+                        </div>
+                        <label class="rev-compare">
+                            <?php echo htmlspecialchars(t('change-management.revisions.compare_with')); ?>
+                            <select id="revisionCompare" onchange="revisionCompareChanged(this.value)"></select>
+                        </label>
+                    </div>
+                    <div id="revisionBody" class="rev-body"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeRevisionViewer()"><?php echo htmlspecialchars(t('change-management.revisions.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF of a change: html2canvas draws it, jsPDF pages it (changePdfDocument() in
+         change-management.js). html2pdf did this until 4.1.0, carrying its own older
+         copy of jsPDF; now there is one jsPDF on the install, and it is current. -->
+    <script src="../assets/js/vendor/html2canvas.min.js"></script>
+    <script src="../assets/js/vendor/jspdf.umd.min.js?v=4.2.1"></script>
     <script>
         window.API_BASE = '<?php echo BASE_URL; ?>api/change-management/';
         <?php if (!empty($openCreateOnLoad)): ?>
@@ -459,6 +604,17 @@ $translationNamespaces = ['common', 'change-management'];
         window.openCreateOnLoad = true;
         <?php endif; ?>
     </script>
-    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=11"></script>
+    <script>window.CHG_SHOW_PROJECTS = <?php echo analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'projects') ? 'true' : 'false'; ?>; window.CHG_BASE = <?php echo json_encode(BASE_URL); ?>;
+        // "Choose approvers" (#180): comfort for the editor; ChangesService enforces it.
+        // Read only (#180): the page leaves out what the server would refuse.
+        window.MODULE_LEVEL = <?php echo json_encode($cmLevel ?: 'full'); ?>;
+        window.CHG_CAN_CHOOSE_APPROVERS = <?php require_once __DIR__ . '/../includes/rbac.php'; echo analystMayAct(connectToDatabase(), (int)$_SESSION['analyst_id'], Cap::CHANGES_CHOOSE_APPROVERS) ? 'true' : 'false'; ?>;</script>
+    <script src="<?php echo BASE_URL; ?>assets/js/project-links.js?v=1"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/safe-html.js?v=4"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/change-revisions.js?v=3"></script>
+    <?php require_once __DIR__ . '/../includes/changes/risk_policy.php'; echo ChangeRiskPolicy::jsBootstrap(connectToDatabase()); ?>
+    <script src="<?php echo BASE_URL; ?>assets/js/change-risk.js?v=1"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/change-management.js?v=37"></script>
+    <script src="<?php echo BASE_URL; ?>assets/js/mobile.js?v=83"></script>
 </body>
 </html>

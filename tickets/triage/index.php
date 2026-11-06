@@ -6,72 +6,85 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
+requireModuleAccess('tickets');
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'triage';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'tickets'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('tickets.triage.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('tickets', t('tickets.triage.title'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
-        .triage-container { flex: 1; overflow-y: auto; padding: 30px 20px; }
-        .page-title { font-size: 22px; font-weight: 600; color: #333; margin: 0 0 6px 0; }
-        .page-subtitle { font-size: 13px; color: #888; margin: 0 0 24px 0; max-width: 760px; }
-        .settings-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
+        /* 🔴 flex:1 only gives the container a height inside a flex column.
+           inbox.css makes body 100vh + overflow:hidden but leaves it a block, so
+           without this the container grew to its content and the bottom of a
+           long queue was cut off with no way to scroll to it. */
+        body { display: flex; flex-direction: column; }
+        .triage-container { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 20px; }
+        .page-title { font-size: 22px; font-weight: 600; color: var(--text); margin: 0 0 6px 0; }
+        .page-subtitle { font-size: 13px; color: var(--text-dim); margin: 0 0 24px 0; max-width: 760px; }
+        .settings-card { background: var(--surface); border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px var(--shadow); margin-bottom: 24px; }
 
-        .triage-info { display: flex; gap: 12px; align-items: flex-start; background: #eef4f8; border: 1px solid #d5e3ec; border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; max-width: 860px; }
-        .triage-info svg { flex-shrink: 0; color: #4a7a96; margin-top: 1px; }
-        .triage-info .ti-text { font-size: 12.5px; color: #38596b; line-height: 1.5; }
-        .triage-info .ti-text strong { color: #1f3d4d; }
-        .triage-info .ti-title { display: block; font-weight: 600; color: #1f3d4d; margin-bottom: 3px; font-size: 13px; }
+        .triage-info { display: flex; gap: 12px; align-items: flex-start; background: var(--info-bg); border: 1px solid var(--info-border); border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; max-width: 860px; }
+        .triage-info svg { flex-shrink: 0; color: var(--info-accent); margin-top: 1px; }
+        .triage-info .ti-text { font-size: 12.5px; color: var(--info-text); line-height: 1.5; }
+        .triage-info .ti-text strong { color: var(--info-text); }
+        .triage-info .ti-title { display: block; font-weight: 600; color: var(--info-text); margin-bottom: 3px; font-size: 13px; }
 
         .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; }
         .btn-primary { background: #546e7a; color: #fff; }
         .btn-primary:hover { background: #455a64; }
-        .btn-secondary { background: #eceff1; color: #455a64; }
-        .btn-secondary:hover { background: #cfd8dc; }
+        .btn-secondary { background: var(--surface-hover); color: var(--text-muted); }
+        .btn-secondary:hover { background: var(--border); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         table.triage { width: 100%; border-collapse: collapse; font-size: 13px; }
-        table.triage th { text-align: left; color: #888; font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid #eee; }
-        table.triage td { padding: 10px; border-bottom: 1px solid #f2f2f2; color: #444; vertical-align: middle; }
+        table.triage th { text-align: left; color: var(--text-dim); font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
+        table.triage td { padding: 10px; border-bottom: 1px solid var(--border-soft); color: var(--text); vertical-align: middle; }
         table.triage tr:last-child td { border-bottom: none; }
-        .sender-name { font-weight: 600; color: #333; }
-        .sender-addr { color: #888; font-size: 12px; }
-        .domain-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #ede7f6; color: #5e35b1; }
-        .domain-chip.freemail { background: #fff3e0; color: #ef6c00; }
+        .sender-name { font-weight: 600; color: var(--text); }
+        .sender-addr { color: var(--text-dim); font-size: 12px; }
+        .domain-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--problem-badge-bg); color: var(--problem-text); }
+        .domain-chip.freemail { background: var(--warning-bg); color: var(--warning-text); }
         .subject-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .table-action-btn { background: #546e7a; color: #fff; border: none; cursor: pointer; padding: 6px 14px; font-size: 12px; font-weight: 600; border-radius: 5px; }
         .table-action-btn:hover { background: #455a64; }
-        .empty-row td { text-align: center; color: #aaa; padding: 36px; font-style: italic; }
+        .empty-row td { text-align: center; color: var(--text-faint); padding: 36px; font-style: italic; }
 
         /* Modal — namespaced (tr-) so it doesn't inherit inbox.css's global .modal. */
         .tr-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 2100; align-items: center; justify-content: center; }
         .tr-modal-overlay.open { display: flex; }
-        .tr-modal { background: #fff; border-radius: 10px; width: 480px; max-width: 92vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-        .tr-modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; color: #333; }
+        .tr-modal { background: var(--surface); border-radius: 10px; width: 480px; max-width: 92vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .tr-modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-soft); font-size: 16px; font-weight: 600; color: var(--text); }
         .tr-modal-body { padding: 20px 24px; }
-        .tr-modal-footer { padding: 16px 24px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 10px; }
+        .tr-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-soft); display: flex; justify-content: flex-end; gap: 10px; }
         .form-field { margin-bottom: 16px; }
-        .form-field label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 4px; }
-        .form-field select, .form-field input[type=text] { width: 100%; padding: 9px 11px; border: 1px solid #ddd; border-radius: 5px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
+        .form-field label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+        .form-field select, .form-field input[type=text] { background: var(--surface); color: var(--text); width: 100%; padding: 9px 11px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 5px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
         .form-field select:focus, .form-field input:focus { outline: none; border-color: #546e7a; }
         .checkbox-field { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
         .checkbox-field input { margin-top: 3px; }
-        .checkbox-field .cb-label { font-size: 13px; color: #444; }
-        .checkbox-field .cb-label span { display: block; color: #999; font-size: 12px; }
-        .triage-email-summary { font-size: 12px; color: #777; background: #f7f8f9; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
-        .freemail-note { font-size: 12px; color: #ef6c00; margin-bottom: 12px; }
+        .checkbox-field .cb-label { font-size: 13px; color: var(--text); }
+        .checkbox-field .cb-label span { display: block; color: var(--text-faint); font-size: 12px; }
+        .triage-email-summary { font-size: 12px; color: var(--text-muted); background: var(--surface-2); border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
+        .freemail-note { font-size: 12px; color: var(--warning-text); margin-bottom: 12px; }
     </style>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="tickets-triage">
     <?php include '../includes/header.php'; ?>
 
     <div class="triage-container">
@@ -146,7 +159,9 @@ $translationNamespaces = ['common', 'tickets'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <script>
     const API = '<?php echo $path_prefix; ?>api/';
     let triageTickets = [];
@@ -154,7 +169,9 @@ $translationNamespaces = ['common', 'tickets'];
     let current = null; // the ticket being resolved
 
     function esc(s) { return (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-    function fmtDate(s) { if (!s) return ''; const d = new Date(s.replace(' ', 'T') + 'Z'); return isNaN(d) ? esc(s) : d.toLocaleString(); }
+    // Named fmtWhen, not fmtDate: a top-level `function fmtDate` here would
+    // shadow the global one from tz.js for this whole page.
+    function fmtWhen(s) { if (!s) return ''; const d = parseUTCDate(s); return (!d || isNaN(d)) ? esc(s) : fmtDateTime(d); }
 
     async function loadCompanies() {
         try {
@@ -190,7 +207,7 @@ $translationNamespaces = ['common', 'tickets'];
                     <td>${domainChip}</td>
                     <td class="subject-cell" title="${esc(tk.subject)}"><strong>${esc(tk.ticket_number)}</strong> ${esc(tk.subject)}</td>
                     <td>${esc(tk.mailbox_name)}</td>
-                    <td>${fmtDate(tk.received)}</td>
+                    <td>${fmtWhen(tk.received)}</td>
                     <td style="text-align:right;"><button class="table-action-btn" data-resolve="${tk.ticket_id}">${esc(window.t('tickets.triage.resolve'))}</button></td>
                 </tr>`;
         }).join('');
@@ -301,5 +318,6 @@ $translationNamespaces = ['common', 'tickets'];
         loadTriage();
     })();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

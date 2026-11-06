@@ -1,0 +1,123 @@
+<?php
+/**
+ * FreeITSM — setup strings (de).
+ *
+ * Keys mirror lang/en/setup.php exactly. A key absent here falls back to
+ * English at runtime, so this file may be incomplete without breaking
+ * anything. Check coverage with: php scripts/i18n_audit.php de
+ *
+ * ⚠️ Placeholders like {name} and %d are substituted at runtime — printf
+ * tokens substitute BY POSITION, so their order must match English.
+ */
+
+return [
+    'title' => 'FreeITSM-Einrichtung',
+    'heading' => 'Setup-Prüfung',
+    'storage' => [
+        'heading' => 'Stopp — hochgeladene Dateien werden bei jeder Aktualisierung gelöscht',
+        'explain' => 'FreeITSM läuft in Docker, und einige der Ordner, in denen hochgeladene Dateien gespeichert werden, liegen im Container selbst statt auf einem Docker-Volume. Eine Aktualisierung von FreeITSM baut den Container neu, und dabei geht alles darin verloren. Ihre Datenbank liegt auf einem Volume und bleibt erhalten, sodass Ihre Anhänge danach zwar weiterhin gelistet wären, die Dateien selbst aber fehlen würden. Zwei Minuten jetzt verhindern das dauerhaft.',
+        'encryption_key' => 'Dazu gehört auch Ihr Verschlüsselungsschlüssel. Geht er verloren, werden gespeicherte Postfach-Passwörter und Integrationszugangsdaten nicht beschädigt, können aber nie wieder gelesen werden, und jedes Einzelne muss von Hand neu eingegeben werden.',
+        'existing_install' => 'Diese Installation ist bereits in Gebrauch, fügen Sie diese also nicht einfach hinzu und bauen neu. Kopieren Sie die Ordner zuerst aus dem laufenden Container heraus — das Hinzufügen eines Volumes rettet keine Dateien, die bereits darin liegen. System → Debug-Werkzeuge → D013 gibt Ihnen die Befehle in der richtigen Reihenfolge.',
+        'step1' => '1. Erstellen Sie eine neue Datei namens docker-compose.override.yml im selben Ordner wie docker-compose.yml, mit genau diesem Inhalt. Bearbeiten Sie nicht docker-compose.yml selbst — diese Datei wird bei einer Aktualisierung ersetzt, sodass Ihre Änderungen verloren gingen oder das Update blockieren würden. FreeITSM liest die Override-Datei automatisch ein.',
+        'step2' => '2. Anwenden:',
+        'foot' => 'Laden Sie danach diese Seite neu — die Meldung ist dann verschwunden. Sonst muss sich nichts ändern, und es jetzt zu tun kostet Sie nichts, weil in diesen Ordnern noch nichts gespeichert ist.',
+        'foot_in_use' => 'Laden Sie danach diese Seite neu — die Meldung ist dann verschwunden. Überspringen Sie den Kopierschritt oben nicht: In diesen Ordnern liegen bereits Dateien, und ein Neuaufbau ohne vorheriges Herauskopieren löscht sie endgültig.',
+    ],
+    'summary' => [
+        'passed' => '{n} bestanden',
+        'warning' => '{n} Warnung',
+        'warnings' => '{n} Warnungen',
+        'failed' => '{n} fehlgeschlagen',
+    ],
+    'checks' => [
+        'config' => 'config.php',
+        'db_config' => 'db_config.php',
+        'db_connection' => 'Datenbankverbindung',
+        'encryption_key' => 'Verschlüsselungsschlüssel',
+        'ssl_verify' => 'Überprüfung des HTTPS-Zertifikats',
+        'ca_bundle_ini' => 'CA-Bundle in der php.ini',
+        'display_errors' => 'Fehleranzeige',
+        'php_version' => 'PHP-Version',
+        'php_extension' => 'PHP-Erweiterung: {ext}',
+        'php_extension_optional' => 'PHP-Erweiterung: {ext} (optional)',
+        'storage_persistence' => 'Speicherpersistenz (Docker)',
+    ],
+    'detail' => [
+        'found' => 'Gefunden',
+        'storage_persisted' => 'Jeder Ordner mit hochgeladenen Dateien liegt auf einem Speicher, der einen Neuaufbau übersteht',
+        'storage_at_risk' => 'NICHT auf einem Docker-Volume und wird bei jedem Neuaufbau geleert: {dirs} — fügen Sie für jeden davon jetzt ein Volume hinzu, bevor etwas darin gespeichert wird',
+        'storage_at_risk_masked' => '{n} Ordner mit hochgeladenen Dateien würden ein Update nicht überstehen',
+        'config_not_found' => 'Nicht gefunden — kopieren Sie config.php in das Stammverzeichnis der Anwendung',
+        'db_config_not_found' => 'Nicht gefunden unter: {path}',
+        'db_config_path_unset' => 'Variable $db_config_path ist in config.php nicht gesetzt',
+        'db_connected' => 'Verbunden (Treiber: {driver})',
+        'db_constants_undefined' => 'Datenbankkonstanten nicht definiert — prüfen Sie db_config.php',
+        'encryption_key_missing' => 'Nicht gefunden unter: {path} — wird zum Verschlüsseln sensibler Einstellungen benötigt',
+        'encryption_key_undefined' => 'ENCRYPTION_KEY_PATH ist in includes/encryption.php nicht definiert',
+        'ssl_enabled' => 'Aktiviert',
+        'ssl_verified' => 'Aktiv und funktionsfähig — bei einer echten HTTPS-Anfrage wurde das Zertifikat überprüft (CA-Bundle: {bundle})',
+        'ssl_broken' => 'Aktiv, aber der Server konnte kein Zertifikat überprüfen — ausgehende HTTPS-Verbindungen (E-Mail, KI, Webhooks, Anmeldung) werden fehlschlagen. Einfachste Lösung: Legen Sie eine Datei cacert.pem in den Ordner includes/ der Anwendung (Download unter https://curl.se/ca/cacert.pem) — Änderungen an der php.ini sind nicht nötig. Fehler: {error}',
+        'ssl_untested' => 'Aktiv, aber eine Testanfrage konnte nicht durchgeführt werden (keine ausgehende Netzwerkverbindung?), daher ließ sich die Überprüfung nicht bestätigen. Fehler: {error}',
+        'ssl_bundle_system' => 'Systemspeicher',
+        'help_link' => 'So beheben Sie das — Anleitung zu HTTPS-Zertifikaten →',
+        'ca_ini_status' => 'curl.cainfo: {curl} · openssl.cafile: {ossl}',
+        'ca_ini_none' => 'nicht gesetzt',
+        'ca_ini_missing' => '{path} (Datei fehlt!)',
+        'ca_ini_note_fix' => ' — korrigieren Sie den Pfad oder kommentieren Sie die Einstellung in der php.ini aus.',
+        'ca_ini_note_fallback' => ' — optional: FreeITSM greift ersatzweise auf seine mitgelieferte CA-Liste (Windows) oder den Zertifikatspeicher des Betriebssystems (Linux) zurück. Hinweis: Dies bezieht sich auf das PHP des Webservers; der Hintergrunddienst verwendet eine eigene CLI-php.ini.',
+        'ssl_disabled' => 'Deaktiviert — für den Produktivbetrieb aktivieren (SSL_VERIFY_PEER in config.php auf true setzen)',
+        'ssl_undefined' => 'SSL_VERIFY_PEER ist in config.php nicht definiert',
+        'display_errors_enabled' => 'Aktiviert — für den Produktivbetrieb deaktivieren (display_errors in config.php auf 0 setzen)',
+        'display_errors_disabled' => 'Deaktiviert',
+        'php_version_ok' => '{version}',
+        'php_version_too_low' => '{version} — PHP 8.1 oder höher ist erforderlich',
+        'php_version_eol' => '{version} — wird noch unterstützt, diese Version erhält jedoch seit dem Ende ihrer Lebensdauer keine Sicherheitsupdates mehr. Empfohlen wird PHP 8.3 oder 8.4.',
+        'extension_loaded' => 'Geladen',
+        'extension_not_loaded' => 'Nicht geladen — in der php.ini aktivieren',
+        'pdo_mysql_not_loaded' => 'Nicht geladen — aktivieren Sie pdo_mysql in der php.ini',
+        'imap_not_loaded' => 'Nicht geladen — wird nur für einfache IMAP-/SMTP-Postfächer benötigt. PHP 8.4 liefert diese Erweiterung nicht mehr mit; installieren Sie sie bei Bedarf über PECL.',
+        'ldap_not_loaded' => 'Nicht geladen — nur für die Anmeldung per LDAP / Active Directory und die Verzeichnissynchronisierung erforderlich. Aktivieren Sie extension=ldap, wenn Sie diese verwenden.',
+        'zip_not_loaded' => 'Nicht geladen — erforderlich, um LMS-Kurse (SCORM) hochzuladen, Word-Dateien im RFP Builder zu lesen und in .docx- und .xlsx-Anhängen zu suchen.',
+        'intl_not_loaded' => 'Nicht geladen — nur für internationale Domainnamen (wie münchen.de) in Domains erforderlich.',
+        'db_config_not_found_masked' => 'Nicht gefunden am in config.php festgelegten Pfad',
+        'ssl_verified_masked' => 'Aktiv und funktionsfähig — bei einer echten HTTPS-Anfrage wurde das Zertifikat überprüft',
+        'ssl_broken_masked' => 'Aktiv, aber der Server konnte kein Zertifikat überprüfen — ausgehende HTTPS-Verbindungen (E-Mail, KI, Webhooks, Anmeldung) werden fehlschlagen. Melden Sie sich als Administrator an, um den Fehler zu sehen.',
+        'ssl_untested_masked' => 'Aktiv, aber eine Testanfrage konnte nicht durchgeführt werden, daher ließ sich die Überprüfung nicht bestätigen.',
+        'db_error_masked' => 'Verbindung fehlgeschlagen — melden Sie sich als Administrator an, um den vollständigen Fehler zu sehen',
+        'encryption_key_missing_masked' => 'Nicht gefunden — wird zum Verschlüsseln sensibler Einstellungen benötigt',
+        'ca_ini_masked_ok' => 'Konfiguriert',
+        'ca_ini_masked_broken' => 'Gesetzt, verweist jedoch auf eine nicht vorhandene Datei — korrigieren Sie den Pfad oder kommentieren Sie die Einstellung in der php.ini aus.',
+        'php_version_ok_masked' => 'Erfüllt die Anforderung',
+        'php_version_too_low_masked' => 'Zu alt — PHP 8.1 oder höher ist erforderlich',
+        'php_version_eol_masked' => 'Wird noch unterstützt, diese Version hat jedoch seit dem Ende ihrer Lebensdauer keine Sicherheitsupdates mehr erhalten. Melden Sie sich als Administrator an, um die Version zu sehen.',
+    ],
+    'locked' => [
+        'notice' => 'Das Setup ist auf dieser Installation abgeschlossen, daher sind Pfade, Verbindungsfehler und Anmeldedaten ausgeblendet. Melden Sie sich als Administrator an, um alle Details zu sehen.',
+    ],
+    'db_verify' => [
+        'heading' => 'Datenbankprüfung',
+        'intro' => 'Prüft die Datenbank auf fehlende Tabellen oder Spalten und legt sie automatisch an.',
+        'run' => 'Ausführen',
+    ],
+    'login' => [
+        'heading' => 'Standard-Anmeldedaten',
+        'intro' => 'Bei der Datenbankprüfung wird ein Standard-Administratorkonto angelegt.',
+        'username' => 'Benutzername:',
+        'password' => 'Passwort:',
+    ],
+    'footer' => [
+        'warning' => 'Sobald Ihr System produktiv läuft, löschen Sie aus Sicherheitsgründen den Ordner {folder}.',
+        'signature' => 'FreeITSM-Setup-Prüfung',
+    ],
+    'js' => [
+        'running' => 'Wird ausgeführt...',
+        'run' => 'Ausführen',
+        'tables_checked' => '{n} Tabellen geprüft:',
+        'ok' => '{n} in Ordnung',
+        'created' => '{n} angelegt',
+        'updated' => '{n} aktualisiert',
+        'errors' => '{n} Fehler',
+        'unknown_error' => 'Unbekannter Fehler',
+        'verify_failed' => 'Datenbankprüfung konnte nicht ausgeführt werden: {error}',
+    ],
+];

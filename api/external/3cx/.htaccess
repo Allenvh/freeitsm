@@ -1,0 +1,7 @@
+# 3CX sends its token as "Authorization: Bearer <token>" - the only way the CRM
+# template carries it. Some Apache/FastCGI setups strip that header from PHP;
+# this hands it through as an environment variable crm.php also reads (the same
+# line as api/v1/.htaccess).
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+</IfModule>

@@ -7,8 +7,12 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/landing.php';   // landingOnPreferenceSaved() — discussion #63
 
 header('Content-Type: application/json');
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
@@ -42,6 +46,11 @@ try {
          ON DUPLICATE KEY UPDATE preference_value = VALUES(preference_value), updated_datetime = UTC_TIMESTAMP()"
     );
     $stmt->execute([(int)$_SESSION['analyst_id'], $key, $value]);
+
+    // A couple of preferences need to be readable before anyone has logged in,
+    // so they are mirrored into a cookie. No-ops for every other key. Must run
+    // before the json_encode below, because it sets a header.
+    landingOnPreferenceSaved($key, $value);
 
     echo json_encode(['success' => true, 'key' => $key, 'value' => $value]);
 } catch (Exception $e) {

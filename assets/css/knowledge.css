@@ -5,7 +5,7 @@
 .knowledge-container {
     display: flex;
     height: calc(100vh - 48px);
-    background: #f5f5f5;
+    background: var(--app-bg, #f5f5f5);
     /* position: relative is the anchor for .sidebar-hover .knowledge-sidebar's
        absolute positioning — keep it here in both modes so the layout doesn't
        reflow when the user toggles the preference. */
@@ -15,8 +15,8 @@
 /* Sidebar */
 .knowledge-sidebar {
     width: 280px;
-    background: white;
-    border-right: 1px solid #ddd;
+    background: var(--surface, white);
+    border-right: 1px solid var(--border, #ddd);
     padding: 20px;
     overflow-y: auto;
 }
@@ -33,10 +33,17 @@
     bottom: 0;
     width: 16px;
     min-width: 16px;
-    z-index: 10;
+    /* ⚠️ MUST BEAT .article-content-header, which is `position: sticky` with a
+       z-index of its own. Both sat at 10, and at EQUAL z-index the later
+       element in the document wins — so the article's sticky header painted
+       straight over the panel as it slid out, and the panel appeared to go
+       underneath the article. In this mode the panel is deliberately an OVERLAY
+       (position: absolute over the content), so it has to be above everything it
+       slides across, not level with it. */
+    z-index: 30;
     overflow: hidden;
     transition: width 0.18s ease;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.12);
+    box-shadow: 2px 0 8px var(--shadow, rgba(0, 0, 0, 0.12));
     padding: 0;
 }
 .knowledge-container.sidebar-hover .knowledge-sidebar:hover {
@@ -80,7 +87,7 @@
 .sidebar-section h3 {
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -89,14 +96,14 @@
 .search-box input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     font-size: 14px;
 }
 
 .search-box input:focus {
     outline: none;
-    border-color: #0078d4;
+    border-color: var(--accent, #0078d4);
 }
 
 .tag-filter-list {
@@ -109,8 +116,8 @@
     display: inline-flex;
     align-items: center;
     padding: 6px 12px;
-    background: #f0f0f0;
-    border: 1px solid #ddd;
+    background: var(--surface-hover, #f0f0f0);
+    border: 1px solid var(--border, #ddd);
     border-radius: 20px;
     font-size: 13px;
     cursor: pointer;
@@ -118,14 +125,14 @@
 }
 
 .tag-filter:hover {
-    background: #e8f4fd;
-    border-color: #0078d4;
+    background: var(--accent-soft, #e8f4fd);
+    border-color: var(--accent, #0078d4);
 }
 
 .tag-filter.active {
-    background: #0078d4;
-    border-color: #0078d4;
-    color: white;
+    background: var(--accent, #0078d4);
+    border-color: var(--accent, #0078d4);
+    color: var(--on-accent, white);
 }
 
 .tag-filter .tag-count {
@@ -148,19 +155,29 @@
 /* Article list */
 .article-list-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    /* ⚠️ NOT space-between. This row had exactly two children — heading, count —
+       so space-between put one at each end. The layout toggle made it three, and
+       space-between then pushed the count into the middle, hard up against the
+       heading with no gap at all ("Knowledge Articles20 articles"). The heading
+       and the count belong TOGETHER as one label; only the toggle goes right,
+       which it does with its own margin-left: auto. */
+    align-items: baseline;
+    gap: 10px;
     margin-bottom: 20px;
 }
 
 .article-list-header h2 {
     font-size: 24px;
-    color: #333;
+    color: var(--text, #333);
 }
 
+/* Same size and weight as the heading it sits beside: the two read as one line
+   ("Knowledge Articles  20 articles") rather than as a title with a footnote
+   stuck to it. The colour still separates them, so which is which stays obvious. */
 .article-count {
-    color: #666;
-    font-size: 14px;
+    color: var(--text-muted, #666);
+    font-size: 24px;
+    font-weight: 600;
 }
 
 .article-list {
@@ -170,30 +187,89 @@
 }
 
 .article-card {
-    background: white;
+    background: var(--surface, white);
     border-radius: 8px;
     padding: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 2px 4px var(--shadow, rgba(0,0,0,0.08));
     cursor: pointer;
     transition: all 0.2s;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--border, #e0e0e0);
+    position: relative;
+}
+
+/* Bulk-select tick. The whole card opens the article, so the label stops
+   propagation (see knowledge.js); the padding widens the hit area so it is
+   reachable without catching the card. */
+.article-select {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    padding: 4px;
+    cursor: pointer;
+    z-index: 1;
+}
+.article-select input { cursor: pointer; }
+
+/* Room for the tick so a long title never runs underneath it. */
+.article-card-title { padding-right: 28px; }
+
+/* ⚠️ The tick is absolutely positioned because a CARD has a corner to put it
+   in. A tree row and a details row do not - they are single lines - so there
+   the same element has to sit in the flow like any other cell, or it lands on
+   top of the text. Same markup everywhere, positioned per view. */
+.kb-tree-article .article-select,
+.kb-details-row .article-select {
+    position: static;
+    padding: 0 6px 0 0;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Selected, and the row the keyboard is on. These are different things: you can
+   move the focus with Ctrl+arrow without selecting anything, and a selection of
+   twelve rows has exactly one focus. */
+.kb-row-selected { background: var(--accent-soft) !important; }
+.article-card.kb-row-selected { outline: 1px solid var(--accent); outline-offset: -1px; }
+.kb-row-focus { box-shadow: inset 2px 0 0 var(--accent); }
+
+.kb-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    background: var(--accent-soft, #eff6ff);
+    border: 1px solid var(--border, #e0e0e0);
+}
+.kb-bulk-count { font-weight: 600; color: var(--text, #333); }
+.kb-bulk-bar label { color: var(--text-muted, #666); font-size: 13px; }
+.kb-bulk-bar select {
+    padding: 6px 10px;
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    font-family: inherit;
 }
 
 .article-card:hover {
-    box-shadow: 0 8px 18px rgba(0,0,0,0.14);
-    border-color: #0078d4;
+    box-shadow: 0 8px 18px var(--shadow, rgba(0,0,0,0.14));
+    border-color: var(--accent, #0078d4);
     transform: translateY(-3px);
 }
 
 .article-card-title {
     font-size: 18px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 8px;
 }
 
 .article-card-preview {
-    color: #666;
+    color: var(--text-muted, #666);
     font-size: 14px;
     line-height: 1.5;
     margin-bottom: 12px;
@@ -208,7 +284,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 12px;
-    color: #888;
+    color: var(--text-dim, #888);
 }
 
 .article-card-tags {
@@ -220,8 +296,8 @@
 .article-tag {
     display: inline-block;
     padding: 3px 10px;
-    background: #e8f4fd;
-    color: #0078d4;
+    background: var(--accent-soft, #e8f4fd);
+    color: var(--accent, #0078d4);
     border-radius: 12px;
     font-size: 11px;
     font-weight: 500;
@@ -245,15 +321,21 @@
     gap: 8px;
 }
 
+/* The action buttons carry both an icon and a word. On a desktop the word is
+   the button and the icon would just be decoration; the phone bar hides the
+   word and keeps the icon (mobile.css, layer 17k). Neither is ever shown
+   without the other. */
+.kb-act-icon { display: none; }
+
 .article-content {
-    background: white;
+    background: var(--surface, white);
     border-radius: 8px;
     padding: 30px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 2px 4px var(--shadow, rgba(0,0,0,0.08));
 }
 
 .article-content-header {
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border, #e0e0e0);
     padding-bottom: 20px;
     margin-bottom: 20px;
 }
@@ -261,7 +343,7 @@
 .article-content-title {
     font-size: 28px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 12px;
 }
 
@@ -269,7 +351,7 @@
     display: flex;
     gap: 24px;
     font-size: 14px;
-    color: #666;
+    color: var(--text-muted, #666);
 }
 
 .article-content-tags {
@@ -281,7 +363,7 @@
 
 .article-content-body {
     line-height: 1.7;
-    color: #333;
+    color: var(--text, #333);
 }
 
 .article-content-body h1,
@@ -302,14 +384,14 @@
 }
 
 .article-content-body code {
-    background: #f5f5f5;
+    background: var(--surface-2, #f5f5f5);
     padding: 2px 6px;
     border-radius: 3px;
     font-family: 'Consolas', monospace;
 }
 
 .article-content-body pre {
-    background: #f5f5f5;
+    background: var(--surface-2, #f5f5f5);
     padding: 16px;
     border-radius: 4px;
     overflow-x: auto;
@@ -327,29 +409,29 @@
 
 .editor-header h2 {
     font-size: 24px;
-    color: #333;
+    color: var(--text, #333);
     margin: 0;
 }
 
 /* Popout toggle: same expand/contract icon-swap pattern as the tickets
    subject-row .ticket-popout-toggle. */
 .editor-popout-toggle {
-    border: 1px solid #ddd;
-    background: white;
+    border: 1px solid var(--border, #ddd);
+    background: var(--surface, white);
     border-radius: 4px;
     width: 32px;
     height: 32px;
     padding: 0;
     cursor: pointer;
-    color: #666;
+    color: var(--text-muted, #666);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.15s;
 }
 .editor-popout-toggle:hover {
-    border-color: #8764b8;
-    color: #8764b8;
+    border-color: var(--kb-accent, #8764b8);
+    color: var(--kb-accent, #8764b8);
 }
 .editor-popout-toggle .popout-icon-contract { display: none; }
 .knowledge-container.editor-popout .editor-popout-toggle .popout-icon-expand   { display: none; }
@@ -379,11 +461,22 @@
     align-items: stretch;
     gap: 24px;
 }
+/* Explains what the chosen "who can see this" actually means, under the select.
+   Themed via tokens so it doesn't glow white in dark mode. */
+.editor-properties .field-hint {
+    display: block;
+    margin-top: 5px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    font-weight: 400;
+    color: var(--text-dim, #888);
+}
+
 .knowledge-container.editor-popout .editor-properties {
     flex-shrink: 0;
     width: 340px;
-    background: #fafafa;
-    border: 1px solid #e0e0e0;
+    background: var(--surface-2, #fafafa);
+    border: 1px solid var(--border, #e0e0e0);
     border-radius: 6px;
     padding: 16px;
     overflow-y: auto;
@@ -447,10 +540,10 @@
 }
 
 .editor-form {
-    background: white;
+    background: var(--surface, white);
     border-radius: 8px;
     padding: 30px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 2px 4px var(--shadow, rgba(0,0,0,0.08));
 }
 
 /* Editor view becomes a flex column so the action row can sit as a real
@@ -479,9 +572,9 @@
     /* Symmetric padding around the buttons: equal top / bottom, and
        a tighter right inset so the buttons sit closer to the panel edge. */
     padding: 14px 16px;
-    background: white;
-    border-top: 1px solid #e0e0e0;
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.04);
+    background: var(--surface, white);
+    border-top: 1px solid var(--border, #e0e0e0);
+    box-shadow: 0 -2px 6px var(--shadow, rgba(0, 0, 0, 0.04));
     /* Negative horizontal margins to extend the bar to the panel edges
        (cancels .knowledge-main's 30px padding-x). No negative bottom
        margin so .knowledge-main's 20px padding-bottom shows as breathing
@@ -519,8 +612,8 @@
     display: inline-flex;
     align-items: center;
     padding: 2px 10px;
-    background: #0078d4;
-    color: white;
+    background: var(--accent, #0078d4);
+    color: var(--on-accent, white);
     border-radius: 10px;
     font-size: 12px;
     line-height: 1.4;
@@ -540,7 +633,7 @@
 .tag-input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     outline: none;
     font-size: 14px;
@@ -551,8 +644,8 @@
     top: 100%;
     left: 0;
     right: 0;
-    background: white;
-    border: 1px solid #ddd;
+    background: var(--surface, white);
+    border: 1px solid var(--border, #ddd);
     border-top: none;
     border-radius: 0 0 4px 4px;
     max-height: 200px;
@@ -572,11 +665,11 @@
 }
 
 .tag-suggestion:hover {
-    background: #f0f0f0;
+    background: var(--surface-hover, #f0f0f0);
 }
 
 .tag-suggestion.new-tag {
-    color: #0078d4;
+    color: var(--accent, #0078d4);
     font-style: italic;
 }
 
@@ -584,7 +677,7 @@
 .empty-state {
     text-align: center;
     padding: 60px 20px;
-    color: #888;
+    color: var(--text-dim, #888);
 }
 
 .empty-state-icon {
@@ -599,8 +692,8 @@
 
 /* Button variants */
 .btn-danger {
-    background: #d13438;
-    color: white;
+    background: var(--danger-accent, #d13438);
+    color: var(--on-accent, white);
 }
 
 .btn-danger:hover {
@@ -617,7 +710,7 @@
 .no-results {
     text-align: center;
     padding: 40px;
-    color: #888;
+    color: var(--text-dim, #888);
     font-size: 14px;
 }
 
@@ -649,29 +742,29 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 
 /* Knowledge module purple theme overrides */
 .knowledge-container .btn-primary {
-    background: #8764b8;
-    border-color: #8764b8;
+    background: var(--kb-accent, #8764b8);
+    border-color: var(--kb-accent, #8764b8);
 }
 
 .knowledge-container .btn-primary:hover {
-    background: #6b4fa2;
-    border-color: #6b4fa2;
+    background: var(--kb-accent-hover, #6b4fa2);
+    border-color: var(--kb-accent-hover, #6b4fa2);
 }
 
 .tag-filter:hover {
-    background: #f3eef8;
-    border-color: #8764b8;
+    background: var(--kb-accent-soft, #f3eef8);
+    border-color: var(--kb-accent, #8764b8);
 }
 
 .tag-filter.active {
-    background: #8764b8;
-    border-color: #8764b8;
-    color: white;
+    background: var(--kb-accent, #8764b8);
+    border-color: var(--kb-accent, #8764b8);
+    color: var(--kb-on-accent, white);
 }
 
 .knowledge-container .form-input:focus,
 .knowledge-container .tag-input:focus {
-    border-color: #8764b8;
+    border-color: var(--kb-accent, #8764b8);
     box-shadow: 0 0 0 2px rgba(135, 100, 184, 0.1);
 }
 
@@ -679,11 +772,11 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 .article-content-header {
     position: sticky;
     top: 0;
-    background: white;
+    background: var(--surface, white);
     z-index: 10;
     padding: 20px 0;
     margin: -20px 0 20px 0;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--border, #e0e0e0);
 }
 
 /* Share dropdown */
@@ -693,8 +786,8 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .btn-share {
-    background: #8764b8;
-    color: white;
+    background: var(--kb-accent, #8764b8);
+    color: var(--kb-on-accent, white);
     border: none;
     padding: 8px 16px;
     border-radius: 4px;
@@ -707,7 +800,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .btn-share:hover {
-    background: #6b4fa2;
+    background: var(--kb-accent-hover, #6b4fa2);
 }
 
 .btn-share svg {
@@ -720,9 +813,9 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     top: 100%;
     right: 0;
     margin-top: 4px;
-    background: white;
+    background: var(--surface, white);
     border-radius: 6px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 20px var(--shadow, rgba(0, 0, 0, 0.15));
     min-width: 180px;
     z-index: 100;
     display: none;
@@ -738,18 +831,18 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     align-items: center;
     gap: 10px;
     padding: 12px 16px;
-    color: #333;
+    color: var(--text, #333);
     text-decoration: none;
     font-size: 14px;
     transition: background 0.15s;
 }
 
 .share-dropdown-menu a:hover {
-    background: #f5f5f5;
+    background: var(--surface-hover, #f5f5f5);
 }
 
 .share-dropdown-menu a svg {
-    color: #666;
+    color: var(--text-muted, #666);
     flex-shrink: 0;
 }
 
@@ -778,7 +871,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 #shareEmailModal .modal-header {
     font-size: 18px;
     font-weight: 600;
-    color: #333;
+    color: var(--text, #333);
     margin-bottom: 20px;
 }
 
@@ -789,7 +882,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 #shareEmailModal .form-textarea {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 4px;
     font-size: 14px;
     font-family: inherit;
@@ -798,7 +891,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 
 #shareEmailModal .form-textarea:focus {
     outline: none;
-    border-color: #8764b8;
+    border-color: var(--kb-accent, #8764b8);
 }
 
 #shareEmailModal .modal-footer {
@@ -807,7 +900,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     gap: 10px;
     margin-top: 20px;
     padding-top: 20px;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid var(--border, #e0e0e0);
 }
 
 /* AI Chat Panel */
@@ -832,8 +925,8 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     right: -420px;
     width: 420px;
     height: 100vh;
-    background: white;
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+    background: var(--surface, white);
+    box-shadow: -4px 0 20px var(--shadow, rgba(0, 0, 0, 0.15));
     z-index: 1001;
     display: flex;
     flex-direction: column;
@@ -849,8 +942,8 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    background: linear-gradient(135deg, #8764b8, #6b4fa2);
-    color: white;
+    background: linear-gradient(135deg, var(--kb-accent, #8764b8), var(--kb-accent-hover, #6b4fa2));
+    color: var(--kb-on-accent, white);
 }
 
 .ai-chat-title {
@@ -864,7 +957,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 .ai-chat-close {
     background: none;
     border: none;
-    color: white;
+    color: var(--kb-on-accent, white);
     font-size: 24px;
     cursor: pointer;
     padding: 0 4px;
@@ -887,7 +980,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 .ai-chat-welcome {
     text-align: center;
     padding: 40px 20px;
-    color: #666;
+    color: var(--text-muted, #666);
     font-size: 14px;
     line-height: 1.6;
 }
@@ -916,14 +1009,14 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .ai-chat-message.user .ai-chat-bubble {
-    background: #8764b8;
-    color: white;
+    background: var(--kb-accent, #8764b8);
+    color: var(--kb-on-accent, white);
     border-bottom-right-radius: 4px;
 }
 
 .ai-chat-message.assistant .ai-chat-bubble {
-    background: #f0f0f0;
-    color: #333;
+    background: var(--surface-hover, #f0f0f0);
+    color: var(--text, #333);
     border-bottom-left-radius: 4px;
 }
 
@@ -935,7 +1028,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 
 .ai-chat-meta {
     font-size: 11px;
-    color: #999;
+    color: var(--text-faint, #999);
     padding: 0 4px;
 }
 
@@ -944,12 +1037,12 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     align-items: center;
     gap: 8px;
     padding: 12px 16px;
-    background: #f0f0f0;
+    background: var(--surface-hover, #f0f0f0);
     border-radius: 12px;
     border-bottom-left-radius: 4px;
     max-width: 85%;
     font-size: 14px;
-    color: #888;
+    color: var(--text-dim, #888);
 }
 
 .ai-chat-thinking .dots {
@@ -975,8 +1068,8 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 
 .ai-chat-error {
     padding: 10px 14px;
-    background: #fce4ec;
-    color: #c62828;
+    background: var(--danger-bg, #fce4ec);
+    color: var(--danger-text, #c62828);
     border-radius: 8px;
     font-size: 13px;
 }
@@ -985,13 +1078,13 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     display: flex;
     gap: 8px;
     padding: 16px 20px;
-    border-top: 1px solid #e0e0e0;
-    background: #fafafa;
+    border-top: 1px solid var(--border, #e0e0e0);
+    background: var(--surface-2, #fafafa);
 }
 
 .ai-chat-input-area textarea {
     flex: 1;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border, #ddd);
     border-radius: 8px;
     padding: 10px 12px;
     font-size: 14px;
@@ -1001,15 +1094,15 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .ai-chat-input-area textarea:focus {
-    border-color: #8764b8;
+    border-color: var(--kb-accent, #8764b8);
 }
 
 .ai-chat-send {
     width: 42px;
     height: 42px;
     border: none;
-    background: #8764b8;
-    color: white;
+    background: var(--kb-accent, #8764b8);
+    color: var(--kb-on-accent, white);
     border-radius: 8px;
     cursor: pointer;
     display: flex;
@@ -1020,7 +1113,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .ai-chat-send:hover {
-    background: #6b4fa2;
+    background: var(--kb-accent-hover, #6b4fa2);
 }
 
 .ai-chat-send:disabled {
@@ -1029,14 +1122,14 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .ai-article-link {
-    color: #7c4daf;
+    color: var(--kb-accent, #7c4daf);
     text-decoration: none;
     font-weight: 500;
-    border-bottom: 1px dashed #7c4daf;
+    border-bottom: 1px dashed var(--kb-accent, #7c4daf);
     transition: color 0.15s, border-color 0.15s;
 }
 .ai-article-link:hover {
-    color: #5a2d8c;
+    color: var(--kb-accent-hover, #5a2d8c);
     border-bottom-style: solid;
 }
 
@@ -1048,9 +1141,9 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .recycle-bin-toggle.active {
-    background: #d13438;
-    border-color: #d13438;
-    color: white;
+    background: var(--danger-accent, #d13438);
+    border-color: var(--danger-accent, #d13438);
+    color: var(--on-accent, white);
 }
 
 .recycle-bin-toggle.active:hover {
@@ -1060,17 +1153,17 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 /* Recycle Bin Notice */
 .recycle-bin-notice {
     padding: 10px 16px;
-    background: #fff3cd;
-    border: 1px solid #ffc107;
+    background: var(--warning-bg, #fff3cd);
+    border: 1px solid var(--warning-border, #ffc107);
     border-radius: 6px;
     font-size: 13px;
-    color: #856404;
+    color: var(--warning-text, #856404);
     margin-bottom: 16px;
 }
 
 /* Recycle Bin Cards */
 .recycle-bin-card {
-    border-left: 4px solid #d13438 !important;
+    border-left: 4px solid var(--danger-accent, #d13438) !important;
     opacity: 0.85;
     cursor: default !important;
 }
@@ -1093,8 +1186,8 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 /* AI Chat Archive Toggle */
 .ai-chat-options {
     padding: 10px 20px;
-    border-top: 1px solid #e0e0e0;
-    background: #fafafa;
+    border-top: 1px solid var(--border, #e0e0e0);
+    background: var(--surface-2, #fafafa);
     font-size: 13px;
 }
 
@@ -1103,7 +1196,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
     align-items: center;
     justify-content: space-between;
     cursor: pointer;
-    color: #555;
+    color: var(--text-muted, #555);
     user-select: none;
 }
 
@@ -1145,7 +1238,7 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 }
 
 .toggle-switch input:checked + .toggle-slider {
-    background: #8764b8;
+    background: var(--kb-accent, #8764b8);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
@@ -1171,4 +1264,626 @@ div.code-toolbar > .toolbar > .toolbar-item > span {
 .kb-toast.show {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   "Also allow anyone on the internet" — the opt-in beneath "Who can see this".
+   It is a tickbox rather than a third dropdown choice because reaching the open
+   internet is a different KIND of decision from the other two, and as the last
+   item in a list it read as their peer.
+   --------------------------------------------------------------------------- */
+.kb-audience-public {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.kb-audience-public input { margin: 0; cursor: pointer; }
+
+/* Disabled while "Analysts only" is selected — that combination would mean
+   "on the internet but not visible to analysts", which must stay unsayable. */
+.kb-audience-public.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.kb-audience-public.is-disabled input { cursor: not-allowed; }
+
+/* ---------------------------------------------------------------------------
+   Folder tree. One tree and one list is what Explorer actually is; three view
+   modes would be three renderers to build, test, theme and mobile-proof.
+   --------------------------------------------------------------------------- */
+.kb-folder-tree { display: flex; flex-direction: column; gap: 1px; }
+
+.kb-folder {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.kb-folder:hover { background: var(--surface-hover); }
+.kb-folder.active { background: var(--accent-soft); font-weight: 600; }
+
+/* The name takes the free space so the count sits hard right and the column of
+   numbers lines up however deep the nesting goes. */
+.kb-folder-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.kb-folder-count {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* The + beside the "Folders" heading. */
+.kb-folder-add {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+.kb-folder-add:hover { color: var(--text); }
+
+/* ---------------------------------------------------------------------------
+   The access list ("Who can see this").
+   --------------------------------------------------------------------------- */
+.kb-perm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.kb-perm-row input { margin: 0; cursor: pointer; }
+
+.kb-perm-list {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+.kb-perm-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+.kb-perm-entry:last-child { border-bottom: none; }
+.kb-perm-entry-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-perm-entry-kind { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); text-transform: capitalize; }
+
+.kb-perm-results {
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+.kb-perm-results:empty { display: none; }
+.kb-perm-result {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.kb-perm-result:hover { background: var(--surface-hover); }
+
+/* The 🔑 on a folder row. Hidden until the row is hovered so the tree stays a
+   list of folders rather than a list of buttons. */
+.kb-folder-perm {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    padding: 0 2px;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+}
+.kb-folder:hover .kb-folder-perm,
+.kb-folder-perm:focus { opacity: 1; }
+
+/* ---------------------------------------------------------------------------
+   Drag and drop, and the right-click menu. Desktop only — a phone has neither a
+   hover nor a second button, and everything here is reachable another way.
+   --------------------------------------------------------------------------- */
+/* ⚠️ ONE RULE FOR EVERY KIND OF DROP TARGET.
+
+   There were three near-identical copies of this - one for the left panel, one
+   for the tree, one for the details table - and the FOURTH kind, the folder
+   cards used by the list and cards views, had no rule at all. The class was
+   being added to them the whole time; nothing painted it. Dragging a document
+   onto a folder therefore lit up in two views out of four and gave no feedback
+   whatsoever in the other two, which reads as the drag not working.
+
+   Copies drift, and the way they drift is that one of them never gets written.
+   Keep this as one selector list: a new kind of folder row added later shows up
+   here as a missing selector, not as a silently dead highlight. */
+.kb-folder.drop-target,
+.kb-tree-folder.drop-target,
+.kb-details-folder.drop-target,
+.kb-folder-card.drop-target {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    background: var(--accent-soft);
+}
+
+/* The thing being dragged fades, so it is obvious WHAT is in flight as well as
+   where it would land. */
+.kb-dragging { opacity: 0.45; }
+.article-card[draggable="true"] { cursor: grab; }
+.article-card[draggable="true"]:active { cursor: grabbing; }
+
+.kb-context-menu {
+    position: fixed;
+    z-index: 2000;
+    min-width: 170px;
+    padding: 4px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    font-size: 13px;
+}
+.kb-context-item {
+    padding: 7px 14px;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.kb-context-item:hover { background: var(--surface-hover); }
+
+/* A small marker in an article title: ↗ shown here by a shortcut, 🔒 carries its
+   own permissions. Both are the "visible and rare" rule — an exception nobody
+   can see from the list is an exception nobody will ever audit. */
+.kb-badge {
+    font-size: 11px;
+    opacity: 0.75;
+    cursor: help;
+}
+
+/* ---------------------------------------------------------------------------
+   Going into a folder from the main pane: a breadcrumb, then folder rows above
+   the articles. NOT a view mode — see the note in knowledge.js.
+   --------------------------------------------------------------------------- */
+/* ⚠️ It has to be SEEN. The first cut was 13px muted text with no background,
+   floating above the heading — Ed went looking for an "up a level" button while
+   the way back out was already on screen, which is the clearest possible
+   evidence that a control is too quiet. It now reads as a bar. */
+.kb-breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* Up one level. The trail says where you are and lets you jump anywhere along
+   it; going up ONE step is the commonest move and should not require reading
+   the trail to work out which crumb is the parent. Explorer has both. */
+.kb-crumb-up {
+    flex: 0 0 auto;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1;
+    padding: 4px 8px;
+    margin-right: 4px;
+    cursor: pointer;
+}
+.kb-crumb-up:hover { background: var(--surface-hover); }
+.kb-breadcrumb a { color: var(--accent); cursor: pointer; }
+.kb-breadcrumb a:hover { text-decoration: underline; }
+/* The last crumb is where you already are, so it is not a link anywhere. */
+.kb-breadcrumb a:last-child {
+    color: var(--text);
+    cursor: default;
+    pointer-events: none;
+}
+.kb-crumb-sep { color: var(--text-muted); }
+
+/* A folder in the list reads as a folder rather than as an article: no preview,
+   no tags, and it opens rather than being read. */
+.kb-folder-card .article-card-title { font-weight: 600; }
+.kb-folder-card:hover { background: var(--surface-hover); }
+
+
+/* ---------------------------------------------------------------------------
+   Main-pane layouts: list (default), cards, tree.
+
+   I argued against three layouts and Ed asked twice having used it — the
+   argument was about duplicating the tree inside a 280px strip, and the main
+   pane is where the room actually is. See knowledge.js.
+   --------------------------------------------------------------------------- */
+.kb-layout-toggle { display: flex; gap: 2px; margin-left: auto; }
+.kb-layout-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.kb-layout-btn:hover { background: var(--surface-hover); }
+.kb-layout-btn.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+/* Cards — the System landing page's grid, so the two screens feel like one
+   product rather than two people's ideas. */
+.article-list.kb-layout-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+    /* ⚠️ NOT align-items: start. Stretch is the grid default and it is what makes
+       every card in a row the same height AUTOMATICALLY, whatever is in them —
+       which matters now that up to five tags can wrap. `start` sized each card
+       to its own content, which is what left the rows ragged. The min-height
+       below is only a floor for a row of very short cards. */
+}
+/* A card is scanned, not read: the preview is the first thing to go, because at
+   240px wide it is three words and an ellipsis rather than a summary. */
+.kb-layout-cards .article-card-preview { display: none; }
+.kb-layout-cards .article-card-title { font-size: 15px; }
+.kb-layout-cards .kb-folder-card { min-height: 0; }
+
+/* Tree — the whole shape at once. */
+.article-list.kb-layout-tree { display: block; }
+.kb-tree-folder,
+.kb-tree-article {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.kb-tree-folder { font-weight: 600; }
+.kb-tree-folder:hover,
+.kb-tree-article:hover { background: var(--surface-hover); }
+.kb-tree-folder.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.kb-tree-icon { flex: 0 0 auto; font-size: 12px; }
+.kb-tree-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Card heights.
+
+   A grid is a grid because the cells line up. Cards were sized by their content,
+   so an article with four tags stood taller than its neighbour with none and the
+   rows went ragged — which is the one thing a grid exists to avoid. Two fixes,
+   both needed: a fixed height so every card matches, and a cap on the tags so
+   the content actually fits inside it (a fixed height alone would just clip).
+   --------------------------------------------------------------------------- */
+.kb-layout-cards .article-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 168px;
+}
+/* ── The order inside a card: title, then who and when, then the tags ──────
+   The shared meta block is `flex; justify-content: space-between` — tags on the
+   left, author and date on the right. That is right for a full-width row and
+   wrong for a 240px card, where the two halves fight: the tags stack one per
+   line and "By (deleted analyst)" wraps onto three.
+
+   So in cards the block becomes a column, REVERSED — the markup is tags-then-
+   info and the card wants info-then-tags — and each part gets the full width
+   instead of half. */
+.kb-layout-cards .article-card-meta {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 8px;
+}
+
+/* Author and date on ONE line, and it stays one line: nowrap is the whole
+   point, since wrapping is what was making the cards uneven. */
+.kb-layout-cards .article-card-info {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 10px;
+    white-space: nowrap;
+    min-width: 0;
+}
+/* The author is the part that can be arbitrarily long, so it is the part that
+   gets trimmed — the date must never be the thing pushed off. */
+.kb-layout-cards .article-card-info > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.kb-layout-cards .article-card-info > span:last-child { flex: 0 0 auto; }
+
+/* Tags run across the full width of the card and wrap as a group, rather than
+   being squeezed into the half a space-between row would give them. Bounded by
+   the "+N more" pill, so this can never exceed one line in practice. */
+.kb-layout-cards .article-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 100%;
+}
+
+/* The pill that stands in for the tags not shown. Looks like a tag because it
+   occupies a tag's place, but reads as an action. */
+.article-tag--more {
+    cursor: pointer;
+    opacity: 0.75;
+    font-style: italic;
+}
+.article-tag--more:hover { opacity: 1; }
+
+/* ---------------------------------------------------------------------------
+   Details — Explorer's table view. Columns you can sort, folders always first.
+   --------------------------------------------------------------------------- */
+.article-list.kb-layout-details { display: block; }
+
+.kb-details-row {
+    display: grid;
+    /* ⚠️ FIVE columns, the first for the tick. Every row type must supply that
+       first cell - the header and the folder rows pass an empty one - or the
+       columns below it shift by one and the table stops lining up. */
+    grid-template-columns: 22px minmax(0, 3fr) minmax(0, 1.2fr) 110px minmax(0, 1.5fr);
+    align-items: center;
+    gap: 12px;
+    padding: 0 10px;
+    /* ⚠️ A FIXED HEIGHT, not padding. Rows were 34, 38 and 53px depending on
+       whether the row had tags and how tall the pills were — and a table whose
+       rows are different heights is not scannable, which is the only reason to
+       choose a table. The tag cell is clipped to suit (below) rather than being
+       allowed to set the height. */
+    height: 38px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.kb-details-row:hover { background: var(--surface-hover); }
+
+/* The header is not a row you can open, and it sticks so the columns stay
+   named when the list is long enough to scroll. */
+.kb-details-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: default;
+}
+.kb-details-head span { cursor: pointer; user-select: none; }
+.kb-details-head:hover { background: var(--surface); }
+
+.kb-details-folder { font-weight: 600; }
+
+/* Every cell truncates rather than wrapping: a table whose rows are different
+   heights because one title is long stops being scannable, which is the only
+   reason to use a table. */
+.kb-details-name,
+.kb-details-author,
+.kb-details-date {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.kb-details-author,
+.kb-details-date { color: var(--text-muted); }
+.kb-details-tags {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    min-width: 0;
+}
+/* Pills must not be the thing that decides the row height. */
+.kb-details-tags .article-tag {
+    flex: 0 0 auto;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+/* Every tag in one article, from the "+N more" pill on a card. */
+.kb-tags-modal-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+   "Who can see this" — a FIXED height, whatever is in it.
+
+   The dialog was sized by its contents, so it grew and shrank as you searched,
+   added somebody, or removed them: the Close button moved under the cursor
+   between one click and the next, and the list jumped while you were reading it.
+   A permissions screen is one you edit repeatedly in a single sitting, which is
+   exactly the case where a dialog that resizes itself is most annoying.
+
+   80% of the window, and the LIST is the part that flexes — so the tickboxes,
+   the explanation and the search box stay put and only the thing that varies
+   scrolls.
+   --------------------------------------------------------------------------- */
+#kbPermModal .modal-content {
+    height: 80vh;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+/* ⚠️ min-height: 0 on every flex ancestor of the scroller. Without it a flex
+   item refuses to shrink below its content, so the list grows the dialog
+   instead of scrolling inside it and the fixed height does nothing. */
+#kbPermModal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+#kbPermModal #kbPermOwnRules {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+#kbPermModal .kb-perm-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+/* The search results are capped rather than flexing: they appear and vanish as
+   you type, and letting them take space from the list would put the jumping
+   back in by another route. */
+#kbPermModal .kb-perm-results { max-height: 180px; flex: 0 0 auto; }
+#kbPermModal .modal-header,
+#kbPermModal .modal-footer { flex: 0 0 auto; }
+
+/* The exceptions report has the same problem for the same reason. */
+#kbExceptionsModal .modal-content {
+    height: 80vh;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+#kbExceptionsModal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+#kbExceptionsModal .kb-perm-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+
+/* Inherited permissions, shown read-only. Visibly not editable: no Remove
+   button and a muted background, so it cannot be mistaken for the list you can
+   change two lines below it. */
+.kb-perm-entry--readonly { opacity: 0.85; }
+#kbPermInherited .kb-perm-list {
+    background: var(--surface-hover);
+    flex: 0 1 auto;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+#kbPermInherited { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+/* Breathing room inside the inherited panel. The two explanatory lines and the
+   list were butting up against each other, so the whole thing read as one
+   undifferentiated block rather than "here is where these come from" / "here is
+   the list" / "here is how to change it". */
+#kbPermInherited .field-hint { margin: 0 0 4px; line-height: 1.5; }
+#kbPermInherited .kb-perm-list { margin-top: 12px; margin-bottom: 12px; }
+#kbPermInherited .no-results { padding: 18px 14px; }
+
+/* ---------------------------------------------------------------------------
+   The history window.
+
+   Fixed height for the same reason the permissions window is: it is opened,
+   read, closed and reopened in one sitting, and a box sized by its contents
+   moves the Close button under the cursor between one click and the next.
+   The LIST scrolls; the heading and the note stay put.
+   --------------------------------------------------------------------------- */
+.kb-audit-content {
+    max-width: 620px;
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+.kb-audit-content .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.kb-audit-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.kb-audit-entry {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+.kb-audit-entry:last-child { border-bottom: none; }
+.kb-audit-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+}
+.kb-audit-action { font-weight: 600; color: var(--text); }
+.kb-audit-when   { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.kb-audit-who    { color: var(--text-muted); margin-top: 2px; }
+.kb-audit-detail { color: var(--text-muted); margin-top: 4px; font-size: 12px; }
+
+/* ⚠️ The row somebody opened this window to find. An override that reads like
+   every other line is one nobody spots in a list of forty. */
+.kb-audit-override {
+    background: var(--warning-bg);
+    border-left: 3px solid var(--warning-border);
+}
+.kb-audit-override .kb-audit-action { color: var(--warning-text); }
+
+/* Full screen (Ed): just the TinyMCE editor, nothing else. TinyMCE's own
+   fullscreen plugin does the work, but it sits at z-index 1200 and parts of
+   the app (header, floating buttons, toasts) are higher, so while it is on
+   the editor and its menus are lifted above everything. */
+body.kb-editor-fullscreen .tox.tox-tinymce.tox-fullscreen { z-index: 100000; }
+body.kb-editor-fullscreen .tox.tox-tinymce-aux { z-index: 100001; }
+/* Desktop only - a phone already gives the editor the whole screen. */
+@media (max-width: 768px) {
+    .kb-fullscreen-btn { display: none; }
 }

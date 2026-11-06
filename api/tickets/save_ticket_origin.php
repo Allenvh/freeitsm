@@ -11,7 +11,11 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 require_once '../../includes/tenancy.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -19,6 +23,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
+requireCapabilityJson(Cap::TICKETS_TICKET_ORIGINS);   // settings tab — see docs/design/rbac.md
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -86,11 +92,14 @@ try {
 
         $stmt = $conn->prepare("UPDATE ticket_origins SET name = ?, description = ?, display_order = ?, is_active = ? WHERE id = ?");
         $stmt->execute([$name, $description, $displayOrder, $isActive, $id]);
+        wf_emit('ticket_origin', 'updated', (int)$id, $name);
         echo json_encode(['success' => true, 'message' => 'Ticket origin updated successfully', 'id' => $id]);
     } else {
         $stmt = $conn->prepare("INSERT INTO ticket_origins (name, description, display_order, is_active, tenant_id) VALUES (?, ?, ?, ?, ?)");
         $stmt->execute([$name, $description, $displayOrder, $isActive, $scopeTenant]);
-        echo json_encode(['success' => true, 'message' => 'Ticket origin created successfully', 'id' => $conn->lastInsertId()]);
+        $newId = (int)$conn->lastInsertId();
+        wf_emit('ticket_origin', 'created', $newId, $name);
+        echo json_encode(['success' => true, 'message' => 'Ticket origin created successfully', 'id' => $newId]);
     }
 
 } catch (Exception $e) {

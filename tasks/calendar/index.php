@@ -4,26 +4,62 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
+// Whether this analyst wants subtasks on the calendar (#90). Read here and
+// published to the page rather than fetched, the same way the board reads
+// tasks_detail_view: the select must render already showing the right choice,
+// or it flickers to the stored value a moment after the page settles.
+$calSubtaskScope = '';
+try {
+    $__p = connectToDatabase()->prepare(
+        "SELECT preference_value FROM user_preferences
+         WHERE analyst_id = ? AND preference_key = 'tasks_calendar_subtasks'"
+    );
+    $__p->execute([(int) ($_SESSION['analyst_id'] ?? 0)]);
+    $__v = (string) $__p->fetchColumn();
+    if ($__v === 'both' || $__v === 'only') { $calSubtaskScope = $__v; }
+} catch (Throwable $e) {
+    // Un-migrated install, or no preferences row: parent tasks only, as before.
+}
+
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('tasks');
+// Read only access to Tasks (#181 Part G): the page offers nothing that writes. The
+// services and endpoints refuse regardless - this only stops the page offering it.
+$tasksReadOnly = analystModuleLevel(connectToDatabase(), (int)$_SESSION['analyst_id'], 'tasks') === 'read';
 
 $current_page = 'calendar';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'tasks'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('tasks.title') . ' ' . t('tasks.nav.calendar')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/tasks.css?v=13">
+    <title><?php echo htmlspecialchars(pageTitle('tasks', t('tasks.nav.calendar'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../../assets/css/tasks.css?v=58">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>">
+<body data-analyst-id="<?php echo $_SESSION['analyst_id'] ?? ''; ?>"<?php echo $tasksReadOnly ? ' class="module-read-only"' : ''; ?>>
     <?php include '../includes/header.php'; ?>
+    <?php /* The action row (#185). Tasks had no general New - only the + at the
+             top of each board column, which stays as a shortcut that already
+             knows the status. New asks for a title and opens the task. */
+          require_once __DIR__ . '/../../includes/action_row.php';
+          renderActionRow(t('tasks.title'), $tasksReadOnly ? [] : [actionRowNew('../?new=1', t('tasks.board.new_task'), true)], ['accent' => 'tsk']); ?>
 
     <div class="tasks-container">
         <!-- Sidebar -->
@@ -38,6 +74,19 @@ $translationNamespaces = ['common', 'tasks'];
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                     <?php echo htmlspecialchars(t('tasks.filter.all')); ?>
                 </button>
+            </div>
+
+            <?php /* Subtasks on the calendar (discussion #90). A subtask is the same
+                     record as a task and carries its own deadline and assignee, but the
+                     list endpoint leaves subtasks out by default so the board and table
+                     do not show them twice. The calendar opts in. */ ?>
+            <div class="sidebar-section">
+                <div class="sidebar-label"><?php echo htmlspecialchars(t('tasks.sidebar.show')); ?></div>
+                <select id="subtaskFilter" class="sidebar-select" onchange="setSubtaskScope(this.value)">
+                    <option value=""<?php echo $calSubtaskScope === ''     ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('tasks.filter.parents_only')); ?></option>
+                    <option value="both"<?php echo $calSubtaskScope === 'both' ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('tasks.filter.parents_and_subtasks')); ?></option>
+                    <option value="only"<?php echo $calSubtaskScope === 'only' ? ' selected' : ''; ?>><?php echo htmlspecialchars(t('tasks.filter.subtasks_only')); ?></option>
+                </select>
             </div>
 
             <div class="sidebar-section">
@@ -102,8 +151,14 @@ $translationNamespaces = ['common', 'tasks'];
         </div>
     </div>
 
-    <script>window.API_BASE = '../../api/tasks/';</script>
-    <script src="../../assets/js/tasks-quick-panel.js?v=1"></script>
-    <script src="../../assets/js/tasks-calendar.js?v=7"></script>
+    <script>
+        window.API_BASE = '../../api/tasks/';
+        // The stored choice, rendered server-side so the select is already correct.
+        window.CAL_SUBTASK_SCOPE = <?php echo json_encode($calSubtaskScope); ?>;
+    </script>
+    <script src="../../assets/js/safe-html.js?v=4"></script>
+    <script src="../../assets/js/tasks-quick-panel.js?v=5"></script>
+    <script src="../../assets/js/tasks-calendar.js?v=13"></script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

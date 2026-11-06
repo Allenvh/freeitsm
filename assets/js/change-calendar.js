@@ -62,7 +62,7 @@ function renderStatusFilters() {
     container.innerHTML = STATUSES.map(s => `
         <label class="category-filter-item">
             <input type="checkbox" ${selectedStatuses.has(s.name) ? 'checked' : ''}
-                   onchange="toggleStatus('${s.name}')">
+                   data-status="${escapeHtml(s.name)}" onchange="toggleStatus(this.dataset.status)">
             <span class="category-color-dot" style="background-color: ${s.color}"></span>
             <span class="category-filter-name">${escapeHtml(s.name)}</span>
         </label>
@@ -407,11 +407,18 @@ function formatDateForCompare(date) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-// Format event time for display
+// Format event time for display.
+// Change work / outage windows are NAIVE wall-clock scheduling values (typed
+// into datetime-local inputs, stored without a zone). They are shown EXACTLY
+// as typed for every analyst — never zone-converted — so they stay consistent
+// with the grid placement (getEventHour / getEventsForDate work off the same
+// raw string). parseNaiveDate (tz.js) builds a Date from the literal
+// components, so getHours()/getMinutes() read back the typed values.
 function formatEventTime(evt) {
-    const start = new Date(evt.start_datetime.replace(' ', 'T'));
-    const end = evt.end_datetime ? new Date(evt.end_datetime.replace(' ', 'T')) : null;
+    const start = parseNaiveDate(evt.start_datetime);
+    const end = evt.end_datetime ? parseNaiveDate(evt.end_datetime) : null;
 
+    /** A time as "2 PM" or "2:30 PM". */
     const formatTime = (d) => {
         let hours = d.getHours();
         const minutes = d.getMinutes();
@@ -427,12 +434,14 @@ function formatEventTime(evt) {
     return formatTime(start);
 }
 
-// Format a datetime range for display in popup
+// Format a datetime range for display in popup (work / outage windows).
+// Naive wall-clock, shown as typed — see formatEventTime.
 function formatDatetimeRange(startStr, endStr) {
     if (!startStr) return '';
-    const start = new Date(startStr.replace(' ', 'T'));
-    const end = endStr ? new Date(endStr.replace(' ', 'T')) : null;
+    const start = parseNaiveDate(startStr);
+    const end = endStr ? parseNaiveDate(endStr) : null;
 
+    /** A date and time as "Mar 5, 2 PM" or "Mar 5, 2:30 PM". */
     const formatDt = (d) => {
         const month = MONTHS[d.getMonth()].slice(0, 3);
         const day = d.getDate();
@@ -533,5 +542,5 @@ function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

@@ -1,0 +1,25 @@
+# apiStatusServicesUpdate()
+
+PATCH /service-status/services/{id} - updates a service through ServiceStatusService and returns it.
+
+```php
+function apiStatusServicesUpdate(PDO $conn, array $apiKey, array $params, array $body): void
+```
+
+Defined in [api/v1/resources/service_status.php](/code/files/api/v1/resources/service_status.php.md), line 258.
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `$conn` | `PDO` |  | The database connection. *([standard](/handbook/standard-parameters.md))* |
+| `$apiKey` | `array` |  | The API key that authenticated the call - its scopes and company limit. *([standard](/handbook/standard-parameters.md))* |
+| `$params` | `array` |  | The ids captured from the URL path, in order, as integers. *([standard](/handbook/standard-parameters.md))* |
+| `$body` | `array` |  | The request's JSON body, decoded. *([standard](/handbook/standard-parameters.md))* |
+
+**Returns:** `void`
+
+## Calls
+
+[apiLoadService()](/code/functions/apiLoadService.md), [apiRespond()](/code/functions/apiRespond.md), [apiSerializeService()](/code/functions/apiSerializeService.md), [apiServiceStatusFail()](/code/functions/apiServiceStatusFail.md)
+
+*Nothing calls this function by name.*
+

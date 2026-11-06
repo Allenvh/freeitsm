@@ -68,6 +68,10 @@ $RECYCLE.BIN/
 
 # Composer dependencies (if you add them later)
 /vendor/
+__pycache__/
+*.pyc
+/certs/*
+!/certs/.gitkeep
 
 # PHP error logs
 error_log
@@ -95,17 +99,72 @@ temp/
 # Upload directories (may contain sensitive user data)
 uploads/*
 !uploads/.gitkeep
+# ⚠️ The execution guards must ship, but git will not re-include a file inside an
+# excluded DIRECTORY — so uploads/documents/ has to be un-ignored first, then its
+# contents excluded again. Without this a fresh clone has no protection in that
+# folder until the first upload happens to create it.
+!uploads/documents/
+uploads/documents/*
+!uploads/documents/.htaccess
+!uploads/documents/web.config
+# Same shape for asset import files. uploadStoreFile() writes both guards on
+# first use, but a fresh clone must ship them rather than wait for an upload.
+!uploads/asset-imports/
+uploads/asset-imports/*
+!uploads/asset-imports/.htaccess
+!uploads/asset-imports/web.config
+# Files module: the default storage root. Every file is a random .bin reached only
+# through api/files/download.php, which checks folder permissions first.
+!uploads/files/
+uploads/files/*
+!uploads/files/.htaccess
+!uploads/files/web.config
 
 # Module-specific runtime content (attachments, uploaded LMS courses, etc.)
 # These are populated by the running app and are tenant-specific — never commit.
-change-management/attachments/
-lms/content/
-tickets/attachments/
+# Ignore uploaded content, but DO ship the guard that stops these directories
+# ever executing code. Ignoring the CONTENTS (/*) rather than the directory
+# itself is what lets the negation work — git won't re-include a file whose
+# parent directory is ignored.
+#
+# ⚠️ Three of these were ignored as whole directories, so their .htaccess could
+# never have shipped. A fresh clone therefore had no execution guard until the
+# first upload created one at runtime — which is exactly the window in which a
+# new install is least likely to notice.
+#
+# web.config is the IIS half of the same guard and has to ship for exactly the same
+# reason — .htaccess does nothing on IIS, so a clone deployed there had no directory
+# protection whatsoever until the first upload wrote one.
+change-management/attachments/*
+!change-management/attachments/.htaccess
+!change-management/attachments/web.config
+lms/content/*
+!lms/content/.htaccess
+tickets/attachments/*
+!tickets/attachments/.htaccess
+!tickets/attachments/web.config
 contracts/rfp-builder/uploads/*
 !contracts/rfp-builder/uploads/.htaccess
-system/uploads/branding/
+!contracts/rfp-builder/uploads/web.config
+system/uploads/branding/*
+!system/uploads/branding/.htaccess
+# ⚠️ The IIS half has to ship too. Every other upload directory un-ignores both
+# files; branding un-ignored only the .htaccess, so on IIS its protection existed
+# solely if uploadPrepareWebServableDir() happened to have run — i.e. only after
+# somebody had already uploaded a logo.
+!system/uploads/branding/web.config
 recordings/*
 !recordings/.htaccess
+!recordings/web.config
+war-room/attachments/*
+!war-room/attachments/.htaccess
+!war-room/attachments/web.config
+# Images placed on a form (a logo, a diagram). Served only through an authorising
+# PHP endpoint — the directory guards are the net under that, not the tightrope,
+# and they must SHIP rather than be written by whenever the first upload happens.
+forms/images/*
+!forms/images/.htaccess
+!forms/images/web.config
 
 # ============================================
 # NODE MODULES (if you use npm/Node.js)
@@ -123,7 +182,31 @@ yarn-error.log
 *.old
 *.orig
 
-# Local corporate CA certificates for Docker builds (never commit actual certs)
-certs/*.crt
-certs/*.cer
-!certs/.gitkeep
+# Credentials handed over during setup. NEVER commit these — a PAT in the
+# history is a live credential even after the file is deleted.
+.devops-pat.txt
+*-pat.txt
+*.pat
+.secrets/
+
+# Docker Compose override (issue #109).
+# ⚠️ This is where an operator's own volume mounts and port changes belong, NOT in
+# docker-compose.yml. That file is tracked, so a local edit to it makes a future
+# `git pull` abort with "your local changes would be overwritten by merge" — and the
+# advice everybody then finds, `git checkout -- docker-compose.yml`, silently discards
+# the volumes they added, putting their uploads back at risk with nothing to say why.
+# Compose reads this file automatically and merges it, so it never has to be tracked.
+docker-compose.override.yml
+
+# The Azure mock records the last request it received (tests/azure-openai).
+tests/azure-openai/last-request.json
+
+# Translation pipeline working state (chunks + worklist) - regenerate with scripts/i18n_chunk.php
+# The numbered variants are parallel batches: one locale set per directory, so a
+# run in progress is not clobbered by chunking the next locale.
+.i18n-work/
+.i18n-work-*/
+
+# Your own additions that no release ships or overwrites (e.g. Feature Bingo cards in local/feature_bingo/).
+local/
+tests/ai-compatible/last-request.json

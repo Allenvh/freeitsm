@@ -11,6 +11,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/rbac.php';
 require_once '../../includes/encryption.php';
 require_once __DIR__ . '/_ai_helpers.php';   // for workflowEffectiveSslVerify()
 header('Content-Type: application/json');
@@ -19,6 +20,8 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('workflow');
+requireCapabilityJson(Cap::WORKFLOW_AI);   // settings tab — see docs/design/rbac.md
 
 try {
     $data      = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -69,6 +72,16 @@ try {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
 
+/**
+ * Sends a tiny prompt to the Anthropic Messages API to prove the key and model work, and
+ * returns the reply text with the token counts.
+ *
+ * Throws with the provider's own error message (or the HTTP code) when the call fails.
+ *
+ * @param string $apiKey  the plaintext key to test - typed in the form, or the decrypted saved key
+ * @param string $model  the model id typed in the form, already trimmed and non-empty
+ * @param bool $verifySsl  the form's verify-SSL tick; combined with SSL_VERIFY_PEER but not applied to the handle
+ */
 function wfTestAnthropic(string $apiKey, string $model, bool $verifySsl): array
 {
     $body = json_encode([
@@ -90,9 +103,8 @@ function wfTestAnthropic(string $apiKey, string $model, bool $verifySsl): array
         ],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 30,
-        CURLOPT_SSL_VERIFYPEER => $verifyPeer,
-        CURLOPT_SSL_VERIFYHOST => $verifyPeer ? 2 : 0,
     ]);
+    sslApplyCurl($ch);
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
@@ -114,6 +126,16 @@ function wfTestAnthropic(string $apiKey, string $model, bool $verifySsl): array
     ];
 }
 
+/**
+ * Sends a tiny prompt to the OpenAI Chat Completions API to prove the key and model
+ * work, and returns the reply text with the token counts.
+ *
+ * Throws with the provider's own error message (or the HTTP code) when the call fails.
+ *
+ * @param string $apiKey  the plaintext key to test - typed in the form, or the decrypted saved key
+ * @param string $model  the model id typed in the form, already trimmed and non-empty
+ * @param bool $verifySsl  the form's verify-SSL tick; combined with SSL_VERIFY_PEER but not applied to the handle
+ */
 function wfTestOpenAI(string $apiKey, string $model, bool $verifySsl): array
 {
     $body = json_encode([
@@ -132,9 +154,8 @@ function wfTestOpenAI(string $apiKey, string $model, bool $verifySsl): array
         ],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 30,
-        CURLOPT_SSL_VERIFYPEER => $verifyPeer,
-        CURLOPT_SSL_VERIFYHOST => $verifyPeer ? 2 : 0,
     ]);
+    sslApplyCurl($ch);
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);

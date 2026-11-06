@@ -12,6 +12,7 @@ require_once '../../api/cmdb/_ai_helpers.php';
 
 header('Content-Type: application/json');
 if (!isset($_SESSION['analyst_id'])) { echo json_encode(['success' => false, 'error' => 'Not authenticated']); exit; }
+requireModuleAccessJson('problems');
 
 try {
     $d = json_decode(file_get_contents('php://input'), true);
@@ -21,19 +22,21 @@ try {
     if (!analystCanAccessProblem($conn, (int) $_SESSION['analyst_id'], $problemId)) throw new Exception('Problem not found');
 
     $cfg = aiSettingsLoad($conn, 'problem_ai');
-    if (($cfg['api_key'] ?? '') === '') throw new Exception('Problem AI is not configured. Set a provider + key in Problem Management → Settings.');
+    if (!aiConfigured($cfg)) throw new Exception('Problem AI is not configured. Set a provider + key in Problem Management → Settings.');
 
     // Problem context + its linked incidents.
     $p = $conn->prepare("SELECT title, description FROM problems WHERE id = ?");
     $p->execute([$problemId]);
     $prob = $p->fetch(PDO::FETCH_ASSOC);
 
+    // Linked incidents go to the AI provider - never a confidential one (#62).
+    require_once __DIR__ . '/../../includes/ticket_sensitivity.php';
     $inc = $conn->prepare(
         "SELECT t.ticket_number, t.subject,
                 (SELECT body_content FROM emails e WHERE e.ticket_id = t.id AND e.direction = 'Inbound'
                  ORDER BY e.is_initial DESC, e.id ASC LIMIT 1) AS body
          FROM problem_tickets pt JOIN tickets t ON t.id = pt.ticket_id
-         WHERE pt.problem_id = ? AND t.deleted_datetime IS NULL LIMIT 20"
+         WHERE pt.problem_id = ? AND t.deleted_datetime IS NULL" . ticketAiExclusionSql($conn, 't') . " LIMIT 20"
     );
     $inc->execute([$problemId]);
     $rows = $inc->fetchAll(PDO::FETCH_ASSOC);

@@ -23,6 +23,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 try {
     $conn = connectToDatabase();
@@ -54,7 +55,7 @@ try {
     foreach ($rows as $r) {
         $from   = (string)($r['from_address'] ?? '');
         $domain = '';
-        if (strpos($from, '@') !== false) {
+        if (str_contains($from, '@')) {
             $domain = strtolower(trim(substr(strrchr($from, '@'), 1)));
         }
         $tickets[] = [

@@ -1,0 +1,59 @@
+/* Hover preview (assets/js/hover-preview.js, #202): the card beside a list
+   item showing its full name and a few facts. Theme tokens only, so dark mode
+   needs nothing of its own. */
+
+.hover-preview {
+    position: fixed;
+    z-index: 3000;
+    width: max-content;
+    max-width: min(340px, calc(100vw - 16px));
+    padding: 12px 14px;
+    background: var(--surface, #fff);
+    color: var(--text, #333);
+    border: 1px solid var(--border, #e0e0e0);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px var(--shadow, rgba(0, 0, 0, 0.1));
+    font-size: 13px;
+    line-height: 1.4;
+    /* Read-only: the pointer passes through to the list underneath. */
+    pointer-events: none;
+}
+.hover-preview[hidden] { display: none; }
+
+.hover-preview-title {
+    font-weight: 600;
+    font-size: 14px;
+    /* A name with no spaces in it still wraps rather than widening the card. */
+    overflow-wrap: anywhere;
+}
+
+.hover-preview-desc {
+    margin-top: 6px;
+    color: var(--text-muted, #666);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.hover-preview-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 12px;
+    margin: 10px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-soft, #eee);
+    font-size: 12px;
+}
+.hover-preview-facts dt { color: var(--text-dim, #888); }
+.hover-preview-facts dd { margin: 0; overflow-wrap: anywhere; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .hover-preview:not([hidden]) { animation: hover-preview-in 0.12s ease-out; }
+    @keyframes hover-preview-in {
+        from { opacity: 0; transform: translateY(2px); }
+        to   { opacity: 1; transform: none; }
+    }
+}

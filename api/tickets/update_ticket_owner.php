@@ -1,83 +1,33 @@
 <?php
 /**
- * API Endpoint: Update ticket owner (assigned analyst)
+ * API Endpoint: Update ticket owner (assigned analyst).
+ * Thin UI adapter over TicketsService::updateTicket — an owner change is an
+ * assignment change, so it flows through the same path (sets assigned + owner,
+ * fires the ticket_assigned template + ticket.assigned workflow). writeAudit=false
+ * (the UI audits client-side).
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/services/tickets.php';
 
 header('Content-Type: application/json');
+if (!isset($_SESSION['analyst_id'])) { echo json_encode(['success' => false, 'error' => 'Not authenticated']); exit; }
+requireModuleAccessJson('tickets');
 
-// Check if user is logged in
-if (!isset($_SESSION['analyst_id'])) {
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
-    exit;
-}
-
-// Get POST data
 $data = json_decode(file_get_contents('php://input'), true);
-
-if (!$data || !isset($data['ticket_id'])) {
-    echo json_encode(['success' => false, 'error' => 'Invalid request data']);
-    exit;
-}
+if (!$data || !isset($data['ticket_id'])) { echo json_encode(['success' => false, 'error' => 'Invalid request data']); exit; }
 
 $ticketId = (int)$data['ticket_id'];
 $ownerId = isset($data['owner_id']) && $data['owner_id'] !== '' ? (int)$data['owner_id'] : null;
 
 try {
     $conn = connectToDatabase();
-
-    // Multi-tenancy: block a ticket in a company this analyst can't access.
-    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticketId)) {
-        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
-        exit;
-    }
-
-    // Check if ticket exists
-    $checkSql = "SELECT id FROM tickets WHERE id = ?";
-    $checkStmt = $conn->prepare($checkSql);
-    $checkStmt->execute([$ticketId]);
-    if (!$checkStmt->fetch()) {
-        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
-        exit;
-    }
-
-    // If owner_id is provided, verify analyst exists
-    if ($ownerId !== null) {
-        $analystSql = "SELECT id FROM analysts WHERE id = ?";
-        $analystStmt = $conn->prepare($analystSql);
-        $analystStmt->execute([$ownerId]);
-        if (!$analystStmt->fetch()) {
-            echo json_encode(['success' => false, 'error' => 'Analyst not found']);
-            exit;
-        }
-    }
-
-    // Get current owner for change detection
-    $currentStmt = $conn->prepare("SELECT owner_id FROM tickets WHERE id = ?");
-    $currentStmt->execute([$ticketId]);
-    $currentTicket = $currentStmt->fetch(PDO::FETCH_ASSOC);
-    $oldOwnerId = $currentTicket ? $currentTicket['owner_id'] : null;
-
-    // Update ticket owner and assigned analyst
-    $sql = "UPDATE tickets SET owner_id = ?, assigned_analyst_id = ?, updated_datetime = UTC_TIMESTAMP() WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([$ownerId, $ownerId, $ticketId]);
-
+    TicketsService::updateTicket($conn, ActorContext::fromSession($conn), $ticketId, ['assigned_analyst_id' => $ownerId], false);
     echo json_encode(['success' => true, 'message' => 'Ticket owner updated successfully']);
-
-    // Trigger ticket_assigned template if owner actually changed
-    if ((string)($ownerId ?? '') !== (string)($oldOwnerId ?? '') && $ownerId !== null) {
-        try {
-            require_once dirname(dirname(__DIR__)) . '/includes/template_email.php';
-            sendTemplateEmail($conn, $ticketId, 'ticket_assigned');
-        } catch (Exception $tplEx) {
-            error_log('Template email error in update_ticket_owner: ' . $tplEx->getMessage());
-        }
-    }
-
+} catch (ServiceError $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

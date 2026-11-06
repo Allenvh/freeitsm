@@ -65,6 +65,18 @@ if (!$apiKeyRow) {
     exit;
 }
 
+// 🔴 The key must belong to an analyst who may use Watchtower NOW. It did not
+// check the owner was still active, or had the module - and these keys live in the
+// same table as the software inventory agents' keys, which are deployed onto
+// machines, so an agent's key opened the whole dashboard; one with no analyst saw
+// every company. Reported privately, October 2026.
+$keyOwner = (int)($apiKeyRow['analyst_id'] ?? 0);
+if ($keyOwner <= 0 || !analystCanAccessModule($conn, $keyOwner, 'watchtower')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => 'Invalid authorization key']);
+    exit;
+}
+
 $apikeyId = (int)$apiKeyRow['id'];
 
 // --------------------------------------------------
@@ -103,7 +115,7 @@ try {
     $requestCount = (int)$stmt->fetchColumn();
 
     // Cleanup old windows (older than 5 minutes)
-    $conn->exec("DELETE FROM api_rate_limits WHERE window_start < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+    $conn->exec("DELETE FROM api_rate_limits WHERE window_start < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 5 MINUTE)");
 } catch (PDOException $e) {
     // If rate limiting fails, allow the request through
     $requestCount = 0;
@@ -131,7 +143,9 @@ if ($requestCount > $rateLimitMax) {
 // Fetch and return Watchtower data
 // --------------------------------------------------
 try {
-    $data = getWatchtowerData($conn);
+    // Scope the Knowledge card to the company the key's owning analyst can see —
+    // an external dashboard is no reason to widen it.
+    $data = getWatchtowerData($conn, (int)($apiKeyRow['analyst_id'] ?? 0));
 
     echo json_encode(array_merge(
         ['success' => true, 'generated_at' => gmdate('Y-m-d\TH:i:s\Z')],

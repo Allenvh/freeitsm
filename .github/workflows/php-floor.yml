@@ -1,0 +1,67 @@
+# FreeITSM's PHP floor is 8.1 (2026-10-25). Two checks keep that true.
+#
+# The floor used to be 7.4 on paper while the code drifted onto 8.0/8.1 from
+# April 2026 - match, named arguments, constructor promotion, str_contains - and
+# nothing noticed, because the development machine's oldest PHP was 8.0. A floor
+# nothing checks is a guess.
+#
+#   floor    every PHP file parses on 8.1, so syntax from 8.2+ (readonly classes,
+#            DNF types, typed class constants...) cannot creep in the same way.
+#   old-php  every file the web server or cron runs DIRECTLY parses on 7.4, so
+#            includes/php_version_guard.php always gets to say "this needs PHP
+#            8.1" instead of an old server showing a parse error. PHP reads a whole
+#            file before running any of it, so 8.x syntax in the file itself beats
+#            the guard. 8.x code belongs in an includes/ folder, loaded after it.
+#
+# tests/php-version-guard.php checks the guard itself on real PHP 7.4 (Docker).
+# Parse checks only: no database, no extensions.
+#
+# TRAP: each `php -l` runs through `sh -c ... || true`. Bare `xargs php -l` STOPS at the
+# first file PHP exits 255 on, so the job reported 2 failing files of 46 (2026-10-25).
+
+name: PHP floor
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - name: every PHP file parses on PHP 8.1
+        run: |
+          set -o pipefail
+          find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -not -path './local/*' -print0 \
+            | xargs -0 -n1 -P4 sh -c 'php -l "$0" 2>&1 || true' > lint.txt
+          if grep -E 'Parse error|Fatal error' lint.txt; then exit 1; fi
+          echo "$(grep -c 'No syntax errors' lint.txt) files parse on PHP 8.1"
+
+  old-php:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          coverage: none
+      - name: files run directly parse on PHP 7.4, so the version message can show
+        run: |
+          # The guard, and the two files that load it FIRST: PHP reads a whole file before
+          # running any of it, so 8.x syntax in either would beat the guard they carry.
+          php -l includes/php_version_guard.php
+          php -l includes/functions.php
+          php -l includes/ssl.php
+          find . -name '*.php' -not -path '*/includes/*' -not -path './tests/*' -not -path './vendor/*' -not -path './node_modules/*' -not -path './local/*' -print0 \
+            | xargs -0 -n1 -P4 sh -c 'php -l "$0" 2>&1 || true' > lint.txt
+          if grep -E 'Parse error|Fatal error' lint.txt; then
+            echo "::error::A file the web server runs directly uses PHP 8 syntax. Move that code into an includes/ file, or write it the old way - see includes/php_version_guard.php."
+            exit 1
+          fi
+          echo "$(grep -c 'No syntax errors' lint.txt) files parse on PHP 7.4"

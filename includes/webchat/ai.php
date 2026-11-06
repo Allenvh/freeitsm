@@ -1,0 +1,121 @@
+<?php
+/**
+ * Web chat AI answers — draft a reply from the Knowledge base for a visitor's message.
+ *
+ * Reuses the shared KB retrieval (includes/knowledge/kb_ai.php) + the shared AI client
+ * (aiProviderChat) with the SAME provider/key the Knowledge module's AI chat uses
+ * (namespace 'knowledge_ai'). The system prompt is webchat-specific: warm, short, and
+ * strictly grounded in the retrieved articles — it must NOT invent answers, and it points
+ * the visitor at a human when unsure (the widget renders the actual escalation buttons).
+ */
+
+require_once __DIR__ . '/../ai_settings.php';
+require_once __DIR__ . '/../ai_provider.php';
+require_once __DIR__ . '/../knowledge/kb_ai.php';
+require_once __DIR__ . '/../knowledge/audience.php';   // Audience:: is used directly below
+
+/** Is a Knowledge AI provider/key configured? (Cheap check before spending the budget.) */
+function webchatAiConfigured(PDO $conn): bool
+{
+    try {
+        $cfg = aiSettingsLoad($conn, 'knowledge_ai');
+        return ($cfg['api_key'] ?? '') !== '';
+    } catch (Exception) {
+        return false;
+    }
+}
+
+/**
+ * Draft an AI answer to $question, given the recent $history (array of ['sender','body']).
+ * Returns ['ok'=>bool, 'answer'=>string, 'articles'=>[{id,title}], 'error'=>?string].
+ *
+ * $tenantId is the widget's company (messaging_channels.tenant_id) — the SAME value
+ * that already decides which company the resulting ticket belongs to. Without it, a
+ * visitor on one client's website could be answered out of another client's articles.
+ * NULL means the widget has no company, which scopes to shared articles only.
+ *
+ * The audience is always Audience::PUBLIC and is not a parameter: whoever is typing
+ * into a website chat box is an anonymous stranger. They gave a name and an email;
+ * we verified neither.
+ *
+ * @param string $question  the visitor's latest message - untrusted
+ * @param array $history  earlier messages, each ['sender' => 'visitor'|..., 'body' => text]; the last six are used
+ */
+function webchatAiReply(PDO $conn, string $question, array $history = [], ?int $tenantId = null): array
+{
+    $cfg = aiSettingsLoad($conn, 'knowledge_ai');
+    if (!aiConfigured($cfg)) {
+        return ['ok' => false, 'answer' => '', 'articles' => [], 'error' => 'AI not configured'];
+    }
+
+    // forWebChat() fixes the rung at PUBLIC from the identity itself rather than
+    // asserting it as an argument, and carries the company so the access list has
+    // a principal to match when it lands.
+    $ret     = kbRetrieveArticles($conn, $question, 5, null, KnowledgeViewer::forWebChat($conn, $tenantId));
+    $context = kbBuildContext($ret['articles']);
+
+    $system = "You are a friendly website support assistant. Answer the visitor's question using ONLY the "
+        . "knowledge base articles below. If the answer is not clearly in them, say you're not certain and suggest "
+        . "they speak to a person or raise a request — never invent details or use outside knowledge. Keep replies "
+        . "short, warm and practical (2 to 4 sentences). Do not mention the words 'article' or 'knowledge base', "
+        . "and do not add a sign-off.\n\nKNOWLEDGE BASE ARTICLES:\n" . $context;
+
+    $userMsg = $question;
+    if (!empty($history)) {
+        $lines = '';
+        foreach (array_slice($history, -6) as $m) {
+            $who = ($m['sender'] ?? '') === 'visitor' ? 'Visitor' : 'Assistant';
+            $lines .= $who . ': ' . trim((string) ($m['body'] ?? '')) . "\n";
+        }
+        $userMsg = "Conversation so far:\n" . $lines . "\nVisitor's latest message: " . $question;
+    }
+
+    try {
+        $r = aiProviderChat($cfg, ['system' => $system, 'user' => $userMsg, 'max_tokens' => 600]);
+        $answer = trim((string) ($r['content'] ?? ''));
+    } catch (Exception $e) {
+        return ['ok' => false, 'answer' => '', 'articles' => [], 'error' => $e->getMessage()];
+    }
+
+    if ($answer === '') {
+        $answer = "I'm not certain about that one — would you like to speak to a person?";
+    }
+    $articles = array_map(function ($a) {
+        return ['id' => (int) $a['id'], 'title' => $a['title']];
+    }, $ret['articles']);
+
+    return ['ok' => true, 'answer' => $answer, 'articles' => $articles, 'error' => null];
+}
+
+/**
+ * Summarise a web chat transcript into a short support-ticket description for a human
+ * agent — used as the ticket body on an "email me back" escalation. Returns '' when AI
+ * is unconfigured or the call fails, so the caller can fall back to the raw transcript.
+ *
+ * @param string $transcript  the chat as plain text (webchatTranscriptText()); blank gives ''
+ */
+function webchatAiSummarise(PDO $conn, string $transcript): string
+{
+    if (trim($transcript) === '') {
+        return '';
+    }
+    try {
+        $cfg = aiSettingsLoad($conn, 'knowledge_ai');
+    } catch (Exception) {
+        return '';
+    }
+    if (!aiConfigured($cfg)) {
+        return '';
+    }
+
+    $system = "You are helping a support team triage a website chat. Summarise the conversation below into a "
+        . "short ticket description for a human agent: state the visitor's question or issue and any useful "
+        . "details they gave (name, order, product, etc.). Write 2 to 4 plain sentences, no preamble, no sign-off.";
+
+    try {
+        $r = aiProviderChat($cfg, ['system' => $system, 'user' => $transcript, 'max_tokens' => 400]);
+        return trim((string) ($r['content'] ?? ''));
+    } catch (Exception) {
+        return '';
+    }
+}

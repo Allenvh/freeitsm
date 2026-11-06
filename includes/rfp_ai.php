@@ -34,6 +34,8 @@ const RFP_AI_FALLBACK_STYLE_GUIDE = "Default style: clear, formal, neutral. Brit
  *   1. The RFP's own `rfps.style_guide` override (per-RFP)
  *   2. The system-wide `system_settings.rfp_default_style_guide`
  *   3. A safe hardcoded fallback
+ *
+ * @param int $rfpId  the rfps id
  */
 function rfpAiResolveStyleGuide(PDO $conn, int $rfpId): string
 {
@@ -117,6 +119,8 @@ function rfpAiGetSettings(PDO $conn): array
  *   provider      string
  *   model         string
  *   duration_ms   int
+ *
+ * @param array $opts  system, user (the prompts), max_tokens (default 4096), temperature (default 0.0)
  */
 function rfpAiCall(PDO $conn, array $opts): array
 {
@@ -136,6 +140,16 @@ function rfpAiCall(PDO $conn, array $opts): array
     return $result;
 }
 
+/**
+ * Sends one prompt to the Anthropic Messages API and returns the reply text with token and
+ * cache counts.
+ *
+ * The system prompt is marked for caching, so several documents extracted in a row reuse
+ * it.
+ *
+ * @param array $settings  the provider settings from rfpAiGetSettings(): model, api_key, verify_ssl
+ * @param array $opts  system, user, max_tokens, temperature (defaults already filled in by rfpAiCall())
+ */
 function rfpAiCallAnthropic(array $settings, array $opts): array
 {
     // Wrap the system prompt as a single text block with a cache_control
@@ -182,6 +196,12 @@ function rfpAiCallAnthropic(array $settings, array $opts): array
     ];
 }
 
+/**
+ * Sends one prompt to the OpenAI chat completions API and returns the reply text with token counts.
+ *
+ * @param array $settings  the provider settings from rfpAiGetSettings(): model, api_key, verify_ssl
+ * @param array $opts  system, user, max_tokens, temperature (defaults already filled in by rfpAiCall())
+ */
 function rfpAiCallOpenAI(array $settings, array $opts): array
 {
     $body = json_encode([
@@ -238,6 +258,10 @@ function rfpAiCallOpenAI(array $settings, array $opts): array
  *
  * Only Anthropic supported today — OpenAI streaming has a different
  * SSE shape and callers should pre-check the configured provider.
+ *
+ * @param array $opts  system, user (the prompts), max_tokens (default 4096), temperature (default 0.0)
+ * @param callable $onEvent  fn(string $eventType, array $data) - called with 'text' deltas and 'usage' updates as they arrive
+ * @param ?array $settingsOverride  another feature's own settings (provider, api_key, model) to bill to; null uses the RFP AI settings
  */
 function rfpAiCallAnthropicStreaming(PDO $conn, array $opts, callable $onEvent, ?array $settingsOverride = null): array
 {
@@ -292,6 +316,7 @@ function rfpAiCallAnthropicStreaming(PDO $conn, array $opts, callable $onEvent, 
     $start = microtime(true);
 
     $ch = curl_init('https://api.anthropic.com/v1/messages');
+    sslApplyCurl($ch);
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $body,
@@ -304,8 +329,6 @@ function rfpAiCallAnthropicStreaming(PDO $conn, array $opts, callable $onEvent, 
         CURLOPT_TIMEOUT        => 0,
         CURLOPT_LOW_SPEED_TIME => 60,
         CURLOPT_LOW_SPEED_LIMIT=> 1,
-        CURLOPT_SSL_VERIFYPEER => $settings['verify_ssl'],
-        CURLOPT_SSL_VERIFYHOST => $settings['verify_ssl'] ? 2 : 0,
         CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$sseBuffer, &$accumulated, &$usage, &$streamError, $onEvent) {
             $sseBuffer .= $chunk;
             // SSE events end with a blank line (\n\n). Split there.
@@ -395,6 +418,11 @@ function rfpAiCallAnthropicStreaming(PDO $conn, array $opts, callable $onEvent, 
 /**
  * POST with retry on 429 / 5xx / network errors. Exponential backoff
  * starting at RFP_AI_RETRY_BACKOFF_MS. Throws on final failure.
+ *
+ * @param string $url  the provider's API endpoint
+ * @param array $headers  the HTTP headers, as 'Name: value' lines
+ * @param string $body  the JSON request body
+ * @param bool $verifySsl  the RFP AI verify-SSL setting (not used - sslApplyCurl() decides)
  */
 function rfpAiHttpPostWithRetry(string $url, array $headers, string $body, bool $verifySsl): array
 {
@@ -411,9 +439,8 @@ function rfpAiHttpPostWithRetry(string $url, array $headers, string $body, bool 
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => RFP_AI_HTTP_TIMEOUT,
-            CURLOPT_SSL_VERIFYPEER => $verifySsl,
-            CURLOPT_SSL_VERIFYHOST => $verifySsl ? 2 : 0,
         ]);
+        sslApplyCurl($ch);
         $resp = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err  = curl_error($ch);
@@ -453,6 +480,15 @@ function rfpAiHttpPostWithRetry(string $url, array $headers, string $body, bool 
  * Insert a row into rfp_processing_log. Silently no-ops if rfp_id is
  * null (the column is NOT NULL in the schema; callers should always
  * have an rfp_id by the time they're calling AI).
+ *
+ * @param ?int $rfpId  the rfps id; null logs nothing
+ * @param ?int $documentId  the rfp_documents id the call was about; null when it was not about one document
+ * @param ?int $sectionId  the section id the call was about; null when it was not about one section
+ * @param string $action  what was done: 'extract', 'consolidate', 'generate_section', 'generate_framing' or 'restyle_section'
+ * @param string $status  'success' or 'error'
+ * @param ?string $details  JSON with the figures for a success, or the error message
+ * @param ?int $tokensIn  input tokens billed; null when unknown
+ * @param ?int $tokensOut  output tokens billed; null when unknown
  */
 function rfpAiLogAction(
     PDO $conn,
@@ -514,6 +550,11 @@ PROMPT;
  *   cache_read   int|null
  *   cache_write  int|null
  *   duration_ms  int
+ *
+ * @param int $rfpId  the rfps id, for the log
+ * @param int $documentId  the rfp_documents id being read, for the log
+ * @param string $rawText  the document's text, as extracted from the upload
+ * @param string $departmentName  the department that wrote the document, given to the model as context
  */
 function rfpAiExtractRequirements(PDO $conn, int $rfpId, int $documentId, string $rawText, string $departmentName): array
 {
@@ -701,6 +742,9 @@ PROMPT;
  *   cache_read   int|null
  *   cache_write  int|null
  *   duration_ms  int
+ *
+ * @param int $rfpId  the rfps id, for the log
+ * @param array $extractedRows  rfp_extracted_requirements rows: id, requirement_text, requirement_type, source_quote, department_name
  */
 function rfpAiConsolidate(PDO $conn, int $rfpId, array $extractedRows): array
 {
@@ -800,6 +844,10 @@ function rfpAiConsolidate(PDO $conn, int $rfpId, array $extractedRows): array
  *
  * Returns the same shape as rfpAiConsolidate(): { payload, tokens_in,
  * tokens_out, cache_read, cache_write, duration_ms }.
+ *
+ * @param int $rfpId  the rfps id, for the log
+ * @param array $extractedRows  rfp_extracted_requirements rows: id, requirement_text, requirement_type, source_quote, department_name
+ * @param callable $onEvent  fn(string $eventType, array $data) - passed to rfpAiCallAnthropicStreaming()
  */
 function rfpAiConsolidateStreaming(PDO $conn, int $rfpId, array $extractedRows, callable $onEvent): array
 {
@@ -953,6 +1001,10 @@ PROMPT;
  *   inputs_hash   string  md5 of the input requirements (used for skip-if-unchanged)
  *
  * Throws if the category has no consolidated requirements assigned.
+ *
+ * @param int $rfpId  the rfps id
+ * @param int $categoryId  the rfp_categories id the section is written for (must belong to the RFP)
+ * @param callable $onEvent  fn(string $eventType, array $data) - passed to rfpAiCallAnthropicStreaming()
  */
 function rfpAiGenerateSectionStreaming(PDO $conn, int $rfpId, int $categoryId, callable $onEvent): array
 {
@@ -1180,6 +1232,10 @@ const RFP_AI_FRAMING_KEYS = [
  * Returns the same shape as rfpAiGenerateSectionStreaming():
  *   content, tokens_in, tokens_out, cache_read, cache_write,
  *   duration_ms, inputs_hash
+ *
+ * @param int $rfpId  the rfps id
+ * @param string $sectionKey  which framing section: a key of RFP_AI_FRAMING_KEYS (introduction, scope, response_instructions)
+ * @param callable $onEvent  fn(string $eventType, array $data) - passed to rfpAiCallAnthropicStreaming()
  */
 function rfpAiGenerateFramingStreaming(PDO $conn, int $rfpId, string $sectionKey, callable $onEvent): array
 {
@@ -1339,6 +1395,11 @@ PROMPT;
  *
  * Caller is responsible for the DB write — this function only does
  * the AI call and the audit log.
+ *
+ * @param int $rfpId  the rfps id - picks the style guide
+ * @param string $existingHtml  the section's current HTML; empty throws
+ * @param string $logContext  a label for the log, e.g. "section #42" or "framing introduction"
+ * @param callable $onEvent  fn(string $eventType, array $data) - passed to rfpAiCallAnthropicStreaming()
  */
 function rfpAiRestyleStreaming(PDO $conn, int $rfpId, string $existingHtml, string $logContext, callable $onEvent): array
 {

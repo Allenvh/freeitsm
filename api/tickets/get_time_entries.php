@@ -16,6 +16,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 $ticket_id = $_GET['ticket_id'] ?? null;
 
@@ -30,6 +31,16 @@ try {
     // Multi-tenancy: don't reveal a ticket in a company this analyst can't access.
     if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], $ticket_id)) {
         echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
+
+    // Time tracking switched off for this ticket's company (discussion #72).
+    // ⚠️ Checked HERE and not only in the browser: hiding a panel is not the same
+    // as turning a feature off, and an endpoint that still answers is one URL away
+    // from putting the panel back. The rows are untouched — this returns none.
+    require_once '../../includes/tenant_settings.php';
+    if (!timeTrackingUiOn($conn, ticketTenantId($conn, (int)$ticket_id))) {
+        echo json_encode(['success' => true, 'time_entries' => [], 'total_minutes' => 0, 'disabled' => true]);
         exit;
     }
 

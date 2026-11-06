@@ -5,26 +5,57 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/timezone.php';
+require_once '../includes/theme.php';
+require_once '../includes/rbac.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('lms');
+
+// This is the management dashboard. A learner (module access but not lms.manage)
+// has no business here — send them to their own courses. Managers and admins
+// stay. This is what makes the waffle "LMS" link land everyone in the right place.
+if (!analystHasCapability(connectToDatabase(), (int)$_SESSION['analyst_id'], Cap::LMS_MANAGE)) {
+    header('Location: my-courses.php');
+    exit;
+}
 
 $current_page = 'lms';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'lms'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('lms.title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
-    <link rel="stylesheet" href="../assets/css/lms.css">
+    <title><?php echo htmlspecialchars(pageTitle('lms')); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/lms.css?v=11">
+    <!-- Mobile layer: linked AFTER this page's own CSS so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
 </head>
-<body>
+<body data-mobile-module="lms">
     <?php include 'includes/header.php'; ?>
+    <?php /* The action row (#185). Each tab creates something different, so the
+             row shows what the active tab can do (lms.js syncActionRow): Upload
+             and New on Courses, New on Groups, Assign on Assignments - Assign is
+             not "creating a record", so it keeps its own word. */
+          require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('lms.title'), [
+              ['label' => t('lms.courses.upload'), 'onclick' => 'LMS.openUploadModal()', 'id' => 'lmsUploadBtn'],
+              actionRowNew('LMS.newForTab()', t('lms.courses.new_tip'), false, 'lmsNewBtn'),
+              ['label' => t('lms.assignments.assign'), 'onclick' => 'LMS.openAssignModal()', 'primary' => true, 'id' => 'lmsAssignBtn', 'hidden' => true],
+          ], ['accent' => 'lms']); ?>
 
     <div class="lms-container">
         <!-- Tabs -->
@@ -39,7 +70,6 @@ $translationNamespaces = ['common', 'lms'];
         <div class="lms-panel" id="panel-courses">
             <div class="lms-panel-header">
                 <h2><?php echo htmlspecialchars(t('lms.courses.heading')); ?></h2>
-                <button class="btn btn-primary" onclick="LMS.openUploadModal()"><?php echo htmlspecialchars(t('lms.courses.upload')); ?></button>
             </div>
             <table class="lms-table">
                 <thead>
@@ -61,7 +91,6 @@ $translationNamespaces = ['common', 'lms'];
         <div class="lms-panel" id="panel-groups" style="display:none;">
             <div class="lms-panel-header">
                 <h2><?php echo htmlspecialchars(t('lms.groups.heading')); ?></h2>
-                <button class="btn btn-primary" onclick="LMS.openGroupModal()"><?php echo htmlspecialchars(t('lms.groups.new')); ?></button>
             </div>
             <table class="lms-table">
                 <thead>
@@ -82,7 +111,6 @@ $translationNamespaces = ['common', 'lms'];
         <div class="lms-panel" id="panel-assignments" style="display:none;">
             <div class="lms-panel-header">
                 <h2><?php echo htmlspecialchars(t('lms.assignments.heading')); ?></h2>
-                <button class="btn btn-primary" onclick="LMS.openAssignModal()"><?php echo htmlspecialchars(t('lms.assignments.assign')); ?></button>
             </div>
             <table class="lms-table">
                 <thead>
@@ -110,6 +138,9 @@ $translationNamespaces = ['common', 'lms'];
                     </select>
                     <select id="filterGroup" onchange="LMS.loadProgress()">
                         <option value=""><?php echo htmlspecialchars(t('lms.progress.all_groups')); ?></option>
+                    </select>
+                    <select id="filterAnalyst" onchange="LMS.loadProgress()">
+                        <option value=""><?php echo htmlspecialchars(t('lms.progress.all_analysts')); ?></option>
                     </select>
                     <select id="filterStatus" onchange="LMS.loadProgress()">
                         <option value=""><?php echo htmlspecialchars(t('lms.progress.all_statuses')); ?></option>
@@ -140,6 +171,33 @@ $translationNamespaces = ['common', 'lms'];
                 </tbody>
             </table>
         </div>
+
+    </div>
+
+    <!-- Create an authored course -->
+    <div class="modal" id="createModal">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header"><?php echo htmlspecialchars(t('lms.create_modal.title')); ?></div>
+            <form id="createForm" style="padding: 20px 24px;">
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('lms.create_modal.field_title')); ?> *</label>
+                    <input type="text" id="newCourseTitle" required>
+                </div>
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('lms.create_modal.field_description')); ?></label>
+                    <textarea id="newCourseDescription" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label><?php echo htmlspecialchars(t('lms.create_modal.field_pass_mark')); ?></label>
+                    <input type="number" id="newCoursePassMark" min="0" max="100" placeholder="<?php echo htmlspecialchars(t('lms.create_modal.pass_mark_placeholder')); ?>">
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('lms.create_modal.pass_mark_hint')); ?></small>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="LMS.closeModal('createModal')"><?php echo htmlspecialchars(t('lms.create_modal.cancel')); ?></button>
+                    <button type="submit" class="btn btn-primary"><?php echo htmlspecialchars(t('lms.create_modal.create')); ?></button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Upload Course Modal -->
@@ -158,13 +216,13 @@ $translationNamespaces = ['common', 'lms'];
                 <div class="form-group">
                     <label><?php echo htmlspecialchars(t('lms.upload_modal.field_package')); ?></label>
                     <input type="file" id="courseFile" accept=".zip" required>
-                    <small style="color: #666;"><?php echo htmlspecialchars(t('lms.upload_modal.package_hint')); ?></small>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('lms.upload_modal.package_hint')); ?></small>
                 </div>
                 <div id="uploadProgress" style="display:none; margin-bottom: 12px;">
-                    <div style="background: #e0e0e0; border-radius: 4px; overflow: hidden;">
-                        <div id="uploadBar" style="height: 6px; background: #2563eb; width: 0%; transition: width 0.3s;"></div>
+                    <div style="background: var(--border, #e0e0e0); border-radius: 4px; overflow: hidden;">
+                        <div id="uploadBar" style="height: 6px; background: var(--lms-accent, #2563eb); width: 0%; transition: width 0.3s;"></div>
                     </div>
-                    <small id="uploadStatus" style="color: #666;"><?php echo htmlspecialchars(t('lms.upload_modal.uploading')); ?></small>
+                    <small id="uploadStatus" style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('lms.upload_modal.uploading')); ?></small>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="LMS.closeModal('uploadModal')"><?php echo htmlspecialchars(t('lms.upload_modal.cancel')); ?></button>
@@ -190,7 +248,7 @@ $translationNamespaces = ['common', 'lms'];
                 </div>
                 <div class="form-group">
                     <label><?php echo htmlspecialchars(t('lms.group_modal.field_members')); ?></label>
-                    <div id="membersList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 8px;"></div>
+                    <div id="membersList" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border, #ddd); border-radius: 4px; padding: 8px;"></div>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="LMS.closeModal('groupModal')"><?php echo htmlspecialchars(t('lms.group_modal.cancel')); ?></button>
@@ -203,7 +261,7 @@ $translationNamespaces = ['common', 'lms'];
     <!-- Assign Course Modal -->
     <div class="modal" id="assignModal">
         <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header"><?php echo htmlspecialchars(t('lms.assign_modal.title')); ?></div>
+            <div class="modal-header" id="assignModalTitle"><?php echo htmlspecialchars(t('lms.assign_modal.title')); ?></div>
             <form id="assignForm" style="padding: 20px 24px;">
                 <div class="form-group">
                     <label><?php echo htmlspecialchars(t('lms.assign_modal.field_course')); ?></label>
@@ -211,12 +269,24 @@ $translationNamespaces = ['common', 'lms'];
                 </div>
                 <div class="form-group">
                     <label><?php echo htmlspecialchars(t('lms.assign_modal.field_group')); ?></label>
-                    <select id="assignGroup" required></select>
+                    <select id="assignGroup" required onchange="LMS.assignTargetChanged()"></select>
+                </div>
+
+                <?php /* Revealed only when "one person" is chosen. A search rather
+                         than a dropdown: an install has thousands of portal users
+                         and a <select> of them is unusable. */ ?>
+                <div class="form-group" id="assignPersonGroup" style="display: none; position: relative;">
+                    <label for="assignPersonSearch"><?php echo htmlspecialchars(t('lms.assign_modal.field_person')); ?></label>
+                    <input type="text" id="assignPersonSearch" autocomplete="off"
+                           placeholder="<?php echo htmlspecialchars(t('lms.assign_modal.person_placeholder')); ?>"
+                           oninput="LMS.searchAssignPeople()">
+                    <div id="assignPersonResults" class="lms-person-results"></div>
+                    <small id="assignPersonChosen" style="display:none; color: var(--text-muted, #666);"></small>
                 </div>
                 <div class="form-group">
                     <label><?php echo htmlspecialchars(t('lms.assign_modal.field_deadline')); ?></label>
                     <input type="date" id="assignDeadline">
-                    <small style="color: #666;"><?php echo htmlspecialchars(t('lms.assign_modal.deadline_hint')); ?></small>
+                    <small style="color: var(--text-muted, #666);"><?php echo htmlspecialchars(t('lms.assign_modal.deadline_hint')); ?></small>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="LMS.closeModal('assignModal')"><?php echo htmlspecialchars(t('lms.assign_modal.cancel')); ?></button>
@@ -231,7 +301,7 @@ $translationNamespaces = ['common', 'lms'];
         <div class="modal-content" style="max-width: 800px; max-height: 90vh;">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <span id="learnerDataTitle"><?php echo htmlspecialchars(t('lms.learner_modal.title')); ?></span>
-                <button style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;" onclick="LMS.closeModal('learnerDataModal')">&times;</button>
+                <button style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-faint, #999);" onclick="LMS.closeModal('learnerDataModal')">&times;</button>
             </div>
             <div id="learnerDataBody" style="padding: 20px 24px; overflow-y: auto; flex: 1;"></div>
         </div>
@@ -239,6 +309,7 @@ $translationNamespaces = ['common', 'lms'];
 
     <!-- Toast -->
     <script>window.API_BASE = '../api/lms/';</script>
-    <script src="../assets/js/lms.js"></script>
+    <script src="../assets/js/lms.js?v=11"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

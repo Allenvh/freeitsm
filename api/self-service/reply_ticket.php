@@ -1,0 +1,260 @@
+<?php
+/**
+ * API: Reply to your own ticket from the Self-Service Portal.
+ * POST { ticket_id, body, attachments[], recording_ids[] }
+ *
+ * Until this existed the portal was entirely READ-ONLY: a requester could watch
+ * their ticket but not answer it, so "can you send us a screenshot?" forced them
+ * back to email — the exact round trip the portal is meant to remove.
+ *
+ * The reply is recorded as an `emails` row with direction 'Portal', the same
+ * shape create_ticket.php already writes for the opening message. Nothing is
+ * SENT: the requester is already here and the analyst sees it in the inbox, so
+ * emailing them their own words back would be noise. (That also keeps the portal
+ * working on an install with no mailbox configured at all.) Analysts' outbound
+ * replies quote the whole thread, so a portal reply is carried into their next
+ * email automatically.
+ */
+session_start(['read_and_close' => true]);
+require_once '../../config.php';
+require_once '../../includes/functions.php';
+require_once '../../includes/ticket_reply.php';
+require_once '../../includes/ticket_snooze.php';
+require_once '../../includes/ticket_recordings.php';
+require_once '../../includes/uploads.php';   // uploadStoreBytes() — see F1
+
+header('Content-Type: application/json');
+
+if (!isset($_SESSION['ss_user_id'])) {
+    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+    exit;
+}
+
+$userId   = (int)$_SESSION['ss_user_id'];
+$input    = json_decode(file_get_contents('php://input'), true);
+$ticketId = (int)($input['ticket_id'] ?? 0);
+$body     = trim($input['body'] ?? '');
+$inputAttachments = $input['attachments'] ?? [];
+$recordingIds     = $input['recording_ids'] ?? [];
+
+if (!$ticketId) {
+    echo json_encode(['success' => false, 'error' => 'Ticket ID required']);
+    exit;
+}
+
+// A reply with neither words nor a file is nothing at all. A screen recording
+// counts: "here, look at what happens" is a complete answer on its own, and
+// making someone type a covering sentence for it would be pointless.
+if ($body === '' && empty($inputAttachments) && empty($recordingIds)) {
+    echo json_encode(['success' => false, 'error' => 'Please write a message or attach a file']);
+    exit;
+}
+
+try {
+    $conn = connectToDatabase();
+
+    // Ownership is the whole guard here: you may only reply to a ticket you
+    // raised. Same rule (and same "not found" wording) as get_ticket_detail.php,
+    // so this endpoint can never confirm the existence of someone else's ticket.
+    // Deleted tickets are excluded — a requester shouldn't be able to add to a
+    // thread the desk has binned.
+    $ticketStmt = $conn->prepare(
+        // The extra columns feed the ticket.reply_received payload below (#55) —
+        // without assigned_analyst_id there is nobody to notify, and the reply
+        // would silently reach no one's bell.
+        //
+        // ⚠️ requester_email is NOT a column on tickets — it comes from the user.
+        // Selecting it directly throws, and the throw lands in the dispatch's own
+        // catch, so the symptom is "notifications just never arrive".
+        "SELECT t.id, t.subject, t.priority_id, t.status_id, t.department_id, t.ticket_type_id,
+                t.assigned_analyst_id, t.owner_id, t.origin_id, t.user_id,
+                u.email AS requester_email
+           FROM tickets t
+           LEFT JOIN users u ON u.id = t.user_id
+          WHERE t.id = ? AND t.deleted_datetime IS NULL"
+    );
+    // Who may reply: the requester, or one of their managers when managers are
+    // allowed to (#62) - the SAME rule as the ticket page. A manager who may only
+    // look, or who sees a confidential stub, is told "not found" like anyone else.
+    require_once __DIR__ . '/../../includes/managers.php';
+    $access = portalTicketAccess($conn, $userId, $ticketId);
+    if (!$access || !$access['can_reply']) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
+    $ticketStmt->execute([$ticketId]);
+    $ticket = $ticketStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$ticket) {
+        echo json_encode(['success' => false, 'error' => 'Ticket not found']);
+        exit;
+    }
+
+    $userStmt = $conn->prepare("SELECT email, username, display_name FROM users WHERE id = ?");
+    $userStmt->execute([$userId]);
+    $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$user) {
+        throw new Exception('User not found');
+    }
+
+    // NULL, not '' — see create_ticket.php. A requester who signs in through a
+    // directory may have no mailbox, and the name is then their only identifier.
+    $fromEmail = ($user['email'] !== null && $user['email'] !== '') ? $user['email'] : null;
+    $fromName  = $user['display_name'] ?: ($user['username'] ?: ($fromEmail ?: ('#' . $userId)));
+
+    // Keep the reply on the same mailbox as the rest of the thread, so an
+    // analyst's next outbound reply goes out from the address the requester has
+    // been talking to. Mirrors getMailboxForTicket() in api/tickets/send_email.php.
+    $mbStmt = $conn->prepare(
+        "SELECT mailbox_id FROM emails
+         WHERE ticket_id = ? AND mailbox_id IS NOT NULL
+         ORDER BY is_initial DESC, received_datetime ASC
+         LIMIT 1"
+    );
+    $mbStmt->execute([$ticketId]);
+    $mailboxId = $mbStmt->fetchColumn();
+    $mailboxId = ($mailboxId === false || $mailboxId === null) ? null : (int)$mailboxId;
+
+    $conn->beginTransaction();
+
+    // The requester types plain text, so it is escaped on the way IN and stored
+    // as the HTML it will be rendered as. Never store their raw markup: this body
+    // is echoed into the analyst's reading pane and quoted into outbound email.
+    $bodyHtml    = $body === '' ? '' : nl2br(htmlspecialchars($body));
+    $bodyPreview = substr(strip_tags($body), 0, 200);
+    $hasAttachments = !empty($inputAttachments) ? 1 : 0;
+
+    $emailSql = "INSERT INTO emails (
+        subject, from_address, from_name, to_recipients, received_datetime,
+        body_preview, body_content, body_type, has_attachments, importance,
+        is_read, ticket_id, is_initial, direction, mailbox_id
+    ) VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, 'html', ?, 'normal', 0, ?, 0, 'Portal', ?)";
+
+    $emailStmt = $conn->prepare($emailSql);
+    $emailStmt->execute([
+        $ticket['subject'],
+        $fromEmail,
+        $fromName,
+        $fromEmail,
+        $bodyPreview,
+        $bodyHtml,
+        $hasAttachments,
+        $ticketId,
+        $mailboxId,
+    ]);
+
+    $emailId = $conn->lastInsertId();
+
+    // ticket.reply_received (discussion #55). The requester coming back is the
+    // single notification analysts most want, and there was no event for it.
+    // Non-fatal: their reply is saved whether or not anyone is told.
+    //
+    // No session analyst here — the actor is a portal user, not an analyst — so
+    // the "never notify me about my own action" rule correctly does not suppress
+    // this for the assignee.
+    try {
+        require_once __DIR__ . '/../../workflow/includes/engine.php';
+        WorkflowEngine::dispatch('ticket.reply_received', [
+            'ticket' => [
+                'id'                  => (int)$ticketId,
+                'subject'             => $ticket['subject'] ?? null,
+                'priority_id'         => isset($ticket['priority_id']) ? (int)$ticket['priority_id'] : null,
+                'status_id'           => isset($ticket['status_id']) ? (int)$ticket['status_id'] : null,
+                'department_id'       => isset($ticket['department_id']) ? (int)$ticket['department_id'] : null,
+                'type_id'             => isset($ticket['ticket_type_id']) ? (int)$ticket['ticket_type_id'] : null,
+                'assigned_analyst_id' => isset($ticket['assigned_analyst_id']) ? (int)$ticket['assigned_analyst_id'] : null,
+                'owner_id'            => isset($ticket['owner_id']) ? (int)$ticket['owner_id'] : null,
+                'origin_id'           => isset($ticket['origin_id']) ? (int)$ticket['origin_id'] : null,
+                'created_by'          => isset($ticket['user_id']) ? (int)$ticket['user_id'] : null,
+                'requester_email'     => $ticket['requester_email'] ?? $fromEmail,
+            ],
+            'source' => 'portal',
+        ]);
+    } catch (Throwable $wfEx) {
+        error_log('Workflow dispatch error in portal reply: ' . $wfEx->getMessage());
+    }
+
+    // Attachments land on disk under tickets/attachments/{floor(id/1000)}/{id}/,
+    // the same convention as inbound mail (check_mailbox_email.php::saveAttachment)
+    // so the analyst's existing get_attachment.php serves them with no changes.
+    if (!empty($inputAttachments)) {
+        $attachDir = realpath(__DIR__ . '/../../tickets/attachments');
+        $subdir    = floor($emailId / 1000);
+        $emailDir  = $attachDir . '/' . $subdir . '/' . $emailId;
+
+        if (!is_dir($emailDir)) {
+            mkdir($emailDir, 0755, true);
+        }
+
+        $attachStmt = $conn->prepare(
+            "INSERT INTO email_attachments (email_id, filename, content_type, file_path, file_size, is_inline, created_datetime)
+             VALUES (?, ?, ?, ?, ?, 0, UTC_TIMESTAMP())"
+        );
+
+        // ⚠️ Same fix as create_ticket.php: the name and declared type are the portal
+        // user's, and were previously written into the web root as-is. See F1 and
+        // includes/uploads.php.
+        $policy = attachmentRejectPolicy($conn);
+        $rejected = [];
+        $quarantined = [];
+        $storedAny = false;
+
+        foreach ($inputAttachments as $att) {
+            $fileData = base64_decode($att['content'] ?? '');
+            $stored = uploadStoreBytes($fileData, (string)($att['name'] ?? 'file'), $emailDir, $policy, attachmentAllowedTypes($conn));
+
+            if (!$stored['stored']) {
+                $rejected[] = ['name' => $stored['original_name'], 'reason' => $stored['reason']];
+                continue;
+            }
+            if ($stored['quarantined']) {
+                $quarantined[] = ['name' => $stored['original_name'], 'reason' => $stored['reason']];
+            }
+            $storedAny = true;
+
+            $relPath = $subdir . '/' . $emailId . '/' . $stored['stored_name'];
+            $attachStmt->execute([$emailId, $stored['original_name'], $stored['mime'], $relPath, $stored['size']]);
+        }
+
+        $notice = attachmentIngestNotice($rejected, $quarantined);
+        if ($notice !== '' || !$storedAny) {
+            $conn->prepare("UPDATE emails SET body_content = CONCAT(body_content, ?), has_attachments = ? WHERE id = ?")
+                 ->execute([$notice, $storedAny ? 1 : 0, $emailId]);
+        }
+    }
+
+    // Bring the ticket back to the top of the queue.
+    $conn->prepare("UPDATE tickets SET updated_datetime = UTC_TIMESTAMP() WHERE id = ?")->execute([$ticketId]);
+
+    $conn->commit();
+
+    // Claim any screen recordings made with this reply. Shared with
+    // create_ticket.php — see includes/ticket_recordings.php. Unlike the opening
+    // message these carry the $emailId, so the video is shown against the reply
+    // it came with rather than floating at the top of a long thread.
+    $claimedRecordings = claimPendingRecordings($conn, $recordingIds, $ticketId, $userId, (int)$emailId);
+
+    // Reopen AFTER the commit: the reply is the thing that must not be lost, and
+    // the helper is deliberately non-fatal for the same reason.
+    $reopened = reopenTicketForCustomerReply($conn, $ticketId);
+    // Same door, same rule: a requester replying wakes a snoozed ticket (#933).
+    wakeSnoozedTicketOnCustomerReply($conn, $ticketId);
+
+    echo json_encode([
+        'success'    => true,
+        'email_id'   => (int)$emailId,
+        'reopened'   => $reopened,
+        'recordings' => $claimedRecordings,
+    ]);
+
+} catch (Exception $e) {
+    if (isset($conn) && $conn->inTransaction()) {
+        $conn->rollBack();
+    }
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+}

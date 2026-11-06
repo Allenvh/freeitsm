@@ -6,23 +6,36 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('software');
 
 $current_page = 'dashboard';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'software'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('software.dashboard.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('software', t('software.nav.dashboard'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
+        /* Module accent (indigo) — primary button, focus rings, drag target. */
+        body { --accent: var(--sw-accent, #5c6bc0); --accent-hover: var(--sw-accent-hover, #3f51b5); }
+
         .dashboard-page {
             height: calc(100vh - 48px);
             overflow-y: auto;
@@ -33,14 +46,14 @@ $translationNamespaces = ['common', 'software'];
             align-items: center;
             justify-content: space-between;
             padding: 16px 24px;
-            background: #fff;
-            border-bottom: 1px solid #e0e0e0;
+            background: var(--surface, #fff);
+            border-bottom: 1px solid var(--border, #e0e0e0);
         }
 
         .dashboard-toolbar h2 {
             margin: 0;
             font-size: 18px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .dashboard-toolbar-actions {
@@ -50,10 +63,10 @@ $translationNamespaces = ['common', 'software'];
 
         .btn {
             padding: 8px 16px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 6px;
-            background: #fff;
-            color: #333;
+            background: var(--surface, #fff);
+            color: var(--text, #333);
             font-size: 13px;
             cursor: pointer;
             display: inline-flex;
@@ -63,18 +76,18 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .btn:hover {
-            background: #f5f5f5;
-            border-color: #ccc;
+            background: var(--surface-hover, #f5f5f5);
+            border-color: var(--border, #ccc);
         }
 
         .btn-primary {
-            background: #5c6bc0;
-            color: #fff;
-            border-color: #5c6bc0;
+            background: var(--sw-accent, #5c6bc0);
+            color: var(--sw-on-accent, #fff);
+            border-color: var(--sw-accent, #5c6bc0);
         }
 
         .btn-primary:hover {
-            background: #4a5ab5;
+            background: var(--sw-accent-hover, #4a5ab5);
         }
 
         .btn svg {
@@ -91,8 +104,8 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .widget-card {
-            background: #fff;
-            border: 1px solid #e0e0e0;
+            background: var(--surface, #fff);
+            border: 1px solid var(--border, #e0e0e0);
             border-radius: 8px;
             display: flex;
             flex-direction: column;
@@ -100,7 +113,7 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .widget-card:hover {
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 8px var(--shadow, rgba(0,0,0,0.08));
         }
 
         .widget-card.dragging {
@@ -108,7 +121,7 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .widget-card.drag-over {
-            border-color: #5c6bc0;
+            border-color: var(--sw-accent, #5c6bc0);
             border-style: dashed;
         }
 
@@ -128,13 +141,13 @@ $translationNamespaces = ['common', 'software'];
             margin: 0;
             font-size: 14px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .widget-header p {
             margin: 4px 0 0 0;
             font-size: 12px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .widget-actions {
@@ -149,15 +162,15 @@ $translationNamespaces = ['common', 'software'];
             border: none;
             padding: 4px;
             cursor: pointer;
-            color: #999;
+            color: var(--text-faint, #999);
             border-radius: 4px;
             display: flex;
             align-items: center;
         }
 
         .widget-action-btn:hover {
-            color: #333;
-            background: #f0f0f0;
+            color: var(--text, #333);
+            background: var(--surface-hover, #f0f0f0);
         }
 
         .widget-action-btn svg {
@@ -179,7 +192,7 @@ $translationNamespaces = ['common', 'software'];
         }
 
         .widget-no-data {
-            color: #aaa;
+            color: var(--text-faint, #aaa);
             font-size: 13px;
         }
 
@@ -187,20 +200,20 @@ $translationNamespaces = ['common', 'software'];
         .dashboard-empty {
             text-align: center;
             padding: 80px 24px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .dashboard-empty svg {
             width: 64px;
             height: 64px;
-            color: #ccc;
+            color: var(--text-faint, #ccc);
             margin-bottom: 16px;
         }
 
         .dashboard-empty h3 {
             margin: 0 0 8px 0;
             font-size: 18px;
-            color: #555;
+            color: var(--text-muted, #555);
         }
 
         .dashboard-empty p {
@@ -223,7 +236,7 @@ $translationNamespaces = ['common', 'software'];
             display: block;
             font-size: 12px;
             font-weight: 600;
-            color: #555;
+            color: var(--text-muted, #555);
             margin-bottom: 4px;
         }
 
@@ -232,7 +245,7 @@ $translationNamespaces = ['common', 'software'];
         .edit-form-grid textarea {
             width: 100%;
             padding: 8px 10px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 4px;
             font-size: 13px;
             box-sizing: border-box;
@@ -269,7 +282,7 @@ $translationNamespaces = ['common', 'software'];
 
         .drilldown-count {
             font-size: 13px;
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .drilldown-table {
@@ -281,26 +294,26 @@ $translationNamespaces = ['common', 'software'];
         .drilldown-table th {
             text-align: left;
             padding: 8px 12px;
-            background: #f5f5f5;
-            border-bottom: 2px solid #e0e0e0;
+            background: var(--surface-2, #f5f5f5);
+            border-bottom: 2px solid var(--border, #e0e0e0);
             font-weight: 600;
-            color: #555;
+            color: var(--text-muted, #555);
         }
 
         .drilldown-table td {
             padding: 8px 12px;
-            border-bottom: 1px solid #eee;
-            color: #333;
+            border-bottom: 1px solid var(--border-soft, #eee);
+            color: var(--text, #333);
         }
 
         .drilldown-table tr:hover td {
-            background: #fafafa;
+            background: var(--surface-hover, #fafafa);
         }
 
         .drilldown-loading {
             text-align: center;
             padding: 40px;
-            color: #999;
+            color: var(--text-faint, #999);
         }
 
         @media (max-width: 900px) {
@@ -309,6 +322,7 @@ $translationNamespaces = ['common', 'software'];
             }
         }
     </style>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php require_once '../includes/header.php'; ?>
@@ -411,6 +425,19 @@ $translationNamespaces = ['common', 'software'];
     <script src="../../assets/js/chart.min.js"></script>
     <script>
         const API_BASE = '../../api/software/';
+
+        // Dark-mode readability: Chart.js paints to a canvas and can't read our
+        // CSS tokens, so set its global text (ticks/legend) + gridline colours
+        // from the active palette mode. Series colours (COLORS) are unchanged —
+        // they read on both. chartSurface is the pie/doughnut slice-border so
+        // slices separate against the card in either mode.
+        const swDark = document.documentElement.getAttribute('data-theme-mode') === 'dark';
+        const chartSurface = swDark ? '#1e2228' : '#ffffff';
+        if (window.Chart) {
+            Chart.defaults.color = swDark ? '#aab2bd' : '#666';
+            Chart.defaults.borderColor = swDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
+        }
+
         let dashboardWidgets = [];
         let chartInstances = {};
         let chartMetadata = {};
@@ -544,6 +571,14 @@ $translationNamespaces = ['common', 'software'];
             }
         }
 
+        // Application names and publishers run long - "Microsoft Teams Meeting Add-in
+        // for Microsoft Office" is 50 characters. Shorten for the axis and the legend;
+        // the tooltip always carries the full text.
+        function truncateLabel(text, max) {
+            text = String(text ?? '');
+            return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
+        }
+
         function renderChart(widgetId, chartType, labels, values) {
             const canvasId = `chart-${widgetId}`;
             const canvas = document.getElementById(canvasId);
@@ -563,7 +598,7 @@ $translationNamespaces = ['common', 'software'];
                     datasets: [{
                         data: values,
                         backgroundColor: bgColors,
-                        borderColor: chartType === 'bar' ? bgColors : '#fff',
+                        borderColor: chartType === 'bar' ? bgColors : chartSurface,
                         borderWidth: chartType === 'bar' ? 0 : 2
                     }]
                 },
@@ -585,8 +620,33 @@ $translationNamespaces = ['common', 'software'];
                             position: 'right',
                             labels: {
                                 boxWidth: 12,
-                                padding: 8,
-                                font: { size: 11 }
+                                // 15 slices at the old padding came to more than the
+                                // canvas is tall, so the last one wrapped into a second
+                                // column on its own. Long publisher names are shortened
+                                // for the same reason - the full name is in the tooltip.
+                                padding: 5,
+                                font: { size: 11 },
+                                generateLabels: function (chart) {
+                                    // Doughnut and pie label each SLICE, and they do it
+                                    // through a per-type override - the global default
+                                    // labels each dataset, which for these is one entry.
+                                    const base = (Chart.overrides[chart.config.type]
+                                                  && Chart.overrides[chart.config.type].plugins
+                                                  && Chart.overrides[chart.config.type].plugins.legend
+                                                  && Chart.overrides[chart.config.type].plugins.legend.labels
+                                                  && Chart.overrides[chart.config.type].plugins.legend.labels.generateLabels)
+                                                 || Chart.defaults.plugins.legend.labels.generateLabels;
+                                    const items = base(chart);
+                                    items.forEach(item => { item.text = truncateLabel(item.text, 26); });
+                                    return items;
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                // the axis and legend are shortened, so the tooltip is
+                                // the one place the full name has to appear
+                                title: items => items.length ? String(labels[items[0].dataIndex]) : ''
                             }
                         }
                     }
@@ -602,7 +662,14 @@ $translationNamespaces = ['common', 'software'];
                     x: {
                         ticks: {
                             maxRotation: 45,
-                            font: { size: 11 }
+                            font: { size: 11 },
+                            // Chart.js drops labels that do not fit rather than shortening
+                            // them, which left half the bars unlabelled. Shorten instead,
+                            // and keep every bar labelled.
+                            autoSkip: false,
+                            callback: function (value) {
+                                return truncateLabel(String(this.getLabelForValue(value)), 22);
+                            }
                         }
                     }
                 };
@@ -639,10 +706,10 @@ $translationNamespaces = ['common', 'software'];
                     drilldownTitle = title;
                     renderDrilldownData(res);
                 } else {
-                    document.getElementById('drilldownBody').innerHTML = '<p style="color:#999;">' + window.t('software.dashboard.no_data_found') + '</p>';
+                    document.getElementById('drilldownBody').innerHTML = '<p style="color:var(--text-faint,#999);">' + window.t('software.dashboard.no_data_found') + '</p>';
                 }
             } catch (err) {
-                document.getElementById('drilldownBody').innerHTML = '<p style="color:#c00;">' + window.t('software.dashboard.load_data_failed') + '</p>';
+                document.getElementById('drilldownBody').innerHTML = '<p style="color:var(--danger-accent,#c00);">' + window.t('software.dashboard.load_data_failed') + '</p>';
             }
         }
 
@@ -663,7 +730,7 @@ $translationNamespaces = ['common', 'software'];
             drilldownRows = res.rows || [];
 
             if (drilldownRows.length === 0) {
-                body.innerHTML = '<p style="color:#999;">' + window.t('software.dashboard.no_records') + '</p>';
+                body.innerHTML = '<p style="color:var(--text-faint,#999);">' + window.t('software.dashboard.no_records') + '</p>';
                 toolbar.style.display = 'none';
                 return;
             }
@@ -890,7 +957,7 @@ $translationNamespaces = ['common', 'software'];
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         document.addEventListener('keydown', function(e) {
@@ -910,5 +977,6 @@ $translationNamespaces = ['common', 'software'];
 
         init();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

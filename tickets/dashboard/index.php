@@ -9,7 +9,10 @@ require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
 require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
+requireModuleAccess('tickets');
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'dashboard';
 $path_prefix = '../../';
@@ -18,11 +21,12 @@ $translationNamespaces = ['common', 'tickets'];
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('tickets.dashboard.page_title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/theme.css?v=4">
-    <link rel="stylesheet" href="../../assets/css/inbox.css?v=35">
+    <title><?php echo htmlspecialchars(pageTitle('tickets', t('tickets.nav.dashboard'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
         .dashboard-page {
             height: calc(100vh - 48px);
@@ -225,8 +229,9 @@ $translationNamespaces = ['common', 'tickets'];
         /* Form fields follow the palette (inbox.css only themes specific input classes). */
     .dashboard-page input, .dashboard-page select, .dashboard-page textarea { background: var(--surface, #fff); color: var(--text, #333); }
     </style>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="tickets-dashboard">
     <?php require_once '../includes/header.php'; ?>
 
     <div class="dashboard-page">
@@ -270,9 +275,11 @@ $translationNamespaces = ['common', 'tickets'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <script src="../../assets/js/chart.min.js"></script>
-    <script src="../../assets/js/widget-editor.js"></script>
+    <script src="../../assets/js/widget-editor.js?v=2"></script>
     <script>
         const API_BASE = '../../api/tickets/';
         let dashboardWidgets = [];
@@ -704,7 +711,7 @@ $translationNamespaces = ['common', 'tickets'];
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         document.addEventListener('keydown', function(e) {
@@ -717,5 +724,6 @@ $translationNamespaces = ['common', 'tickets'];
 
         init();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

@@ -1,498 +1,406 @@
 <?php
 /**
- * System - Module Access Management
- * Configure which modules each analyst can access
+ * System - Module Access Management (issue #30)
+ * Team- and analyst-level module access: a module-centric summary, a per-module
+ * edit modal, the most/least conflict-policy toggle, and an effective-access tool.
+ * Backed by api/system/get_module_access.php + save_module_grants.php +
+ * save_module_permission_mode.php + get_effective_module_access.php.
  */
 session_start();
 require_once '../../config.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/timezone.php';
+require_once '../../includes/theme.php';
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'modules';
+require_once __DIR__ . '/../includes/page_gate.php';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'system'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Service Desk - <?php echo htmlspecialchars(t('system.modules.title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('system', t('system.modules.title'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
-        .main-container {
-            flex: 1;
-            background: #f5f7fa;
-            overflow-y: auto;
-        }
+        /* System module accent (blue-grey). --on-accent is pinned too: in dark the
+           accent is a LIGHT blue-grey, so text on it must go dark, not white. */
+        body { --accent: var(--sys-accent, #546e7a); --accent-hover: var(--sys-accent-hover, #37474f); --on-accent: var(--sys-on-accent, #fff); }
 
-        .modules-container {
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 30px 20px;
-        }
+        .main-container { flex: 1; background: var(--app-bg, #f5f7fa); overflow-y: auto; }
+        .modules-container { flex: 1; min-width: 0; overflow-y: auto; padding: 28px 32px 80px; box-sizing: border-box; }
+        .page-title { font-size: 24px; font-weight: 700; color: var(--text, #1a1a1a); margin: 0 0 4px; }
+        .page-subtitle { color: var(--text-muted, #666); margin: 0 0 22px; }
 
-        .page-title {
-            font-size: 22px;
-            font-weight: 600;
-            color: #333;
-            margin: 0 0 6px 0;
-        }
+        .panel { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; box-shadow: 0 1px 3px var(--shadow, rgba(0,0,0,0.05)); }
+        .panel > h2 { font-size: 15px; margin: 0 0 12px; color: var(--text, #333); }
 
-        .page-subtitle {
-            font-size: 13px;
-            color: #888;
-            margin: 0 0 24px 0;
-        }
+        .mode-opt { display: block; margin: 8px 0; cursor: pointer; color: var(--text, #333); }
+        .mode-opt input { margin-right: 8px; }
+        .strict-explainer { margin-top: 12px; padding: 12px 14px; border-radius: 8px; background: #fff3e0; border: 1px solid #ffcc80; color: #7c2d12; font-size: 13px; line-height: 1.55; }
 
-        /* Info banner */
-        .info-banner {
-            background: #e3f2fd;
-            border: 1px solid #90caf9;
-            border-radius: 6px;
-            padding: 12px 16px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        .eff-tool select { padding: 8px 10px; border: 1px solid var(--border, #ddd); border-radius: 6px; font-size: 14px; min-width: 260px; margin-left: 8px; background: var(--surface, #fff); color: var(--text, #333); }
+        .eff-head { margin: 12px 0 6px; font-size: 13px; color: var(--text-muted, #666); }
+        .eff-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .eff-table td { padding: 6px 10px; border-bottom: 1px solid var(--border, #eee); vertical-align: top; color: var(--text, #333); }
+        .eff-table td:first-child { font-weight: 600; width: 22%; }
+        .eff-table .yes { color: #2e7d32; font-weight: 600; white-space: nowrap; }
+        .eff-table .no  { color: #c62828; font-weight: 600; white-space: nowrap; }
+        .eff-table .reason { color: var(--text-muted, #666); }
 
-        .info-banner svg {
-            width: 18px;
-            height: 18px;
-            color: #1565c0;
-            flex-shrink: 0;
-        }
+        table.access-table { width: 100%; border-collapse: collapse; background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px var(--shadow, rgba(0,0,0,0.05)); }
+        .access-table th { text-align: left; padding: 12px 16px; background: var(--surface-3, #f8fafc); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted, #667); border-bottom: 1px solid var(--border, #e5e7eb); }
+        .access-table td { padding: 12px 16px; border-bottom: 1px solid var(--border, #f0f0f0); vertical-align: middle; color: var(--text, #333); }
+        .mod-row { cursor: pointer; transition: background 0.12s; }
+        .mod-row:hover { background: var(--surface-hover, #f5f8ff); }
 
-        .info-banner p {
-            margin: 0;
-            font-size: 13px;
-            color: #1565c0;
-            line-height: 1.4;
-        }
+        .pill { display: inline-block; padding: 3px 10px; margin: 2px; border-radius: 14px; font-size: 12px; background: #e8f0fe; color: #1565c0; }
+        .pill-all { background: #ede7f6; color: #5e35b1; }
+        .pill-more { background: var(--sys-accent-soft, #eceff1); color: var(--sys-accent, #546e7a); cursor: pointer; }
+        .pill-none { color: var(--text-faint, #999); font-size: 12px; }
+        .all-note { color: #5e35b1; }
 
-        /* Matrix table */
-        .matrix-card {
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-            overflow: hidden;
-        }
+        .chk-row { display: block; padding: 6px 4px; cursor: pointer; border-bottom: 1px solid var(--border, #f2f2f2); color: var(--text, #333); }
+        .chk-line { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border, #f2f2f2); }
+        .chk-line .chk-row { flex: 1; border-bottom: none; }
+        .lvl-select { font-size: 12px; padding: 2px 6px; }
+        .chk-row input { margin-right: 8px; }
+        #moduleModalBody h4 { margin: 14px 0 4px; font-size: 13px; color: var(--text-muted, #667); text-transform: uppercase; letter-spacing: 0.4px; }
 
-        .matrix-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
+        .lvl-filter { width: 100%; max-width: 320px; padding: 7px 10px; border: 1px solid var(--border, #ddd); border-radius: 6px; font-size: 13px; margin: 4px 0 14px; box-sizing: border-box; background: var(--surface, #fff); color: var(--text, #333); }
+        .lvl-cols { display: flex; gap: 20px; flex-wrap: wrap; }
+        .lvl-col { flex: 1; min-width: 260px; }
+        .lvl-col h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-muted, #667); text-transform: uppercase; letter-spacing: 0.4px; }
+        .lvl-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border, #eee); border-radius: 8px; }
+        .lvl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border, #f2f2f2); }
+        .lvl-row:last-child { border-bottom: none; }
+        .lvl-name { font-size: 13px; color: var(--text, #333); }
+        .lvl-tag { font-size: 11px; color: #c62828; margin-left: 6px; }
+        .lvl-empty { padding: 14px; text-align: center; color: var(--text-faint, #999); font-size: 13px; }
 
-        .matrix-table thead {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
+        .loading-spinner { text-align: center; color: var(--text-muted, #666); padding: 30px; }
 
-        .matrix-table th {
-            background: #546e7a;
-            color: #fff;
-            padding: 10px 8px;
-            font-weight: 600;
-            font-size: 12px;
-            text-align: center;
-            white-space: nowrap;
-            border-right: 1px solid rgba(255,255,255,0.1);
-        }
+        /* Availability (GH #217). */
+        .avail-intro { color: var(--text-muted, #666); font-size: 13px; margin: 0 0 12px; line-height: 1.5; }
+        .avail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 18px; }
+        .avail-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 2px; border-bottom: 1px solid var(--border, #f2f2f2); }
+        .avail-name { font-size: 13px; color: var(--text, #333); }
+        .avail-row.is-off .avail-name { color: var(--text-faint, #999); text-decoration: line-through; }
+        .avail-lock { font-size: 11px; color: var(--text-muted, #666); }
+        .avail-sub { font-size: 13px; margin: 18px 0 4px; color: var(--text, #333); }
+        .off-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--surface-3, #f1f5f9); color: var(--text-muted, #666); }
+        .mod-row.is-off td { opacity: 0.6; }
 
-        .matrix-table th:first-child {
-            text-align: left;
-            padding-left: 16px;
-            min-width: 180px;
-        }
-
-        .matrix-table th:last-child {
-            border-right: none;
-        }
-
-        .matrix-table td {
-            padding: 10px 8px;
-            border-bottom: 1px solid #f0f0f0;
-            text-align: center;
-            vertical-align: middle;
-        }
-
-        .matrix-table td:first-child {
-            text-align: left;
-            padding-left: 16px;
-        }
-
-        .matrix-table tr:hover td {
-            background: #f9fafb;
-        }
-
-        .matrix-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        /* Analyst cell */
-        .analyst-info {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .analyst-name {
-            font-weight: 600;
-            color: #333;
-        }
-
-        .analyst-username {
-            font-size: 11px;
-            color: #999;
-        }
-
-        /* Checkbox toggle */
-        .toggle {
-            position: relative;
-            display: inline-block;
-            width: 36px;
-            height: 20px;
-        }
-
-        .toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: #ccc;
-            border-radius: 20px;
-            transition: 0.2s;
-        }
-
-        .toggle-slider::before {
-            content: '';
-            position: absolute;
-            height: 14px;
-            width: 14px;
-            left: 3px;
-            bottom: 3px;
-            background: #fff;
-            border-radius: 50%;
-            transition: 0.2s;
-        }
-
-        .toggle input:checked + .toggle-slider {
-            background: #546e7a;
-        }
-
-        .toggle input:checked + .toggle-slider::before {
-            transform: translateX(16px);
-        }
-
-        .toggle input:disabled + .toggle-slider {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        /* All access badge */
-        .all-access-toggle {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .all-access-label {
-            font-size: 11px;
-            color: #888;
-            white-space: nowrap;
-        }
-
-        /* Status indicator */
-        .save-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 11px;
-            color: #107c10;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .save-indicator.show { opacity: 1; }
-
-        .save-indicator svg {
-            width: 14px;
-            height: 14px;
-        }
-
-        /* Loading */
-        .loading-spinner {
-            text-align: center;
-            padding: 60px;
-            color: #888;
-            font-size: 13px;
-        }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #888;
-        }
-
-        .empty-state svg {
-            width: 48px;
-            height: 48px;
-            color: #ccc;
-            margin-bottom: 12px;
-        }
-
-        .empty-state h3 {
-            margin: 0 0 4px 0;
-            font-size: 16px;
-            color: #666;
-        }
-
-        .empty-state p {
-            margin: 0;
-            font-size: 13px;
-        }
-
-        /* Toast — override global inbox.css toast (which uses left:50% + translateX) */
-        .toast {
-            left: auto;
-            right: 24px;
-            transform: translateY(10px);
-            max-width: 350px;
-        }
-
-        .toast.show {
-            transform: translateY(0);
-        }
-
-        .toast.error { background: #d32f2f; }
-        .toast.success { background: #2e7d32; }
+        /* ---- Dark mode: pale washes and light-on-light text that can't be tokenised ---- */
+        [data-theme-mode="dark"] .strict-explainer { background: #3a2e12; border-color: #5a4a1e; color: #fcd34d; }
+        [data-theme-mode="dark"] .eff-table .yes { color: #86efac; }
+        [data-theme-mode="dark"] .eff-table .no  { color: #fca5a5; }
+        [data-theme-mode="dark"] .lvl-tag        { color: #fca5a5; }
+        [data-theme-mode="dark"] .pill           { background: #1e2b3d; color: #93c5fd; }
+        [data-theme-mode="dark"] .pill-all       { background: #2b2440; color: #c4b5fd; }
+        [data-theme-mode="dark"] .all-note       { color: #c4b5fd; }
     </style>
+    <!-- Mobile layer LAST, after this page's own <style> (Techniques §9). -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="system" data-mobile-page="modules">
     <?php include '../includes/header.php'; ?>
 
     <div class="main-container">
         <div class="modules-container">
             <h1 class="page-title"><?php echo htmlspecialchars(t('system.modules.title')); ?></h1>
-            <p class="page-subtitle"><?php echo htmlspecialchars(t('system.modules.subtitle')); ?></p>
+            <p class="page-subtitle">Control which modules teams and analysts can use. Grant a module to a whole team, or to individuals. (System access is separate — set the Administrator flag on the Analysts screen.)</p>
 
-            <div class="info-banner">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                <p><?php echo t('system.modules.info_text', ['all_access' => '<strong>' . htmlspecialchars(t('system.modules.all_access_strong')) . '</strong>']); ?></p>
+            <!-- Availability (GH #217): switch a module off for the whole install -->
+            <div class="panel">
+                <h2 id="availability">Availability</h2>
+                <p class="avail-intro">Switch a module off for the <strong>whole installation</strong> if you do not use it. It disappears for everyone, administrators included - from the menus, from other modules' buttons and links, from the REST API, from workflows and from scheduled jobs. <strong>Nothing is deleted</strong>: switch it back on and it returns exactly as it was, with everyone's access unchanged.</p>
+                <div class="avail-grid" id="availGrid"></div>
+                <h3 class="avail-sub">Ticket features</h3>
+                <p class="avail-intro">Parts of Tickets you can switch off on their own. Tickets keeps working without any of them.</p>
+                <div class="avail-grid" id="availFeatures"></div>
             </div>
 
-            <div id="loading" class="loading-spinner"><?php echo htmlspecialchars(t('system.modules.loading')); ?></div>
+            <!-- Conflict policy -->
+            <div class="panel">
+                <h2 id="conflicts">When grants conflict</h2>
+                <label class="mode-opt"><input type="radio" name="permMode" value="most" onchange="setMode('most')"> <strong>Most permissive</strong> &mdash; an analyst can use a module if <em>any</em> of their teams, or their own access, grants it. (Recommended default.)</label>
+                <label class="mode-opt"><input type="radio" name="permMode" value="least" onchange="setMode('least')"> <strong>Least permissive (strict)</strong> &mdash; an analyst can use a module only if their own access <em>and every team they're in</em> grant it.</label>
+                <div id="strictExplainer" class="strict-explainer" style="display:none;">
+                    <strong>&#9888; Strict mode is ON.</strong> An analyst can open a module <strong>only if their own access and every team they belong to allow it</strong>. Granting a module to a person will <strong>not</strong> give them access if any of their teams lacks it &mdash; and a team with <strong>no modules</strong> granted removes access to <strong>everything</strong> for its members. Use the effective-access checker below to see exactly what anyone can reach.
+                </div>
+            </div>
 
-            <div id="matrixCard" class="matrix-card" style="display: none;"></div>
+            <!-- Access level: grant / revoke all-module access without leaving this screen -->
+            <div class="panel">
+                <h2 id="access-level">Access level</h2>
+                <p style="color:var(--text-muted,#666);font-size:13px;margin:0 0 8px;">Turn <strong>all modules</strong> on or off for a team or analyst right here. <strong>Off</strong> = restrict them to specific modules, which you then grant in the table below.</p>
+                <input type="text" id="lvlFilter" class="lvl-filter" placeholder="Filter by name&hellip;" onkeyup="renderAccessLevels()">
+                <div class="lvl-cols">
+                    <div class="lvl-col">
+                        <h4>Teams</h4>
+                        <div class="lvl-list" id="lvlTeams"></div>
+                    </div>
+                    <div class="lvl-col">
+                        <h4>Analysts</h4>
+                        <div class="lvl-list" id="lvlAnalysts"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Effective access checker -->
+            <div class="panel eff-tool">
+                <h2 id="checker">Effective access checker</h2>
+                <label for="effAnalyst">Show what an analyst can actually reach, and why:</label>
+                <select id="effAnalyst" onchange="loadEffective()"><option value="">&mdash; choose an analyst &mdash;</option></select>
+                <div id="effResult"></div>
+            </div>
+
+            <div id="loading" class="loading-spinner">Loading&hellip;</div>
+            <table class="access-table" id="summaryTable" style="display:none;">
+                <thead><tr><th style="width:22%">Module</th><th>Teams with access</th><th>Analysts with access</th></tr></thead>
+                <tbody id="summaryBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Per-module edit modal — canonical 3-pane modal (header / body / footer) -->
+    <div class="modal" id="moduleModal">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header" id="moduleModalTitle"></div>
+            <div class="modal-body" id="moduleModalBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModuleModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveModuleModal()">Save</button>
+            </div>
         </div>
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <script>
-    const MODULE_LABELS = {
-        'tickets': 'Tickets',
-        'assets': 'Assets',
-        'knowledge': 'Knowledge',
-        'changes': 'Changes',
-        'calendar': 'Calendar',
-        'morning-checks': 'Checks',
-        'reporting': 'Reporting',
-        'software': 'Software',
-        'forms': 'Forms',
-        'contracts': 'Contracts',
-        'wiki': 'Wiki',
-        'tasks': 'Tasks',
-        'system': 'System'
-    };
-
-    let analysts = [];
-    let moduleAssignments = {};
-    let availableModules = [];
-    let saveTimers = {};
+    const API = '../../api/system/';
+    let DATA = { mode: 'most', modules: [], teams: [], analysts: [] };
+    let editingModule = null;
 
     async function loadData() {
         try {
-            const resp = await fetch('<?php echo $path_prefix; ?>api/system/get_analyst_modules.php');
-            const data = await resp.json();
-
-            if (!data.success) {
-                showToast(data.error, 'error');
-                return;
-            }
-
-            analysts = data.analysts;
-            moduleAssignments = data.module_assignments || {};
-            availableModules = data.available_modules;
-
-            renderMatrix();
+            const d = await (await fetch(API + 'get_module_access.php')).json();
+            if (!d.success) throw new Error(d.error || 'load failed');
+            DATA = d;
+            const radio = document.querySelector(`input[name="permMode"][value="${d.mode}"]`);
+            if (radio) radio.checked = true;
+            document.getElementById('strictExplainer').style.display = d.mode === 'least' ? 'block' : 'none';
+            document.getElementById('effAnalyst').innerHTML =
+                '<option value="">— choose an analyst —</option>' +
+                d.analysts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+            renderAccessLevels();
+            renderAvailability();
+            renderSummary();
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('summaryTable').style.display = '';
         } catch (e) {
-            showToast(window.t('system.modules.load_failed'), 'error');
+            document.getElementById('loading').textContent = 'Failed to load: ' + e.message;
         }
     }
 
-    function renderMatrix() {
-        document.getElementById('loading').style.display = 'none';
-        const card = document.getElementById('matrixCard');
-        card.style.display = 'block';
+    function grantedBy(list, key) {
+        return list.filter(e => e.all_modules || (e.modules || []).includes(key))
+                   .map(e => Object.assign({}, e, { _read: !e.all_modules && e.levels && e.levels[key] === 'read' }));
+    }
 
-        if (analysts.length === 0) {
-            card.innerHTML = `
-                <div class="empty-state">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-                    <h3>${window.t('system.modules.empty_heading')}</h3>
-                    <p>${window.t('system.modules.empty_text')}</p>
-                </div>
-            `;
-            return;
+    // Access-level lists: an all-modules toggle per team / analyst, editable in place.
+    function renderAccessLevels() {
+        const q = (document.getElementById('lvlFilter').value || '').toLowerCase();
+        const row = (e, kind) => {
+            if (q && !(e.name || '').toLowerCase().includes(q)) return '';
+            const restricted = !Number(e.all_modules);
+            return `<div class="lvl-row">
+                <span class="lvl-name">${escapeHtml(e.name)}${restricted ? ' <span class="lvl-tag">restricted</span>' : ''}</span>
+                <label class="toggle-switch"><input type="checkbox" ${restricted ? '' : 'checked'} onchange="toggleAllAccess('${kind}', ${e.id}, this.checked)"><span class="toggle-slider"></span></label>
+            </div>`;
+        };
+        const fill = (id, arr, kind, empty) => {
+            const html = arr.map(e => row(e, kind)).join('');
+            document.getElementById(id).innerHTML = arr.length
+                ? (html || '<div class="lvl-empty">No matches</div>')
+                : `<div class="lvl-empty">${empty}</div>`;
+        };
+        fill('lvlTeams', DATA.teams, 'team', 'No teams');
+        fill('lvlAnalysts', DATA.analysts, 'analyst', 'No analysts');
+    }
+
+    async function toggleAllAccess(kind, id, checked) {
+        const d = await (await fetch(API + 'set_module_all_access.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, id, all_modules: checked })
+        })).json();
+        if (!d.success) { showToast('Failed: ' + (d.error || ''), 'error'); renderAccessLevels(); return; }
+        const e = (kind === 'team' ? DATA.teams : DATA.analysts).find(x => Number(x.id) === Number(id));
+        if (e) e.all_modules = checked ? 1 : 0;
+        renderSummary();
+        renderAccessLevels();
+        if (document.getElementById('effAnalyst').value) loadEffective();
+        showToast(checked ? 'Granted all modules' : 'Restricted — grant modules in the table below', 'success');
+    }
+
+    function pills(items) {
+        if (!items.length) return '<span class="pill-none">None</span>';
+        const shown = items.slice(0, 3), extra = items.length - 3;
+        let html = shown.map(e => `<span class="pill ${e.all_modules ? 'pill-all' : ''}"${e.all_modules ? ' title="Has all modules"' : ''}>${escapeHtml(e.name)}${e.all_modules ? ' &#10022;' : ''}${e._read ? ' (read only)' : ''}</span>`).join('');
+        if (extra > 0) html += `<span class="pill pill-more">+${extra}</span>`;
+        return html;
+    }
+
+    // Availability (GH #217): one switch per module. Tickets and System are locked on.
+    const isOff = key => (DATA.disabled || []).includes(key);
+    function renderAvailability() {
+        const locked = DATA.always_on || [];
+        const row = m => {
+            const off = isOff(m.key);
+            const control = locked.includes(m.key)
+                ? '<span class="avail-lock">Always on</span>'
+                : `<label class="toggle-switch" title="${off ? 'Switched off' : 'On'}"><input type="checkbox" ${off ? '' : 'checked'} onchange="setAvailability('${m.key}', this)"><span class="toggle-slider"></span></label>`;
+            return `<div class="avail-row${off ? ' is-off' : ''}"><span class="avail-name">${escapeHtml(m.name)}</span>${control}</div>`;
+        };
+        document.getElementById('availGrid').innerHTML = DATA.modules.map(row).join('');
+        document.getElementById('availFeatures').innerHTML = (DATA.features || []).map(row).join('');
+    }
+
+    // What switching off says, per Tickets feature (the modules share one sentence).
+    const FEATURE_OFF_TEXT = {
+        csat: 'No surveys are sent, the CSAT page and Request feedback button go, and old survey links say feedback is no longer being collected.',
+        sla: 'Clocks, breach warnings and notifications, the SLA settings and sla.* workflow triggers stop. SLA calendars stay editable - web chat uses them for its opening hours.',
+        'time-tracking': 'Recording time goes from every ticket, the REST API and the settings. Entries already logged are kept.',
+        rota: 'The duty rota page and its settings go, the War Room bot stops answering who is on call, and project capacity stops counting rota shifts.'
+    };
+
+    async function setAvailability(key, box) {
+        const m = DATA.modules.find(x => x.key === key) || (DATA.features || []).find(x => x.key === key);
+        const enabled = box.checked;
+        let sendMissed = false;
+        if (!enabled) {
+            const ok = await showConfirm({
+                title: 'Switch off ' + m.name + '?',
+                message: (FEATURE_OFF_TEXT[key] ? FEATURE_OFF_TEXT[key] + ' Nothing is deleted - switch it back on and it returns as it was.' : m.name + ' will disappear for everyone, including you: menus, buttons in other modules, the REST API, workflows and scheduled jobs. Nothing is deleted - switch it back on and it returns as it was.')
+                    // A project's plan is made of task rows and belongs to Projects, so it stays (GH #217).
+                    + (key === 'tasks' ? ' Project plans keep working inside Projects.' : ''),
+                okLabel: 'Switch off', okClass: 'danger'
+            });
+            if (!ok) { box.checked = true; return; }
+        } else if (key === 'sla') {
+            // SLA back on: the one choice here. Tickets that crossed a warning or a
+            // breach while it was off are either announced now, all together, or
+            // recorded as announced and left quiet (the default - GH #217).
+            sendMissed = await showConfirm({
+                title: 'Send what was missed?',
+                message: 'Some tickets may have passed an SLA warning or breach while SLA was off. Send those notifications and workflow triggers now, all at once, or skip them? Either way, everything from now on is sent as normal.',
+                okLabel: 'Send', cancelLabel: 'Skip'
+            });
         }
+        const d = await (await fetch(API + 'save_module_availability.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ module_key: key, enabled, send_missed: sendMissed })
+        })).json();
+        if (!d.success) { showToast('Failed: ' + (d.error || ''), 'error'); box.checked = !enabled; return; }
+        DATA.disabled = d.disabled;
+        renderAvailability();
+        renderSummary();
+        if (document.getElementById('effAnalyst').value) loadEffective();
+        showToast(enabled ? m.name + ' is on' : m.name + ' is switched off', 'success');
+    }
 
-        // Build header
-        let headerHtml = '<th>' + window.t('system.modules.col_analyst') + '</th><th>' + window.t('system.modules.col_all_access') + '</th>';
-        availableModules.forEach(m => {
-            headerHtml += `<th>${escapeHtml(MODULE_LABELS[m] || m)}</th>`;
+    function renderSummary() {
+        document.getElementById('summaryBody').innerHTML = DATA.modules.map(m => `
+            <tr class="mod-row${isOff(m.key) ? ' is-off' : ''}" onclick="openModuleModal('${m.key}')">
+                <td><strong>${escapeHtml(m.name)}</strong>${isOff(m.key) ? '<span class="off-tag">Switched off</span>' : ''}</td>
+                <td>${pills(grantedBy(DATA.teams, m.key))}</td>
+                <td>${pills(grantedBy(DATA.analysts, m.key))}</td>
+            </tr>`).join('');
+    }
+
+    async function setMode(mode) {
+        const d = await (await fetch(API + 'save_module_permission_mode.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode })
+        })).json();
+        if (d.success) {
+            DATA.mode = d.mode;
+            document.getElementById('strictExplainer').style.display = d.mode === 'least' ? 'block' : 'none';
+            showToast('Conflict policy updated', 'success');
+            if (document.getElementById('effAnalyst').value) loadEffective();
+        } else showToast('Failed: ' + (d.error || ''), 'error');
+    }
+
+    function openModuleModal(key) {
+        editingModule = key;
+        const m = DATA.modules.find(x => x.key === key);
+        document.getElementById('moduleModalTitle').textContent = 'Who can use ' + m.name + '?';
+        // A module that offers Read only (#180) shows Full / Read only beside each grant.
+        const offersRead = !!m.read_only;
+        const rows = (arr, kind) => (arr.length ? arr.map(e => {
+            const has = e.all_modules || (e.modules || []).includes(key);
+            const note = e.all_modules ? ' <span class="all-note">(all modules)</span>' : '';
+            const lvl = (e.levels && e.levels[key]) === 'read' ? 'read' : 'full';
+            const levelSel = offersRead && !e.all_modules
+                ? `<select class="lvl-select" data-kind="${kind}" data-id="${e.id}"><option value="full"${lvl === 'full' ? ' selected' : ''}>Full</option><option value="read"${lvl === 'read' ? ' selected' : ''}>Read only</option></select>`
+                : '';
+            return `<div class="chk-line"><label class="chk-row"><input type="checkbox" data-kind="${kind}" data-id="${e.id}" ${has ? 'checked' : ''} ${e.all_modules ? 'disabled' : ''}> ${escapeHtml(e.name)}${note}</label>${levelSel}</div>`;
+        }).join('') : '<p class="pill-none">None</p>');
+        document.getElementById('moduleModalBody').innerHTML =
+            `<p style="color:var(--text-muted,#666);font-size:13px;margin:0 0 6px;">Tick the teams and analysts that can use <strong>${escapeHtml(m.name)}</strong>. Anyone with <em>all modules</em> always has access &mdash; flip that with the <strong>Access level</strong> toggles above.</p>
+             ${offersRead ? '<p style="color:var(--text-muted,#666);font-size:13px;margin:0 0 6px;"><strong>Read only</strong> lets them see everything here - records, history, exports - and change nothing. A named approver can still approve.</p>' : ''}
+             <h4>Teams</h4>${rows(DATA.teams, 'team')}
+             <h4>Analysts</h4>${rows(DATA.analysts, 'analyst')}`;
+        document.getElementById('moduleModal').classList.add('active');
+    }
+    function closeModuleModal() { document.getElementById('moduleModal').classList.remove('active'); }
+
+    async function saveModuleModal() {
+        const team_ids = [], analyst_ids = [], levels = { team: {}, analyst: {} };
+        document.querySelectorAll('#moduleModalBody input[type=checkbox]:not([disabled])').forEach(c => {
+            if (c.checked) (c.dataset.kind === 'team' ? team_ids : analyst_ids).push(parseInt(c.dataset.id));
         });
-
-        // Build rows
-        let rowsHtml = '';
-        analysts.forEach(analyst => {
-            const aid = analyst.id;
-            const assigned = moduleAssignments[aid] || [];
-            const hasAllAccess = assigned.length === 0;
-
-            rowsHtml += `<tr data-analyst-id="${aid}">`;
-            rowsHtml += `<td>
-                <div class="analyst-info">
-                    <span class="analyst-name">${escapeHtml(analyst.full_name)}</span>
-                    <span class="analyst-username">${escapeHtml(analyst.username)}</span>
-                </div>
-            </td>`;
-
-            // All Access toggle
-            rowsHtml += `<td>
-                <div class="all-access-toggle">
-                    <label class="toggle">
-                        <input type="checkbox" ${hasAllAccess ? 'checked' : ''} onchange="toggleAllAccess(${aid}, this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-            </td>`;
-
-            // Module toggles
-            availableModules.forEach(m => {
-                const isSystem = m === 'system';
-                const isChecked = hasAllAccess || assigned.includes(m);
-                const isDisabled = hasAllAccess || isSystem;
-
-                rowsHtml += `<td>
-                    <label class="toggle">
-                        <input type="checkbox"
-                            ${isChecked ? 'checked' : ''}
-                            ${isDisabled ? 'disabled' : ''}
-                            data-analyst="${aid}"
-                            data-module="${m}"
-                            onchange="toggleModule(${aid}, '${m}', this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </td>`;
-            });
-
-            rowsHtml += '</tr>';
+        document.querySelectorAll('#moduleModalBody .lvl-select').forEach(s => {
+            levels[s.dataset.kind][s.dataset.id] = s.value;
         });
-
-        card.innerHTML = `
-            <table class="matrix-table">
-                <thead><tr>${headerHtml}</tr></thead>
-                <tbody>${rowsHtml}</tbody>
-            </table>
-        `;
+        const d = await (await fetch(API + 'save_module_grants.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ module_key: editingModule, team_ids, analyst_ids, levels })
+        })).json();
+        if (d.success) { closeModuleModal(); showToast('Saved', 'success'); loadData(); }
+        else showToast('Failed: ' + (d.error || ''), 'error');
     }
 
-    function toggleAllAccess(analystId, allAccess) {
-        const row = document.querySelector(`tr[data-analyst-id="${analystId}"]`);
-        const checkboxes = row.querySelectorAll('input[data-module]');
-
-        if (allAccess) {
-            // All access: check all, disable all
-            checkboxes.forEach(cb => {
-                cb.checked = true;
-                cb.disabled = true;
-            });
-            // Save empty array = full access
-            moduleAssignments[analystId] = undefined;
-            saveModules(analystId, []);
-        } else {
-            // Restricted: enable all (except system), keep all checked
-            checkboxes.forEach(cb => {
-                cb.checked = true;
-                cb.disabled = (cb.dataset.module === 'system');
-            });
-            // Save all modules (since they're all still checked)
-            const allModules = availableModules.slice();
-            moduleAssignments[analystId] = allModules;
-            saveModules(analystId, allModules);
-        }
+    async function loadEffective() {
+        const id = document.getElementById('effAnalyst').value;
+        const box = document.getElementById('effResult');
+        if (!id) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div class="eff-head">Loading…</div>';
+        const d = await (await fetch(API + 'get_effective_module_access.php?analyst_id=' + id)).json();
+        if (!d.success) { box.innerHTML = 'Failed: ' + escapeHtml(d.error || ''); return; }
+        box.innerHTML =
+            `<div class="eff-head">Conflict policy: <strong>${d.mode === 'least' ? 'Least permissive (strict)' : 'Most permissive'}</strong></div>` +
+            '<table class="eff-table">' + d.modules.map(m =>
+                `<tr><td>${escapeHtml(m.name)}</td><td>${m.allowed ? (m.level === 'read' ? '<span class="yes">&#10003; Read only</span>' : '<span class="yes">&#10003; Access</span>') : '<span class="no">&#10007; No access</span>'}</td><td class="reason">${escapeHtml(m.reason)}</td></tr>`
+            ).join('') + '</table>';
     }
 
-    function toggleModule(analystId, moduleKey, checked) {
-        // Get current modules for this analyst
-        let current = moduleAssignments[analystId] || [];
-        if (!Array.isArray(current)) current = availableModules.slice();
+    // showToast() is the global helper from assets/js/toast.js (loaded via the
+    // waffle menu in the shared header), so toasts honour the user's configured
+    // position/animation and match every other module.
 
-        if (checked && !current.includes(moduleKey)) {
-            current.push(moduleKey);
-        } else if (!checked) {
-            current = current.filter(m => m !== moduleKey);
-        }
+    function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
-        // Ensure system is always included
-        if (!current.includes('system')) {
-            current.push('system');
-        }
-
-        moduleAssignments[analystId] = current;
-        saveModules(analystId, current);
-    }
-
-    async function saveModules(analystId, modules) {
-        // Debounce saves per analyst (300ms)
-        if (saveTimers[analystId]) clearTimeout(saveTimers[analystId]);
-
-        saveTimers[analystId] = setTimeout(async () => {
-            try {
-                const resp = await fetch('<?php echo $path_prefix; ?>api/system/save_analyst_modules.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ analyst_id: analystId, modules: modules })
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    showToast(data.message, 'success');
-                } else {
-                    showToast(data.error, 'error');
-                }
-            } catch (e) {
-                showToast(window.t('system.modules.save_failed'), 'error');
-            }
-        }, 300);
-    }
-
-    function escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str || '';
-        return div.innerHTML;
-    }
-
-    // Init
     loadData();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

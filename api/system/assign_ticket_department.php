@@ -9,7 +9,11 @@
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
+require_once '../../includes/admin_api_guard.php'; // System admins only (issue #34)
 require_once '../../includes/functions.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -67,6 +71,13 @@ try {
         if (!array_key_exists($tid, $oldById)) continue;
         $old = $oldById[$tid] !== null ? ('department #' . $oldById[$tid] . ' (orphaned)') : '(none)';
         $audit->execute([$tid, $analystId, $old, $deptName]);
+    }
+
+    // This screen bypasses TicketsService::updateTicket(), so it must raise
+    // confidential tickets itself when the new department is confidential (#62).
+    require_once __DIR__ . '/../../includes/ticket_sensitivity.php';
+    foreach ($ticketIds as $tid) {
+        if (array_key_exists($tid, $oldById)) ticketSensitivityApplyDefaults($conn, (int)$tid);
     }
 
     $conn->commit();

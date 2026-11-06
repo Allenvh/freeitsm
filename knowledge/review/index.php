@@ -9,23 +9,32 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
+require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
+requireModuleAccess('knowledge');
 
 $current_page = 'review';
 $path_prefix = '../../';
 $translationNamespaces = ['common', 'knowledge'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('knowledge.browser_title.review')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/inbox.css">
-    <link rel="stylesheet" href="../../assets/css/knowledge.css">
+    <title><?php echo htmlspecialchars(pageTitle('knowledge', t('knowledge.nav.review'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../../assets/css/knowledge.css?v=2">
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
     <style>
         /* Layout: the container takes the remaining viewport height and is
            a flex column. Header / filter tabs / search bar are flex-shrink: 0
@@ -50,20 +59,20 @@ $translationNamespaces = ['common', 'knowledge'];
         .review-header h1 {
             font-size: 24px;
             font-weight: 600;
-            color: #333;
+            color: var(--text, #333);
             margin: 0;
         }
 
         .review-search {
             width: 320px;
             padding: 8px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border, #ddd);
             border-radius: 6px;
             font-size: 14px;
         }
         .review-search:focus {
             outline: none;
-            border-color: #8764b8;
+            border-color: var(--kb-accent, #8764b8);
             box-shadow: 0 0 0 2px rgba(135, 100, 184, 0.1);
         }
 
@@ -71,19 +80,19 @@ $translationNamespaces = ['common', 'knowledge'];
             display: flex;
             gap: 8px;
             margin-bottom: 16px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border, #e0e0e0);
             padding-bottom: 10px;
             flex-shrink: 0;
         }
 
         .filter-tab {
             padding: 8px 16px;
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
             border: none;
             border-radius: 6px;
             cursor: pointer;
             font-size: 14px;
-            color: #666;
+            color: var(--text-muted, #666);
             transition: all 0.15s;
             display: flex;
             align-items: center;
@@ -91,12 +100,12 @@ $translationNamespaces = ['common', 'knowledge'];
         }
 
         .filter-tab:hover {
-            background: #e8e8e8;
+            background: var(--surface-hover, #e8e8e8);
         }
 
         .filter-tab.active {
-            background: #8764b8;
-            color: white;
+            background: var(--kb-accent, #8764b8);
+            color: var(--kb-on-accent, white);
         }
 
         .filter-tab .badge {
@@ -125,9 +134,9 @@ $translationNamespaces = ['common', 'knowledge'];
         .review-content {
             flex-grow: 1;
             overflow-y: auto;
-            background: white;
+            background: var(--surface, white);
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 1px 3px var(--shadow, rgba(0, 0, 0, 0.1));
             min-height: 0;
         }
 
@@ -140,23 +149,23 @@ $translationNamespaces = ['common', 'knowledge'];
         .review-table td {
             padding: 12px 16px;
             text-align: left;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
         }
 
         .review-table thead th {
             position: sticky;
             top: 0;
             z-index: 1;
-            background: #f9f9f9;
+            background: var(--surface-3, #f9f9f9);
             font-weight: 600;
-            color: #666;
+            color: var(--text-muted, #666);
             font-size: 13px;
             text-transform: uppercase;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid var(--border, #e0e0e0);
         }
 
         .review-table tr:hover td {
-            background: #fafafa;
+            background: var(--surface-2, #fafafa);
         }
 
         .review-table tr:last-child td {
@@ -164,7 +173,7 @@ $translationNamespaces = ['common', 'knowledge'];
         }
 
         .article-title-link {
-            color: #8764b8;
+            color: var(--kb-accent, #8764b8);
             text-decoration: none;
             font-weight: 500;
         }
@@ -196,7 +205,7 @@ $translationNamespaces = ['common', 'knowledge'];
             font-size: 11px;
             padding: 2px 6px;
             border-radius: 4px;
-            background: #f0f0f0;
+            background: var(--surface-hover, #f0f0f0);
         }
 
         .review-date.upcoming .days-badge {
@@ -205,16 +214,16 @@ $translationNamespaces = ['common', 'knowledge'];
         }
 
         .no-date {
-            color: #999;
+            color: var(--text-faint, #999);
             font-style: italic;
         }
 
         .owner-cell {
-            color: #666;
+            color: var(--text-muted, #666);
         }
 
         .owner-cell.unassigned {
-            color: #999;
+            color: var(--text-faint, #999);
             font-style: italic;
         }
 
@@ -228,17 +237,17 @@ $translationNamespaces = ['common', 'knowledge'];
             height: 32px;
             padding: 0;
             background: none;
-            border: 1px solid #ddd;
-            color: #666;
+            border: 1px solid var(--border, #ddd);
+            color: var(--text-muted, #666);
             border-radius: 4px;
             cursor: pointer;
             text-decoration: none;
             transition: all 0.15s;
         }
         .action-btn:hover {
-            background: #f0f0f0;
-            border-color: #8764b8;
-            color: #8764b8;
+            background: var(--surface-hover, #f0f0f0);
+            border-color: var(--kb-accent, #8764b8);
+            color: var(--kb-accent, #8764b8);
         }
         .action-btn svg {
             width: 16px;
@@ -255,13 +264,13 @@ $translationNamespaces = ['common', 'knowledge'];
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #888;
+            color: var(--text-dim, #888);
         }
 
         .empty-state svg {
             width: 64px;
             height: 64px;
-            color: #ddd;
+            color: var(--border, #ddd);
             margin-bottom: 15px;
         }
 
@@ -274,8 +283,8 @@ $translationNamespaces = ['common', 'knowledge'];
         .spinner {
             width: 40px;
             height: 40px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #8764b8;
+            border: 3px solid var(--border-soft, #f3f3f3);
+            border-top: 3px solid var(--kb-accent, #8764b8);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -285,6 +294,8 @@ $translationNamespaces = ['common', 'knowledge'];
             100% { transform: rotate(360deg); }
         }
     </style>
+    <!-- Mobile: LAYER 17f turns the six-column review table into a card feed. -->
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
 <body>
     <?php include '../includes/header.php'; ?>
@@ -418,9 +429,10 @@ $translationNamespaces = ['common', 'knowledge'];
                     ? `<span class="owner-cell">${escapeHtml(article.owner_name)}</span>`
                     : `<span class="owner-cell unassigned">${escapeHtml(window.t('knowledge.review.unassigned'))}</span>`;
 
-                const modifiedDate = new Date(article.modified_datetime).toLocaleDateString('en-GB', {
-                    day: 'numeric', month: 'short', year: 'numeric'
-                });
+                // Server-stamped UTC — convert to the analyst's zone. The review
+                // due date (next_review_date_formatted) is a bare date, so it's
+                // rendered server-side and left unconverted.
+                const modifiedDate = fmtDate(article.modified_datetime);
 
                 html += `
                     <tr>
@@ -472,8 +484,9 @@ $translationNamespaces = ['common', 'knowledge'];
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

@@ -5,9 +5,13 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/functions.php';
 require_once '../../includes/i18n.php';
 require_once '../../includes/theme.php';
+require_once '../../includes/timezone.php';
+requireModuleAccess('tickets');
 I18n::initFromSession();
+Tz::init();
 
 $current_page = 'dashboard';
 $path_prefix = '../../';
@@ -16,11 +20,12 @@ $translationNamespaces = ['common', 'tickets'];
 <!DOCTYPE html>
 <html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('tickets.dashboard.library.page_title')); ?></title>
-    <link rel="stylesheet" href="../../assets/css/theme.css?v=4">
-    <link rel="stylesheet" href="../../assets/css/inbox.css?v=35">
+    <title><?php echo htmlspecialchars(pageTitle('tickets', t('tickets.nav.dashboard'), t('tickets.dashboard.library.page_title'))); ?></title>
+    <link rel="stylesheet" href="../../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../../assets/css/inbox.css?v=79">
     <style>
         .dashboard-page {
             height: calc(100vh - 48px);
@@ -232,8 +237,9 @@ $translationNamespaces = ['common', 'tickets'];
         /* Form fields follow the palette (inbox.css only themes specific input classes). */
     .dashboard-page input, .dashboard-page select, .dashboard-page textarea { background: var(--surface, #fff); color: var(--text, #333); }
     </style>
+    <link rel="stylesheet" href="../../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="tickets-widget-library">
     <?php require_once '../includes/header.php'; ?>
 
     <div class="dashboard-page">
@@ -286,8 +292,10 @@ $translationNamespaces = ['common', 'tickets'];
     </div><!-- /.dashboard-page -->
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../../assets/js/i18n.js"></script>
-    <script src="../../assets/js/widget-editor.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../../assets/js/tz.js?v=5"></script>
+    <script src="../../assets/js/i18n.js?v=3"></script>
+    <script src="../../assets/js/widget-editor.js?v=2"></script>
     <script>
         const API_BASE = '../../api/tickets/';
         let allWidgets = [];
@@ -321,11 +329,11 @@ $translationNamespaces = ['common', 'tickets'];
 
             tbody.innerHTML = filtered.map(w => {
                 const onDash = dashboardWidgetIds.has(parseInt(w.id));
-                const propLabel = WidgetEditor.PROPERTY_LABELS[w.aggregate_property] || w.aggregate_property;
-                const groupLabel = w.time_grouping ? WidgetEditor.TIME_GROUPING_LABELS[w.time_grouping] || w.time_grouping : '';
+                const propLabel = WidgetEditor.propertyLabel(w.aggregate_property);
+                const groupLabel = w.time_grouping ? WidgetEditor.timeGroupingLabel(w.time_grouping) : '';
                 const propDisplay = groupLabel ? propLabel + ' (' + groupLabel + ')' : propLabel;
-                const seriesLabel = w.series_property ? WidgetEditor.SERIES_LABELS[w.series_property] || w.series_property : '';
-                const rangeLabel = w.date_range ? WidgetEditor.DATE_RANGE_LABELS[w.date_range] || w.date_range : '';
+                const seriesLabel = w.series_property ? WidgetEditor.seriesLabel(w.series_property) : '';
+                const rangeLabel = w.date_range ? WidgetEditor.dateRangeLabel(w.date_range) : '';
                 const deptCount = w.department_filter ? (typeof w.department_filter === 'string' ? JSON.parse(w.department_filter) : w.department_filter).length : 0;
                 const filterInfo = [rangeLabel, deptCount > 0 ? window.t(deptCount > 1 ? 'tickets.dashboard.library.dept_many' : 'tickets.dashboard.library.dept_one', { count: deptCount }) : ''].filter(Boolean).join(', ');
                 return `<tr>
@@ -491,7 +499,7 @@ $translationNamespaces = ['common', 'tickets'];
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         document.addEventListener('keydown', function(e) {
@@ -500,5 +508,6 @@ $translationNamespaces = ['common', 'tickets'];
 
         init();
     </script>
+    <script src="../../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

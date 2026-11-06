@@ -1,10 +1,30 @@
 <?php
 /**
  * API Endpoint: Upload file attachment to a change
+ *
+ * ⚠️ SECURITY-CRITICAL, and it was wrong. This endpoint used to accept any file
+ * with no validation, keep the caller's own filename, and write it into
+ * change-management/attachments/ — a folder Apache serves. Uploading `x.php`
+ * and then requesting it over HTTP executed it. Verified, not theorised.
+ *
+ * Two rules now, and both matter:
+ *
+ *   1. every byte goes through uploadStoreFile(), which whitelists extension AND
+ *      content type, invents its own filename, and drops execution protection
+ *      into the directory;
+ *   2. the ACCESS CHECK RUNS FIRST. It used to run after move_uploaded_file(),
+ *      so an analyst with no rights to a change could still land a file on the
+ *      server — the check only stopped the database row, not the write.
+ *
+ * Downloads already go through get_attachment.php, which authorises. Nothing
+ * here is ever meant to be fetched by direct URL.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
+require_once '../../includes/uploads.php';
+require_once '../../includes/services/changes.php';
 
 header('Content-Type: application/json');
 
@@ -12,73 +32,41 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('changes');
+requireModuleWriteJson('changes');   // Read only access (#180) changes nothing here
 
 $analystId = (int)$_SESSION['analyst_id'];
-$changeId = (int)($_POST['change_id'] ?? 0);
+$changeId  = (int)($_POST['change_id'] ?? 0);
 
 if (!$changeId) {
     echo json_encode(['success' => false, 'error' => 'Change ID required']);
     exit;
 }
 
-if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-    echo json_encode(['success' => false, 'error' => 'No file uploaded or upload error']);
-    exit;
-}
-
-$file = $_FILES['file'];
-$fileName = basename($file['name']);
-$fileSize = $file['size'];
-$fileType = $file['type'];
-
-// Create attachment directory if it doesn't exist
-$uploadDir = dirname(dirname(__DIR__)) . '/change-management/attachments/' . $changeId;
-if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
-}
-
-// Ensure unique filename if file already exists
-$destPath = $uploadDir . '/' . $fileName;
-if (file_exists($destPath)) {
-    $info = pathinfo($fileName);
-    $base = $info['filename'];
-    $ext = isset($info['extension']) ? '.' . $info['extension'] : '';
-    $counter = 1;
-    while (file_exists($destPath)) {
-        $fileName = $base . '_' . $counter . $ext;
-        $destPath = $uploadDir . '/' . $fileName;
-        $counter++;
-    }
-}
-
-if (!move_uploaded_file($file['tmp_name'], $destPath)) {
-    echo json_encode(['success' => false, 'error' => 'Failed to save file']);
-    exit;
-}
-
-// Store relative path in DB
-$relativePath = $changeId . '/' . $fileName;
-
 try {
     $conn = connectToDatabase();
 
-    $sql = "INSERT INTO change_attachments (change_id, file_name, file_path, file_size, file_type, uploaded_by_id, uploaded_datetime)
-            VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([$changeId, $fileName, $relativePath, $fileSize, $fileType, $analystId]);
-    $attachmentId = $conn->lastInsertId();
+    // ⚠️ BEFORE the file is written, not after. Same wording as a missing change
+    // so this cannot be used to discover which changes exist.
+    if (!analystCanAccessChange($conn, $analystId, $changeId)) {
+        echo json_encode(['success' => false, 'error' => 'Change not found']);
+        exit;
+    }
+
+    if (!isset($_FILES['file'])) {
+        echo json_encode(['success' => false, 'error' => 'No file was chosen.']);
+        exit;
+    }
+
+    $result = ChangesService::uploadAttachment($conn, ActorContext::fromSession($conn), $changeId, $_FILES['file']);
+    $attachmentId = $result['id'];
 
     echo json_encode([
-        'success' => true,
+        'success'       => true,
         'attachment_id' => $attachmentId,
-        'message' => 'File uploaded successfully'
+        'message'       => 'File uploaded successfully',
     ]);
 
 } catch (Exception $e) {
-    // Clean up file if DB insert failed
-    if (file_exists($destPath)) {
-        unlink($destPath);
-    }
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
-?>

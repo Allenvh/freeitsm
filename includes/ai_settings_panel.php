@@ -76,6 +76,9 @@ function renderAiSettingsPanel(string $ns, array $opts = []): void
     .ai-settings-panel .ai-result.ok   { color: var(--success-text, #107c10); }
     .ai-settings-panel .ai-result.err  { color: var(--danger-accent, #d13438); }
     .ai-settings-panel .ai-result.busy { color: var(--text-muted, #666); }
+    .ai-settings-panel .ai-key-clear { margin-top: 6px; font-size: 13px; }
+    .ai-settings-panel .ai-key-clear[hidden] { display: none; }
+    .ai-settings-panel .ai-result-hint { margin-top: 6px; color: var(--text-muted, #666); line-height: 1.45; }
     </style>
     <?php endif; ?>
 
@@ -91,12 +94,69 @@ function renderAiSettingsPanel(string $ns, array $opts = []): void
                 <option value="anthropic"><?php echo $t('provider_anthropic'); ?></option>
                 <option value="openai"><?php echo $t('provider_openai'); ?></option>
                 <option value="openrouter"><?php echo $t('provider_openrouter'); ?></option>
+                <option value="azure"><?php echo $t('provider_azure'); ?></option>
+                <option value="openai_compatible"><?php echo $t('provider_compatible'); ?></option>
             </select>
         </div>
 
         <div class="ai-note" data-ai-openrouter-note><?php echo $t('openrouter_note'); ?></div>
 
-        <div class="form-group">
+        <!--
+            Azure OpenAI's deployment-based endpoints (discussion #86). Shown
+            ONLY when Azure is the chosen provider — three fields that mean
+            nothing to anybody else, and the Model box below is hidden alongside
+            them, because on a deployment-based endpoint the deployment IS the
+            model and offering both would be asking the same question twice.
+
+            Every placeholder is a REAL example rather than a shape hint: these
+            are copied out of the Azure portal, and "2024-02-01" tells you what
+            an api-version looks like in a way that "version" never will.
+        -->
+        <div data-ai-azure hidden>
+            <div class="ai-note" data-ai-azure-note><?php echo $t('azure_note'); ?></div>
+
+            <div class="form-group">
+                <label><?php echo $t('azure_endpoint'); ?></label>
+                <input type="text" data-ai-azure-endpoint
+                       placeholder="https://company.openai.azure.com/"
+                       autocomplete="off" style="max-width: 420px;">
+                <small class="ai-model-hint"><?php echo $t('azure_endpoint_help'); ?></small>
+            </div>
+
+            <div class="form-group">
+                <label><?php echo $t('azure_deployment'); ?></label>
+                <input type="text" data-ai-azure-deployment
+                       placeholder="gpt-4o" autocomplete="off" style="max-width: 280px;">
+                <small class="ai-model-hint"><?php echo $t('azure_deployment_help'); ?></small>
+            </div>
+
+            <div class="form-group">
+                <label><?php echo $t('azure_api_version'); ?></label>
+                <input type="text" data-ai-azure-api-version
+                       placeholder="2024-02-01" autocomplete="off" style="max-width: 280px;">
+                <small class="ai-model-hint"><?php echo $t('azure_api_version_help'); ?></small>
+            </div>
+        </div>
+
+        <!--
+            GH #192: any server that speaks the OpenAI API at an address the
+            administrator chooses - most often a model they run themselves. Only
+            the address is new; the model box and the key below are reused, and
+            the key becomes optional.
+        -->
+        <div data-ai-compatible hidden>
+            <div class="ai-note show"><?php echo $t('compatible_note'); ?></div>
+
+            <div class="form-group">
+                <label><?php echo $t('compatible_base_url'); ?></label>
+                <input type="text" data-ai-compatible-base-url
+                       placeholder="http://llm-host:11434/v1"
+                       autocomplete="off" spellcheck="false" style="max-width: 420px;">
+                <small class="ai-model-hint"><?php echo $t('compatible_base_url_help'); ?></small>
+            </div>
+        </div>
+
+        <div class="form-group" data-ai-model-group>
             <label><?php echo $t('model'); ?></label>
             <div class="ai-model-combo">
                 <input type="text" data-ai-model placeholder="<?php echo $t('model_placeholder'); ?>" autocomplete="off">
@@ -109,14 +169,11 @@ function renderAiSettingsPanel(string $ns, array $opts = []): void
             <label><?php echo $t('api_key'); ?></label>
             <input type="password" data-ai-key placeholder="sk-..." autocomplete="off" style="max-width: 420px;">
             <small class="ai-model-hint" data-ai-key-hint><?php echo $t('api_key_help'); ?></small>
-        </div>
-
-        <div class="form-group">
-            <label style="font-weight: normal; cursor: pointer;">
-                <input type="checkbox" data-ai-verify-ssl>
-                <?php echo $t('verify_ssl'); ?>
-            </label>
-            <small class="ai-model-hint"><?php echo $t('verify_ssl_help'); ?></small>
+            <?php /* A div, not the label itself: settings pages style `.form-group label`
+                     as display:block, which would beat [hidden] and show the box with no key saved. */ ?>
+            <div class="ai-key-clear" data-ai-key-clear-wrap hidden>
+                <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:0;"><input type="checkbox" data-ai-key-clear> <?php echo $t('api_key_clear'); ?></label>
+            </div>
         </div>
 
         <div class="form-actions">

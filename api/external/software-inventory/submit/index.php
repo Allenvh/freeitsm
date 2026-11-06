@@ -1,4 +1,20 @@
 <?php
+/**
+ * External API: the software inventory agent posts one machine's installed software
+ * here.
+ *
+ * Authenticated by an API key in the Authorization header (apikeys); the key's company
+ * owns the machine. The machine is matched or created through AssetsService (the same
+ * reconcile rules as every inventory source), then software_inventory_apps and
+ * software_inventory_detail are brought in line with the list through
+ * AssetInventoryService::agentReport() - apps no longer reported are removed from this
+ * machine, and an empty list is skipped. Every outcome is logged to software_inventory_log.
+ *
+ * @input  Hostname  the machine's name (JSON body)
+ * @input  Software  the installed applications - each with Display Name, Publisher, Display Version, Install Date and so on
+ * @output {status, hostname, counts of apps and detail rows inserted, updated and deleted}, or {error}
+ * @wiki Asset-Reconciliation-Developer-Guide
+ */
 header('Content-Type: application/json');
 
 // --------------------------------------------------
@@ -37,11 +53,23 @@ if (!$authKey) {
 // --------------------------------------------------
 // Validate Authorization key against apikeys table
 // --------------------------------------------------
+$keyTenant = null;  // multi-tenancy: the company this agent's assets belong to
 try {
-    $stmt = $conn->prepare("SELECT COUNT(*) AS keyExists FROM apikeys WHERE apikey = ? AND active = 1");
-    $stmt->execute([$authKey]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    $keyExists = $result && $result['keyExists'] > 0;
+    // Validate the key and read its company in one go. Fall back gracefully if
+    // the tenant_id column isn't present yet (part-migrated install).
+    try {
+        $stmt = $conn->prepare("SELECT tenant_id FROM apikeys WHERE apikey = ? AND active = 1");
+        $stmt->execute([$authKey]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        $stmt = $conn->prepare("SELECT id FROM apikeys WHERE apikey = ? AND active = 1");
+        $stmt->execute([$authKey]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    $keyExists = (bool)$result;
+    if ($result && array_key_exists('tenant_id', $result) && $result['tenant_id'] !== null) {
+        $keyTenant = (int)$result['tenant_id'];   // NULL stays the Default company
+    }
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to validate API key: ' . $e->getMessage()]);
@@ -53,6 +81,11 @@ if (!$keyExists) {
     echo json_encode(['error' => 'Invalid authorization key']);
     exit;
 }
+
+// GH #217: an agent's report is refused while its module is switched off for the
+// install - the device is not recorded, and nothing is queued to arrive later.
+requireModuleOnJson($conn, 'software');
+requireModuleOnJson($conn, 'assets');
 
 // --------------------------------------------------
 // Retrieve raw JSON payload & normalize to UTF-8
@@ -89,6 +122,8 @@ $softwareList = $data['Software'];
 
 // --------------------------------------------------
 // Helper function to log errors/responses
+// @param mixed $hostId  the asset id the submitting machine was matched to or created as; null before that
+// @param mixed $message  the response or error to log - a string, or an array stored as JSON
 // --------------------------------------------------
 function logApiResponse($conn, $hostId, $message) {
     try {
@@ -105,319 +140,102 @@ function logApiResponse($conn, $hostId, $message) {
 $hostId = null;
 
 try {
-    // Try to find existing host
-    $stmt = $conn->prepare("SELECT id FROM assets WHERE hostname = ?");
-    $stmt->execute([$hostname]);
-    $hostRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    // Which asset is this machine? This agent only sends a hostname, so it
+    // matches on that - but through the same rules as every other inventory
+    // source (PR #164), and a new machine is written the same way. Scoped to
+    // this key's company (NULL-safe match).
+    require_once __DIR__ . '/../../../../includes/services/assets.php';
+    $agentCtx = ActorContext::system('Software inventory agent');
+    $reconcileRes = AssetsService::reconcileAsset($conn, $agentCtx, ['hostname' => $hostname], $keyTenant, 'software inventory');
 
-    if ($hostRow && isset($hostRow['id'])) {
+    if ($reconcileRes['asset_id'] !== null) {
         // Host exists -> update last_seen
-        $hostId = (int)$hostRow['id'];
+        $hostId = (int)$reconcileRes['asset_id'];
 
         $stmt = $conn->prepare("UPDATE assets SET last_seen = UTC_TIMESTAMP() WHERE id = ?");
         $stmt->execute([$hostId]);
-    } else {
-        // Host does not exist -> insert
-        $stmt = $conn->prepare("INSERT INTO assets (hostname, first_seen, last_seen) VALUES (?, UTC_TIMESTAMP(), UTC_TIMESTAMP())");
-        $stmt->execute([$hostname]);
-
-        // Re-select to get id
-        $stmt = $conn->prepare("SELECT id FROM assets WHERE hostname = ?");
-        $stmt->execute([$hostname]);
-        $hostRow2 = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$hostRow2 || !isset($hostRow2['id'])) {
-            http_response_code(500);
-            echo json_encode(['error' => 'Could not obtain host id after insert']);
+        // A retired asset (it has left the estate) keeps the software it left with:
+        // seen, but not reshaped.
+        if ($reconcileRes['retired']) {
+            echo json_encode(['success' => true, 'asset_id' => $hostId, 'retired' => true,
+                              'message' => 'This asset is retired in FreeITSM: the software list was not applied.']);
             exit;
         }
-        $hostId = (int)$hostRow2['id'];
+    } else {
+        // Host does not exist -> create it (stamped with this key's company)
+        $hostId = AssetsService::createDiscoveredAsset($conn, $agentCtx, ['hostname' => mb_substr($hostname, 0, 50)], $keyTenant, 'the software inventory agent');
     }
-} catch (PDOException $e) {
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Failed to process host: ' . $e->getMessage()]);
     exit;
 }
 
 // --------------------------------------------------
-// 2. Load existing host/app mappings for this host
-//    (to know what to delete later)
+// 2. Bring the machine's software in line - through the one inventory
+//    implementation the system-info agent and the REST API share (GH #200 Part B)
 // --------------------------------------------------
-$existingAppIds = [];
+//
+// The same catalogue rule as everywhere: an application is matched on display name and
+// publisher, and a MANUALLY ADDED one (#1549) is adopted, never rewritten. This endpoint
+// used to also rewrite a found application's name to the casing it had just been sent;
+// that is gone, so two machines spelling it differently no longer take turns renaming it.
+//
+// 🔴 An empty list is "I did not find out" here, as on the other agent endpoints: it is
+// skipped and the machine's software is kept, rather than every row being removed.
+require_once __DIR__ . '/../../../../includes/services/asset_inventory.php';
+
+$items = [];
+foreach ($softwareList as $item) {
+    if (!is_array($item)) continue;
+    $items[] = [
+        'display_name'     => $item['Display Name'] ?? null,
+        'publisher'        => $item['Publisher'] ?? null,
+        'display_version'  => $item['Display Version'] ?? null,
+        'install_date'     => $item['Install Date'] ?? null,
+        'uninstall_string' => $item['Uninstall String'] ?? null,
+        'install_location' => $item['Install Location'] ?? null,
+        'estimated_size'   => $item['Estimated Size'] ?? null,
+        'system_component' => !empty($item['System Component']),
+    ];
+}
 
 try {
-    $stmt = $conn->prepare("SELECT app_id FROM software_inventory_detail WHERE host_id = ?");
-    $stmt->execute([$hostId]);
-
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if (isset($row['app_id'])) {
-            $existingAppIds[(int)$row['app_id']] = true;
-        }
-    }
-} catch (PDOException $e) {
-    $errorMessage = ['error' => 'Failed to load existing host/app mappings', 'db_error' => $e->getMessage()];
+    $sections = AssetInventoryService::agentReport($conn, $hostId, [
+        'software' => AssetInventoryService::agentState($items, false),
+    ]);
+} catch (Throwable $e) {
+    $errorMessage = ['error' => 'Failed to sync software', 'db_error' => $e->getMessage()];
     logApiResponse($conn, $hostId, $errorMessage);
     http_response_code(500);
     echo json_encode($errorMessage);
     exit;
 }
 
-// We'll track which app_ids are present in this new payload
-$seenAppIds = [];
-
-// Cache for app lookup to avoid repeated SELECTs
-// Key is case-insensitive: lower(display_name) + '|' + lower(publisher or '')
-$appCache = [];
-
-// Counters for reporting
-$insertedApps     = 0;
-$updatedApps      = 0;
-$insertedDetails  = 0;
-$updatedDetails   = 0;
-
-// --------------------------------------------------
-// 3. Loop over Software list
-// --------------------------------------------------
-foreach ($softwareList as $item) {
-
-    // Require a display name as the main key
-    if (!isset($item['Display Name']) || trim($item['Display Name']) === '') {
-        // Skip records with no display name
-        continue;
-    }
-
-    $displayName = trim($item['Display Name']);
-    // Treat empty publisher as null
-    $publisher   = isset($item['Publisher']) && trim($item['Publisher']) !== ''
-        ? trim($item['Publisher'])
-        : null;
-
-    $displayVersion  = $item['Display Version']  ?? null;
-    $installDate     = $item['Install Date']     ?? null;
-    $uninstallString = $item['Uninstall String'] ?? null;
-    $installLocation = $item['Install Location'] ?? null;
-    $estimatedSize   = $item['Estimated Size']   ?? null;
-    $systemComponent = !empty($item['System Component']) ? 1 : 0;
-
-    // Build case-insensitive cache key
-    $appKey = strtolower($displayName) . '|' . strtolower($publisher ?? '');
-
-    // --------------------------
-    // 3a. Upsert app row
-    // --------------------------
-    $appId = null;
-
-    if (isset($appCache[$appKey])) {
-        $appId = $appCache[$appKey];
-    } else {
-        try {
-            // Look up in DB
-            $stmt = $conn->prepare("
-                SELECT id, display_name, publisher
-                FROM software_inventory_apps
-                WHERE display_name = ?
-                  AND (publisher IS NULL OR publisher = ?)
-            ");
-            $stmt->execute([$displayName, $publisher]);
-            $appRow = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($appRow && isset($appRow['id'])) {
-                // Exists -> optionally update display_name/publisher
-                $appId = (int)$appRow['id'];
-
-                $currentName      = $appRow['display_name'] ?? null;
-                $currentPublisher = $appRow['publisher'] ?? null;
-
-                $needsUpdate = false;
-                $newName     = $currentName;
-                $newPub      = $currentPublisher;
-
-                // If collation is case-insensitive, this is mostly cosmetic,
-                // but we can still normalise to the latest values.
-                if ($displayName && $displayName !== $currentName) {
-                    $newName = $displayName;
-                    $needsUpdate = true;
-                }
-                if ($publisher !== null && $publisher !== $currentPublisher) {
-                    $newPub = $publisher;
-                    $needsUpdate = true;
-                }
-
-                if ($needsUpdate) {
-                    $stmt = $conn->prepare("UPDATE software_inventory_apps SET display_name = ?, publisher = ? WHERE id = ?");
-                    $stmt->execute([$newName, $newPub, $appId]);
-                    $updatedApps++;
-                }
-            } else {
-                // Insert new app
-                $stmt = $conn->prepare("INSERT INTO software_inventory_apps (display_name, publisher) VALUES (?, ?)");
-                $stmt->execute([$displayName, $publisher]);
-
-                // Re-select to get id
-                $stmt = $conn->prepare("
-                    SELECT id FROM software_inventory_apps
-                    WHERE display_name = ?
-                      AND (publisher IS NULL OR publisher = ?)
-                ");
-                $stmt->execute([$displayName, $publisher]);
-                $appRow2 = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                if (!$appRow2 || !isset($appRow2['id'])) {
-                    $errorMessage = [
-                        'error'        => 'Could not obtain app id after insert',
-                        'display_name' => $displayName,
-                        'publisher'    => $publisher
-                    ];
-                    logApiResponse($conn, $hostId, $errorMessage);
-                    http_response_code(500);
-                    echo json_encode($errorMessage);
-                    exit;
-                }
-
-                $appId = (int)$appRow2['id'];
-                $insertedApps++;
-            }
-
-            // Cache for this request (case-insensitive key)
-            $appCache[$appKey] = $appId;
-
-        } catch (PDOException $e) {
-            $errorMessage = [
-                'error'        => 'Failed to process app',
-                'db_error'     => $e->getMessage(),
-                'display_name' => $displayName,
-                'publisher'    => $publisher
-            ];
-            logApiResponse($conn, $hostId, $errorMessage);
-            http_response_code(500);
-            echo json_encode($errorMessage);
-            exit;
-        }
-    }
-
-    if ($appId === null) {
-        continue; // Safety guard
-    }
-
-    // Remember that this host has seen this app in this scan
-    $seenAppIds[$appId] = true;
-
-    // --------------------------
-    // 3b. Upsert detail row (host/app)
-    // --------------------------
-    try {
-        $stmt = $conn->prepare("SELECT id FROM software_inventory_detail WHERE host_id = ? AND app_id = ?");
-        $stmt->execute([$hostId, $appId]);
-        $detailRow = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($detailRow && isset($detailRow['id'])) {
-            // Exists -> UPDATE
-            $stmt = $conn->prepare("
-                UPDATE software_inventory_detail
-                SET
-                    display_version  = ?,
-                    install_date     = ?,
-                    uninstall_string = ?,
-                    install_location = ?,
-                    estimated_size   = ?,
-                    system_component = ?,
-                    last_seen        = UTC_TIMESTAMP()
-                WHERE host_id = ? AND app_id = ?
-            ");
-            $stmt->execute([
-                $displayVersion,
-                $installDate,
-                $uninstallString,
-                $installLocation,
-                $estimatedSize,
-                $systemComponent,
-                $hostId,
-                $appId
-            ]);
-            $updatedDetails++;
-        } else {
-            // New mapping -> INSERT
-            $stmt = $conn->prepare("
-                INSERT INTO software_inventory_detail (
-                    host_id,
-                    app_id,
-                    display_version,
-                    install_date,
-                    uninstall_string,
-                    install_location,
-                    estimated_size,
-                    system_component,
-                    created_at,
-                    last_seen
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-            ");
-            $stmt->execute([
-                $hostId,
-                $appId,
-                $displayVersion,
-                $installDate,
-                $uninstallString,
-                $installLocation,
-                $estimatedSize,
-                $systemComponent
-            ]);
-            $insertedDetails++;
-        }
-    } catch (PDOException $e) {
-        $errorMessage = [
-            'error'    => 'Failed to process detail',
-            'db_error' => $e->getMessage(),
-            'host_id'  => $hostId,
-            'app_id'   => $appId
-        ];
-        logApiResponse($conn, $hostId, $errorMessage);
-        http_response_code(500);
-        echo json_encode($errorMessage);
-        exit;
-    }
-}
-
-// --------------------------------------------------
-// 4. Delete ONLY mappings that disappeared for this host
-// --------------------------------------------------
-$toDeleteAppIds = array_diff_key($existingAppIds, $seenAppIds);
-$deletedDetails = 0;
-
-if (!empty($toDeleteAppIds)) {
-    try {
-        $stmt = $conn->prepare("DELETE FROM software_inventory_detail WHERE host_id = ? AND app_id = ?");
-
-        foreach ($toDeleteAppIds as $appId => $_) {
-            $stmt->execute([$hostId, $appId]);
-            $deletedDetails++;
-        }
-    } catch (PDOException $e) {
-        $errorMessage = [
-            'error'    => 'Failed to delete obsolete detail rows',
-            'db_error' => $e->getMessage(),
-            'host_id'  => $hostId
-        ];
-        logApiResponse($conn, $hostId, $errorMessage);
-        http_response_code(500);
-        echo json_encode($errorMessage);
-        exit;
-    }
+$software = $sections['software'];
+if ($software['result'] === 'failed') {
+    $errorMessage = ['error' => 'Failed to sync software', 'db_error' => $software['error']];
+    logApiResponse($conn, $hostId, $errorMessage);
+    http_response_code(500);
+    echo json_encode($errorMessage);
+    exit;
 }
 
 // --------------------------------------------------
 // Success response
 // --------------------------------------------------
+$applied = $software['result'] === 'applied';
 $successPayload = [
     'status'            => 'ok',
     'hostname'          => $hostname,
     'total_software'    => count($softwareList),
-    'inserted_apps'     => $insertedApps,
-    'updated_apps'      => $updatedApps,
-    'inserted_details'  => $insertedDetails,
-    'updated_details'   => $updatedDetails,
-    'deleted_details'   => $deletedDetails,
-    'message'           => 'Software inventory synchronized successfully (normalized on display_name + publisher)'
+    'inserted_details'  => $applied ? $software['added'] : 0,
+    'updated_details'   => $applied ? $software['updated'] : 0,
+    'deleted_details'   => $applied ? $software['removed'] : 0,
+    'left_unchanged'    => $applied ? [] : ['software'],
+    'message'           => $applied
+        ? 'Software inventory synchronized successfully (normalized on display_name + publisher)'
+        : 'No software in the report - the existing list was left unchanged'
 ];
 
 // Log success

@@ -16,7 +16,7 @@ const CMDB_AI_PROPERTY_TYPES = ['text', 'number', 'date', 'boolean', 'dropdown',
  */
 function loadCmdbAiConfig(PDO $conn): array {
     $cfg = aiSettingsLoad($conn, 'cmdb_ai'); // provider, model, api_key, verify_ssl
-    if (($cfg['api_key'] ?? '') === '') {
+    if (!aiConfigured($cfg)) {
         throw new Exception('CMDB AI is not configured. Set your provider and key in CMDB → Settings → AI Integration.');
     }
 
@@ -32,6 +32,11 @@ function loadCmdbAiConfig(PDO $conn): array {
  * One-shot AI call via the shared, provider-agnostic client (Anthropic /
  * OpenAI / OpenRouter). Name kept for backward compatibility with callers.
  * Returns ['content' => string, 'tokens_in' => ?int, 'tokens_out' => ?int, ...].
+ *
+ * @param array $cfg  the AI connection settings (provider, model, key...) as passed to aiProviderChat()
+ * @param string $systemPrompt  the system prompt
+ * @param string $userMessage  the user message
+ * @param int $maxTokens  the most tokens the reply may use
  */
 function callAnthropic(array $cfg, string $systemPrompt, string $userMessage, int $maxTokens = 1500): array {
     return aiProviderChat($cfg, [
@@ -43,6 +48,8 @@ function callAnthropic(array $cfg, string $systemPrompt, string $userMessage, in
 
 /**
  * Pull the assistant's text out of the shared client's response shape.
+ *
+ * @param array $resp  the response array returned by callAnthropic()
  */
 function anthropicResponseText(array $resp): string {
     return trim((string)($resp['content'] ?? ''));
@@ -51,6 +58,8 @@ function anthropicResponseText(array $resp): string {
 /**
  * Parse a JSON response from Claude robustly: strip markdown fences,
  * extract the first JSON object/array, and json_decode it.
+ *
+ * @param string $text  the model's reply, which may wrap the JSON in markdown fences or prose
  */
 function parseClaudeJson(string $text): array {
     // Strip ```json ... ``` fences if present

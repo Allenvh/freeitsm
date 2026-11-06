@@ -98,6 +98,39 @@
         iot:            '<rect x="6" y="6" width="12" height="12" rx="1"/><rect x="9" y="9" width="6" height="6"/><line x1="6" y1="9" x2="3" y2="9"/><line x1="6" y1="12" x2="3" y2="12"/><line x1="6" y1="15" x2="3" y2="15"/><line x1="18" y1="9" x2="21" y2="9"/><line x1="18" y1="12" x2="21" y2="12"/><line x1="18" y1="15" x2="21" y2="15"/><line x1="9" y1="6" x2="9" y2="3"/><line x1="12" y1="6" x2="12" y2="3"/><line x1="15" y1="6" x2="15" y2="3"/><line x1="9" y1="18" x2="9" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="15" y1="18" x2="15" y2="21"/>',
         printer:        '<polyline points="6 9 6 3 18 3 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/>',
 
+        // ---- Peripherals & Displays ----
+        // Added for asset types (#1146). The estate is full of things that are
+        // not computers, and the library had no glyph for any of them.
+        //
+        // ⚠️ `display` exists because `monitor` is a GAUGE — a monitoring dial
+        // under Ops, labelled "Monitor / gauge". An asset type called Monitor
+        // picking it would show a speedometer. `workstation` is close to a
+        // screen but reads as a PC; this one is deliberately wider and thinner
+        // in the bezel so the two are distinguishable at 20px.
+        // Widescreen with a WIDE FLAT FOOT — workstation has a centre post, and
+        // at 16px a centre post is the only thing telling them apart, so this
+        // one deliberately has none.
+        display:        '<rect x="1.5" y="5" width="21" height="11" rx="1.5"/><line x1="6" y1="20" x2="18" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/>',
+        television:     '<rect x="2" y="6" width="20" height="12" rx="1.5"/><line x1="7" y1="21" x2="10" y2="18"/><line x1="17" y1="21" x2="14" y2="18"/><circle cx="18.5" cy="15" r="0.7" fill="currentColor"/>',
+        // Body + one big lens + two rays. The arrow version was unreadable at
+        // 16px; a single large circle survives shrinking, fine detail does not.
+        projector:      '<rect x="2" y="7" width="13" height="10" rx="1.5"/><circle cx="8.5" cy="12" r="3.2"/><path d="M18 10.5h3"/><path d="M18 13.5h3"/>',
+        // Big lens on a stalk with a clip foot. The previous circle-plus-legs
+        // collapsed into a blob.
+        webcam:         '<circle cx="12" cy="9" r="5.5"/><circle cx="12" cy="9" r="2"/><line x1="12" y1="14.5" x2="12" y2="17"/><path d="M6 20h12l-1.5-3h-9L6 20z"/>',
+        headset:        '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2" y="13" width="4" height="6" rx="1.5"/><rect x="18" y="13" width="4" height="6" rx="1.5"/><path d="M20 19v1a2 2 0 0 1-2 2h-4"/>',
+        keyboard:       '<rect x="2" y="6" width="20" height="12" rx="1.5"/><line x1="6" y1="10" x2="6.01" y2="10"/><line x1="10" y1="10" x2="10.01" y2="10"/><line x1="14" y1="10" x2="14.01" y2="10"/><line x1="18" y1="10" x2="18.01" y2="10"/><line x1="8" y1="14.5" x2="16" y2="14.5"/>',
+        mouse:          '<rect x="6" y="2" width="12" height="20" rx="6"/><line x1="12" y1="6" x2="12" y2="10"/>',
+        speaker:        '<rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="15" r="3.2"/><circle cx="12" cy="7" r="1.4"/>',
+        // A low slab with PORTS on the front edge. Key dots made it a keyboard.
+        dock:           '<rect x="2" y="11" width="20" height="6" rx="1.5"/><rect x="5" y="13" width="2.4" height="2" rx="0.4"/><rect x="9" y="13" width="2.4" height="2" rx="0.4"/><rect x="13" y="13" width="2.4" height="2" rx="0.4"/><path d="M8 11V8h8v3"/>',
+        scanner:        '<rect x="2" y="12" width="20" height="8" rx="1.5"/><path d="M5 12V6a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"/><line x1="7" y1="16" x2="17" y2="16"/>',
+        camera:         '<path d="M3 8h3l2-2.5h8L18 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/>',
+        // The handset sits ACROSS the top as a separate bar — the arch version
+        // read as a scanner lid.
+        'desk-phone':   '<rect x="3" y="11" width="18" height="9" rx="1.5"/><rect x="5" y="4" width="14" height="3.5" rx="1.75"/><line x1="7" y1="15" x2="7.01" y2="15"/><line x1="11" y1="15" x2="11.01" y2="15"/><line x1="15" y1="15" x2="15.01" y2="15"/>',
+        ups:            '<rect x="4" y="4" width="16" height="16" rx="1.5"/><polyline points="13 8 10 13 12.5 13 11 17"/><line x1="8" y1="8" x2="8.01" y2="8"/>',
+
         // ---- Monitoring & Ops ----
         monitor:        '<path d="M3 12a9 9 0 0 1 18 0"/><line x1="12" y1="12" x2="16" y2="8"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
         alert:          '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/>',
@@ -119,100 +152,129 @@
 
     // Category metadata for the per-node icon picker UI. Keys must match
     // ICONS above. Order here drives display order in the picker modal.
+    /**
+     * Translate, or the English written right here. Every label below is a
+     * GETTER rather than a value: this file is evaluated the moment it loads,
+     * which can be before the host page has set window.translations, and a
+     * value read once at load time would be English for the rest of the
+     * session. A getter is read when the palette is drawn.
+     */
+    function nm(key, english) {
+        return window.tf ? window.tf('network-mapper.icons.' + key, english) : english;
+    }
+
     const META = {
-        server:           { label: 'Server',            category: 'compute' },
-        'server-rack':    { label: 'Server (rack)',     category: 'compute' },
-        'server-blade':   { label: 'Server (blade)',    category: 'compute' },
-        'server-tower':   { label: 'Server (tower)',    category: 'compute' },
-        mainframe:        { label: 'Mainframe',         category: 'compute' },
-        vm:               { label: 'Virtual Machine',   category: 'compute' },
-        function:         { label: 'Function',          category: 'compute' },
-        workstation:      { label: 'Workstation',       category: 'compute' },
+        server:           { get label() { return nm('label.server', 'Server'); },            category: 'compute' },
+        'server-rack':    { get label() { return nm('label.server_rack', 'Server (rack)'); },     category: 'compute' },
+        'server-blade':   { get label() { return nm('label.server_blade', 'Server (blade)'); },    category: 'compute' },
+        'server-tower':   { get label() { return nm('label.server_tower', 'Server (tower)'); },    category: 'compute' },
+        mainframe:        { get label() { return nm('label.mainframe', 'Mainframe'); },         category: 'compute' },
+        vm:               { get label() { return nm('label.vm', 'Virtual Machine'); },   category: 'compute' },
+        function:         { get label() { return nm('label.function', 'Function'); },          category: 'compute' },
+        workstation:      { get label() { return nm('label.workstation', 'Workstation'); },       category: 'compute' },
 
-        database:           { label: 'Database',          category: 'database' },
-        'database-cluster': { label: 'Database cluster',  category: 'database' },
-        'database-cache':   { label: 'Database (cache)',  category: 'database' },
+        database:           { get label() { return nm('label.database', 'Database'); },          category: 'database' },
+        'database-cluster': { get label() { return nm('label.database_cluster', 'Database cluster'); },  category: 'database' },
+        'database-cache':   { get label() { return nm('label.database_cache', 'Database (cache)'); },  category: 'database' },
 
-        storage:        { label: 'Storage',         category: 'storage' },
-        'storage-san':  { label: 'SAN',             category: 'storage' },
-        'storage-tape': { label: 'Tape backup',     category: 'storage' },
-        backup:         { label: 'Backup',          category: 'storage' },
+        storage:        { get label() { return nm('label.storage', 'Storage'); },         category: 'storage' },
+        'storage-san':  { get label() { return nm('label.storage_san', 'SAN'); },             category: 'storage' },
+        'storage-tape': { get label() { return nm('label.storage_tape', 'Tape backup'); },     category: 'storage' },
+        backup:         { get label() { return nm('label.backup', 'Backup'); },          category: 'storage' },
 
-        network:         { label: 'Network',          category: 'network' },
-        router:          { label: 'Router',           category: 'network' },
-        switch:          { label: 'Switch',           category: 'network' },
-        firewall:        { label: 'Firewall',         category: 'network' },
-        'load-balancer': { label: 'Load balancer',    category: 'network' },
-        proxy:           { label: 'Proxy',            category: 'network' },
-        vpn:             { label: 'VPN',              category: 'network' },
-        gateway:         { label: 'Gateway',          category: 'network' },
-        'wireless-ap':   { label: 'Wireless AP',      category: 'network' },
-        modem:           { label: 'Modem',            category: 'network' },
-        cdn:             { label: 'CDN',              category: 'network' },
-        dns:             { label: 'DNS',              category: 'network' },
+        network:         { get label() { return nm('label.network', 'Network'); },          category: 'network' },
+        router:          { get label() { return nm('label.router', 'Router'); },           category: 'network' },
+        switch:          { get label() { return nm('label.switch', 'Switch'); },           category: 'network' },
+        firewall:        { get label() { return nm('label.firewall', 'Firewall'); },         category: 'network' },
+        'load-balancer': { get label() { return nm('label.load_balancer', 'Load balancer'); },    category: 'network' },
+        proxy:           { get label() { return nm('label.proxy', 'Proxy'); },            category: 'network' },
+        vpn:             { get label() { return nm('label.vpn', 'VPN'); },              category: 'network' },
+        gateway:         { get label() { return nm('label.gateway', 'Gateway'); },          category: 'network' },
+        'wireless-ap':   { get label() { return nm('label.wireless_ap', 'Wireless AP'); },      category: 'network' },
+        modem:           { get label() { return nm('label.modem', 'Modem'); },            category: 'network' },
+        cdn:             { get label() { return nm('label.cdn', 'CDN'); },              category: 'network' },
+        dns:             { get label() { return nm('label.dns', 'DNS'); },              category: 'network' },
 
-        shield: { label: 'Shield',                  category: 'security' },
-        lock:   { label: 'Lock',                    category: 'security' },
-        key:    { label: 'Key',                     category: 'security' },
-        ids:    { label: 'IDS / IPS',               category: 'security' },
-        siem:   { label: 'SIEM',                    category: 'security' },
+        shield: { get label() { return nm('label.shield', 'Shield'); },                  category: 'security' },
+        lock:   { get label() { return nm('label.lock', 'Lock'); },                    category: 'security' },
+        key:    { get label() { return nm('label.key', 'Key'); },                     category: 'security' },
+        ids:    { get label() { return nm('label.ids', 'IDS / IPS'); },               category: 'security' },
+        siem:   { get label() { return nm('label.siem', 'SIEM'); },                    category: 'security' },
 
-        cloud:           { label: 'Cloud',           category: 'cloud' },
-        'cloud-private': { label: 'Private cloud',   category: 'cloud' },
-        'cloud-public':  { label: 'Public cloud',    category: 'cloud' },
-        'cloud-hybrid':  { label: 'Hybrid cloud',    category: 'cloud' },
-        region:          { label: 'Region',          category: 'cloud' },
+        cloud:           { get label() { return nm('label.cloud', 'Cloud'); },           category: 'cloud' },
+        'cloud-private': { get label() { return nm('label.cloud_private', 'Private cloud'); },   category: 'cloud' },
+        'cloud-public':  { get label() { return nm('label.cloud_public', 'Public cloud'); },    category: 'cloud' },
+        'cloud-hybrid':  { get label() { return nm('label.cloud_hybrid', 'Hybrid cloud'); },    category: 'cloud' },
+        region:          { get label() { return nm('label.region', 'Region'); },          category: 'cloud' },
 
-        container:        { label: 'Container',          category: 'containers' },
-        'container-pod':  { label: 'Pod',                category: 'containers' },
-        kubernetes:       { label: 'Kubernetes',         category: 'containers' },
-        registry:         { label: 'Registry',           category: 'containers' },
+        container:        { get label() { return nm('label.container', 'Container'); },          category: 'containers' },
+        'container-pod':  { get label() { return nm('label.container_pod', 'Pod'); },                category: 'containers' },
+        kubernetes:       { get label() { return nm('label.kubernetes', 'Kubernetes'); },         category: 'containers' },
+        registry:         { get label() { return nm('label.registry', 'Registry'); },           category: 'containers' },
 
-        application:  { label: 'Application',    category: 'app' },
-        service:      { label: 'Service',        category: 'app' },
-        website:      { label: 'Website',        category: 'app' },
-        api:          { label: 'API',            category: 'app' },
-        microservice: { label: 'Microservice',   category: 'app' },
-        queue:        { label: 'Message queue',  category: 'app' },
-        cache:        { label: 'Cache',          category: 'app' },
-        dashboard:    { label: 'Dashboard',      category: 'app' },
+        application:  { get label() { return nm('label.application', 'Application'); },    category: 'app' },
+        service:      { get label() { return nm('label.service', 'Service'); },        category: 'app' },
+        website:      { get label() { return nm('label.website', 'Website'); },        category: 'app' },
+        api:          { get label() { return nm('label.api', 'API'); },            category: 'app' },
+        microservice: { get label() { return nm('label.microservice', 'Microservice'); },   category: 'app' },
+        queue:        { get label() { return nm('label.queue', 'Message queue'); },  category: 'app' },
+        cache:        { get label() { return nm('label.cache', 'Cache'); },          category: 'app' },
+        dashboard:    { get label() { return nm('label.dashboard', 'Dashboard'); },      category: 'app' },
 
-        laptop:  { label: 'Laptop',           category: 'endpoint' },
-        mobile:  { label: 'Mobile',           category: 'endpoint' },
-        tablet:  { label: 'Tablet',           category: 'endpoint' },
-        iot:     { label: 'IoT device',       category: 'endpoint' },
-        printer: { label: 'Printer',          category: 'endpoint' },
+        laptop:  { get label() { return nm('label.laptop', 'Laptop'); },           category: 'endpoint' },
+        mobile:  { get label() { return nm('label.mobile', 'Mobile'); },           category: 'endpoint' },
+        tablet:  { get label() { return nm('label.tablet', 'Tablet'); },           category: 'endpoint' },
+        iot:     { get label() { return nm('label.iot', 'IoT device'); },       category: 'endpoint' },
+        printer: { get label() { return nm('label.printer', 'Printer'); },          category: 'endpoint' },
 
-        monitor: { label: 'Monitor / gauge',  category: 'ops' },
-        alert:   { label: 'Alert',            category: 'ops' },
-        log:     { label: 'Log',              category: 'ops' },
+        // Peripherals & displays (#1146). ⚠️ 'display' is the screen; 'monitor'
+        // below is the monitoring GAUGE and is labelled so nobody picks it for
+        // a monitor asset by mistake.
+        display:      { get label() { return nm('label.display', 'Display / screen'); }, category: 'peripheral' },
+        television:   { get label() { return nm('label.television', 'Television'); },       category: 'peripheral' },
+        projector:    { get label() { return nm('label.projector', 'Projector'); },        category: 'peripheral' },
+        webcam:       { get label() { return nm('label.webcam', 'Webcam'); },           category: 'peripheral' },
+        headset:      { get label() { return nm('label.headset', 'Headset'); },          category: 'peripheral' },
+        keyboard:     { get label() { return nm('label.keyboard', 'Keyboard'); },         category: 'peripheral' },
+        mouse:        { get label() { return nm('label.mouse', 'Mouse'); },            category: 'peripheral' },
+        speaker:      { get label() { return nm('label.speaker', 'Speaker'); },          category: 'peripheral' },
+        dock:         { get label() { return nm('label.dock', 'Docking station'); },  category: 'peripheral' },
+        scanner:      { get label() { return nm('label.scanner', 'Scanner'); },          category: 'peripheral' },
+        camera:       { get label() { return nm('label.camera', 'Camera'); },           category: 'peripheral' },
+        'desk-phone': { get label() { return nm('label.desk_phone', 'Desk phone'); },       category: 'peripheral' },
+        ups:          { get label() { return nm('label.ups', 'UPS'); },              category: 'peripheral' },
 
-        person: { label: 'Person',  category: 'people' },
-        team:   { label: 'Team',    category: 'people' },
-        org:    { label: 'Org',     category: 'people' },
+        monitor: { get label() { return nm('label.monitor', 'Monitor / gauge'); },  category: 'ops' },
+        alert:   { get label() { return nm('label.alert', 'Alert'); },            category: 'ops' },
+        log:     { get label() { return nm('label.log', 'Log'); },              category: 'ops' },
 
-        document: { label: 'Document', category: 'files' },
-        folder:   { label: 'Folder',   category: 'files' },
-        globe:    { label: 'Globe',    category: 'files' },
-        mail:     { label: 'Mail',     category: 'files' },
-        calendar: { label: 'Calendar', category: 'files' },
-        box:      { label: 'Generic',  category: 'files' }
+        person: { get label() { return nm('label.person', 'Person'); },  category: 'people' },
+        team:   { get label() { return nm('label.team', 'Team'); },    category: 'people' },
+        org:    { get label() { return nm('label.org', 'Org'); },     category: 'people' },
+
+        document: { get label() { return nm('label.document', 'Document'); }, category: 'files' },
+        folder:   { get label() { return nm('label.folder', 'Folder'); },   category: 'files' },
+        globe:    { get label() { return nm('label.globe', 'Globe'); },    category: 'files' },
+        mail:     { get label() { return nm('label.mail', 'Mail'); },     category: 'files' },
+        calendar: { get label() { return nm('label.calendar', 'Calendar'); }, category: 'files' },
+        box:      { get label() { return nm('label.box', 'Generic'); },  category: 'files' }
     };
 
     // Category display labels and order (drives the per-node picker layout)
     const CATEGORIES = [
-        { key: 'compute',    label: 'Compute & Servers' },
-        { key: 'database',   label: 'Databases' },
-        { key: 'storage',    label: 'Storage' },
-        { key: 'network',    label: 'Networking' },
-        { key: 'security',   label: 'Security' },
-        { key: 'cloud',      label: 'Cloud' },
-        { key: 'containers', label: 'Containers' },
-        { key: 'app',        label: 'Applications & Data' },
-        { key: 'endpoint',   label: 'Endpoints' },
-        { key: 'ops',        label: 'Monitoring & Ops' },
-        { key: 'people',     label: 'People & Org' },
-        { key: 'files',      label: 'Files & Generic' }
+        { key: 'compute',    get label() { return nm('category.compute', 'Compute & Servers'); } },
+        { key: 'database',   get label() { return nm('category.database', 'Databases'); } },
+        { key: 'storage',    get label() { return nm('category.storage', 'Storage'); } },
+        { key: 'network',    get label() { return nm('category.network', 'Networking'); } },
+        { key: 'security',   get label() { return nm('category.security', 'Security'); } },
+        { key: 'cloud',      get label() { return nm('category.cloud', 'Cloud'); } },
+        { key: 'containers', get label() { return nm('category.containers', 'Containers'); } },
+        { key: 'app',        get label() { return nm('category.app', 'Applications & Data'); } },
+        { key: 'endpoint',   get label() { return nm('category.endpoint', 'Endpoints'); } },
+        { key: 'peripheral', get label() { return nm('category.peripheral', 'Peripherals & Displays'); } },
+        { key: 'ops',        get label() { return nm('category.ops', 'Monitoring & Ops'); } },
+        { key: 'people',     get label() { return nm('category.people', 'People & Org'); } },
+        { key: 'files',      get label() { return nm('category.files', 'Files & Generic'); } }
     ];
 
     const FALLBACK = ICONS.box;

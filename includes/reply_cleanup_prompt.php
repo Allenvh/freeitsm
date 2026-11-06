@@ -10,6 +10,8 @@
 /**
  * Map a tone name (Friendly / Formal / Brief) to the short clause inserted
  * into the system prompt. Defaults to Friendly for unrecognised values.
+ *
+ * @param string $tone  the tone name from settings: 'Friendly', 'Formal' or 'Brief'; anything else is treated as Friendly
  */
 function replyCleanupToneDescription(string $tone): string
 {
@@ -24,6 +26,10 @@ function replyCleanupToneDescription(string $tone): string
  * Build the system prompt. $customInstructions is appended verbatim under a
  * dedicated heading at the end so any user-supplied rules sit AFTER the
  * safety scaffold rather than overriding it.
+ *
+ * @param string $greetingName  the name after "Dear" - the requester's, or a placeholder on the settings page
+ * @param string $toneDescription  the tone clause from replyCleanupToneDescription()
+ * @param string $customInstructions  the organisation's extra rules from settings, appended last; '' for none
  */
 function buildReplyCleanupSystemPrompt(string $greetingName, string $toneDescription, string $customInstructions = ''): string
 {

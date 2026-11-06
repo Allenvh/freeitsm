@@ -27,12 +27,79 @@ $DIAG_NAME = 'Self-Service SSO check (by email)';
 // ---- helpers -----------------------------------------------------------
 
 $sections = [];
+/**
+ * Adds one titled section ("=== TITLE ===" and its lines) to the report; $body is a
+ * string or an array of lines.
+ *
+ * @param mixed $sections  the report so far, a list of section strings - appended to by reference
+ * @param mixed $title  the section heading, printed between === marks
+ * @param mixed $body  the section text - a string, or an array of lines
+ */
 function addSection(&$sections, $title, $body) {
     if (is_array($body)) $body = implode("\n", $body);
     $sections[] = "=== {$title} ===\n" . rtrim($body, "\n");
 }
+/**
+ * Formats a boolean as YES or NO for the report.
+ *
+ * @param mixed $v  any value, judged as true or false
+ */
 function yn($v) { return $v ? 'YES' : 'NO'; }
+/**
+ * Formats a boolean as one of two words - OK or MISSING unless others are given.
+ *
+ * @param mixed $v  any value, judged as true or false
+ * @param mixed $ok  the word printed when $v is true
+ * @param mixed $bad  the word printed when $v is false
+ */
 function okbad($v, $ok = 'OK', $bad = 'MISSING') { return $v ? $ok : $bad; }
+
+/**
+ * One discovery-endpoint line, printing the ADDRESS the provider published.
+ *
+ * Three things are worth saying about each, and only the first was ever said:
+ *   - present or missing;
+ *   - RELATIVE, which is the failure that masquerades as a bug in this app —
+ *     a bare "/oidc/authorize" is resolved by the browser against THIS host, so
+ *     the user lands here, gets a 404, and nothing on screen implicates the IdP;
+ *   - a host that differs from the issuer's. Perfectly legal (Entra and Okta
+ *     both do it), so it is a note and never a failure — but when somebody is
+ *     staring at an unexpected domain it is the line that explains it.
+ *
+ * @param string $key  the discovery document key, e.g. 'authorization_endpoint'
+ * @param array $doc  the provider's decoded OIDC discovery document
+ * @param string $issuerUrl  the provider's configured issuer URL, to compare hosts with
+ * @param string $what  a short note on what the endpoint is for, printed under the line
+ */
+function endpointLine(string $key, array $doc, string $issuerUrl, string $what): string {
+    $pad   = str_pad($key, 22);
+    $value = isset($doc[$key]) ? trim((string)$doc[$key]) : '';
+    if ($value === '') return "    {$pad}: MISSING  <-- required; sign-in cannot start without it";
+
+    $parts   = parse_url($value);
+    $scheme  = is_array($parts) ? strtolower($parts['scheme'] ?? '') : '';
+    $host    = is_array($parts) ? ($parts['host'] ?? '') : '';
+    $isAbs   = ($scheme === 'http' || $scheme === 'https') && $host !== '';
+    $line    = "    {$pad}: " . maskGuids($value);
+
+    if (!$isAbs) {
+        return $line . "\n      ^^ NOT AN ABSOLUTE URL — this is the problem. The provider must publish"
+                     . "\n         the full address (https://idp.example.com/...). A relative one sends"
+                     . "\n         people to THIS server instead of to the provider. Fix it at the IdP.";
+    }
+    $issuerHost = parse_url(rtrim($issuerUrl, '/'), PHP_URL_HOST) ?: '';
+    if ($issuerHost !== '' && strcasecmp($host, $issuerHost) !== 0) {
+        $line .= "\n      note: different host from the issuer (" . maskGuids($issuerHost) . ") — normal for"
+               . "\n            some providers, but worth confirming it is the one you expect.";
+    }
+    return $line . "\n      ({$what})";
+}
+/**
+ * Shortens a value to its first and last four characters (the first two for a short
+ * one), so a shared report shows enough to recognise it but not the whole value.
+ *
+ * @param mixed $s  the value to shorten; empty gives '(empty)'
+ */
 function maskMiddle($s) {
     $s = (string)$s;
     if ($s === '') return '(empty)';
@@ -43,11 +110,18 @@ function maskMiddle($s) {
 // made to be shared with support — so partially mask them: enough to eyeball-
 // verify, not the full value. Diagnostic signals (match/reachability) are
 // computed on the real values and shown as YES/NO, so nothing is lost.
+// @param mixed $s  text that may contain GUIDs; each one is shortened, the rest is left alone
 function maskGuids($s) {
     return preg_replace_callback('/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/', function ($m) {
         return substr($m[0], 0, 8) . '…' . substr($m[0], -4);
     }, (string)$s);
 }
+/**
+ * Partially masks a client or tenant id - GUIDs and long opaque ids through
+ * maskMiddle(), short readable names shown as they are.
+ *
+ * @param mixed $s  a client or tenant id; empty gives '(empty!)'
+ */
 function maskId($s) {
     $s = (string)$s;
     if ($s === '') return '(empty!)';
@@ -56,6 +130,12 @@ function maskId($s) {
     if (preg_match('/^[0-9a-fA-F-]{20,}$/', $s) || strlen($s) > 24) return maskMiddle($s);
     return $s;
 }
+/**
+ * Prints every section, separated by blank lines, and stops - the end of the report, and
+ * the early exit when a check cannot go on.
+ *
+ * @param mixed $sections  the report, a list of section strings as built by addSection()
+ */
 function emit_and_exit($sections) {
     if (!headers_sent()) {
         header('Content-Type: text/plain; charset=utf-8');
@@ -91,7 +171,7 @@ if ($email === '') {
     emit_and_exit($sections);
 }
 $emailValid = (bool)filter_var($email, FILTER_VALIDATE_EMAIL);
-$domain = (strpos($email, '@') !== false) ? strtolower(trim(substr(strrchr($email, '@'), 1))) : '';
+$domain = (str_contains($email, '@')) ? strtolower(trim(substr(strrchr($email, '@'), 1))) : '';
 addSection($sections, "INPUT", [
     "Email           : {$email}",
     "Valid format    : " . yn($emailValid),
@@ -108,8 +188,12 @@ $rootCfg = realpath(__DIR__ . '/../../../config.php');
 $conn = null; $connErr = null;
 try {
     if ($rootCfg) @require_once $rootCfg;
+    // Debug tools are administrators-only (issue #34). Fail closed.
+    require_once __DIR__ . '/../../../includes/functions.php';
+    try { $__dbgAdmin = !empty($_SESSION['analyst_id']) && analystIsAdmin(connectToDatabase(), (int)$_SESSION['analyst_id']); } catch (Throwable $e) { $__dbgAdmin = false; }
+    if (!$__dbgAdmin) { http_response_code(403); if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8'); echo "Administrator access required.\n"; exit; }
     if (defined('DB_SERVER') && defined('DB_NAME') && defined('DB_USERNAME') && defined('DB_PASSWORD')) {
-        $conn = new PDO("mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USERNAME, DB_PASSWORD);
+        $conn = new PDO("mysql:host=" . DB_SERVER . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USERNAME, DB_PASSWORD, dbConnectionOptions());   // UTC session — includes/db.php
         $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } else {
         $connErr = 'DB constants not defined in config.php';
@@ -149,7 +233,10 @@ $rows = function ($sql, $params = []) use ($conn) {
 $schema = [
     'users'                => ['id','email','display_name','preferred_name','password_hash','totp_secret','totp_enabled','auth_provider_id'],
     'user_sso_identities'  => ['id','user_id','provider_id','subject','email','linked_datetime','last_login_datetime'],
-    'auth_providers'       => ['id','display_name','issuer_url','client_id','client_secret','scopes','enabled','auto_create_users','require_verified_email','tenant_id'],
+    // `protocol` matters here even though this tool is about OIDC: oidc_login.php
+    // refuses anything that is not 'oidc', so a build missing the column would
+    // fail in a way this report could not explain.
+    'auth_providers'       => ['id','display_name','protocol','issuer_url','client_id','client_secret','scopes','enabled','auto_create_users','require_verified_email','tenant_id'],
     'system_settings'      => ['setting_key','setting_value'],
 ];
 $schemaLines = [];
@@ -307,7 +394,8 @@ $discover = function ($issuer) use ($sslVerify) {
     $url = rtrim($issuer, '/') . '/.well-known/openid-configuration';
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl not available', 'url' => $url];
     $ch = curl_init();
-    curl_setopt_array($ch, [CURLOPT_URL => $url, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 8, CURLOPT_SSL_VERIFYPEER => $sslVerify, CURLOPT_HTTPHEADER => ['Accept: application/json']]);
+    curl_setopt_array($ch, [CURLOPT_URL => $url, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 8, CURLOPT_HTTPHEADER => ['Accept: application/json']]);
+    sslApplyCurl($ch);
     $body = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch);
     if ($body === false || $err) return ['ok' => false, 'error' => ($err ?: 'no response'), 'url' => $url];
     if ($code !== 200) return ['ok' => false, 'error' => "HTTP {$code}", 'url' => $url];
@@ -328,6 +416,8 @@ if (!$relevantIds) {
         $block = [
             "Provider #{$p['id']} — {$p['display_name']}",
             "  Enabled                 : " . yn($p['enabled']),
+            "  Protocol                : " . ($p['protocol'] ?? 'oidc')
+                . ((($p['protocol'] ?? 'oidc') !== 'oidc') ? "  <-- not OIDC; the SSO login flow refuses this and offers a password instead" : ''),
             "  Owner                   : {$owner}",
             "  Issuer URL              : " . maskGuids($p['issuer_url']),
             "  Client ID               : " . maskId($p['client_id']),
@@ -345,10 +435,24 @@ if (!$relevantIds) {
             $doc = $d['doc'];
             $issMatch = isset($doc['issuer']) && rtrim((string)$doc['issuer'], '/') === rtrim((string)$p['issuer_url'], '/');
             $block[] = "  Discovery               : OK (" . maskGuids($d['url']) . ")";
-            $block[] = "    issuer match          : " . yn($issMatch) . ($issMatch ? '' : "  <-- token 'iss' must equal configured issuer; mismatch breaks login");
-            $block[] = "    authorization_endpoint: " . okbad(!empty($doc['authorization_endpoint']), 'present', 'MISSING');
-            $block[] = "    token_endpoint        : " . okbad(!empty($doc['token_endpoint']), 'present', 'MISSING');
-            $block[] = "    jwks_uri              : " . okbad(!empty($doc['jwks_uri']), 'present', 'MISSING');
+            // Deliberately NOT phrased as a blocker. Token validation compares
+            // the ID token's `iss` against the DISCOVERY DOCUMENT's issuer, not
+            // against the value typed in here (includes/oidc.php), so this
+            // difference does not by itself stop anyone signing in. It is a
+            // configuration smell worth showing — most often the www / apex
+            // form of the same domain — and claiming it breaks login would send
+            // an administrator hunting the wrong thing.
+            $block[] = "    issuer match          : " . yn($issMatch)
+                . ($issMatch ? '' : "  <-- the provider calls itself \"" . maskGuids((string)($doc['issuer'] ?? '?'))
+                                  . "\". Sign-in still works (the ID token is checked against the provider's own"
+                                  . "\n                            value, not this one), but the two are usually meant to match.");
+            // Print the VALUES, not just present/absent. "authorization_endpoint:
+            // present" tells you nothing about the one fact that decides where the
+            // browser actually goes, and a wrong address here looks exactly like a
+            // bug in this application (issue #117).
+            $block[] = endpointLine('authorization_endpoint', $doc, $p['issuer_url'], 'this is the address the browser is sent to');
+            $block[] = endpointLine('token_endpoint',         $doc, $p['issuer_url'], 'this server calls it directly, back-channel');
+            $block[] = endpointLine('jwks_uri',               $doc, $p['issuer_url'], 'signing keys for the ID token');
             $block[] = "    end_session_endpoint  : " . okbad(!empty($doc['end_session_endpoint']), 'present', 'absent (single logout will be skipped)');
         }
         $provBlocks[] = implode("\n", $block);
@@ -358,7 +462,7 @@ if (!$relevantIds) {
 
 // ---- 12. REDIRECT URI --------------------------------------------------
 
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$scheme = requestScheme();
 $base   = defined('BASE_URL') ? BASE_URL : '/';
 $redirectUri = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $base . 'api/auth/oidc_callback.php';
 addSection($sections, "REDIRECT URI", [
@@ -385,6 +489,20 @@ if ($predMode === 'sso' || $predMode === 'choose') {
         if ($iss && !empty($d['ok'])) {
             $secOk = (bool)$scalar("SELECT (client_secret IS NOT NULL AND client_secret<>'') FROM auth_providers WHERE id=?", [$pp['id']]);
             if (!$secOk) $blockers[] = "Provider #{$pp['id']} ({$pp['name']}) has no client secret set.";
+            // A relative endpoint is a blocker that points AWAY from us, so say so
+            // in the verdict rather than leaving it to be spotted in the detail.
+            foreach (['authorization_endpoint', 'token_endpoint', 'jwks_uri'] as $key) {
+                $val   = trim((string)($d['doc'][$key] ?? ''));
+                $bits  = $val !== '' ? parse_url($val) : null;
+                $absOk = is_array($bits)
+                    && in_array(strtolower($bits['scheme'] ?? ''), ['http', 'https'], true)
+                    && !empty($bits['host']);
+                if ($val !== '' && !$absOk) {
+                    $blockers[] = "Provider #{$pp['id']} ({$pp['name']}) publishes {$key} as \"{$val}\", which is not an "
+                                . "absolute URL. Sign-in will fail, and it will look like a fault in FreeITSM because the "
+                                . "browser resolves that address against this server. Fix it at the identity provider.";
+                }
+            }
         }
     }
 }

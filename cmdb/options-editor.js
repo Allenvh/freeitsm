@@ -22,10 +22,12 @@
  */
 
 (function (global) {
+    /** Escapes text for safe use in HTML and attributes. */
     function escapeHtmlAttr(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
     }
 
+    /** Turns the stored options (plain strings or {value, colour}) into {value, colour} objects, colour '' when unset. */
     function normalizeInitial(opts) {
         if (!Array.isArray(opts)) return [];
         return opts.map(o => {
@@ -37,6 +39,7 @@
         });
     }
 
+    /** Returns one option row - value box, colour swatch, clear-colour, up, down and delete buttons. */
     function renderRow(value, colour, index) {
         const colourValue = colour && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(colour) ? colour : '#cccccc';
         const hasColour = !!colour;
@@ -45,7 +48,7 @@
                 <input type="text" class="cmdb-opt-val" value="${escapeHtmlAttr(value)}" placeholder="${escapeHtmlAttr(window.t('cmdb.options_editor.value_placeholder'))}" maxlength="255">
                 <label class="cmdb-opt-colour-wrap" title="${escapeHtmlAttr(window.t('cmdb.options_editor.colour_title'))}">
                     <input type="color" class="cmdb-opt-colour" value="${colourValue}" data-has-colour="${hasColour ? '1' : '0'}">
-                    <span class="cmdb-opt-colour-swatch" style="background:${hasColour ? colourValue : 'transparent'}; border-color:${hasColour ? colourValue : '#d1d5db'};"></span>
+                    <span class="cmdb-opt-colour-swatch" style="${hasColour ? `background:${colourValue};` : ''}"></span>
                 </label>
                 <button type="button" class="cmdb-opt-clear-colour" title="${escapeHtmlAttr(window.t('cmdb.options_editor.remove_colour'))}">×</button>
                 <button type="button" class="cmdb-opt-up" title="${escapeHtmlAttr(window.t('cmdb.options_editor.move_up'))}">↑</button>
@@ -54,6 +57,7 @@
             </div>`;
     }
 
+    /** Adds the editor's stylesheet to the page the first time an editor is rendered. */
     function injectStylesOnce() {
         if (document.getElementById('cmdb-opt-editor-styles')) return;
         const style = document.createElement('style');
@@ -67,12 +71,16 @@
                 align-items: center;
             }
             .cmdb-opt-val {
-                padding: 7px 10px;
-                border: 1px solid #d1d5db;
+                box-sizing: border-box;
+                height: 30px;
+                padding: 6px 10px;
+                background: var(--surface, #ffffff);
+                color: var(--text, #1f2937);
+                border: 1px solid var(--border, #d1d5db);
                 border-radius: 4px;
                 font-size: 13px;
             }
-            .cmdb-opt-val:focus { outline: none; border-color: #be185d; }
+            .cmdb-opt-val:focus { outline: none; border-color: var(--cmdb-accent, #be185d); }
             .cmdb-opt-colour-wrap {
                 position: relative;
                 display: inline-flex;
@@ -81,37 +89,49 @@
             }
             .cmdb-opt-colour {
                 position: absolute;
+                inset: 0;
                 opacity: 0;
-                width: 26px;
-                height: 26px;
+                width: 30px;
+                height: 30px;
                 cursor: pointer;
             }
             .cmdb-opt-colour-swatch {
+                box-sizing: border-box;
                 display: inline-block;
-                width: 26px;
-                height: 26px;
+                width: 30px;
+                height: 30px;
                 border-radius: 4px;
-                border: 1px solid #d1d5db;
-                background: transparent;
+                /* Always a neutral frame; the chosen colour is shown as the FILL
+                   only (set in renderRow/oninput), so a coloured chip and an empty
+                   one share the exact same footprint and line up in the column. */
+                border: 1px solid var(--border, #d1d5db);
+                /* "No colour" state: a diagonal slash on the surface colour, so an
+                   unset swatch reads as empty rather than as a picked black — this
+                   is what looked almost-black on dark before. A chosen colour
+                   overrides the surface fill via an inline background. */
+                background-color: var(--surface, #ffffff);
+                background-image: linear-gradient(to top right, transparent calc(50% - 1px), var(--border, #d1d5db) 50%, transparent calc(50% + 1px));
             }
             .cmdb-opt-clear-colour, .cmdb-opt-up, .cmdb-opt-down, .cmdb-opt-del {
-                background: white;
-                border: 1px solid #e5e7eb;
-                color: #6b7280;
-                width: 28px;
-                height: 28px;
+                box-sizing: border-box;
+                background: var(--surface, #ffffff);
+                border: 1px solid var(--border, #e5e7eb);
+                color: var(--text-muted, #6b7280);
+                width: 30px;
+                height: 30px;
                 border-radius: 4px;
                 cursor: pointer;
                 font-size: 13px;
                 line-height: 1;
                 padding: 0;
             }
-            .cmdb-opt-clear-colour:hover { color: #b91c1c; border-color: #fecaca; }
-            .cmdb-opt-up:hover, .cmdb-opt-down:hover { color: #be185d; border-color: #fbcfe8; }
-            .cmdb-opt-del:hover { color: #b91c1c; border-color: #fecaca; }
+            .cmdb-opt-clear-colour:hover, .cmdb-opt-del:hover { color: var(--danger-text, #b91c1c); border-color: #fecaca; }
+            .cmdb-opt-up:hover, .cmdb-opt-down:hover { color: var(--cmdb-accent, #be185d); border-color: #fbcfe8; }
+            [data-theme-mode="dark"] .cmdb-opt-clear-colour:hover, [data-theme-mode="dark"] .cmdb-opt-del:hover { border-color: rgba(248,113,113,0.5); }
+            [data-theme-mode="dark"] .cmdb-opt-up:hover, [data-theme-mode="dark"] .cmdb-opt-down:hover { border-color: rgba(190,24,93,0.5); }
             .cmdb-opt-add {
                 background: #fdf2f8;
-                color: #be185d;
+                color: var(--cmdb-accent, #be185d);
                 border: 1px dashed #fbcfe8;
                 padding: 7px 12px;
                 border-radius: 4px;
@@ -122,10 +142,13 @@
                 width: 100%;
             }
             .cmdb-opt-add:hover { background: #fce7f3; border-style: solid; }
+            [data-theme-mode="dark"] .cmdb-opt-add { background: rgba(190,24,93,0.12); border-color: rgba(190,24,93,0.45); }
+            [data-theme-mode="dark"] .cmdb-opt-add:hover { background: rgba(190,24,93,0.2); }
         `;
         document.head.appendChild(style);
     }
 
+    /** Wires every row's delete, move up, move down, colour pick and clear-colour buttons. */
     function wireRowHandlers(container) {
         // Delete row
         container.querySelectorAll('.cmdb-opt-del').forEach(btn => {
@@ -157,7 +180,6 @@
                 input.dataset.hasColour = '1';
                 const swatch = input.parentElement.querySelector('.cmdb-opt-colour-swatch');
                 swatch.style.background = input.value;
-                swatch.style.borderColor = input.value;
             };
         });
         // Clear colour — back to "no colour set"
@@ -168,12 +190,14 @@
                 const colourInput = row.querySelector('.cmdb-opt-colour');
                 const swatch = row.querySelector('.cmdb-opt-colour-swatch');
                 colourInput.dataset.hasColour = '0';
-                swatch.style.background = 'transparent';
-                swatch.style.borderColor = '#d1d5db';
+                // Clear the inline styles so the CSS "no colour" slash returns.
+                swatch.style.background = '';
+                swatch.style.borderColor = '';
             };
         });
     }
 
+    /** Renders the options editor into a container from the stored options, with an Add button that appends an empty row. */
     global.renderOptionsEditor = function (containerId, initialOptions) {
         injectStylesOnce();
         const container = document.getElementById(containerId);
@@ -198,6 +222,9 @@
         };
     };
 
+    /**
+     * Reads the rows back in their current order as [{value, colour}], dropping empty values; colour is '' when none was picked.
+     */
     global.collectOptionsFromEditor = function (containerId) {
         const container = document.getElementById(containerId);
         if (!container) return [];

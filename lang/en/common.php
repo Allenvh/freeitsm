@@ -6,6 +6,98 @@
  * Other locales mirror this file structure under lang/<locale>/common.php.
  */
 return [
+    'inventory_source' => 'Source',
+    // Every currency dropdown and every amount (includes/money.php +
+    // assets/js/money.js, GH #189). Published to the browser by
+    // Money::scriptTag(), so a page needs no namespace for them.
+    // Click-to-call (System → Integrations → 3CX): the button beside a phone number.
+    'phone_dial' => [
+        'call'       => 'Call',
+        'call_title' => 'Call {number}',
+    ],
+    'currency' => [
+        'favourites' => 'Favourites',
+        'all'        => 'All currencies',
+        'none'       => 'None',
+        'retired'    => '{code} - {name} (no longer issued)',
+        'unknown'    => '{code} - not a recognised currency',
+        'sep'        => 'Separators',
+        'symbol'     => 'Symbol',
+        'decimals'   => 'Decimal places',
+        'dec_std'    => 'As the currency ({n})',
+        'dec_0'      => 'None',
+        'dec_2'      => 'Two',
+    ],
+    // The shared "put these in order" control (assets/js/reorder-list.js, GH #187):
+    // module order in Preferences, card order in Watchtower settings.
+    // The action row under every module header (includes/action_row.php, #185).
+    // One word on the button; the tooltip names the thing.
+    'action_row' => [
+        'new' => 'New',
+    ],
+    // Custom ticket fields (#179) as the inbox and the portal draw them
+    // (assets/js/ticket-fields.js).
+    'ticket_fields' => [
+        'not_set'   => 'Not set',
+        'yes'       => 'Yes',
+        'no'        => 'No',
+        'heading'   => 'More details',
+        'saved'     => 'Saved',
+        'required'  => 'Fill in {name}',
+    ],
+    // The optional module sidebar (#124, includes/app_sidebar.php).
+    'sidebar' => [
+        'label'     => 'Modules',
+        'customise' => 'Choose what is on the sidebar',
+        // Beside the icon once names show (#124); the line above is its tooltip.
+        'customise_short' => 'Choose',
+        'pin'       => 'Pin',
+        'unpin'     => 'Unpin',
+        'pin_tip'   => 'Keep the sidebar open with names',
+        'unpin_tip' => 'Open the sidebar only when you point at it',
+        // The arrows that appear when the modules do not all fit (#124).
+        'scroll_top'    => 'Scroll to the top',
+        'scroll_bottom' => 'Scroll to the bottom',
+    ],
+    'reorder' => [
+        'drag'     => 'Drag to move',
+        'up'       => 'Move {name} up',
+        'down'     => 'Move {name} down',
+        'position' => '{name}, {n} of {total}. Alt and the arrow keys move it.',
+        'moved'    => '{name} moved to position {n} of {total}',
+    ],
+    // Shared "add this calendar to your phone" dialogue
+    // (includes/subscribe_modal.php + assets/js/subscribe.js). Only the strings
+    // that are genuinely identical for every feed live here; each caller passes
+    // its own title, intro and field labels.
+    'subscribe' => [
+        'insecure'      => 'This system is not using HTTPS, so this link — and everything it shows — travels across the network unprotected every time your calendar refreshes. Ask your administrator to enable HTTPS before using it outside a trusted network.',
+        'copied'        => 'Link copied',
+        'reset'         => 'Reset',
+        'reset_confirm' => 'Every device already subscribed will stop updating until you give it the new link. Continue?',
+        'reset_done'    => 'Link reset — the old one no longer works',
+    ],
+    // "Add to address book" on a person - Tickets → Users and Assets → Users (#133).
+    'address_book_add' => [
+        'button'        => 'Add to address book',
+        'button_named'  => 'Add to {name}',
+        'title'         => 'Add to {name}?',
+        'intro'         => 'FreeITSM will create a new contact for {person} in {name} and link them to it. From then on {name} is in charge of their contact details.',
+        'will_write'    => 'The card will have: {fields}.',
+        'will_tag'      => 'It will be tagged "{value}", which is what this address book imports.',
+        'will_group'    => 'It will be added to the group "{value}", which is what this address book imports.',
+        'checks'        => 'If the address book already has this email address, or the new card would not be picked up by the next import, nothing is kept.',
+        'ok'            => 'Add',
+        'added'         => 'Added to {name} and linked',
+        'failed'        => 'Not added: {error}',
+        'field_display_name' => 'name',
+        'field_email'        => 'email',
+        'field_job_title'    => 'job title',
+        'field_department'   => 'department',
+        'field_office'       => 'office',
+        'field_phone'        => 'phone',
+        'field_mobile'       => 'mobile',
+    ],
     // Left-panel visibility preference — shared labels reused by every module
     // that has a left panel (settings pages + System → Preferences). Only the
     // identical strings live here; per-module intro/description copy stays in
@@ -25,6 +117,29 @@ return [
         'provider_openai'     => 'OpenAI (GPT)',
         'provider_openrouter' => 'OpenRouter (one key, many models)',
         'openrouter_note'     => 'With OpenRouter, a single key reaches hundreds of models. Note that prompts are routed through OpenRouter\'s service.',
+
+        // Azure OpenAI deployment-based endpoints (discussion #86). Named
+        // "Azure OpenAI" rather than "Azure" because Azure hosts a great many
+        // things and the distinction matters to the person choosing it.
+        'provider_azure'        => 'Azure OpenAI (your own deployment)',
+        'azure_note'            => 'Requests go to a deployment in your own Azure subscription rather than to a shared service, so prompts never leave your tenant. Copy all three values from the Azure portal, under your resource\'s Deployments.',
+        'azure_endpoint'        => 'Azure endpoint',
+        'azure_endpoint_help'   => 'The resource address from the Azure portal. Pasting the deployment\'s whole Target URI is fine too - only the resource part is used.',
+        'azure_deployment'      => 'Deployment name',
+        'azure_deployment_help' => 'The name YOU gave the deployment, which need not match the model it runs. This replaces the model box — on a deployment endpoint the deployment decides the model.',
+        'azure_api_version'     => 'API version',
+        'azure_api_version_help'=> 'The api-version at the end of the deployment\'s Target URI - not the date beside the model, which is the model\'s own version. Leave it blank to use 2024-02-01, or enter v1 for Azure\'s newer route.',
+        // A custom OpenAI-compatible endpoint (GH #192): Ollama, LM Studio, vLLM...
+        'provider_compatible'      => 'OpenAI-compatible (custom endpoint)',
+        'compatible_note'          => 'For a model server you run yourself - Ollama, LM Studio, vLLM, LocalAI - or any other service that speaks the OpenAI API. Requests go only to the address below; if it fails, nothing is sent anywhere else. The request comes from the FreeITSM server, so "localhost" means that server (in Docker, the FreeITSM container), not the machine running the model.',
+        'compatible_base_url'      => 'Base URL',
+        'compatible_base_url_help' => 'The server\'s OpenAI-compatible address, usually ending in /v1 - for Ollama, http://llm-host:11434/v1. FreeITSM adds /chat/completions itself.',
+        'compatible_model_help'    => 'The model\'s exact name on that server, for example llama3.1:8b (Ollama: ollama list).',
+        'api_key_optional_help'    => 'Optional. Leave blank if the server needs no key. Stored encrypted.',
+        'api_key_clear'            => 'Remove the saved key',
+        'test_tools_supported'     => 'Tool calling works with this model, so every AI feature can use it.',
+        'test_tools_not_used'      => 'The model answered but did not call the test tool. The war room bot and the Projects assistant need tool calling and may not work well with it.',
+        'test_tools_unsupported'   => 'Tool calling did not work with this model. Everything else can use it, but the war room bot and the Projects assistant need tool calling.',
         'model'               => 'Model',
         'model_placeholder'   => 'Type or pick a model…',
         'model_set'           => 'Model',
@@ -42,6 +157,7 @@ return [
         'testing'             => 'Testing…',
         'test_ok'             => 'Connection OK',
         'test_failed'         => 'Test failed',
+        'debug_link'          => 'See exactly what was sent and what came back (debug tool D014)',
         'saved'               => 'Saved',
         'save_failed'         => 'Failed to save',
     ],
@@ -52,12 +168,15 @@ return [
     'delete'       => 'Delete',
     'add'          => 'Add',
     'edit'         => 'Edit',
+    'remove'       => 'Remove',
     'close'        => 'Close',
+    'dismiss'      => 'Dismiss',
     'copy'         => 'Copy',
     'copied'       => 'Copied',
     'retry'        => 'Retry',
     'export'       => 'Export',
-    'open'         => 'Open',
+    'back'         => 'Back',
+    'open'         =>  'Open',
     'apply'        => 'Apply',
 
     // Confirm / state
@@ -81,6 +200,7 @@ return [
     'optional'     => 'Optional',
     'select_one'   => 'Select…',
     'search'       => 'Search',
+    'filter'       => 'Filter',
 
     // Errors
     'error_generic'        => 'Something went wrong.',
@@ -88,6 +208,67 @@ return [
     'error_not_logged_in'  => 'You need to be logged in.',
 
     // Home / landing page (index.php)
+    // ── The shared OK/Cancel dialog (assets/js/confirm.js) ──────────────
+    // Only the DEFAULTS live here. Every caller passes its own title and
+    // message, and those are translated where they are written.
+    'confirm_dialog' => [
+        'title' => 'Confirm',
+    ],
+
+    // ── Command palette (assets/js/command-palette.js) ──────────────────
+    // Loaded from the waffle menu on every in-app page, so it uses tf() and
+    // carries its own English: not every one of those pages exports
+    // window.translations, and a palette showing "common.palette.search_ph"
+    // would be worse than one showing English.
+    'palette' => [
+        'aria_dialog'   => 'Command palette',
+        'search_ph'     => 'Search tickets, assets, items — or jump to a module…',
+        'hint_navigate' => 'navigate',
+        'hint_open'     => 'open',
+        'hint_close'    => 'close',
+        'cmd_theme'     => 'Toggle dark mode',
+        'cmd_signout'   => 'Sign out',
+        'doc_details'   => 'Document details',
+        'no_matches'    => 'No matches for “{q}”',
+        'type_to_search' => 'Type to search',
+
+        // The tag on a single result row.
+        'type_ticket'    => 'Ticket',
+        'type_change'    => 'Change',
+        'type_problem'   => 'Problem',
+        'type_article'   => 'Article',
+        'type_contract'  => 'Contract',
+        'type_domain'    => 'Domain',
+        'type_project'   => 'Project',
+        'type_person'    => 'Person',
+        'type_company'   => 'Company',
+        'type_supplier'  => 'Supplier',
+        'type_supplier_contact' => 'Supplier contact',
+        'type_ci'        => 'Config item',
+        'type_asset'     => 'Asset',
+        'type_document'  => 'Document',
+
+        // The heading above a group of results.
+        'group_ticket'    => 'Tickets',
+        'group_change'    => 'Changes',
+        'group_problem'   => 'Problems',
+        'group_knowledge' => 'Knowledge',
+        'group_contract'  => 'Contracts',
+        'group_domain'    => 'Domains',
+        'group_project'   => 'Projects',
+        'group_person'    => 'People',
+        'group_company'   => 'Companies',
+        'group_supplier'  => 'Suppliers',
+        'group_supplier_contact' => 'Supplier contacts',
+        'group_asset'     => 'Assets',
+        'group_ci'        => 'Configuration items',
+        'group_document'  => 'Documents',
+        // These three say WHERE the match was, not what the thing is.
+        'group_in_tickets'   => 'Found inside tickets',
+        'group_in_articles'  => 'Found inside articles',
+        'group_in_documents' => 'Found inside documents',
+    ],
+
     'home' => [
         'header_title'     => 'Service Desk',
         'browser_title'    => 'Service Desk - ITSM',
@@ -97,8 +278,25 @@ return [
     ],
 
     // Waffle module-switcher panel (shared header)
+    // A Read only grant (#180): the analyst can see this module but not change it.
+    'module_read_only'       => 'You have read-only access to this module.',
+    'module_read_only_badge' => 'Read only',
+
     'waffle' => [
         'title' => 'ITSM Modules',
+        // The recent trail (#124). "Recent" rather than "History": history is a
+        // record of what happened, and this is a way back to it.
+        'tab_modules'  => 'Modules',
+        'form_approvals' => 'Form approvals',   // a catalogue approver without the Forms module (#180)
+        'tab_recent'   => 'Recent',
+        'trail_search' => 'Search your trail',
+        'trail_loading' => 'Loading…',
+        // Shown before anybody has opened a record. It says what the pane WILL
+        // hold rather than that it is empty, because an empty list with no
+        // explanation reads as something that is broken.
+        'trail_empty'  => 'Records you open will appear here, grouped by the module you were in.',
+        'trail_no_matches' => 'Nothing in your trail matches that.',
+        'trail_unavailable' => 'Run Database Verification in System to switch this on.',
     ],
 
     // Per-module display name + one-line description.
@@ -116,11 +314,18 @@ return [
         'software'       => ['name' => 'Software',    'description' => 'Browse software inventory and licensing'],
         'forms'          => ['name' => 'Forms',       'description' => 'Design custom forms and view submissions'],
         'contracts'      => ['name' => 'Contracts',   'description' => 'Manage suppliers, contacts and contracts'],
+        'domains'        => ['name' => 'Domains',     'description' => 'Track domain names, renewals, DNS, email security and certificates'],
+        'files'          => ['name' => 'Files',       'description' => 'Share files and folders securely, with a record of who opened what and when'],
+        'people'         => ['name' => 'People',      'description' => 'Everything about a person or a company, from every module, on one page'],
+        'starters'       => ['name' => 'Starters & leavers', 'description' => 'Everything that has to happen when someone joins, moves or leaves - tasks, kit and accounts, from one checklist'],
         'service-status' => ['name' => 'Status',      'description' => 'Monitor service health and track incidents'],
+        'war-room'       => ['name' => 'War room',    'description' => 'Fallback chat for when Teams or Slack is unavailable'],
         'wiki'           => ['name' => 'Wiki',        'description' => 'Browse auto-generated codebase documentation'],
         'lms'            => ['name' => 'LMS',         'description' => 'Learning Management System with SCORM course player'],
         'process-mapper' => ['name' => 'Processes',   'description' => 'Visual flowchart and process mapping tool'],
+        'checklists'     => ['name' => 'Checklists',  'description' => 'Step-by-step checklists and SOPs you can run against a ticket or task'],
         'tasks'          => ['name' => 'Tasks',       'description' => 'Kanban board and list view for tracking tasks'],
+        'projects'       => ['name' => 'Projects',    'description' => 'Plan and run IT projects, built on your tasks and linked to everything else'],
         'cmdb'           => ['name' => 'CMDB',        'description' => 'Configuration Management Database'],
         'network-mapper' => ['name' => 'Network',     'description' => 'Design and document network diagrams'],
         'workflow'       => ['name' => 'Workflows',   'description' => 'Cross-module automation — triggers, conditions, actions'],
@@ -128,6 +333,287 @@ return [
     ],
 
     // Account / user menu in the shared header
+    // The global notification bell (discussion #55). Event descriptions are
+    // resolved when the bell renders, not when the row is written, so a
+    // notification reads in the LANGUAGE OF WHOEVER IS READING IT rather than
+    // whoever happened to trigger it.
+
+    // GH #201: the link between an asset and its configuration item - the same card on
+    // the asset page and the CI page (assets/js/ci-asset-link.js).
+    'ci_link' => [
+        'title_asset'              => 'Configuration item',
+        'title_cmdb'               => 'Asset',
+        'module_cmdb'              => 'the CMDB',
+        'module_assets'            => 'Assets',
+        'none_ci'                  => 'No configuration item.',
+        'none_asset'               => 'No asset.',
+        'link'                     => 'Link',
+        'replace'                  => 'Replace',
+        'unlink'                   => 'Unlink',
+        'cancel'                   => 'Cancel',
+        'loading'                  => 'Loading...',
+        'not_ready'                => 'Run Database Verification to use links between assets and configuration items.',
+        'restricted_heading_ci'    => 'Linked configuration item - restricted',
+        'restricted_heading_asset' => 'Linked asset - restricted',
+        'restricted_ci'            => 'a restricted configuration item',
+        'restricted_asset'         => 'a restricted asset',
+        'no_access'                => 'Linking is not available because you cannot open {module}.',
+        'from_asset'               => 'From the asset',
+        'field_type'               => 'Type',
+        'field_manufacturer'       => 'Manufacturer',
+        'field_model'              => 'Model',
+        'field_serial'             => 'Serial number',
+        'field_asset_tag'          => 'Asset tag',
+        'field_status'             => 'Status',
+        'field_location'           => 'Location',
+        'field_freshness'          => 'Inventory',
+        'fresh_current'            => 'Current',
+        'fresh_stale'              => 'Stale',
+        'fresh_failed'             => 'Last read failed',
+        'fresh_none'               => 'Nothing reports this asset',
+        'last_seen'                => 'last seen {when}',
+        'linked_by'                => 'Linked {by}',
+        'by'                       => 'by {name}',
+        'by_system'                => 'automatically',
+        'via_api'                  => 'REST: {key}',
+        'history'                  => 'Link history',
+        'live'                     => 'Linked now',
+        'made_on'                  => '(made on {name}, since merged)',
+        'reason_unlinked'          => 'Unlinked',
+        'reason_replaced'          => 'Replaced',
+        'reason_ci_deleted'        => 'Configuration item deleted',
+        'reason_asset_merged'      => 'Ended when two assets were merged',
+        'pick_ci'                  => 'Search configuration items...',
+        'pick_asset'               => 'Search assets by name, serial or asset tag...',
+        'already_linked'           => 'already linked',
+        'no_results'               => 'Nothing matches.',
+        'replace_title'            => 'Replace the link?',
+        'replace_body'             => 'Replacing ends that link - it stays in the link history - and links {name} instead. Nothing is deleted.',
+        'unlink_title'             => 'Unlink?',
+        'unlink_body'              => 'The link to {name} ends and stays in the link history. Both records are kept.',
+        'linked'                   => 'Linked',
+        'unlinked'                 => 'Unlinked',
+        'unchanged'                => 'Already linked',
+        'failed'                   => 'The link could not be saved.',
+        'impact_show'              => 'Show',
+        'create'                   => 'Create linked CI',
+        'create_title'             => 'New {class} linked to this asset',
+        'create_matches'           => 'These already exist with the same name. A name alone does not prove it is the same equipment - link one if it is.',
+        'create_link_instead'      => 'Link this one instead',
+        'create_name'              => 'Name',
+        'create_go'                => 'Create',
+        'create_anyway'            => 'Create a new one',
+        'create_unmapped'          => 'This asset\'s type is not mapped to a CMDB class.',
+        'created'                  => 'Configuration item created and linked',
+        'impact_diagram'           => 'Open as diagram',
+        'impact_diagram_empty'     => 'Nothing would be affected, so there is nothing to draw.',
+        'impact_some'              => 'If this failed, affected: {n}',
+        'impact_some_more'         => 'If this failed, affected: at least {n}',
+        'impact_none'              => 'If this failed: nothing else in the CMDB depends on it.',
+        'impact_unconfigured'      => 'If this failed: nothing is set to carry impact in the CMDB yet.',
+        'impact_graded'            => 'If this failed: {summary}',
+        'grade_affected'           => 'affected',
+        'grade_may_be_interrupted' => 'may be interrupted',
+        'grade_redundancy_reduced' => 'redundancy reduced',
+        'grade_unknown'            => 'unknown',
+    ],
+
+    // The documents panel, shared by every module that attaches files or links
+    // to a record. Lives in `common` because it belongs to no single module.
+    'documents' => [
+        'heading'        => 'Documents',
+        'count_one'      => '1 document',
+        'count_many'     => '{n} documents',
+        'none'           => 'No documents attached yet.',
+        'drop'           => 'Drop a file here, or click to choose one',
+        'drop_or'        => 'or paste a link to it in your document system below',
+        'link_url'       => 'https://link-to-your-document',
+        'link_title'     => 'What is it? (optional)',
+        'add_link'       => 'Add link',
+        'open'           => 'Open',
+        'download'       => 'Download',
+        'remove'         => 'Remove',
+        'remove_confirm' => 'Remove "{name}" from this record?',
+        // Said only when that was the LAST place it was attached. Everywhere else
+        // "Remove" means detach, and the file stays where others can still see it.
+        'removed_last'   => 'That was the last place it was attached, so the document has been deleted.',
+        'also_on'        => 'Also on {label}',
+        'uploading'      => 'Uploading…',
+        'show_more'      => 'Show more',
+        'failed'         => 'Something went wrong.',
+        'by'             => 'by {name}',
+        'loading'        => 'Loading…',
+        'close'          => 'Close',
+        // The ⓘ dialogue: where a document is attached, and whether it is searchable.
+        'info_title'     => 'Document details',
+        'attached_to'    => 'Attached to',
+        'attached_none'  => 'Not attached to anything you can see.',
+        // A COUNT, never a name — it says the document is more widely attached
+        // than you can see, which matters before you attach it somewhere new,
+        // and identifies nothing.
+        'attached_hidden' => 'And {n} other record(s) you do not have access to.',
+        'kind_link'      => 'A link to an external document',
+        // "Not indexed yet" and "nothing readable in it" look identical without this.
+        'idx_ok'          => 'Searchable — {n} characters of text indexed.',
+        'idx_pending'     => 'Not searchable yet — the text is still being read.',
+        'idx_unsupported' => 'Its contents cannot be read, so only its name and description are searchable.',
+        'idx_failed'      => 'Its contents could not be read.',
+        // Attaching an existing document: the other half of the join table.
+        'find_existing'   => 'Or attach a document already in FreeITSM — start typing its name',
+        'find_none'       => 'No documents match, that you can see and that are not already here.',
+        // Shown against each candidate, because attaching WIDENS who can read it.
+        'currently_on'    => 'currently on {where}',
+        // The Help Centre - knowledge articles only (GH #177).
+        'hc_customer'     => 'Customers who can read this article in the Help Centre can download the documents marked Shown.',
+        'hc_internal'     => 'Customers cannot read this article, so none of its documents are in the Help Centre.',
+        'hc_verify'       => 'Run System → Database Verification to choose which documents customers can download.',
+        'hc_how'          => 'How this works',
+        'hc_shown'        => 'Shown in Help Centre',
+        'hc_hidden'       => 'Hidden from Help Centre',
+        'hc_show'         => 'Show',
+        'hc_hide'         => 'Hide',
+    ],
+
+    'notifications' => [
+        'title'       => 'Notifications',
+        'aria'        => 'Notifications',
+        'mark_all'    => 'Mark all read',
+        // Clearing is separate from reading: "read" silences the badge and keeps
+        // the row, "clear" deletes it (discussion #111).
+        'clear_all'         => 'Clear all',
+        'clear_one'         => 'Clear this notification',
+        'clear_one_title'   => 'Clear this notification?',
+        'clear_one_msg'     => 'It will be removed from your bell for good. This cannot be undone.',
+        'clear_title'       => 'Clear notifications?',
+        'clear_msg'         => 'This removes them from your bell for good. It cannot be undone.',
+        'clear_msg_read'    => 'This removes read notifications from your bell for good. It cannot be undone.',
+        'clear_unread'      => 'Also clear the {n} you have not read yet',
+        'clear_unread_one'  => 'Also clear the 1 you have not read yet',
+        'clear_ok'          => 'Clear',
+        'clear_failed'      => 'Could not clear notifications.',
+        'clear_nothing'     => 'Nothing to clear — all of these are unread.',
+        'empty'       => 'Nothing new.',
+        'desktop_more' => 'And {n} more new notifications',
+        'loading'     => 'Loading…',
+        'load_failed' => 'Could not load notifications.',
+        'someone'     => 'Someone',
+        'just_now'    => 'just now',
+        'minutes'     => '{n}m ago',
+        'hours'       => '{n}h ago',
+        'days'        => '{n}d ago',
+        // ⚠️ NESTED BY ENTITY, not keyed by the literal event name. I18n::t()
+        // splits the key on EVERY dot, so a flat 'ticket.assigned' key here is
+        // unreachable — the lookup silently misses and the bell falls back to
+        // showing a bare name with no explanation of what happened.
+        // Event types are 'ticket.assigned' etc, so 'event.' . $type resolves
+        // through this nesting exactly as intended.
+        'event' => [
+            'ticket' => [
+                'assigned'         => 'Assigned to you by {actor}',
+                'reply_received'   => 'The requester replied',
+                'note_added'       => '{actor} added a note',
+                'status_changed'   => '{actor} changed the status',
+                'priority_changed' => '{actor} changed the priority',
+                'created'          => 'Raised by {actor}',
+            ],
+            'sla' => [
+                'warning'  => 'Approaching its SLA target',
+                'breached' => 'SLA target breached',
+            ],
+            'task' => [
+                'assigned'  => 'Assigned to you by {actor}',
+                'created'   => '{actor} created a task for you',
+                'completed' => '{actor} completed a task',
+                // These had no wording, so the bell showed the task's title and nothing
+                // else - and nothing at all when no person did it (a repeat, a workflow).
+                'status_changed'        => '{actor} moved it to {to}',
+                'status_changed_plain'  => '{actor} changed the status',
+                'due_date_changed'      => '{actor} changed the due date to {to}',
+                'due_date_changed_plain'=> '{actor} changed the due date',
+                'comment_added'         => '{actor} added a comment',
+                'collaborator_added'    => '{actor} added you to it',
+                'collaborator_removed'  => '{actor} took you off it',
+            ],
+            'domain' => [
+                'expiring'     => 'A domain you own is due for renewal',
+                'ssl_expiring' => 'A certificate on your domain is expiring',
+                'changed'      => 'Something changed on a domain you own',
+            ],
+            'project' => [
+                'health_changed'     => 'The health of a project you manage changed',
+                'tolerance_breached' => 'A project you manage went beyond a tolerance',
+                'stage_due'          => 'A stage of a project you manage ends soon',
+                'stage_closed'       => 'A stage of a project you manage closed',
+                'milestone_due'      => 'A milestone of a project you manage is coming up',
+                'milestone_missed'   => 'A milestone of a project you manage was missed',
+                'milestone_reached'  => 'A milestone of a project you manage was reached',
+                'raid_escalated'     => 'Something on a project you manage was escalated',
+                'change_raised'      => 'A change request was raised on a project you manage',
+                'change_decided'     => 'A change request on a project you manage was decided',
+                'proposal_submitted' => 'A project proposal is waiting for your approval',
+                'proposal_decided'   => 'A project you proposed was approved or rejected',
+                'benefit_review_due' => 'A project benefit is due for review',
+                'signoff_requested'  => 'Your sign-off is needed at a project gate',
+                'tasks_overdue'      => 'Overdue tasks on a project you manage',
+                'approval_stalled'   => 'Something on a project is still waiting for your decision',
+                'report_drafted'     => 'A scheduled report on a project you manage is drafted',
+            ],
+        ],
+        // Labels for the per-type switches on the Preferences page. Same nesting
+        // rule as above, and for the same reason.
+        'pref' => [
+            'ticket' => [
+                'assigned'         => 'A ticket is assigned to me',
+                'reply_received'   => 'A requester replies to my ticket',
+                'note_added'       => 'Someone adds a note to my ticket',
+                'status_changed'   => 'Someone changes the status of my ticket',
+                'priority_changed' => 'Someone changes the priority of my ticket',
+                'created'          => 'A ticket is raised',
+            ],
+            'sla' => [
+                'warning'  => 'My ticket is approaching its SLA target',
+                'breached' => 'My ticket breaches its SLA target',
+            ],
+            // ⚠️ "on a task I am on" rather than "my task": since GH #89 these
+            // reach the owner AND everybody listed as Involved, so wording them
+            // as ownership would be wrong for most of the people reading them.
+            'task' => [
+                'assigned'            => 'A task is assigned to me',
+                'created'             => 'A task is created for me',
+                'completed'           => 'A task I am on is completed',
+                'collaborator_added'  => 'I am added to a task',
+                'collaborator_removed'=> 'I am taken off a task',
+                'comment_added'       => 'Someone comments on a task I am on',
+                'status_changed'      => 'Someone changes the status of a task I am on',
+                'due_date_changed'    => 'Someone changes the due date of a task I am on',
+            ],
+            'domain' => [
+                'expiring'     => 'A domain I own is approaching its expiry date',
+                'ssl_expiring' => 'A certificate on a domain I own is approaching expiry',
+                'changed'      => 'Name servers, registrar, locks or mail records change on a domain I own',
+            ],
+            'project' => [
+                'health_changed'     => 'The health of a project I manage changes',
+                'tolerance_breached' => 'A project I manage goes beyond a time or risk tolerance',
+                'stage_due'          => 'A stage of a project I manage ends in 7 days, and the day before',
+                'stage_closed'       => 'A stage of a project I manage closes',
+                'milestone_due'      => 'A milestone of a project I manage is 7 days away, and the day before',
+                'milestone_missed'   => 'A milestone of a project I manage passes without being reached',
+                'milestone_reached'  => 'A milestone of a project I manage is marked reached',
+                'raid_escalated'     => 'Somebody escalates a risk, issue, dependency or decision on a project I manage',
+                'change_raised'      => 'Somebody raises a change request on a project I manage',
+                'change_decided'     => 'Somebody approves or rejects a change request on a project I manage',
+                'proposal_submitted' => 'A project is proposed and I am one of the people who approve proposals',
+                'proposal_decided'   => 'A project I proposed is approved or rejected',
+                'benefit_review_due' => 'A benefit I own, or of a project I manage, is due for review',
+                'signoff_requested'  => 'I am named to sign something off at a project stage gate',
+                'tasks_overdue'      => 'A project I manage has overdue tasks (weekly or daily, as Projects - Settings says)',
+                'approval_stalled'   => 'A proposal, change request, sign-off or report I decide has been waiting for days',
+                'report_drafted'     => 'A project I manage has a scheduled report drafted for me to check',
+            ],
+        ],
+    ],
+
     'account' => [
         'mail_check'      => 'Check for new emails',
         'preferences'     => 'Preferences',
@@ -135,6 +621,9 @@ return [
         'change_password' => 'Change Password',
         'mfa'             => 'Multi-Factor Auth',
         'trusted_device'  => 'Trusted Device',
+        // Only rendered when the analyst also has a portal account they could sign
+        // in to. See includes/waffle-menu.php (#81).
+        'portal'          => 'Self-Service Portal',
         'logout'          => 'Logout',
         'logout_confirm'  => 'Are you sure you want to logout?',
         'badge_off'       => 'Off',
@@ -189,5 +678,124 @@ return [
             'saturday'  => 'Saturday',
             'sunday'    => 'Sunday',
         ],
+
+        // Abbreviated forms, used by the date formatter (DateFmt / fmtDate) for
+        // the "25 Aug 2026" family of formats. Kept beside the full names so a
+        // translator sees both together. Where a language does not abbreviate a
+        // month, repeat the full word - do NOT invent an abbreviation.
+        'months_short' => [
+            'january'   => 'Jan',
+            'february'  => 'Feb',
+            'march'     => 'Mar',
+            'april'     => 'Apr',
+            'may'       => 'May',
+            'june'      => 'Jun',
+            'july'      => 'Jul',
+            'august'    => 'Aug',
+            'september' => 'Sep',
+            'october'   => 'Oct',
+            'november'  => 'Nov',
+            'december'  => 'Dec',
+        ],
+
+        'weekdays_short' => [
+            'monday'    => 'Mon',
+            'tuesday'   => 'Tue',
+            'wednesday' => 'Wed',
+            'thursday'  => 'Thu',
+            'friday'    => 'Fri',
+            'saturday'  => 'Sat',
+            'sunday'    => 'Sun',
+        ],
+    ],
+    // Saved table views, shared by every module running the data-table engine (#96)
+    'table_views' => [
+        'button'               => 'Views',
+        'heading'              => 'Saved views',
+        'search_placeholder'   => 'Search views by name, description or who made them',
+        'layout_list'          => 'List',
+        'layout_cards'         => 'Cards',
+        'save_current'         => 'Save current view',
+        'close'                => 'Close',
+        'none_yet'             => 'No saved views yet. Set the table up how you like it, then use Save view in the toolbar.',
+        'none_matching'        => 'No views match what you typed.',
+        'vis_private'          => 'Only me',
+        'vis_team'             => 'Team',
+        'vis_public'           => 'Everyone',
+        'vis_team_label'       => 'A team',
+        'vis_public_label'     => 'Everyone',
+        'default'              => 'Default',
+        'set_default'          => 'Open this table with this view',
+        'unset_default'        => 'Stop opening this table with this view',
+        'edit'                 => 'Edit',
+        'delete'               => 'Delete',
+        'by'                   => 'by {name}',
+        'by_nobody'            => 'owner removed',
+        'created'              => 'Created {d}',
+        'modified'             => 'Modified {d}',
+        'last_used'            => 'Last used {d}',
+        'never_used'           => 'Never used',
+        'save_heading'         => 'Save this view',
+        'edit_heading'         => 'Edit view',
+        'field_name'           => 'Name',
+        'field_description'    => 'Description',
+        'field_visibility'     => 'Who can see it',
+        'name_placeholder'     => 'My end user devices',
+        'desc_placeholder'     => 'What this view is for, so somebody else knows whether to use it',
+        'no_teams'             => 'You are not in a team, so there is nobody to share a team view with.',
+        'edit_hint'            => 'This changes the name and who can see it. What the view SHOWS is left as it was saved - use "Save current view" to capture the table as it looks now.',
+        'save'                 => 'Save',
+        'cancel'               => 'Cancel',
+        'failed'               => 'That did not work.',
+    ],
+
+    // At-a-glance previews of a linked record (#91). Shared, because seven
+    // modules render them.
+    'preview' => [
+        'unavailable'        => 'That record cannot be shown here.',
+        'status'             => 'Status',
+        'priority'           => 'Priority',
+        'with'               => 'With',
+        'requester'          => 'Requester',
+        'assignee'           => 'Assignee',
+        'due'                => 'Due',
+        'subtasks'           => 'Subtasks',
+        'subtask_progress'   => '{done} of {total} done',
+        'risk'               => 'Risk',
+        'window'             => 'Planned',
+        'tickets'            => 'Tickets attached',
+        'tag'                => 'Asset tag',
+        'type'               => 'Type',
+        'model'              => 'Make and model',
+        'serial'             => 'Serial',
+        'held_by'            => 'Held by',
+        'held_by_many'       => '{name} and {n} other(s)',
+        'warranty'           => 'Warranty',
+        'supplier'           => 'Supplier',
+        'customer'           => 'Customer',
+        'renewal'            => 'Renews',
+        'notice'             => 'Notice by',
+        'expires'            => 'Expires',
+        'grade'              => 'Security grade',
+        'registrar'          => 'Registrar',
+        'owner'              => 'Owner',
+        'certificate'        => 'Certificate expires',
+        'open'               => 'Open',
+        'loading'            => 'Loading…',
+        'aria'               => 'Preview this record',
+    ],
+
+    // The shared data table's server mode (assets/js/data-table.js, PR #213): a
+    // table that asks the server for one page at a time. Only Tickets uses it so far.
+    'table_server' => [
+        'retry'         => 'Retry',
+        'failed'        => 'Could not refresh this list. The previous rows are unavailable for actions.',
+        'previous'      => 'Previous',
+        'next'          => 'Next',
+        'page_size'     => 'Rows per page',
+        'range'         => '{from}-{to} of {total}',
+        'page'          => 'Page {page} of {pages}',
+        'cancel_export' => 'Cancel export',
+        'export_failed' => 'The export could not be completed.',
     ],
 ];

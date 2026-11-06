@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><body><pre id="out">…</pre><script>
+/**
+ * Direct asset links in the user overview (discussion #85) — the LIVE run.
+ *
+ * Read-only. It opens pages and reads links; it writes nothing.
+ *
+ * ⚠️ The last three checks are the point of the file. Asserting that the asset
+ * page merely HAS a detail panel passes on the "Select an asset to view
+ * details" empty state — which is precisely the failure Issue-84 was about, a
+ * deep link that opened the module and selected nothing. An earlier draft of
+ * this file did exactly that and reported a pass. So they look for the asset's
+ * OWN NAME in the panel, and a bogus id is checked beside it to prove the test
+ * is capable of failing.
+ *
+ * HOW TO RUN — needs a signed-in analyst:
+ *   printf 'analyst_id|i:1;' > c:/wamp64/tmp/sess_rp85
+ *   http://localhost/freeitsm-app/tests/user-asset-links-live.html?sid=rp85&user=128
+ *
+ * ?user= must be somebody who actually holds equipment.
+ */
+const P=new URLSearchParams(location.search);
+if(P.get('sid'))document.cookie='PHPSESSID='+P.get('sid')+'; path=/';
+const L=[];const log=s=>{L.push(s);document.getElementById('out').textContent=L.join('\n');};
+const wait=(fn,ms)=>new Promise(r=>{const t0=Date.now();(function p(){let v=null;try{v=fn()}catch(e){}
+  if(v)return r(v); if(Date.now()-t0>ms)return r(null); setTimeout(p,250)})()});
+function frame(src){const x=document.createElement('iframe');
+  x.style.cssText='width:1500px;height:1000px;position:absolute;left:-9999px';
+  document.body.appendChild(x);x.src=src;return x;}
+(async()=>{
+  const f=frame('../asset-management/users.php');
+  await new Promise(r=>{f.onload=r;setTimeout(r,10000)});
+  const d=()=>f.contentDocument,W=()=>f.contentWindow;
+  await wait(()=>d().querySelector('[onclick*="selectPerson"]'),15000);
+  W().selectPerson(parseInt(P.get('user') || '128', 10));
+  const links=await wait(()=>{const l=[...d().querySelectorAll('#auDetail td a.au-link')];return l.length?l:null;},15000);
+  if(!links){log('FAIL no asset links rendered');return;}
+  log('PASS  '+links.length+' asset name(s) render as links');
+  const bad=links.filter(a=>!/^index\.php\?asset_id=\d+$/.test(a.getAttribute('href')));
+  log((bad.length?'FAIL  ':'PASS  ')+'every href is index.php?asset_id=<number>');
+  const empty=links.filter(a=>!a.textContent.trim()||a.textContent.trim()==='—');
+  log((empty.length?'FAIL  ':'PASS  ')+'no link is blank or an em dash');
+
+  const label=links[0].textContent.trim();
+  const id=links[0].getAttribute('href').split('=')[1];
+  log('  following: "'+label+'" -> asset_id='+id);
+
+  // ⚠️ The real signal is the asset's OWN NAME appearing in the detail panel.
+  // Checking the panel merely has text passes on the "Select an asset" empty
+  // state, which is exactly the bug Issue-84 was about.
+  const shows=async(src,needle)=>{
+    const g=frame(src);
+    await new Promise(r=>{g.onload=r;setTimeout(r,10000)});
+    const hit=await wait(()=>{
+      const t=g.contentDocument.querySelector('#assetDetail');
+      return t && t.textContent.indexOf(needle)!==-1 ? true : null;
+    },15000);
+    g.remove(); return !!hit;
+  };
+  log((await shows('../asset-management/index.php?asset_id='+id,label)?'PASS  ':'FAIL  ')
+      +'following the link actually SELECTS that asset (panel shows "'+label+'")');
+  log((await shows('../asset-management/index.php?asset_id=999999999',label)?'FAIL  ':'PASS  ')
+      +'NEGATIVE CONTROL: a bogus id does not show it');
+  log((await shows('../asset-management/index.php?asset='+id,label)?'PASS  ':'FAIL  ')
+      +'the legacy ?asset= spelling still works too');
+})();
+</script></body>

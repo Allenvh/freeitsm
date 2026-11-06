@@ -1,11 +1,12 @@
 <?php
 /**
- * API: Create or update a form with its fields
- * Expects JSON body: { id?, title, description, fields: [{ field_type, label, options?, is_required }] }
+ * API: Create or update a form with its fields.
+ * Thin UI adapter over FormsService.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/services/forms.php';
 
 header('Content-Type: application/json');
 
@@ -13,6 +14,10 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('forms');
+requireModuleWriteJson('forms');   // Read only access (#180) changes nothing here
+require_once '../../includes/rbac.php';
+requireActionJson(Cap::FORMS_DESIGN);   // designing - #180; module access is enough until Forms → Settings → Access restricts it
 
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input) {
@@ -20,117 +25,11 @@ if (!$input) {
     exit;
 }
 
-$title = trim($input['title'] ?? '');
-$description = trim($input['description'] ?? '');
-$fields = $input['fields'] ?? [];
-
-if (empty($title)) {
-    echo json_encode(['success' => false, 'error' => 'Form title is required']);
-    exit;
-}
-
 try {
     $conn = connectToDatabase();
-    $conn->beginTransaction();
-
-    $formId = (int)($input['id'] ?? 0);
-
-    if ($formId > 0) {
-        // Block in-place saves of frozen (non-leaf) versions (#442).
-        // The UI hides the Save button for non-leaf rows but this
-        // server-side check stops a stale tab / direct API call from
-        // mutating a historical snapshot.
-        $leafCheck = $conn->prepare("SELECT COUNT(*) FROM forms WHERE parent_form_id = ?");
-        $leafCheck->execute([$formId]);
-        if ((int)$leafCheck->fetchColumn() > 0) {
-            throw new Exception('This is a historical version. Open the current (latest) version to make changes, or click "Save as new version" to fork from here.');
-        }
-
-        // In-place save. Refresh modified_by + modified_date;
-        // version_number is NEVER bumped here — that only happens via
-        // create_version.php which forks the form into a new chain
-        // entry. Lets analysts iterate on the current version without
-        // littering the chain with tiny "fix typo" snapshots.
-        $stmt = $conn->prepare(
-            "UPDATE forms
-             SET title = ?, description = ?,
-                 modified_by = ?, modified_date = UTC_TIMESTAMP()
-             WHERE id = ?"
-        );
-        $stmt->execute([$title, $description, $_SESSION['analyst_id'], $formId]);
-
-        // Get existing field IDs in sort order
-        $stmt = $conn->prepare("SELECT id FROM form_fields WHERE form_id = ? ORDER BY sort_order");
-        $stmt->execute([$formId]);
-        $existingIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-        // Build list of valid incoming fields
-        $validFields = [];
-        foreach ($fields as $field) {
-            $label = trim($field['label'] ?? '');
-            if (empty($label)) continue;
-            $options = $field['options'] ?? null;
-            if (is_array($options)) $options = json_encode($options);
-            $validFields[] = [
-                'field_type' => $field['field_type'] ?? 'text',
-                'label'      => $label,
-                'options'    => $options,
-                'is_required'=> (int)($field['is_required'] ?? 0),
-            ];
-        }
-
-        // Update existing fields in place, insert new ones
-        foreach ($validFields as $i => $f) {
-            if ($i < count($existingIds)) {
-                // Update existing field (preserves ID and submission data)
-                $stmt = $conn->prepare("UPDATE form_fields SET field_type = ?, label = ?, options = ?, is_required = ?, sort_order = ? WHERE id = ?");
-                $stmt->execute([$f['field_type'], $f['label'], $f['options'], $f['is_required'], $i, $existingIds[$i]]);
-            } else {
-                // Insert new field
-                $stmt = $conn->prepare("INSERT INTO form_fields (form_id, field_type, label, options, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$formId, $f['field_type'], $f['label'], $f['options'], $f['is_required'], $i]);
-            }
-        }
-
-        // Remove fields that no longer exist (user deleted them from the form)
-        $removeIds = array_slice($existingIds, count($validFields));
-        foreach ($removeIds as $removeId) {
-            $stmt = $conn->prepare("DELETE FROM form_submission_data WHERE field_id = ?");
-            $stmt->execute([$removeId]);
-            $stmt = $conn->prepare("DELETE FROM form_fields WHERE id = ?");
-            $stmt->execute([$removeId]);
-        }
-    } else {
-        // Create new form — author + initial modified_by both default
-        // to the current analyst; version_number starts at 1.
-        $stmt = $conn->prepare(
-            "INSERT INTO forms (title, description, created_by, modified_by, version_number)
-             VALUES (?, ?, ?, ?, 1)"
-        );
-        $stmt->execute([$title, $description, $_SESSION['analyst_id'], $_SESSION['analyst_id']]);
-        $formId = (int)$conn->lastInsertId();
-
-        // Insert fields
-        $sortOrder = 0;
-        foreach ($fields as $field) {
-            $label = trim($field['label'] ?? '');
-            if (empty($label)) continue;
-            $options = $field['options'] ?? null;
-            if (is_array($options)) $options = json_encode($options);
-            $stmt = $conn->prepare("INSERT INTO form_fields (form_id, field_type, label, options, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$formId, $field['field_type'] ?? 'text', $label, $options, (int)($field['is_required'] ?? 0), $sortOrder]);
-            $sortOrder++;
-        }
-    }
-
-    $conn->commit();
-
-    echo json_encode(['success' => true, 'form_id' => $formId, 'message' => 'Form saved']);
-
+    // The UI already sends canonical keys (id, title, description, fields).
+    $res = FormsService::saveForm($conn, ActorContext::fromSession($conn), $input);
+    echo json_encode(['success' => true, 'form_id' => $res['id'], 'message' => 'Form saved']);
 } catch (Exception $e) {
-    if ($conn->inTransaction()) {
-        $conn->rollBack();
-    }
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
-?>

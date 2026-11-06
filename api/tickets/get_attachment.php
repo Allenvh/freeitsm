@@ -7,12 +7,14 @@ session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/uploads.php';   // attachmentSendHeaders()
 
 // Check if user is logged in
 if (!isset($_SESSION['analyst_id'])) {
     http_response_code(401);
     exit('Not authenticated');
 }
+requireModuleAccessJson('tickets');
 
 // Get attachment identifier
 $attachmentId = $_GET['id'] ?? null;
@@ -65,39 +67,52 @@ try {
     }
 
     // Build full file path
-    $filePath = dirname(dirname(__DIR__)) . '/tickets/attachments/' . $attachment['file_path'];
+    $baseDir  = dirname(dirname(__DIR__)) . '/tickets/attachments';
+    $filePath = $baseDir . '/' . $attachment['file_path'];
 
     if (!file_exists($filePath)) {
         http_response_code(404);
         exit('Attachment file not found');
     }
 
-    // Set headers for file download/display
-    header('Content-Type: ' . $attachment['content_type']);
-    header('Content-Length: ' . $attachment['file_size']);
+    // ⚠️ Containment: the resolved file must be INSIDE the attachments directory.
+    //
+    // file_path comes out of the database, so this is not reachable from a request
+    // parameter today — which is exactly why it was missing. It is the second half of
+    // the pattern: every writer now generates its own random name (uploads.php), and
+    // the reader refuses to follow a path that leaves the directory regardless of how
+    // the row got there. A stored `../../config.php`, whether from a future bug, an
+    // older row written before the upload rules existed, or anyone with a foothold in
+    // the database, would otherwise be read and returned by an authenticated request.
+    //
+    // realpath() also resolves symlinks, so a link planted inside the folder cannot
+    // point out of it. Both sides are realpath()'d because comparing a resolved path
+    // against an unresolved prefix fails on Windows, where the base arrives with
+    // forward slashes and comes back with backslashes.
+    $realBase = realpath($baseDir);
+    $realFile = realpath($filePath);
+    if ($realBase === false || $realFile === false
+        || strncmp($realFile, $realBase . DIRECTORY_SEPARATOR, strlen($realBase) + 1) !== 0) {
+        error_log('get_attachment: refused a path outside the attachments directory — attachment id '
+                  . (int)$attachment['id'] . ', stored path ' . (string)$attachment['file_path']);
+        http_response_code(404);
+        exit('Attachment file not found');
+    }
 
     // For inline images, allow browser caching
     header('Cache-Control: private, max-age=86400');
 
-    // Never let the browser MIME-sniff a user-supplied file into something
-    // executable (e.g. a "photo" that's actually HTML/JS) — honour our declared type.
-    header('X-Content-Type-Options: nosniff');
+    // ⚠️ The stored content_type is whatever the SENDER put on the MIME part, and it
+    // used to be echoed straight into the header — so `image/svg+xml` satisfied the
+    // old `strpos($ct, 'image/') === 0` inline test, and inbox.js opens attachments
+    // with window.open(), i.e. as a top-level document on our own origin. SVG is XML
+    // and runs <script>. nosniff cannot help when the declared type is the executable
+    // one. The type is now derived from the file extension against our own map, and
+    // anything unrecognised downloads as octet-stream. See includes/uploads.php.
+    attachmentSendHeaders((string)$attachment['filename'], (int)$attachment['file_size']);
 
-    // Media that's safe to render in-browser is served inline (so it can preview in
-    // the reading pane); everything else is offered as a download.
-    $ct = strtolower($attachment['content_type']);
-    $inlineSafe = strpos($ct, 'image/') === 0
-        || strpos($ct, 'audio/') === 0
-        || strpos($ct, 'video/') === 0
-        || $ct === 'application/pdf';
-    if ($inlineSafe) {
-        header('Content-Disposition: inline; filename="' . $attachment['filename'] . '"');
-    } else {
-        header('Content-Disposition: attachment; filename="' . $attachment['filename'] . '"');
-    }
-
-    // Output file contents
-    readfile($filePath);
+    // Output file contents — the CONTAINED path, not the one built from the row.
+    readfile($realFile);
 
 } catch (Exception $e) {
     http_response_code(500);

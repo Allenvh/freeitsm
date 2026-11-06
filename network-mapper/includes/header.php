@@ -11,7 +11,7 @@ $current_module = 'network-mapper';
 $module_title = function_exists('t') ? t('network-mapper.title') : 'Network Mapper';
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 

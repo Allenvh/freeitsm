@@ -14,6 +14,7 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/landing.php';   // install-wide landing default (#63)
 
 header('Content-Type: application/json');
 
@@ -84,6 +85,26 @@ try {
             'footer_center'  => $values['branding_footer_center'],
             'footer_right'   => $values['branding_footer_right'],
         ],
+        // Which front door "/" sends an unauthenticated visitor to (#63).
+        'landing_page' => landingInstallDefault($conn),
+        // The "Back to ..." link (3.5.0).
+        'back_link' => (function () use ($conn) { require_once '../../includes/back_link.php'; return backLinkSettings($conn); })(),
+        // The first word of every page title (GH #173). Raw - blank means the
+        // default, and the box shows that as its placeholder.
+        'system_name' => (function () use ($conn) {
+            $st = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'system_name'");
+            $st->execute();
+            return (string)$st->fetchColumn();
+        })(),
+        // The Files desktop's corner logo (Files module).
+        'files_desktop' => (function () use ($conn) {
+            $st = $conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('files_logo_mode', 'files_logo_position')");
+            $v = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+            return [
+                'logo_mode'     => ($v['files_logo_mode'] ?? '') === 'none' ? 'none' : 'company',
+                'logo_position' => ($v['files_logo_position'] ?? '') === 'bottom-right' ? 'bottom-right' : 'top-right',
+            ];
+        })(),
     ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

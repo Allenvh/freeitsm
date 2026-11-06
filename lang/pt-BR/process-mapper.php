@@ -1,9 +1,15 @@
 <?php
 /**
- * Português (Brasil) (pt-BR) — Process Mapper module.
- * Falls back per-key to lang/en/process-mapper.php for anything missing here.
- * Key order mirrors lang/en/process-mapper.php.
+ * FreeITSM — process-mapper strings (pt-BR).
+ *
+ * Keys mirror lang/en/process-mapper.php exactly. A key absent here falls back to
+ * English at runtime, so this file may be incomplete without breaking
+ * anything. Check coverage with: php scripts/i18n_audit.php pt-BR
+ *
+ * ⚠️ Placeholders like {name} and %d are substituted at runtime — printf
+ * tokens substitute BY POSITION, so their order must match English.
  */
+
 return [
     'title' => 'Mapeador de processos',
     'nav' => [
@@ -29,6 +35,13 @@ return [
         'new_process' => '+ Novo processo',
         'search_placeholder' => 'Pesquisar processos…',
         'no_processes_yet' => 'Ainda não há processos',
+    ],
+    'new_modal' => [
+        'title' => 'Novo processo',
+        'field_title' => 'Nome do processo',
+        'placeholder' => 'ex.: Triagem de incidentes',
+        'create' => 'Criar',
+        'failed' => 'Não foi possível criar o processo.',
     ],
     'toolbar' => [
         'process' => 'Processo',
@@ -222,7 +235,7 @@ return [
         'creating_step2' => '<strong>Adicione a primeira etapa</strong> &mdash; clique em qualquer um dos botões de forma na barra de ferramentas (Processo, Decisão, Início/Fim, Documento) para soltar uma nova etapa na tela. A maioria dos processos começa com um Início/Fim rotulado como "Início" ou descrevendo o evento que dispara o fluxo.',
         'creating_step3' => '<strong>Defina seu rótulo</strong> &mdash; dê um duplo clique na etapa para renomeá-la em linha, ou um único clique para abrir o painel de detalhes deslizante à direita, onde você pode alterar rótulo, tipo, descrição e cor.',
         'creating_step4' => '<strong>Construa o restante</strong> &mdash; continue adicionando etapas e conectores até o diagrama contar a história completa. Use losangos de Decisão para qualquer ponto de "sim/não" ou ramificação, e formas de Documento para saídas como relatórios, certificados ou aprovações.',
-        'creating_step5' => '<strong>Salve</strong> &mdash; pressione <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span> ou clique no botão Salvar na barra de ferramentas. Todo o processo é enviado ao servidor de uma só vez &mdash; etapas, conectores, posições e tudo o mais.',
+        'creating_step5' => '<strong>Salve</strong> &mdash; pressione <span class="help-kbd">Ctrl</span>+<span class="help-kbd">S</span> ou clique no botão Salvar na barra de ferramentas. Todo o processo é enviado ao servidor de uma só vez &mdash; etapas, conectores, posições e tudo o mais.',
         'creating_tip' => 'Se você já importou os dados de demonstração, a barra lateral vem pré-preenchida com seis exemplos resolvidos (triagem de incidentes, integração, aprovação de mudanças, resposta a incidente grave, descarte de ativos e redefinição de senha) que você pode abrir e ajustar como pontos de partida.',
         'step_types_heading' => 'Tipos de etapa',
         'step_types_intro' => 'A barra de ferramentas é montada a partir dos tipos de etapa definidos em <strong>Configurações</strong>. Quatro tipos integrados vêm prontos &mdash; cada um com seu próprio significado convencional na notação de fluxogramas. Escolha aquele que corresponde ao que a etapa realmente faz; os leitores entenderão a estrutura do diagrama muito mais rapidamente quando as formas forem usadas de maneira consistente.',
@@ -241,8 +254,8 @@ return [
         'connectors_intro' => 'Conectores são as setas entre as etapas. O Mapeador de processos oferece algumas maneiras de desenhá-los, além de um rico menu do botão direito em cada etapa que reúne os atalhos de edição mais rápidos &mdash; renomear, conectar, recolorir, área de transferência &mdash; sem sair da tela.',
         'connectors_drawing_heading' => 'Desenhando setas',
         'connectors_draw_step1' => '<strong>Arraste a partir de uma alça de borda</strong> &mdash; passe o cursor sobre qualquer etapa e pequenas alças aparecem nas bordas superior, inferior, esquerda e direita. Clique e arraste de uma alça até a etapa de destino; solte para soltar o conector. A maneira mais rápida para setas pontuais.',
-        'connectors_draw_step2' => '<strong>Use a ferramenta Conectar</strong> &mdash; clique no botão Conectar na barra de ferramentas para entrar no modo de conexão. Clique na etapa de origem, depois na etapa de destino, e um conector é desenhado entre elas. Clique em Conectar novamente (ou pressione <span class="pm-help-kbd">Esc</span>) para sair do modo.',
-        'connectors_draw_step3' => '<strong>Botão direito &rarr; Conectar a&hellip;</strong> &mdash; um modo de clicar para conectar: o cursor vira uma mira e um aviso azul aparece na parte inferior. O próximo clique em qualquer etapa as emparelha; um clique na tela vazia ou no fundo de uma raia, um clique com o botão direito ou pressionar <span class="pm-help-kbd">Esc</span> cancela.',
+        'connectors_draw_step2' => '<strong>Use a ferramenta Conectar</strong> &mdash; clique no botão Conectar na barra de ferramentas para entrar no modo de conexão. Clique na etapa de origem, depois na etapa de destino, e um conector é desenhado entre elas. Clique em Conectar novamente (ou pressione <span class="help-kbd">Esc</span>) para sair do modo.',
+        'connectors_draw_step3' => '<strong>Botão direito &rarr; Conectar a&hellip;</strong> &mdash; um modo de clicar para conectar: o cursor vira uma mira e um aviso azul aparece na parte inferior. O próximo clique em qualquer etapa as emparelha; um clique na tela vazia ou no fundo de uma raia, um clique com o botão direito ou pressionar <span class="help-kbd">Esc</span> cancela.',
         'connectors_draw_step4' => '<strong>Adicione um rótulo</strong> &mdash; dê um duplo clique em qualquer conector para adicionar ou editar um rótulo de texto curto. Útil em ramificações de Decisão (Sim / Não, Aprovado / Rejeitado, P1 / P2 / P3) e sempre que o significado de uma seta não for óbvio pelo contexto. Você não precisa escolher uma borda específica na etapa de destino &mdash; o Mapeador de processos escolhe a borda mais próxima automaticamente e refaz o roteamento sempre que qualquer uma das extremidades se move.',
         'connectors_menu_heading' => 'Menu do botão direito',
         'connectors_menu_intro' => 'Clique com o botão direito em qualquer etapa para um menu agrupado em quatro seções.',
@@ -253,25 +266,25 @@ return [
         'connectors_menu_card3_title' => 'Inverter conexão&hellip; · Excluir todas as conexões',
         'connectors_menu_card3_body' => '<em>Inverter conexão</em> abre um submenu listando cada seta de entrada ou saída da etapa com a seta de direção + o nome da outra extremidade &mdash; escolha uma para inverter sua direção. <em>Excluir todas as conexões</em> apaga cada seta incidente à etapa (com confirmação). Ambas ficam acinzentadas quando a etapa não tem conectores.',
         'connectors_menu_card4_title' => 'Recortar · Copiar · Colar · Duplicar',
-        'connectors_menu_card4_body' => '<em>Recortar</em> esmaece a origem na tela e a remove somente quando você <em>Colar</em> &mdash; recortar+colar se comporta como um movimento. <em>Copiar</em> mantém a área de transferência ativa para que você possa colar repetidamente. Colar solta a nova etapa na posição do cursor do clique direito. <em>Duplicar</em> desloca uma cópia 40px para baixo e à direita. <span class="pm-help-kbd">Esc</span> desfaz o recorte de uma origem pendente.',
+        'connectors_menu_card4_body' => '<em>Recortar</em> esmaece a origem na tela e a remove somente quando você <em>Colar</em> &mdash; recortar+colar se comporta como um movimento. <em>Copiar</em> mantém a área de transferência ativa para que você possa colar repetidamente. Colar solta a nova etapa na posição do cursor do clique direito. <em>Duplicar</em> desloca uma cópia 40px para baixo e à direita. <span class="help-kbd">Esc</span> desfaz o recorte de uma origem pendente.',
         'connectors_menu_card5_title' => 'Copiar formatação · Aplicar formatação',
         'connectors_menu_card5_body' => 'Apenas a &ldquo;pintura&rdquo; &mdash; <em>Copiar formatação</em> guarda a cor e o gradiente da etapa clicada com o botão direito. O menu de cada outra etapa então mostra <em>Aplicar formatação</em>, que pinta esses valores na próxima etapa em que você clicar com o botão direito. Posição, rótulo, tipo e tamanho não são copiados. Economiza muitas idas ao seletor de cores.',
         'connectors_menu_card6_title' => 'Excluir&hellip;',
-        'connectors_menu_card6_body' => 'Ação destrutiva destacada em vermelho na parte inferior &mdash; pede confirmação e depois remove a etapa e cada conector ligado a ela. (Para exclusão em massa de seleção múltipla, use a tecla <span class="pm-help-kbd">Delete</span>.)',
+        'connectors_menu_card6_body' => 'Ação destrutiva destacada em vermelho na parte inferior &mdash; pede confirmação e depois remove a etapa e cada conector ligado a ela. (Para exclusão em massa de seleção múltipla, use a tecla <span class="help-kbd">Delete</span>.)',
         'connectors_tip' => 'O roteamento dos conectores é recalculado toda vez que você arrasta uma etapa, de modo que as setas sempre correm até as bordas mais próximas. Você nunca precisa redesenhar uma seta apenas porque moveu uma caixa.',
         'arranging_heading' => 'Organizando &amp; editando',
         'arranging_intro' => 'Uma vez que as etapas estão posicionadas, a tela se comporta como qualquer outra ferramenta de diagramação &mdash; arrastar, selecionar múltiplos, ajustar, recolorir, excluir. Tudo se encaixa na grade subjacente de 20 pixels, de modo que o diagrama permanece organizado sem nenhum trabalho minucioso.',
         'arranging_step1' => '<strong>Arraste para mover</strong> &mdash; clique e arraste qualquer etapa para reposicioná-la. A etapa se encaixa na grade de pontos ao soltar. As setas conectadas são reroteadas automaticamente.',
-        'arranging_step2' => '<strong>Seleção múltipla</strong> &mdash; <span class="pm-help-kbd">Ctrl</span>+clique alterna etapas individuais dentro e fora da seleção, ou faça uma seleção retangular arrastando pela tela. A seleção retangular funciona no fundo da grade de pontos <em>e</em> sobre os fundos das raias, então continua funcionando em processos que preenchem a tela com raias. Pressione <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">A</span> para selecionar tudo. Uma vez que um grupo de etapas está selecionado, arraste qualquer uma delas e o restante segue.',
+        'arranging_step2' => '<strong>Seleção múltipla</strong> &mdash; <span class="help-kbd">Ctrl</span>+clique alterna etapas individuais dentro e fora da seleção, ou faça uma seleção retangular arrastando pela tela. A seleção retangular funciona no fundo da grade de pontos <em>e</em> sobre os fundos das raias, então continua funcionando em processos que preenchem a tela com raias. Pressione <span class="help-kbd">Ctrl</span>+<span class="help-kbd">A</span> para selecionar tudo. Uma vez que um grupo de etapas está selecionado, arraste qualquer uma delas e o restante segue.',
         'arranging_step3' => '<strong>Ajuste com as teclas de seta</strong> &mdash; uma vez que as etapas estão selecionadas, use as teclas de seta para movê-las uma casa da grade por vez. Útil para ajustes finos após um arraste aproximado.',
         'arranging_step4' => '<strong>O painel de detalhes</strong> &mdash; clicar em uma única etapa desliza para dentro um painel à direita com tudo o que você pode editar: rótulo, tipo, descrição, URL do link, cor e coordenadas x/y exatas. As atualizações são aplicadas instantaneamente conforme você digita. O painel só abre ao soltar o clique (não ao pressionar), de modo que pegar uma etapa para arrastá-la não faz o painel piscar.',
-        'arranging_step5' => '<strong>Excluir</strong> &mdash; pressione <span class="pm-help-kbd">Delete</span> ou <span class="pm-help-kbd">Backspace</span> para remover a seleção atual. Os conectores ligados a uma etapa excluída são removidos com ela.',
-        'arranging_tip' => 'Atalho de edição em linha: dê um duplo clique em qualquer etapa para renomeá-la sem abrir o painel de detalhes. Pressione <span class="pm-help-kbd">Enter</span> para confirmar ou <span class="pm-help-kbd">Esc</span> para cancelar.',
+        'arranging_step5' => '<strong>Excluir</strong> &mdash; pressione <span class="help-kbd">Delete</span> ou <span class="help-kbd">Backspace</span> para remover a seleção atual. Os conectores ligados a uma etapa excluída são removidos com ela.',
+        'arranging_tip' => 'Atalho de edição em linha: dê um duplo clique em qualquer etapa para renomeá-la sem abrir o painel de detalhes. Pressione <span class="help-kbd">Enter</span> para confirmar ou <span class="help-kbd">Esc</span> para cancelar.',
         'saving_heading' => 'Salvando &amp; carregando',
         'saving_intro' => 'Todo processo é armazenado no servidor e acessível pela barra lateral. Salvar é uma única ida e volta que captura o diagrama inteiro &mdash; etapas, conectores, posições e rótulos &mdash; em uma transação.',
-        'saving_step1' => '<strong>Salve o processo atual</strong> &mdash; clique no botão Salvar na barra de ferramentas ou pressione <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span>. O processo é recarregado do servidor após salvar, para que quaisquer IDs atribuídos pelo banco de dados sejam refletidos na tela.',
+        'saving_step1' => '<strong>Salve o processo atual</strong> &mdash; clique no botão Salvar na barra de ferramentas ou pressione <span class="help-kbd">Ctrl</span>+<span class="help-kbd">S</span>. O processo é recarregado do servidor após salvar, para que quaisquer IDs atribuídos pelo banco de dados sejam refletidos na tela.',
         'saving_step2' => '<strong>Alterne entre processos</strong> &mdash; clique em qualquer item na barra lateral para carregá-lo na tela. Use a caixa de pesquisa no topo da barra lateral para filtrar a lista quando você tiver muitos processos.',
-        'saving_step3' => '<strong>URLs marcáveis</strong> &mdash; a barra de endereços é atualizada para <span class="pm-help-kbd">process-mapper/?id=N</span> sempre que você abre um processo, de modo que cada diagrama tem uma URL que você pode compartilhar ou salvar nos favoritos. Colar um link direto no navegador leva diretamente àquele diagrama. Os botões <strong>voltar / avançar</strong> do navegador navegam entre os processos que você abriu na sessão atual.',
+        'saving_step3' => '<strong>URLs marcáveis</strong> &mdash; a barra de endereços é atualizada para <span class="help-kbd">process-mapper/?id=N</span> sempre que você abre um processo, de modo que cada diagrama tem uma URL que você pode compartilhar ou salvar nos favoritos. Colar um link direto no navegador leva diretamente àquele diagrama. Os botões <strong>voltar / avançar</strong> do navegador navegam entre os processos que você abriu na sessão atual.',
         'saving_step4' => '<strong>Excluir um processo</strong> &mdash; passe o cursor sobre um processo na barra lateral e clique no &times; que aparece. Você será solicitado a confirmar; o processo e todas as suas etapas e conectores são removidos permanentemente.',
         'saving_tip' => 'Salvar substitui todas as etapas e conectores de um processo em uma transação, de modo que o banco de dados sempre corresponde ao que está na tela. Não há estado de salvamento parcial com que se preocupar.',
         'export_heading' => 'Exportando',
@@ -289,6 +302,6 @@ return [
         'tip1' => '<strong>Use as formas de maneira consistente</strong><br>Reserve losangos para decisões reais, ovais para pontos de entrada/saída e documentos para artefatos tangíveis. Misturar formas torna os diagramas mais difíceis de ler.',
         'tip2' => '<strong>Rotule cada ramificação de Decisão</strong><br>Um losango sem rótulo com duas setas de saída deixa o leitor adivinhando. "Sim / Não", "Aprovado / Rejeitado", "P1 / P2-3 / P4-5" &mdash; deixe explícito.',
         'tip3' => '<strong>Fluxos da esquerda para a direita são mais fáceis de ler</strong><br>As pessoas leem da esquerda para a direita, de cima para baixo. Disponha o caminho ideal ao longo de um eixo horizontal e ramifique as decisões verticalmente &mdash; os dados de demonstração seguem essa convenção.',
-        'tip4' => '<strong>Ative o salvamento automático</strong><br>A barra de ferramentas tem um botão de salvamento automático que aciona um salvamento com atraso ~2 segundos após a última edição, com um indicador de status ao vivo ao lado. Se você preferir salvamentos manuais, o atalho é <span class="pm-help-kbd">Ctrl</span>+<span class="pm-help-kbd">S</span>.',
+        'tip4' => '<strong>Ative o salvamento automático</strong><br>A barra de ferramentas tem um botão de salvamento automático que aciona um salvamento com atraso ~2 segundos após a última edição, com um indicador de status ao vivo ao lado. Se você preferir salvamentos manuais, o atalho é <span class="help-kbd">Ctrl</span>+<span class="help-kbd">S</span>.',
     ],
 ];

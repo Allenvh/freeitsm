@@ -12,11 +12,12 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('service-status');
 
 try {
     $conn = connectToDatabase();
 
-    $sql = "SELECT id, name, colour, is_default, severity_order, display_order, is_active, created_datetime
+    $sql = "SELECT id, name, colour, is_default, severity_order, display_order, is_active, counts_as_downtime, created_datetime
             FROM service_impact_levels
             ORDER BY display_order, severity_order, name";
 

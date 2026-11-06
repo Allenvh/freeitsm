@@ -1,0 +1,193 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>task link replace — live check</title>
+<body>
+<pre id="out">running…</pre>
+<script>
+/**
+ * Replacing a task's linked ticket (Ed's request) — the LIVE run.
+ *
+ * A task holds ONE ticket and ONE change, so linking a second replaces the
+ * first. The search box used to disappear once something was linked, which read
+ * as "you can only link changes here". It now stays and asks before replacing.
+ *
+ * This drives the real Tasks page and checks, in order:
+ *   1. the ticket box is present on a task that ALREADY has a ticket
+ *   2. picking a different ticket raises a confirm naming the current one
+ *   3. DECLINING leaves the original link untouched  <- the point of the file
+ *   4. accepting actually replaces it
+ *   5. and it is put back afterwards, so the run leaves nothing changed
+ *
+ * HOW TO RUN — needs a signed-in analyst:
+ *   printf 'analyst_id|i:1;' > c:/wamp64/tmp/sess_rplive
+ *   http://localhost/freeitsm-app/tests/task-link-replace-live.html?sid=rplive&task=8
+ */
+const P = new URLSearchParams(location.search);
+if (P.get('sid')) document.cookie = 'PHPSESSID=' + P.get('sid') + '; path=/';
+const TASK = P.get('task') || '8';
+
+// 🔴 THIS FILE WRITES. It replaces a task's linked ticket and puts it back, and
+// a run that is cut short - a timeout, a closed tab - leaves the task on the
+// wrong ticket. From outside, a half-finished run looks exactly like a finished
+// one, which is how a link quietly ended up somewhere nobody put it during
+// development. So it refuses to run without being asked explicitly.
+const ALLOW_WRITE = P.get('allowwrite') === '1';
+
+const lines = [];
+const out = document.getElementById('out');
+function log(s) { lines.push(s); out.textContent = lines.join('\n'); }
+function ok(what, cond, detail) { log((cond ? 'PASS  ' : 'FAIL  ') + what + (cond || !detail ? '' : '  <- ' + detail)); }
+
+function waitFor(fn, ms) {
+  return new Promise(res => {
+    const t0 = Date.now();
+    (function poll() {
+      let v = null; try { v = fn(); } catch (e) {}
+      if (v) return res(v);
+      if (Date.now() - t0 > ms) return res(null);
+      setTimeout(poll, 200);
+    })();
+  });
+}
+
+(async () => {
+  if (!ALLOW_WRITE) {
+    log('This test REPLACES a real task\'s linked ticket and puts it back.\n' +
+        'It will not run without being asked explicitly. Add &allowwrite=1 to the URL,\n' +
+        'and check the task is back where it belongs when it finishes.');
+    return;
+  }
+
+  const f = document.createElement('iframe');
+  f.style.cssText = 'width:1500px;height:1000px;border:0;position:absolute;left:-9999px';
+  document.body.appendChild(f);
+  f.src = '../tasks/index.php?task=' + TASK;
+  // ⚠️ f.onload fires when the HTML arrives, NOT when the SPA has fetched the
+  // task and drawn the detail panel. Racing it made this file fail early and
+  // intermittently, reporting the feature broken when the page simply was not
+  // there yet. Wait for the thing being tested to exist instead.
+  const d = () => f.contentDocument;
+  const W = () => f.contentWindow;
+
+  const linked = await waitFor(() => {
+    if (!d()) return null;
+    const el = d().querySelector('#linkList .link-item');
+    return el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
+  }, 30000);
+  if (!linked) { log('FAIL  the task has nothing linked — pick a task that does'); return; }
+  log('the task starts linked to: ' + linked);
+
+  // ⚠️ NOT W().detailLinks. A top-level `let` is not a property of window, so
+  // reading it from outside the frame gives undefined — and the first run of
+  // this file did exactly that, compared every candidate ticket against
+  // "undefined", picked the ticket that was ALREADY linked, and then reported
+  // "it replaced the link with no warning" when nothing had been replaced at
+  // all. Ask the server what is linked instead.
+  const startState = await fetch('../api/tasks/get.php?id=' + TASK).then(r => r.json());
+  const originalId = startState.task && startState.task.ticket_id;
+  if (!originalId) { log('FAIL  could not read the task\'s current ticket'); return; }
+  log('confirmed with the server: ticket_id = ' + originalId);
+  ok('the ticket search box is shown even though a ticket is linked',
+     !!d().querySelector('input[oninput*="\'ticket\'"]'),
+     'the box is hidden, so there is no way to reach the confirm at all');
+
+  // A different ticket to swap to.
+  const other = await fetch('../api/tasks/search_links.php?type=ticket&q=TICKET')
+      .then(r => r.json())
+      .then(j => (j.results || []).find(r => String(r.id) !== String(originalId)));
+  if (!other) { log('FAIL  could not find a second ticket to swap to'); return; }
+
+  // --- 2 & 3: decline ---------------------------------------------------
+  W().linkItem('ticket_id', other.id);
+  await new Promise(r => setTimeout(r, 1200));  // showConfirm raises the dialog in a rAF
+  const dlg = await waitFor(() => {
+    const m = d().querySelector('.fitsm-confirm-overlay .fitsm-confirm-modal');
+    // ⚠️ Matched on the dialog's CONTENT, which showConfirm sets synchronously,
+    // NOT on the .active class it adds inside a requestAnimationFrame. Headless
+    // Chrome does not reliably service a rAF (or run the CSS transition that
+    // class drives) for an offscreen iframe, so keying on it made this file fail
+    // intermittently while the app was behaving perfectly. What actually matters
+    // is asserted against the DATABASE below: declining changes nothing,
+    // accepting changes exactly one thing.
+    return m && /replace|erstat|ersetzen/i.test(m.textContent) ? m : null;
+  }, 6000);
+  ok('picking a different ticket asks first', !!dlg, 'it replaced the link with no warning at all');
+  if (dlg) {
+    const txt = dlg.textContent.replace(/\s+/g, ' ');
+    ok('…and the warning names the ticket that would be unlinked',
+       txt.indexOf(String(originalId)) !== -1 || /TICKET-/.test(txt), txt.slice(0, 140));
+
+    const buttons = [...dlg.querySelectorAll('button')];
+    const cancel = buttons.find(b => !/replace|erstat/i.test(b.textContent));
+    cancel.click();
+    await new Promise(r => setTimeout(r, 1500));
+    const still = await fetch('../api/tasks/get.php?id=' + TASK).then(r => r.json());
+    ok('DECLINING leaves the original link exactly as it was',
+       String(still.task.ticket_id) === String(originalId),
+       'the link changed to ' + still.task.ticket_id + ' after Cancel');
+  }
+
+  // --- 4 & 5: accept, then put it back ----------------------------------
+  // ⚠️ showConfirm() adds the class that makes the dialog visible inside a
+  // requestAnimationFrame, and headless Chrome does not always service one
+  // promptly for an offscreen iframe. This step was intermittently reporting no
+  // dialog on the SECOND attempt while the first was fine - so it gets a longer
+  // settle and a longer poll. An intermittent failure is evidence, not noise:
+  // the product behaviour here was confirmed separately by clicking through the
+  // accept path by hand, and by this same step passing consistently in
+  // ticket-task-move-live.html.
+  W().linkItem('ticket_id', other.id);
+  await new Promise(r => setTimeout(r, 2000));
+  const dlg2 = await waitFor(() => {
+    const m = d().querySelector('.fitsm-confirm-overlay .fitsm-confirm-modal');
+    // ⚠️ Matched on the dialog's CONTENT, which showConfirm sets synchronously,
+    // NOT on the .active class it adds inside a requestAnimationFrame. Headless
+    // Chrome does not reliably service a rAF (or run the CSS transition that
+    // class drives) for an offscreen iframe, so keying on it made this file fail
+    // intermittently while the app was behaving perfectly. What actually matters
+    // is asserted against the DATABASE below: declining changes nothing,
+    // accepting changes exactly one thing.
+    return m && /replace|erstat|ersetzen/i.test(m.textContent) ? m : null;
+  }, 12000);
+  // ⚠️ An `if (dlg2)` here would SKIP silently when the dialog never appeared,
+  // and a skipped assertion reads exactly like a passing one in the output.
+  ok('the confirm appears again on a second attempt', !!dlg2,
+     'no dialog the second time — the accept path below was never exercised');
+  if (dlg2) {
+    [...dlg2.querySelectorAll('button')].find(b => /replace|erstat/i.test(b.textContent)).click();
+    await new Promise(r => setTimeout(r, 2500));
+    const now = await fetch('../api/tasks/get.php?id=' + TASK).then(r => r.json());
+    ok('accepting actually replaces it',
+       String(now.task.ticket_id) === String(other.id),
+       'still ' + now.task.ticket_id);
+  }
+
+  // ⚠️ Put the original link back. This file edits a REAL task; leaving it
+  // pointing somewhere else would be a change nobody asked for.
+  //
+  // 🔴 REFUSE to write a value that is not a real id. The first run sent
+  // Number(undefined) — NaN, which JSON.stringify turns into null — and so the
+  // "cleanup" UNLINKED the ticket it was supposed to restore. A cleanup that
+  // can destroy the thing it is protecting is worse than none.
+  if (!Number.isFinite(Number(originalId)) || Number(originalId) <= 0) {
+    log('FAIL  CLEANUP REFUSED: original ticket id was ' + originalId +
+        ' — restore the link by hand rather than letting this write a guess');
+    f.remove();
+    return;
+  }
+  // This page is not a FreeITSM page, so it sends the token the loaded page carries (S4).
+  await fetch('../api/tasks/save.php', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (f.contentDocument.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+    body: JSON.stringify({ id: Number(TASK), ticket_id: Number(originalId) })
+  });
+  await new Promise(r => setTimeout(r, 1200));
+  const back = await fetch('../api/tasks/get.php?id=' + TASK).then(r => r.json());
+  ok('CLEANUP: the task is back on its original ticket',
+     String(back.task.ticket_id) === String(originalId),
+     'LEFT ON ' + back.task.ticket_id + ' — set it back to ' + originalId + ' by hand');
+
+  f.remove();
+  log('\ndone');
+})();
+</script>
+</body>

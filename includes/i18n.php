@@ -33,9 +33,31 @@ class I18n {
         'nl'    => 'Nederlands',
         'it'    => 'Italiano',
         'pl'    => 'Polski',
+        // Norwegian ships as both written standards rather than one "Norwegian":
+        // bokmål is what ~85-90% write, nynorsk is co-official and dominant in the
+        // west. Naming them natively is the point of this map — a nynorsk reader
+        // offered only "Norsk" cannot tell which one they are about to get.
+        // ⚠️ A namespace file listed here must PARSE. loadNamespace() does
+        // `file_exists($file) ? (require $file) : []`, so a file that is simply
+        // ABSENT falls back to English cleanly and a locale may ship a subset —
+        // fr, nl and it each carry 17 of the 24 namespaces today. A file that
+        // exists and contains a parse error is a fatal on that module, which is
+        // the case this warning is actually about.
+        'nb'    => 'Norsk bokmål',
+        'nn'    => 'Norsk nynorsk',
+        // Danish, added for a Danish installation that reported two bugs in a
+        // week (#117 and the demo data account deletion). Norwegian is close
+        // enough to Danish to look right and be wrong, so nothing here was
+        // seeded from nb — every namespace is translated or absent.
+        'da'    => 'Dansk',
         'ru'    => 'Русский',
         'uk'    => 'Українська',
         'id'    => 'Bahasa Indonesia',
+        // Malay and Indonesian are two national standards of one language, so they
+        // sit together — but they are NOT interchangeable. Vocabulary diverges in
+        // exactly the register software uses (Indonesian borrowed from Dutch, Malay
+        // from English): kualitas/kualiti, perangkat lunak/perisian, unduh/muat turun.
+        'ms'    => 'Bahasa Melayu',
         'hi'    => 'हिन्दी',
         'bn'    => 'বাংলা',
         'ta'    => 'தமிழ்',
@@ -54,15 +76,21 @@ class I18n {
     /** Two-level cache: [locale][namespace] => array */
     private static $cache = [];
 
-    /** Set the active locale for this request. Unsupported values silently fall back to DEFAULT_LOCALE. */
+    /**
+     * Set the active locale for this request. Unsupported values silently fall back to DEFAULT_LOCALE.
+     *
+     * @param mixed $locale  a locale code from SUPPORTED_LOCALES, e.g. 'de' or 'pt-BR' (case-sensitive)
+     */
     public static function setLocale($locale) {
         self::$locale = array_key_exists($locale, self::SUPPORTED_LOCALES) ? $locale : self::DEFAULT_LOCALE;
     }
 
+    /** The locale this request is translating into. */
     public static function getLocale() {
         return self::$locale;
     }
 
+    /** Every supported locale code mapped to its native display name. */
     public static function getSupportedLocales() {
         return self::SUPPORTED_LOCALES;
     }
@@ -99,7 +127,7 @@ class I18n {
                     self::$locale = $value;
                     return;
                 }
-            } catch (Throwable $e) {
+            } catch (Throwable) {
                 // Fall through to header / default
             }
         }
@@ -121,6 +149,9 @@ class I18n {
      * Look up a translation by dotted key. Returns the key itself if nothing
      * resolves so missing strings are visible during development rather than
      * silently rendering as empty.
+     *
+     * @param mixed $key     'namespace.dotted.path', e.g. 'common.save' - the namespace is the lang/<locale>/ file
+     * @param mixed $params  placeholder values, name => value, substituted for {name} in the text
      */
     public static function t($key, $params = []) {
         $parts = explode('.', $key, 2);
@@ -141,12 +172,43 @@ class I18n {
     }
 
     /**
+     * Same lookup as t(), but for an EXPLICIT locale rather than this request's
+     * active one — for text that goes to someone who isn't the logged-in user,
+     * e.g. a Telegram bot reply in the customer's own language_code, where
+     * there is no session locale for them at all (the webhook has no session).
+     * An unsupported/unknown locale code falls back to English, same as t().
+     *
+     * @param mixed $locale  the recipient's locale code, e.g. 'de' or 'pt-BR'; unsupported gives English
+     * @param mixed $key     'namespace.dotted.path', as for t()
+     * @param mixed $params  placeholder values, name => value, substituted for {name} in the text
+     */
+    public static function tFor($locale, $key, $params = []) {
+        $parts = explode('.', $key, 2);
+        if (count($parts) < 2) {
+            return self::interpolate($key, $params);
+        }
+        [$namespace, $path] = $parts;
+
+        $locale = array_key_exists($locale, self::SUPPORTED_LOCALES) ? $locale : self::FALLBACK_LOCALE;
+        $value = self::resolve($namespace, $path, $locale);
+        if ($value === null && $locale !== self::FALLBACK_LOCALE) {
+            $value = self::resolve($namespace, $path, self::FALLBACK_LOCALE);
+        }
+        if ($value === null) {
+            return $key;
+        }
+        return self::interpolate($value, $params);
+    }
+
+    /**
      * Build a flat translations object for the JS bridge: pre-merges English
      * fallback into the active locale **per key** so the frontend can do plain
      * dotted lookups without re-implementing the fallback chain. Caller passes
      * the namespaces the current page actually needs.
      *
      *   I18n::exportForJs(['common', 'process-mapper'])
+     *
+     * @param array $namespaces  the lang/ file names the page needs; invalid names are skipped
      */
     public static function exportForJs(array $namespaces) {
         $out = [];
@@ -163,6 +225,13 @@ class I18n {
     // Internals
     // -----------------------------------------------------------------------
 
+    /**
+     * Looks up one dotted key in a namespace for a locale; null when it is missing or not a string.
+     *
+     * @param mixed $namespace  the lang/ file name, e.g. 'common'
+     * @param mixed $path       the rest of the key after the namespace, dot-separated, e.g. 'buttons.save'
+     * @param mixed $locale     the locale code to look in, e.g. 'de'
+     */
     private static function resolve($namespace, $path, $locale) {
         $translations = self::loadNamespace($namespace, $locale);
         $cursor = $translations;
@@ -173,6 +242,15 @@ class I18n {
         return is_string($cursor) ? $cursor : null;
     }
 
+    /**
+     * Loads lang/<locale>/<namespace>.php once per request and caches it.
+     *
+     * An unknown namespace or locale, a missing file, or a file that does not return an
+     * array gives an empty list.
+     *
+     * @param mixed $namespace  the lang/ file name without .php, e.g. 'common'; must match [a-z0-9_-]+
+     * @param mixed $locale     the locale code, i.e. the lang/ folder, e.g. 'pt-BR'
+     */
     private static function loadNamespace($namespace, $locale) {
         if (!self::isValidNamespace($namespace)) return [];
         if (!array_key_exists($locale, self::SUPPORTED_LOCALES)) return [];
@@ -188,12 +266,21 @@ class I18n {
         return self::$cache[$locale][$namespace];
     }
 
-    /** Only allow simple namespace identifiers — prevents path traversal via t() arg. */
+    /**
+     * Only allow simple namespace identifiers — prevents path traversal via t() arg.
+     *
+     * @param mixed $namespace  the namespace to check (untrusted - it becomes part of a file path)
+     */
     private static function isValidNamespace($namespace) {
         return is_string($namespace) && preg_match('/^[a-z0-9_-]+$/', $namespace) === 1;
     }
 
-    /** {name}-style substitution. Unknown placeholders are left as-is so they're visible. */
+    /**
+     * {name}-style substitution. Unknown placeholders are left as-is so they're visible.
+     *
+     * @param mixed $value   the translated text holding {name} placeholders
+     * @param mixed $params  name => value; a non-array or empty array leaves the text unchanged
+     */
     private static function interpolate($value, $params) {
         if (!is_array($params) || empty($params)) return $value;
         foreach ($params as $k => $v) {
@@ -202,7 +289,12 @@ class I18n {
         return $value;
     }
 
-    /** Overlay merges into base, recursively. Used to lay the active locale on top of English fallback. */
+    /**
+     * Overlay merges into base, recursively. Used to lay the active locale on top of English fallback.
+     *
+     * @param array $base     the English namespace array
+     * @param array $overlay  the active locale's namespace array; its keys win
+     */
     private static function deepMerge(array $base, array $overlay) {
         foreach ($overlay as $k => $v) {
             if (is_array($v) && isset($base[$k]) && is_array($base[$k])) {
@@ -214,7 +306,11 @@ class I18n {
         return $base;
     }
 
-    /** Pick the best supported locale from an Accept-Language header. Exact matches first, then primary subtag. */
+    /**
+     * Pick the best supported locale from an Accept-Language header. Exact matches first, then primary subtag.
+     *
+     * @param mixed $header  the browser's Accept-Language header, e.g. 'en-GB,en;q=0.9,de;q=0.8' (untrusted)
+     */
     private static function matchAcceptLanguage($header) {
         $entries = [];
         foreach (explode(',', $header) as $part) {
@@ -253,7 +349,15 @@ class I18n {
     }
 }
 
-/** Global shorthand. Recommended call style in views and modules. */
+/**
+ * Global shorthand. Recommended call style in views and modules.
+ *
+ * @param mixed $key     'namespace.dotted.path', e.g. 'common.save'
+ * @param mixed $params  placeholder values, name => value, substituted for {name} in the text
+ */
 function t($key, $params = []) {
     return I18n::t($key, $params);
 }
+
+// systemName() - the install's name for page titles (System -> Branding).
+require_once __DIR__ . '/system_name.php';

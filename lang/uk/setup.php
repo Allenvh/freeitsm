@@ -1,84 +1,120 @@
 <?php
 /**
- * Ukrainian (uk) — Setup Verification (first-run installer) strings.
+ * FreeITSM — setup strings (uk).
  *
- * Covers the single setup/index.php page: the page title, summary badges,
- * individual check names + details, the Database Verify section, the default
- * login block, the footer warning, and the JS strings used by runDbVerify().
+ * Keys mirror lang/en/setup.php exactly. A key absent here falls back to
+ * English at runtime, so this file may be incomplete without breaking
+ * anything. Check coverage with: php scripts/i18n_audit.php uk
  *
- * Dynamic bits (paths, driver names, extension names, raw error messages) are
- * passed in via {placeholder} params rather than translated.
+ * ⚠️ Placeholders like {name} and %d are substituted at runtime — printf
+ * tokens substitute BY POSITION, so their order must match English.
  */
+
 return [
-    'title'   => 'FreeITSM Встановлення',
+    'title' => 'FreeITSM Встановлення',
     'heading' => 'Перевірка встановлення',
-
+    'storage' => [
+        'heading' => 'Стоп — файли, які ви завантажуєте, видалятимуться під час кожного оновлення',
+        'explain' => 'FreeITSM працює в Docker, і деякі теки, у яких зберігаються завантажені файли, знаходяться всередині контейнера, а не на томі Docker. Оновлення FreeITSM перебудовує контейнер, і все, що всередині нього, при цьому видаляється. Ваша база даних розташована на томі й збережеться, тож після цього вкладення й далі відображатимуться у списках, хоча самих файлів уже не буде. Дві хвилини зараз назавжди запобігають цьому.',
+        'encryption_key' => 'Це стосується і вашого ключа шифрування. Якщо його втрачено, збережені паролі поштових скриньок та облікові дані інтеграцій не пошкоджуються, але їх уже неможливо прочитати, і кожен доведеться ввести вручну.',
+        'existing_install' => 'Ця інсталяція вже використовується, тому не просто додавайте це й перебудовуйте. Спершу скопіюйте теки з контейнера, що працює, — додавання тому не рятує файли, які вже всередині нього. Система → Інструменти налагодження → D013 дає команди в правильному порядку.',
+        'step1' => '1. Створіть новий файл із назвою docker-compose.override.yml у тій самій теці, що й docker-compose.yml, і вставте в нього точно наведений нижче вміст. Не редагуйте сам файл docker-compose.yml — під час оновлення він замінюється, і ваші зміни буде втрачено або вони заблокують оновлення. FreeITSM автоматично зчитує файл override.',
+        'step2' => '2. Застосуйте це:',
+        'foot' => 'Потім перезавантажте цю сторінку — це повідомлення зникне. Більше нічого змінювати не потрібно, і зробити це зараз нічого не коштує, бо в цих теках поки що нічого не зберігається.',
+        'foot_in_use' => 'Потім перезавантажте цю сторінку — це повідомлення зникне. Не пропускайте описаний вище крок копіювання: у цих теках уже є файли, і перебудова без попереднього копіювання видалить їх назавжди.',
+    ],
     'summary' => [
-        'passed'   => '{n} пройдено',
-        'warning'  => '{n} попередження',
+        'passed' => '{n} пройдено',
+        'warning' => '{n} попередження',
         'warnings' => '{n} попереджень',
-        'failed'   => '{n} не вдалося',
+        'failed' => '{n} не вдалося',
     ],
-
     'checks' => [
-        'config'         => 'config.php',
-        'db_config'      => 'db_config.php',
-        'db_connection'  => 'З\'єднання з базою даних',
+        'config' => 'config.php',
+        'db_config' => 'db_config.php',
+        'db_connection' => 'З\'єднання з базою даних',
         'encryption_key' => 'Ключ шифрування',
-        'ssl_verify'     => 'Перевірка SSL-сертифіката',
+        'ssl_verify' => 'Перевірка SSL-сертифіката',
+        'ca_bundle_ini' => 'CA-пакет у php.ini',
         'display_errors' => 'Відображення помилок',
-        'php_version'    => 'Версія PHP',
-        'php_extension'  => 'Розширення PHP: {ext}',
+        'php_version' => 'Версія PHP',
+        'php_extension' => 'Розширення PHP: {ext}',
+        'php_extension_optional' => 'Розширення PHP: {ext} (необов\'язково)',
+        'storage_persistence' => 'Збереження сховища (Docker)',
     ],
-
     'detail' => [
-        'found'                    => 'Знайдено',
-        'config_not_found'         => 'Не знайдено — скопіюйте config.php до кореневої теки застосунку',
-        'db_config_not_found'      => 'Не знайдено за шляхом: {path}',
-        'db_config_path_unset'     => 'Змінна $db_config_path не задана у config.php',
-        'db_connected'             => 'Підключено (драйвер: {driver})',
-        'db_constants_undefined'   => 'Константи бази даних не визначені — перевірте db_config.php',
-        'encryption_key_missing'   => 'Не знайдено за шляхом: {path} — потрібен для шифрування чутливих налаштувань',
+        'found' => 'Знайдено',
+        'storage_persisted' => 'Усі теки із завантаженими файлами розташовані на сховищі, яке переживає перебудову',
+        'storage_at_risk' => 'НЕ на томі Docker і очищується під час кожної перебудови: {dirs} — додайте том для кожної з них зараз, доки в них ще нічого не зберігається',
+        'storage_at_risk_masked' => '{n} тек із завантаженими файлами не переживуть оновлення',
+        'config_not_found' => 'Не знайдено — скопіюйте config.php до кореневої теки застосунку',
+        'db_config_not_found' => 'Не знайдено за шляхом: {path}',
+        'db_config_path_unset' => 'Змінна $db_config_path не задана у config.php',
+        'db_connected' => 'Підключено (драйвер: {driver})',
+        'db_constants_undefined' => 'Константи бази даних не визначені — перевірте db_config.php',
+        'encryption_key_missing' => 'Не знайдено за шляхом: {path} — потрібен для шифрування чутливих налаштувань',
         'encryption_key_undefined' => 'ENCRYPTION_KEY_PATH не визначено у includes/encryption.php',
-        'ssl_enabled'              => 'Увімкнено',
-        'ssl_disabled'             => 'Вимкнено — увімкніть для продуктивного середовища (встановіть SSL_VERIFY_PEER у значення true у config.php)',
-        'ssl_undefined'            => 'SSL_VERIFY_PEER не визначено у config.php',
-        'display_errors_enabled'   => 'Увімкнено — вимкніть для продуктивного середовища (встановіть display_errors у значення 0 у config.php)',
-        'display_errors_disabled'  => 'Вимкнено',
-        'php_version_ok'           => '{version}',
-        'php_version_too_low'      => '{version} — потрібна PHP 7.4 або вище',
-        'extension_loaded'         => 'Завантажено',
-        'extension_not_loaded'     => 'Не завантажено — увімкніть у php.ini',
-        'pdo_mysql_not_loaded'     => 'Не завантажено — увімкніть pdo_mysql у php.ini',
+        'ssl_enabled' => 'Увімкнено',
+        'ssl_verified' => 'Увімкнено і працює — реальний HTTPS-запит пройшов перевірку сертифіката (набір CA: {bundle})',
+        'ssl_broken' => 'Увімкнено, але сервер не зміг перевірити сертифікат — вихідні HTTPS-запити (пошта, AI, webhook, вхід) не працюватимуть. Найпростіше рішення: покладіть файл cacert.pem у теку includes/ застосунку (завантажте з https://curl.se/ca/cacert.pem) — зміни в php.ini не потрібні. Помилка: {error}',
+        'ssl_untested' => 'Увімкнено, але виконати тестовий запит не вдалося (немає вихідної мережі?), тож перевірку підтвердити не можна. Помилка: {error}',
+        'ssl_bundle_system' => 'системне сховище',
+        'help_link' => 'Як це виправити — довідник із сертифікатів HTTPS →',
+        'ca_ini_status' => 'curl.cainfo: {curl} · openssl.cafile: {ossl}',
+        'ca_ini_none' => 'не встановлено',
+        'ca_ini_missing' => '{path} (файл відсутній!)',
+        'ca_ini_note_fix' => ' — виправте шлях або закоментуйте цей параметр у php.ini.',
+        'ca_ini_note_fallback' => ' — необов\'язково: FreeITSM використовує вбудований список CA (Windows) або довірене сховище ОС (Linux) як резерв. Примітка: це стосується PHP веб-сервера; фоновий обробник використовує окремий CLI php.ini.',
+        'ssl_disabled' => 'Вимкнено — увімкніть для продуктивного середовища (встановіть SSL_VERIFY_PEER у значення true у config.php)',
+        'ssl_undefined' => 'SSL_VERIFY_PEER не визначено у config.php',
+        'display_errors_enabled' => 'Увімкнено — вимкніть для продуктивного середовища (встановіть display_errors у значення 0 у config.php)',
+        'display_errors_disabled' => 'Вимкнено',
+        'php_version_ok' => '{version}',
+        'php_version_too_low' => '{version} — потрібна PHP 8.1 або вище',
+        'php_version_eol' => '{version} — ще підтримується, але ця версія не отримує оновлень безпеки відколи досягла кінця терміну підтримки. Рекомендовано PHP 8.3 або 8.4.',
+        'extension_loaded' => 'Завантажено',
+        'extension_not_loaded' => 'Не завантажено — увімкніть у php.ini',
+        'pdo_mysql_not_loaded' => 'Не завантажено — увімкніть pdo_mysql у php.ini',
+        'imap_not_loaded' => 'Не завантажено — потрібно лише для базових поштових скриньок IMAP/SMTP. PHP 8.4 більше не постачає це розширення разом із собою; встановіть його через PECL, якщо використовуєте таку скриньку.',
+        'db_config_not_found_masked' => 'Не знайдено за шляхом, указаним у config.php',
+        'ssl_verified_masked' => 'Увімкнено і працює — реальний HTTPS-запит пройшов перевірку сертифіката',
+        'ssl_broken_masked' => 'Увімкнено, але сервер не зміг перевірити сертифікат — вихідні HTTPS-запити (пошта, AI, webhook, вхід) не працюватимуть. Увійдіть як адміністратор, щоб побачити помилку.',
+        'ssl_untested_masked' => 'Увімкнено, але виконати тестовий запит не вдалося, тож перевірку підтвердити не можна.',
+        'db_error_masked' => 'Не вдалося підключитися — увійдіть як адміністратор, щоб побачити повну помилку',
+        'encryption_key_missing_masked' => 'Не знайдено — потрібен для шифрування конфіденційних налаштувань',
+        'ca_ini_masked_ok' => 'Налаштовано',
+        'ca_ini_masked_broken' => 'Установлено, але вказує на файл, якого немає — виправте шлях або закоментуйте цей параметр у php.ini.',
+        'php_version_ok_masked' => 'Відповідає вимогам',
+        'php_version_too_low_masked' => 'Застаріла версія — потрібен PHP 8.1 або новіший',
+        'php_version_eol_masked' => 'Підтримується, але ця версія досягла кінця терміну підтримки і більше не отримує оновлень безпеки. Увійдіть як адміністратор, щоб побачити версію.',
     ],
-
+    'locked' => [
+        'notice' => 'Налаштування на цій інсталяції завершено, тому шляхи, помилки підключення та облікові дані приховано. Увійдіть як адміністратор, щоб побачити повні деталі.',
+    ],
     'db_verify' => [
         'heading' => 'Перевірка бази даних',
-        'intro'   => 'Перевірте та автоматично створіть відсутні таблиці або стовпці в базі даних.',
-        'run'     => 'Запустити',
+        'intro' => 'Перевірте та автоматично створіть відсутні таблиці або стовпці в базі даних.',
+        'run' => 'Запустити',
     ],
-
     'login' => [
-        'heading'  => 'Вхід за замовчуванням',
-        'intro'    => 'Обліковий запис адміністратора за замовчуванням створюється під час запуску перевірки бази даних.',
+        'heading' => 'Вхід за замовчуванням',
+        'intro' => 'Обліковий запис адміністратора за замовчуванням створюється під час запуску перевірки бази даних.',
         'username' => 'Ім\'я користувача:',
         'password' => 'Пароль:',
     ],
-
     'footer' => [
-        'warning'   => 'Після переведення системи в продуктивний режим видаліть теку {folder} з міркувань безпеки.',
+        'warning' => 'Після переведення системи в продуктивний режим видаліть теку {folder} з міркувань безпеки.',
         'signature' => 'Перевірка встановлення FreeITSM',
     ],
-
     'js' => [
-        'running'        => 'Виконується...',
-        'run'            => 'Запустити',
+        'running' => 'Виконується...',
+        'run' => 'Запустити',
         'tables_checked' => '{n} таблиць перевірено:',
-        'ok'             => '{n} гаразд',
-        'created'        => '{n} створено',
-        'updated'        => '{n} оновлено',
-        'errors'         => '{n} помилок',
-        'unknown_error'  => 'Невідома помилка',
-        'verify_failed'  => 'Не вдалося виконати перевірку БД: {error}',
+        'ok' => '{n} гаразд',
+        'created' => '{n} створено',
+        'updated' => '{n} оновлено',
+        'errors' => '{n} помилок',
+        'unknown_error' => 'Невідома помилка',
+        'verify_failed' => 'Не вдалося виконати перевірку БД: {error}',
     ],
 ];

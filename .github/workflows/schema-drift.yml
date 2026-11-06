@@ -1,0 +1,85 @@
+# Stop a schema-drift bug reaching somebody else's installation.
+#
+# FreeITSM describes its schema in more than one place, on purpose:
+#
+#   database/freeitsm.sql        builds a NEW install
+#   includes/db_verify_schema.php  upgrades an EXISTING one
+#   includes/db_verify_indexes.php a GENERATED mirror of the indexes in
+#                                  freeitsm.sql, used to restore any that a
+#                                  grown install is missing
+#
+# When they disagree, a fresh install and an upgraded one end up with different
+# databases - and Database Verification says so, on the administrator's screen,
+# in language only the maintainer can act on.
+#
+# 🔴 THIS HAS SHIPPED THREE TIMES. GH #113 (sixteen indexes missing from the
+# list), then again in 1.6, then again in 1.9. Each time the response was a
+# better tool: `gen_db_verify_indexes.php --check` exists and does exactly the
+# right thing. Nothing was obliged to run it, so it caught none of them. The
+# checklist in WRITEUP.local.md has had a box for this the whole time.
+#
+# 🔑 A guard a human has to remember is not a guard. That is what this file is
+# for, and it is the only part of the third fix that is actually new.
+#
+# Runs on every push and pull request, not just on a tag: catching it at the
+# tag would mean unpicking a release, and catching it in somebody's install
+# means they found it for us.
+
+name: Schema drift
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No database and no extensions needed - every check here reads files.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      # 1. The generated index mirror must match freeitsm.sql exactly.
+      #    Names the offending indexes and exits non-zero.
+      - name: Index backfill list is in step with freeitsm.sql
+        run: php scripts/gen_db_verify_indexes.php --check
+
+      # 2. Regenerating must be a no-op. --check compares the rendered file, so
+      #    this also catches a hand-edit that happens to parse to the same
+      #    indexes - which is how the last one got in: two rows were added to
+      #    the generated file by hand instead of to the schema.
+      - name: Regenerating changes nothing
+        run: |
+          php scripts/gen_db_verify_indexes.php
+          if ! git diff --quiet -- includes/db_verify_indexes.php; then
+            echo "::error::includes/db_verify_indexes.php is not what the generator produces."
+            echo "Run: php scripts/gen_db_verify_indexes.php   then commit BOTH files."
+            git --no-pager diff -- includes/db_verify_indexes.php
+            exit 1
+          fi
+
+      # 3. The hand-maintained pair: freeitsm.sql vs the Verification schema.
+      #    Both are sources of truth and can disagree in either direction, each
+      #    breaking a different install.
+      - name: freeitsm.sql and Database Verification agree about columns
+        run: |
+          php -r '
+            require "includes/db_verify_column_parse.php";
+            $p = dbVerifyColumnSelfCheck();
+            if (!$p) { echo "No column drift.\n"; exit(0); }
+            fwrite(STDERR, "::error::freeitsm.sql and includes/db_verify_schema.php disagree:\n");
+            foreach ($p as $x) fwrite(STDERR, "  - $x\n");
+            exit(1);
+          '
+
+      # 4. The parser itself, with its positive controls - "no drift" is only
+      #    worth anything if the checker can still report drift when there is
+      #    some, and a FULLTEXT index read as an ordinary KEY would keep the
+      #    count looking right.
+      - name: Index parser tests
+        run: php tests/db-verify-indexes/run.php

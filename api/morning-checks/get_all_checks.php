@@ -12,11 +12,16 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('morning-checks');
 
 try {
     $conn = connectToDatabase();
 
-    $sql = "SELECT CheckID, CheckName, CheckDescription, IsActive, SortOrder, CreatedDate, ModifiedDate
+    // GroupID/AssignedAnalystID (discussion #64) are needed by the settings edit
+    // modal to pre-select the pickers. Without them the modal would open showing
+    // "no group" for a grouped check and quietly clear the grouping on save.
+    $sql = "SELECT CheckID, CheckName, CheckDescription, IsActive, SortOrder,
+                   GroupID, AssignedAnalystID, CreatedDate, ModifiedDate
             FROM morningChecks_Checks
             ORDER BY SortOrder, CheckName";
 
@@ -29,6 +34,10 @@ try {
         $check['CheckID'] = (int)$check['CheckID'];
         $check['IsActive'] = (bool)$check['IsActive'];
         $check['SortOrder'] = (int)$check['SortOrder'];
+        // Cast only when set — null must stay null so the picker shows "no group"
+        // rather than selecting whichever option happens to have id 0.
+        $check['GroupID'] = $check['GroupID'] !== null ? (int)$check['GroupID'] : null;
+        $check['AssignedAnalystID'] = $check['AssignedAnalystID'] !== null ? (int)$check['AssignedAnalystID'] : null;
     }
 
     echo json_encode($checks);

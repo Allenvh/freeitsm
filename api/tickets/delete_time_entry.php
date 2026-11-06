@@ -1,52 +1,31 @@
 <?php
 /**
- * API Endpoint: Soft-delete a ticket time entry (sets is_active = 0)
- *
- * Only the entry's own analyst can delete it. Soft-delete keeps the row for
- * audit / restore — get_time_entries.php filters on is_active = 1 so deleted
- * rows just disappear from the UI.
+ * API Endpoint: Soft-delete a ticket time entry (sets is_active = 0).
+ * Thin UI adapter over TicketsService::deleteTimeEntry — only the entry's own
+ * analyst may delete it (restrictToOwner = true). The entry id alone identifies
+ * it; the service resolves + scope-gates the owning ticket.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
+require_once '../../includes/services/tickets.php';
 
 header('Content-Type: application/json');
-
-if (!isset($_SESSION['analyst_id'])) {
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
-    exit;
-}
+if (!isset($_SESSION['analyst_id'])) { echo json_encode(['success' => false, 'error' => 'Not authenticated']); exit; }
+requireModuleAccessJson('tickets');
 
 try {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $entry_id = isset($data['id']) ? (int)$data['id'] : null;
-
-    if (!$entry_id) {
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+    $entryId = isset($data['id']) ? (int)$data['id'] : null;
+    if (!$entryId) {
         throw new Exception('Entry ID is required');
     }
-
     $conn = connectToDatabase();
-
-    $existing = $conn->prepare("SELECT analyst_id, ticket_id FROM ticket_time_entries WHERE id = ? AND is_active = 1");
-    $existing->execute([$entry_id]);
-    $row = $existing->fetch(PDO::FETCH_ASSOC);
-    if (!$row) {
-        throw new Exception('Time entry not found');
-    }
-    // Multi-tenancy: the entry's ticket must be one this analyst can access.
-    if (!analystCanAccessTicket($conn, (int)$_SESSION['analyst_id'], (int)$row['ticket_id'])) {
-        throw new Exception('Time entry not found');
-    }
-    if ((int)$row['analyst_id'] !== (int)$_SESSION['analyst_id']) {
-        throw new Exception('You can only delete your own time entries');
-    }
-
-    $stmt = $conn->prepare("UPDATE ticket_time_entries SET is_active = 0 WHERE id = ?");
-    $stmt->execute([$entry_id]);
-
+    TicketsService::deleteTimeEntry($conn, ActorContext::fromSession($conn), $entryId, null, true);
     echo json_encode(['success' => true]);
-
+} catch (ServiceError $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

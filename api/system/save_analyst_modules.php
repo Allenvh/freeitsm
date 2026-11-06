@@ -7,7 +7,11 @@
  */
 session_start();
 require_once '../../config.php';
+require_once '../../includes/admin_api_guard.php'; // System admins only (issue #34)
 require_once '../../includes/functions.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -33,22 +37,20 @@ if (!is_array($modules)) {
 try {
     $conn = connectToDatabase();
 
-    // Delete existing assignments for this analyst
+    // Delete existing assignments for this analyst - keeping each one's level (#180),
+    // so re-saving the list does not turn a Read only grant into Full.
+    $levels = moduleGrantLevels($conn, 'analyst', $analyst_id);
     $delSql = "DELETE FROM analyst_modules WHERE analyst_id = ?";
     $delStmt = $conn->prepare($delSql);
     $delStmt->execute([$analyst_id]);
 
-    // If modules array is not empty, insert new assignments
+    // If modules array is not empty, insert new assignments. (System is no longer a
+    // module grant — it's gated by is_admin, issue #34 — so it's never force-added.)
     if (!empty($modules)) {
-        // Always ensure system is included
-        if (!in_array('system', $modules)) {
-            $modules[] = 'system';
-        }
-
-        $insSql = "INSERT INTO analyst_modules (analyst_id, module_key) VALUES (?, ?)";
+        $insSql = "INSERT INTO analyst_modules (analyst_id, module_key, access_level) VALUES (?, ?, ?)";
         $insStmt = $conn->prepare($insSql);
         foreach ($modules as $moduleKey) {
-            $insStmt->execute([$analyst_id, $moduleKey]);
+            $insStmt->execute([$analyst_id, $moduleKey, ($levels[$moduleKey] ?? 'full') === 'read' ? 'read' : 'full']);
         }
     }
 

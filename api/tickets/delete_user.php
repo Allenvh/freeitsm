@@ -8,6 +8,10 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/tenancy.php';
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 header('Content-Type: application/json');
 
@@ -15,6 +19,7 @@ if (!isset($_SESSION['analyst_id'])) {
     echo json_encode(['success' => false, 'error' => 'Not authenticated']);
     exit;
 }
+requireModuleAccessJson('tickets');
 
 $data = json_decode(file_get_contents('php://input'), true);
 $id = isset($data['id']) ? (int)$data['id'] : 0;
@@ -26,6 +31,30 @@ if ($id <= 0) {
 
 try {
     $conn = connectToDatabase();
+
+    // ⚠️ THIS CHECK MUST STAY ABOVE THE TWO COUNTS BELOW.
+    //
+    // This endpoint had no company check of any kind: any signed-in analyst with the
+    // tickets module could delete any customer contact on the install, including one
+    // belonging to a company they cannot see. It is the sibling of the save_user.php
+    // hole (S1) — same table, same module, opposite verb — and was reported by Erlend
+    // Volden alongside it.
+    //
+    // Position is half the fix. The two "cannot delete, this user is on N ticket(s)"
+    // refusals below are computed from a plain `WHERE user_id = ?` with no tenancy
+    // clause, so running them first would answer "does contact 412 exist, and how much
+    // work is attached to them?" for every company on the install, and answer it
+    // accurately, before refusing. That is a cross-tenant oracle whether or not the
+    // DELETE is ever reached. Nothing may be measured about a contact the caller
+    // cannot reach.
+    //
+    // The refusal deliberately matches the one for an id that does not exist, exactly
+    // as save_user.php's edit guard does: a scoped analyst must not be able to tell
+    // "not yours" from "not there".
+    if (!analystCanAccessUser($conn, (int)$_SESSION['analyst_id'], $id)) {
+        echo json_encode(['success' => false, 'error' => 'User not found']);
+        exit;
+    }
 
     $stmt = $conn->prepare("SELECT COUNT(*) FROM tickets WHERE user_id = ?");
     $stmt->execute([$id]);

@@ -1,6 +1,6 @@
 <?php
 /**
- * Network Mapper — Diagrams landing page.
+ * Network Mapper â Diagrams landing page.
  *
  * Lists the current (leaf) version of every diagram chain. From here the user
  * either opens an existing diagram or creates a brand-new one. Versions of a
@@ -10,57 +10,64 @@ session_start();
 require_once '../config.php';
 require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../auth/login.php');
     exit;
 }
+
+requireModuleAccess('network-mapper');
 
 $current_page = 'diagrams';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'network-mapper'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('network-mapper.index.browser_title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('network-mapper')); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
     <style>
-        body { background: #f5f5f5; height: 100vh; overflow: hidden; }
+        body { --accent: var(--nm-accent, #06b6d4); background: var(--app-bg, #f5f5f5); height: 100vh; overflow: hidden; }
 
         .nm-page {
             height: calc(100vh - 60px);
             display: flex;
             flex-direction: column;
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
         }
 
         .nm-toolbar {
             padding: 16px 24px;
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
+            background: var(--surface, #fff);
+            border-bottom: 1px solid var(--border, #e5e7eb);
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
         }
-        .nm-toolbar h1 { margin: 0; font-size: 20px; color: #111827; }
+        .nm-toolbar h1 { margin: 0; font-size: 20px; color: var(--text, #111827); }
         .nm-toolbar .actions { display: flex; gap: 12px; align-items: center; }
         .nm-toolbar input[type="text"] {
             padding: 8px 12px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border, #d1d5db);
             border-radius: 4px;
             font-size: 13px;
             width: 260px;
         }
-        .nm-toolbar input[type="text"]:focus { outline: none; border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,0.12); }
+        .nm-toolbar input[type="text"]:focus { outline: none; border-color: var(--nm-accent, #06b6d4); box-shadow: 0 0 0 3px rgba(6,182,212,0.12); }
 
         .nm-btn {
             padding: 8px 16px;
-            background: #06b6d4;
+            background: var(--nm-accent, #06b6d4);
             color: white;
             border: none;
             border-radius: 4px;
@@ -68,9 +75,9 @@ $translationNamespaces = ['common', 'network-mapper'];
             font-weight: 500;
             font-size: 13px;
         }
-        .nm-btn:hover { background: #0891b2; }
-        .nm-btn.secondary { background: white; color: #374151; border: 1px solid #d1d5db; }
-        .nm-btn.secondary:hover { background: #f9fafb; }
+        .nm-btn:hover { background: var(--nm-accent-hover, #0891b2); }
+        .nm-btn.secondary { background: var(--surface, #fff); color: var(--text-muted, #374151); border: 1px solid var(--border, #d1d5db); }
+        .nm-btn.secondary:hover { background: var(--surface-hover, #f9fafb); }
         .nm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .nm-list-wrap { flex: 1; overflow: auto; padding: 20px 24px 32px 24px; }
@@ -82,8 +89,8 @@ $translationNamespaces = ['common', 'network-mapper'];
         }
 
         .nm-card {
-            background: white;
-            border: 1px solid #e5e7eb;
+            background: var(--surface, #fff);
+            border: 1px solid var(--border, #e5e7eb);
             border-radius: 8px;
             padding: 16px 18px;
             cursor: pointer;
@@ -93,7 +100,7 @@ $translationNamespaces = ['common', 'network-mapper'];
             gap: 10px;
         }
         .nm-card:hover {
-            border-color: #06b6d4;
+            border-color: var(--nm-accent, #06b6d4);
             box-shadow: 0 8px 18px rgba(6,182,212,0.16);
             transform: translateY(-3px);
         }
@@ -106,13 +113,13 @@ $translationNamespaces = ['common', 'network-mapper'];
         .nm-card-title {
             font-size: 15px;
             font-weight: 600;
-            color: #111827;
+            color: var(--text, #111827);
             margin: 0;
             line-height: 1.3;
         }
         .nm-version-pill {
             display: inline-block;
-            background: #ecfeff;
+            background: var(--nm-accent-soft, #ecfeff);
             color: #0e7490;
             border: 1px solid #a5f3fc;
             padding: 2px 8px;
@@ -122,7 +129,7 @@ $translationNamespaces = ['common', 'network-mapper'];
             white-space: nowrap;
         }
         .nm-card-desc {
-            color: #6b7280;
+            color: var(--text-dim, #6b7280);
             font-size: 13px;
             line-height: 1.5;
             display: -webkit-box;
@@ -130,41 +137,41 @@ $translationNamespaces = ['common', 'network-mapper'];
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-        .nm-card-desc.empty { color: #9ca3af; font-style: italic; }
+        .nm-card-desc.empty { color: var(--text-faint, #9ca3af); font-style: italic; }
         .nm-card-meta {
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 12px;
-            color: #6b7280;
+            color: var(--text-dim, #6b7280);
             padding-top: 8px;
-            border-top: 1px solid #f3f4f6;
+            border-top: 1px solid var(--border-soft, #f3f4f6);
         }
         .nm-card-stats {
             display: flex;
             gap: 12px;
         }
-        .nm-card-stats span strong { color: #374151; }
+        .nm-card-stats span strong { color: var(--text-muted, #374151); }
         .nm-card-actions { display: flex; gap: 6px; }
         .nm-card-action-btn {
             background: transparent;
-            border: 1px solid #e5e7eb;
-            color: #6b7280;
+            border: 1px solid var(--border, #e5e7eb);
+            color: var(--text-dim, #6b7280);
             padding: 4px 8px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 11px;
             transition: all 0.12s;
         }
-        .nm-card-action-btn:hover { background: #f9fafb; color: #111827; border-color: #d1d5db; }
+        .nm-card-action-btn:hover { background: var(--surface-hover, #f9fafb); color: var(--text, #111827); border-color: var(--border, #d1d5db); }
         .nm-card-action-btn.danger:hover { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
 
         .nm-empty {
             text-align: center;
             padding: 80px 40px;
-            color: #6b7280;
+            color: var(--text-dim, #6b7280);
         }
-        .nm-empty h2 { color: #374151; font-weight: 600; margin: 0 0 8px 0; }
+        .nm-empty h2 { color: var(--text-muted, #374151); font-weight: 600; margin: 0 0 8px 0; }
         .nm-empty p { margin: 0 0 18px 0; font-size: 14px; }
 
         /* Modal */
@@ -178,7 +185,7 @@ $translationNamespaces = ['common', 'network-mapper'];
         }
         .nm-modal-overlay.active { display: flex; }
         .nm-modal {
-            background: white;
+            background: var(--surface, #fff);
             border-radius: 8px;
             width: 480px;
             max-width: 95vw;
@@ -188,15 +195,15 @@ $translationNamespaces = ['common', 'network-mapper'];
         }
         .nm-modal-header {
             padding: 16px 22px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--border, #e5e7eb);
             font-weight: 600;
             font-size: 16px;
-            color: #111827;
+            color: var(--text, #111827);
         }
         .nm-modal-body { padding: 22px; flex: 1; overflow-y: auto; }
         .nm-modal-actions {
             padding: 14px 22px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid var(--border, #e5e7eb);
             display: flex;
             gap: 10px;
             justify-content: flex-end;
@@ -206,13 +213,13 @@ $translationNamespaces = ['common', 'network-mapper'];
             display: block;
             font-size: 13px;
             font-weight: 500;
-            color: #374151;
+            color: var(--text-muted, #374151);
             margin-bottom: 5px;
         }
         .nm-form-group input, .nm-form-group textarea {
             width: 100%;
             padding: 9px 12px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border, #d1d5db);
             border-radius: 4px;
             font-size: 14px;
             font-family: inherit;
@@ -221,24 +228,30 @@ $translationNamespaces = ['common', 'network-mapper'];
         .nm-form-group textarea { resize: vertical; min-height: 70px; }
         .nm-form-group input:focus, .nm-form-group textarea:focus {
             outline: none;
-            border-color: #06b6d4;
+            border-color: var(--nm-accent, #06b6d4);
             box-shadow: 0 0 0 3px rgba(6,182,212,0.12);
         }
-        .nm-form-group small { color: #6b7280; font-size: 12px; display: block; margin-top: 4px; }
+        .nm-form-group small { color: var(--text-dim, #6b7280); font-size: 12px; display: block; margin-top: 4px; }
+
+        /* Pale-red danger-hover wash → dark red in dark mode so it does not glow. */
+        [data-theme-mode="dark"] .nm-card-action-btn.danger:hover { background: #3a1a1a; color: #fca5a5; border-color: #5a2a2a; }
     </style>
+    <!-- Mobile layer LAST, so its @media rules win the ties against the block
+         above rather than losing on document order (Techniques §9). -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="network-mapper" data-mobile-page="nm-list">
     <?php include 'includes/header.php'; ?>
+    <?php /* The action row (#185) is what was the list's toolbar: title, filter,
+             New. */
+          require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('network-mapper.index.heading'), [actionRowNew('openNewModal()', t('network-mapper.index.new'))], [
+              'accent' => 'nm',
+              'extra' => '<input type="text" id="searchInput" class="action-row-search" placeholder="'
+                       . htmlspecialchars(t('network-mapper.index.filter_placeholder')) . '" oninput="filterDiagrams(this.value)">',
+          ]); ?>
 
     <div class="nm-page">
-        <div class="nm-toolbar">
-            <h1><?php echo htmlspecialchars(t('network-mapper.index.heading')); ?></h1>
-            <div class="actions">
-                <input type="text" id="searchInput" placeholder="<?php echo htmlspecialchars(t('network-mapper.index.filter_placeholder')); ?>" oninput="filterDiagrams(this.value)">
-                <button class="nm-btn" onclick="openNewModal()">+ <?php echo htmlspecialchars(t('network-mapper.index.new')); ?></button>
-            </div>
-        </div>
-
         <div class="nm-list-wrap">
             <div id="diagramListContainer">
                 <div class="nm-empty"><p><?php echo htmlspecialchars(t('network-mapper.index.loading')); ?></p></div>
@@ -273,7 +286,9 @@ $translationNamespaces = ['common', 'network-mapper'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
     <script>
         const API = '../api/network-mapper/';
         let allDiagrams = [];
@@ -309,7 +324,7 @@ $translationNamespaces = ['common', 'network-mapper'];
 
         function diagramCardHtml(d) {
             const desc = d.description ? escapeHtml(d.description) : '<span class="empty">' + escapeHtml(t('network-mapper.index.no_description')) + '</span>';
-            const updated = d.updated_datetime ? new Date(d.updated_datetime.replace(' ', 'T') + 'Z').toLocaleString() : '';
+            const updated = d.updated_datetime ? fmtDateTime(d.updated_datetime) : '';
             const author = d.author_name ? d.author_name : t('network-mapper.index.author_unknown');
             const versionLabel = d.version_label ? escapeHtml(d.version_label) : escapeHtml(t('network-mapper.index.version_unknown'));
             const versionCount = d.version_count > 1 ? escapeHtml(t('network-mapper.index.versions_suffix', { count: d.version_count })) : '';
@@ -329,7 +344,7 @@ $translationNamespaces = ['common', 'network-mapper'];
                             <button class="nm-card-action-btn danger" onclick="event.stopPropagation(); deleteDiagram(${d.id}, '${escapeAttr(d.title)}')">${escapeHtml(t('common.delete'))}</button>
                         </div>
                     </div>
-                    <div style="font-size:11px;color:#9ca3af;">${escapeHtml(t('network-mapper.index.meta_by', { author: author, date: updated }))}</div>
+                    <div style="font-size:11px;color:var(--text-faint, #9ca3af);">${escapeHtml(t('network-mapper.index.meta_by', { author: author, date: updated }))}</div>
                 </div>`;
         }
 
@@ -402,5 +417,8 @@ $translationNamespaces = ['common', 'network-mapper'];
 
         loadDiagrams();
     </script>
+    <!-- After the page's own script, so mobile.js can wrap globals it exposes
+         rather than edit them (Techniques §1). -->
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

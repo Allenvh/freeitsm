@@ -20,9 +20,18 @@ require_once __DIR__ . '/encryption.php';
 
 /**
  * Main cron entry. Returns a summary so the cron wrapper can log it.
+ *
+ * QUIET (GH #217): walks exactly the same tickets and triggers, but sends nothing -
+ * it records each warning and breach in both fire-once ledgers instead, so the next
+ * real run treats them as already announced. Run once when SLA is switched back on
+ * for the install and the administrator chose not to send what was missed while it
+ * was off; without it the first run after switching on would announce every ticket
+ * that crossed a line during the off period, all at once.
+ *
+ * @param bool $quiet  true to mark, not send - see above
  */
-function sla_run_breach_check(PDO $conn): array {
-    $summary = ['sent' => [], 'skipped' => [], 'errors' => []];
+function sla_run_breach_check(PDO $conn, bool $quiet = false): array {
+    $summary = ['sent' => [], 'skipped' => [], 'errors' => [], 'marked' => 0];
 
     // Settings sanity check — if SLA enforcement is off entirely, abort early.
     $settings = sla_load_settings($conn);
@@ -76,6 +85,32 @@ function sla_run_breach_check(PDO $conn): array {
                 }
 
                 foreach (array_unique($triggers) as $trigger) {
+                    // ---- Workflow event -------------------------------------
+                    // Emitted BEFORE the email-rule lookup, and gated by its OWN
+                    // fire-once ledger, deliberately:
+                    //
+                    //  * A workflow must fire whether or not anyone configured an
+                    //    email rule. Notification rules are about who gets an
+                    //    email; they have nothing to say about automation.
+                    //  * sla_notifications_sent is only written when an email
+                    //    actually goes out (see below — "no matching rule" leaves
+                    //    it unmarked), so reusing it as the workflow ledger would
+                    //    mean a workflow re-fires forever on any install with no
+                    //    notification rules. Which is most of them.
+                    //
+                    // Free to compute: we're already holding this ticket's SLA
+                    // state, so the emitter can't drift from what the emails think.
+                    if ($quiet) {
+                        sla_mark_workflow_event($conn, (int)$ticketId, $targetType, $trigger, $target);
+                        if (!sla_notification_already_sent($conn, (int)$ticketId, $targetType, $trigger)) {
+                            sla_mark_notification_sent($conn, (int)$ticketId, $targetType, $trigger, ['(not sent: SLA switched back on)']);
+                            $summary['marked']++;
+                        }
+                        continue;
+                    }
+
+                    sla_emit_workflow_event($conn, (int)$ticketId, $targetType, $trigger, $target);
+
                     if (sla_notification_already_sent($conn, (int)$ticketId, $targetType, $trigger)) {
                         continue;
                     }
@@ -103,6 +138,108 @@ function sla_run_breach_check(PDO $conn): array {
 }
 
 /**
+ * Record an SLA workflow event as already fired, WITHOUT firing it - the quiet run
+ * above (GH #217). Same ledger, entity and fingerprint as sla_emit_workflow_event(),
+ * and the same rule as workflowEmitOnce(): nothing is recorded while no workflow is
+ * listening, so a workflow switched on later is not silenced by it.
+ *
+ * @param string $targetType  'response' or 'resolution'
+ * @param string $trigger  'warning' or 'breach'
+ * @param array $target  that target's state from sla_get_state()
+ */
+function sla_mark_workflow_event(PDO $conn, int $ticketId, string $targetType, string $trigger, array $target): void
+{
+    $event = $trigger === 'breach' ? 'sla.breached' : 'sla.warning';
+    try {
+        $listening = $conn->prepare("SELECT COUNT(*) FROM workflows WHERE trigger_event = ? AND is_active = 1");
+        $listening->execute([$event]);
+        if ((int)$listening->fetchColumn() === 0) return;
+        $conn->prepare(
+            "INSERT IGNORE INTO workflow_scheduled_emissions (trigger_event, entity_key, fingerprint, emitted_datetime)
+             VALUES (?, ?, ?, UTC_TIMESTAMP())"
+        )->execute([$event, 'ticket:' . $ticketId . ':' . $targetType, (string)($target['target_minutes'] ?? 0)]);
+    } catch (Exception $e) {
+        error_log('[sla quiet resume] ' . $e->getMessage());
+    }
+}
+
+/**
+ * Emit the time-based workflow event for an SLA warning / breach.
+ *
+ * `$trigger` is the SLA module's own vocabulary ('warning' / 'breach'); the
+ * workflow trigger names are `sla.warning` / `sla.breached`.
+ *
+ * FINGERPRINT = the SLA target in minutes. That is what makes this re-arm
+ * correctly: change a ticket's priority and its SLA target changes with it, so
+ * the new deadline is a new fingerprint and is allowed to breach and fire again.
+ * Fingerprinting on the ticket alone would suppress the second escalation
+ * forever — the workflow would go quiet exactly when the ticket got more urgent.
+ *
+ * The full ticket is loaded into the payload so an escalation can act on the
+ * ticket itself (reassign, reprioritise, message about it) — not just announce
+ * that a number went red.
+ *
+ * @param string $targetType  'response' or 'resolution'
+ * @param string $trigger  'warning' or 'breach'
+ * @param array $target  that target's state from sla_get_state(): target_minutes, elapsed_minutes, remaining_minutes, percent
+ */
+function sla_emit_workflow_event(PDO $conn, int $ticketId, string $targetType, string $trigger, array $target): void
+{
+    try {
+        require_once __DIR__ . '/workflow_scheduled.php';
+
+        $event = $trigger === 'breach' ? 'sla.breached' : 'sla.warning';
+
+        // ⚠️ `type_id` and `created_by` are NOT columns on `tickets` — they are
+        // aliases for `ticket_type_id` and `user_id`. Without the aliases this
+        // query threw, the catch below swallowed it, and workflowEmitOnce() was
+        // never reached: sla.warning and sla.breached had NEVER fired, on any
+        // install, despite being registered triggers with a documented feature
+        // page. Keep this in step with the canonical payload query in
+        // includes/services/tickets.php.
+        $t = $conn->prepare(
+            "SELECT id, subject, priority_id, status_id, department_id,
+                    ticket_type_id AS type_id, assigned_analyst_id, owner_id,
+                    origin_id, user_id AS created_by
+               FROM tickets WHERE id = ? LIMIT 1"
+        );
+        $t->execute([$ticketId]);
+        $ticket = $t->fetch(PDO::FETCH_ASSOC);
+        if (!$ticket) return;
+
+        // Requester email lives on the ticket's originating email row.
+        // ⚠️ The column is `from_address`, not `from_email` — the third wrong
+        // column name in this one function, all three undiscovered because the
+        // duplicate sla_format_minutes() fataled the cron before it ever ran.
+        $r = $conn->prepare("SELECT from_address FROM emails WHERE ticket_id = ? ORDER BY id ASC LIMIT 1");
+        $r->execute([$ticketId]);
+        $ticket['requester_email'] = $r->fetchColumn() ?: null;
+
+        $sla = [
+            'target'         => $targetType,                       // 'response' | 'resolution'
+            'target_minutes' => (int)($target['target_minutes'] ?? 0),
+            'percent'        => (float)($target['percent'] ?? 0),
+        ];
+        if ($event === 'sla.breached') {
+            $sla['overdue_minutes'] = max(0, (int)($target['elapsed_minutes'] ?? 0) - (int)($target['target_minutes'] ?? 0));
+        } else {
+            $sla['remaining_minutes'] = (int)($target['remaining_minutes'] ?? 0);
+        }
+
+        workflowEmitOnce(
+            $conn,
+            $event,
+            'ticket:' . $ticketId . ':' . $targetType,
+            (string)($target['target_minutes'] ?? 0),   // re-arms if the SLA target changes
+            ['ticket' => $ticket, 'sla' => $sla]
+        );
+    } catch (Exception $e) {
+        // Never let workflow emission break the SLA email run.
+        error_log('[sla_emit_workflow_event] ticket ' . $ticketId . ': ' . $e->getMessage());
+    }
+}
+
+/**
  * Find the most-specific rule matching this ticket + trigger + target.
  *
  * Resolution order:
@@ -113,6 +250,9 @@ function sla_run_breach_check(PDO $conn): array {
  *
  * 'both' rules match either target — they're the "applies to all SLAs"
  * convenience shortcut.
+ *
+ * @param string $trigger  'warning' or 'breach'
+ * @param string $targetType  'response' or 'resolution'
  */
 function sla_find_matching_rule(PDO $conn, int $ticketId, string $trigger, string $targetType): ?array {
     $stmt = $conn->prepare("SELECT department_id FROM tickets WHERE id = ?");
@@ -139,6 +279,8 @@ function sla_find_matching_rule(PDO $conn, int $ticketId, string $trigger, strin
  * Expand a rule into a unique list of recipient email addresses.
  * Resolves assignee, department-team members, named analyst, and the
  * explicit emails list; dedupes case-insensitively.
+ *
+ * @param array $rule  the sla_notification_rules row: notify_assignee, notify_department_teams, notify_analyst_id, notify_emails
  */
 function sla_resolve_recipients(PDO $conn, int $ticketId, array $rule): array {
     $out = [];
@@ -193,35 +335,16 @@ function sla_resolve_recipients(PDO $conn, int $ticketId, array $rule): array {
  * Send a breach / warning email via the ticket's originating mailbox.
  * Falls back to the first active mailbox if the ticket has none (e.g.
  * manually-created ticket).
+ *
+ * @param array $state  the ticket's SLA state from sla_get_state()
+ * @param string $targetType  'response' or 'resolution' - which part of $state the email is about
+ * @param string $trigger  'warning' or 'breach'
+ * @param array $recipients  the email addresses to send to, from sla_resolve_recipients()
  */
 function sla_send_breach_email(PDO $conn, int $ticketId, array $state, string $targetType, string $trigger, array $recipients): void {
     $merge = buildTicketMergeData($conn, $ticketId);
     if (!$merge) {
         throw new Exception("could not build merge data for ticket $ticketId");
-    }
-
-    $mailbox = templateGetMailboxForTicket($conn, $ticketId);
-    if (!$mailbox) {
-        $mailbox = sla_get_first_active_mailbox($conn);
-    }
-    if (!$mailbox) {
-        throw new Exception("no mailbox available to send from");
-    }
-
-    $tokenData = json_decode(preg_replace('/[\x00-\x1F\x7F]/', '', $mailbox['token_data'] ?? ''), true);
-    if (!$tokenData || !isset($tokenData['access_token'])) {
-        throw new Exception("invalid token data on mailbox {$mailbox['id']}");
-    }
-
-    $provider = $mailbox['provider'] ?? 'microsoft';
-    if ($provider === 'google') {
-        require_once __DIR__ . '/gmail.php';
-        $accessToken = gmailGetValidAccessToken($conn, $mailbox, $tokenData);
-    } else {
-        $accessToken = templateGetValidAccessToken($conn, $mailbox, $tokenData);
-    }
-    if (!$accessToken) {
-        throw new Exception("failed to refresh access token for mailbox {$mailbox['id']}");
     }
 
     $target = $state[$targetType];
@@ -241,26 +364,21 @@ function sla_send_breach_email(PDO $conn, int $ticketId, array $state, string $t
 
     $body = sla_build_breach_email_body($merge, $target, $targetLabel, $headline, $trigger);
 
-    foreach ($recipients as $to) {
-        if ($provider === 'google') {
-            $from = $mailbox['target_mailbox'] ?? '';
-            gmailSendEmail($accessToken, $to, $subject, $body, $from);
-        } else {
-            $message = [
-                'message' => [
-                    'subject' => $subject,
-                    'body' => ['contentType' => 'HTML', 'content' => $body],
-                    'toRecipients' => [['emailAddress' => ['address' => $to]]],
-                ],
-                'saveToSentItems' => false, // Internal notification, don't clutter sent items
-            ];
-            templateSendViaGraph($accessToken, $message);
-        }
-    }
+    // Mailbox choice, token refresh, the three providers and the per-recipient
+    // send log live in internalTicketEmail(), shared with the mandatory-fields
+    // closure alert. Logged per recipient: one address failing (a typo in an
+    // escalation list, say) should not read as the whole alert having failed.
+    internalTicketEmail($conn, $ticketId, $recipients, $subject, $body, 'sla');
 }
 
 /**
  * Render the HTML body for a breach / warning email.
+ *
+ * @param array $merge  the ticket merge data from buildTicketMergeData()
+ * @param array $target  that target's state: target_minutes, elapsed_minutes, remaining_minutes
+ * @param string $targetLabel  'Response' or 'Resolution'
+ * @param string $headline  the banner text - trusted HTML, written into the email as it is
+ * @param string $trigger  'warning' or 'breach'; sets the banner colour and the status line
  */
 function sla_build_breach_email_body(array $merge, array $target, string $targetLabel, string $headline, string $trigger): string {
     $bannerColour = $trigger === 'breach' ? '#dc2626' : '#f59e0b';
@@ -296,16 +414,21 @@ function sla_build_breach_email_body(array $merge, array $target, string $target
 </div>';
 }
 
-function sla_format_minutes(int $mins): string {
-    $n = abs($mins);
-    if ($n < 60) return $mins . 'm';
-    $h = intdiv($n, 60); $r = $n % 60;
-    $sign = $mins < 0 ? '-' : '';
-    return $sign . ($r ? "{$h}h {$r}m" : "{$h}h");
-}
+// ⚠️ sla_format_minutes() USED TO BE DECLARED HERE, and it is already declared
+// in includes/sla.php — which this file requires at the top. Two unguarded
+// declarations of the same function is a FATAL, so requiring this file killed
+// the request outright: cron/sla_breach_check.php could not run at all, which
+// means SLA warning and breach emails never sent and sla.warning / sla.breached
+// workflows never fired.
+//
+// The two bodies were equivalent, so this one is simply gone. Do not
+// reintroduce it — call the one in sla.php.
 
 /**
  * Check if we've already fired this notification for (ticket, target, trigger).
+ *
+ * @param string $targetType  'response' or 'resolution'
+ * @param string $trigger  'warning' or 'breach'
  */
 function sla_notification_already_sent(PDO $conn, int $ticketId, string $targetType, string $trigger): bool {
     $stmt = $conn->prepare("SELECT 1 FROM sla_notifications_sent WHERE ticket_id = ? AND target_type = ? AND trigger_type = ?");
@@ -313,11 +436,19 @@ function sla_notification_already_sent(PDO $conn, int $ticketId, string $targetT
     return (bool)$stmt->fetchColumn();
 }
 
+/**
+ * Records that an SLA notification went out for a ticket, so it is not sent twice.
+ *
+ * @param string $targetType  'response' or 'resolution'
+ * @param string $trigger  'warning' or 'breach'
+ * @param array $recipients  the addresses it went to, stored comma-separated
+ */
 function sla_mark_notification_sent(PDO $conn, int $ticketId, string $targetType, string $trigger, array $recipients): void {
     $stmt = $conn->prepare("INSERT IGNORE INTO sla_notifications_sent (ticket_id, target_type, trigger_type, recipients) VALUES (?, ?, ?, ?)");
     $stmt->execute([$ticketId, $targetType, $trigger, implode(',', $recipients)]);
 }
 
+/** The active mailbox with the lowest id, decrypted; null when there is none. */
 function sla_get_first_active_mailbox(PDO $conn): ?array {
     $stmt = $conn->query("SELECT * FROM target_mailboxes WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
     $mailbox = $stmt->fetch(PDO::FETCH_ASSOC);

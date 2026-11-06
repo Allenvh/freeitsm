@@ -4,9 +4,14 @@
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
+require_once '../../includes/admin_api_guard.php'; // System admins only (issue #34)
 require_once '../../includes/functions.php';
+require_once '../../includes/analyst_signin.php';   // Follow team (GH #41)
 
 header('Content-Type: application/json');
+
+// Changes data: never on a GET, which a link on another site can send (csrf.php).
+csrfRequireWriteMethod();
 
 // Check if user is logged in
 if (!isset($_SESSION['analyst_id'])) {
@@ -27,9 +32,21 @@ $username = trim($data['username'] ?? '');
 $fullName = trim($data['full_name'] ?? '');
 $email = trim($data['email'] ?? '') ?: null;
 $password = $data['password'] ?? null;
+require_once __DIR__ . '/../../includes/password_policy.php';   // the one rule for a new password
+if ($password !== null && $password !== '' && ($why = passwordPolicyError((string)$password))) {
+    echo json_encode(['success' => false, 'error' => $why]);
+    exit;
+}
 $isActive = $data['is_active'] ?? true;
 // Which sign-in method: NULL/empty = local password, otherwise an auth_providers.id (SSO).
 $authProviderId = !empty($data['auth_provider_id']) ? (int)$data['auth_provider_id'] : null;
+// Follow team (GH #41): the method comes from their teams instead. Only touched when
+// the caller sends it, so an older caller cannot switch it off by leaving it out.
+$hasFollowTeam = array_key_exists('auth_follow_team', $data);
+$followTeam    = !empty($data['auth_follow_team']) ? 1 : 0;
+// Administrator flag. Only admins reach this endpoint (see admin_api_guard), so the
+// real safeguard is refusing to remove the LAST admin (below) — not who may set it.
+$isAdmin = !empty($data['is_admin']) ? 1 : 0;
 
 // Validation
 if (empty($username)) {
@@ -60,6 +77,41 @@ try {
         exit;
     }
 
+    // Never allow the last administrator to be demoted (or deactivated) — it would
+    // lock everyone out of the System module with no way back in.
+    if ($id) {
+        $wasAdmin = (int)($conn->query("SELECT is_admin FROM analysts WHERE id = " . (int)$id)->fetchColumn()) === 1;
+        $losingAdmin = $wasAdmin && (!$isAdmin || !$isActive);
+        if ($losingAdmin) {
+            $otherAdmins = (int)$conn->query("SELECT COUNT(*) FROM analysts WHERE is_admin = 1 AND is_active = 1 AND id <> " . (int)$id)->fetchColumn();
+            if ($otherAdmins === 0) {
+                echo json_encode(['success' => false, 'error' => 'This is the last active administrator — grant admin to another analyst before removing or deactivating this one.']);
+                exit;
+            }
+        }
+    }
+
+    if ($hasFollowTeam && !analystSignInReady($conn)) {
+        if ($followTeam) {
+            echo json_encode(['success' => false, 'error' => 'Run System → Database Verification before using Follow team.']);
+            exit;
+        }
+        $hasFollowTeam = false; // nothing to switch off yet
+    }
+
+    // Following their team: keep the method they have now. analystSignInApply()
+    // below replaces it with the team's, or leaves it if their teams disagree or
+    // set nothing - never guess.
+    if ($hasFollowTeam && $followTeam) {
+        $authProviderId = null;
+        if ($id) {
+            $cur = $conn->prepare("SELECT auth_provider_id FROM analysts WHERE id = ?");
+            $cur->execute([(int)$id]);
+            $v = $cur->fetchColumn();
+            $authProviderId = ($v !== false && $v !== null) ? (int)$v : null;
+        }
+    }
+
     if ($id) {
         // Update existing analyst
         if (!empty($password)) {
@@ -72,10 +124,11 @@ try {
                     password_hash = ?,
                     is_active = ?,
                     auth_provider_id = ?,
+                    is_admin = ?,
                     last_modified_datetime = UTC_TIMESTAMP()
                     WHERE id = ?";
             $stmt = $conn->prepare($sql);
-            $stmt->execute([$username, $fullName, $email, $passwordHash, $isActive ? 1 : 0, $authProviderId, $id]);
+            $stmt->execute([$username, $fullName, $email, $passwordHash, $isActive ? 1 : 0, $authProviderId, $isAdmin, $id]);
         } else {
             // Update without changing password
             $sql = "UPDATE analysts SET
@@ -84,10 +137,11 @@ try {
                     email = ?,
                     is_active = ?,
                     auth_provider_id = ?,
+                    is_admin = ?,
                     last_modified_datetime = UTC_TIMESTAMP()
                     WHERE id = ?";
             $stmt = $conn->prepare($sql);
-            $stmt->execute([$username, $fullName, $email, $isActive ? 1 : 0, $authProviderId, $id]);
+            $stmt->execute([$username, $fullName, $email, $isActive ? 1 : 0, $authProviderId, $isAdmin, $id]);
         }
         $analystId = (int)$id;
         $message = 'Analyst updated successfully';
@@ -95,12 +149,29 @@ try {
         // Create new analyst
         $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 
-        $sql = "INSERT INTO analysts (username, password_hash, full_name, email, is_active, auth_provider_id, created_datetime, last_modified_datetime)
-                VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())";
+        $sql = "INSERT INTO analysts (username, password_hash, full_name, email, is_active, auth_provider_id, is_admin, created_datetime, last_modified_datetime)
+                VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())";
         $stmt = $conn->prepare($sql);
-        $stmt->execute([$username, $passwordHash, $fullName, $email, $isActive ? 1 : 0, $authProviderId]);
+        $stmt->execute([$username, $passwordHash, $fullName, $email, $isActive ? 1 : 0, $authProviderId, $isAdmin]);
         $analystId = (int)$conn->lastInsertId();
+        // The "for new analysts" preference template (discussion #124).
+        require_once __DIR__ . '/../../includes/preference_templates.php';
+        prefTemplatesApplyForNew($conn, $analystId);
         $message = 'Analyst created successfully';
+    }
+
+    $signin = null;
+    if ($hasFollowTeam && $analystId > 0) {
+        $conn->prepare("UPDATE analysts SET auth_follow_team = ? WHERE id = ?")->execute([$followTeam, $analystId]);
+        $signin = analystSignInApplyMany($conn, [$analystId]);
+    }
+
+    // Module access (issue #30): the all-modules flag. Only touched when the form
+    // sends it, so other callers can't clobber it. Specific grants (when restricted)
+    // are managed on System -> Modules.
+    if (array_key_exists('can_access_all_modules', $data) && $analystId > 0) {
+        $allMods = !empty($data['can_access_all_modules']) ? 1 : 0;
+        try { $conn->prepare("UPDATE analysts SET can_access_all_modules = ? WHERE id = ?")->execute([$allMods, $analystId]); } catch (Exception $e) {}
     }
 
     // Multi-tenancy: company access. Only touched when the form actually sends it
@@ -124,7 +195,7 @@ try {
         }
     }
 
-    echo json_encode(['success' => true, 'message' => $message]);
+    echo json_encode(['success' => true, 'message' => $message, 'signin' => $signin]);
 
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

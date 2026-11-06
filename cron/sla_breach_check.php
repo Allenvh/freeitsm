@@ -32,15 +32,22 @@ header('Content-Type: text/plain; charset=utf-8');
 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/encryption.php';   // decryptValue() for the cron token
 require_once __DIR__ . '/../includes/sla_notifications.php';
+require_once __DIR__ . '/../includes/job_runs.php';   // run history (#182)
 
 $isCli = (PHP_SAPI === 'cli');
 $clientIp = $isCli ? null : ($_SERVER['REMOTE_ADDR'] ?? null);
 $startedAt = microtime(true);
 $runId = null;
+$jobRunId = null;   // #182's shared run history; sla_cron_runs stays for the SLA screen
+$trigger = JobRun::scheduledTrigger();
 
 /**
  * Helper — record a run row. Returns the inserted id (or null if logging fails).
+ *
+ * @param bool $isCli  true when run from the command line (logged as 'cli'), false for an HTTP call ('http')
+ * @param ?string $clientIp  the caller's REMOTE_ADDR for an HTTP call; null from the command line
  */
 function sla_cron_log_start(PDO $conn, bool $isCli, ?string $clientIp): ?int {
     try {
@@ -52,6 +59,15 @@ function sla_cron_log_start(PDO $conn, bool $isCli, ?string $clientIp): ?int {
     }
 }
 
+/**
+ * Completes this run's sla_cron_runs row with its end time, duration, outcome, counts and notes; does nothing when the start row was never written.
+ *
+ * @param ?int $runId  the row id from sla_cron_log_start(); null when that insert failed
+ * @param string $outcome  ok, error, auth_failed, config_missing or rate_limited
+ * @param array $counts  array{sent?:int,skipped?:int,errors?:int} - missing keys are logged as 0
+ * @param ?string $notes  free text for the log (cut to 65,000 characters); null or empty stores NULL
+ * @writes sla_cron_runs(ended_at, duration_ms, outcome, sent_count, skipped_count, error_count, notes) - the run log shown in SLA settings
+ */
 function sla_cron_log_finish(PDO $conn, ?int $runId, string $outcome, array $counts = [], ?string $notes = null): void {
     if (!$runId) return;
     try {
@@ -106,15 +122,20 @@ try {
             if ((int)$lockStmt->fetchColumn() >= 10) {
                 http_response_code(429);
                 sla_cron_log_finish($conn, $runId, 'auth_failed', [], "IP locked out (>=10 failed attempts in last hour)");
+                JobRun::refused($conn, 'sla_breach', 'caller locked out after repeated wrong tokens');
                 echo "Too many failed attempts from this IP. Locked out for 1 hour.\n";
                 exit;
             }
         }
 
-        $expected = $settings['sla_cron_token'] ?? null;
+        // Stored encrypted (isEncryptedSettingKey matches *_token). decryptValue()
+        // returns an unencrypted value untouched, so installs that pre-date the
+        // change keep authenticating on the same plaintext token.
+        $expected = decryptValue($settings['sla_cron_token'] ?? null);
         if (empty($expected)) {
             http_response_code(503);
             sla_cron_log_finish($conn, $runId, 'config_missing', [], "sla_cron_token not seeded");
+            JobRun::refused($conn, 'sla_breach', 'token not set');
             echo "Cron token not set. Run api/system/db_verify.php to seed it, or insert manually.\n";
             exit;
         }
@@ -122,9 +143,15 @@ try {
         if (!hash_equals($expected, (string)$supplied)) {
             http_response_code(403);
             sla_cron_log_finish($conn, $runId, 'auth_failed', [], "wrong or missing token");
+            JobRun::refused($conn, 'sla_breach', 'wrong token');
             echo "Forbidden\n";
             exit;
         }
+    }
+
+    if (!JobRun::lock($conn, 'sla_breach', $trigger)) {
+        sla_cron_log_finish($conn, $runId, 'rate_limited', [], 'another run is still going');
+        exit;
     }
 
     // ---- LAYER 3: Min interval between successful runs ----
@@ -144,12 +171,22 @@ try {
             $wait = $minInterval - (int)$age;
             http_response_code(429);
             sla_cron_log_finish($conn, $runId, 'rate_limited', [], "min interval not met (last ok run {$age}s ago, need {$minInterval}s)");
+            JobRun::skipped($conn, 'sla_breach', $trigger, "Minimum interval: last good run {$age}s ago, minimum {$minInterval}s.");
             echo "Rate limited. Last successful run was {$age}s ago; minimum interval is {$minInterval}s. Try again in {$wait}s.\n";
             exit;
         }
     }
 
+    // GH #217: nothing to judge while SLA is switched off for the install. Logged as a
+    // skip in both histories; switching back on decides what happens to what was missed.
+    if (!moduleIsEnabled($conn, 'sla')) {
+        sla_cron_log_finish($conn, $runId, 'ok', [], 'Skipped: ' . moduleDisabledMessage('sla'));   // no 'skipped' in its ENUM
+        cronModuleSwitchedOff($conn, 'sla', 'sla_breach', $trigger);
+        exit(0);
+    }
+
     // ---- Run the actual check ----
+    $jobRunId = JobRun::start($conn, 'sla_breach', $trigger);
     $summary = sla_run_breach_check($conn);
     $elapsed = round((microtime(true) - $startedAt) * 1000);
     $counts = [
@@ -164,6 +201,12 @@ try {
 
     $outcome = !empty($summary['errors']) && empty($summary['sent']) ? 'error' : 'ok';
     sla_cron_log_finish($conn, $runId, $outcome, $counts, $notes);
+    // #182: a run that sent some emails and hit errors on others is PARTIAL, not
+    // the plain success sla_cron_runs records it as. The per-email lines stay in
+    // sla_cron_runs (they name tickets and addresses); the shared history gets counts.
+    JobRun::finish($conn, $jobRunId,
+        empty($summary['errors']) ? 'ok' : (empty($summary['sent']) ? 'failed' : 'partial'),
+        $counts, "Sent {$counts['sent']}, errors {$counts['errors']}.");
 
     // ---- Retention prune ----
     // Keep last N days; runs at end of every invocation. Cheap (indexed scan).
@@ -195,11 +238,16 @@ try {
         foreach ($summary['skipped'] as $line) echo "  - $line\n";
     }
 
+    // Non-zero when any notification failed (#182), like the other jobs, so a
+    // scheduler watching exit codes can tell too. The run is already recorded.
+    if (!empty($summary['errors'])) exit(1);
+
 } catch (Exception $e) {
     http_response_code(500);
     if (isset($conn) && $runId) {
         sla_cron_log_finish($conn, $runId, 'error', [], $e->getMessage());
     }
+    if (isset($conn)) JobRun::fail($conn, $jobRunId, $e);
     echo "ERROR: " . $e->getMessage() . "\n";
     error_log("SLA breach cron error: " . $e->getMessage());
     exit(1);

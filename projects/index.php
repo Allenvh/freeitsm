@@ -1,0 +1,134 @@
+<?php
+/**
+ * Projects - the portfolio (3.2.0).
+ *
+ * Every project the analyst's company runs (or every company they can see, in
+ * the "All companies" view) as a wall of cards: each project's own colour and
+ * icon, a health ring with its progress inside, its target date and what is
+ * happening now. Behaviour is in assets/js/projects-portfolio.js; the shared
+ * renderers and the project dialog in assets/js/projects.js.
+ */
+session_start();
+require_once '../config.php';
+require_once '../includes/functions.php';
+require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
+require_once '../includes/money.php';
+I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('projects');
+
+$current_page = 'portfolio';
+$path_prefix = '../';
+$translationNamespaces = ['common', 'projects'];
+?>
+<!DOCTYPE html>
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
+<head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo BASE_URL; ?>favicon.svg">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars(pageTitle('projects')); ?></title>
+    <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <?php echo Money::scriptTag(); ?>
+    <script src="../assets/js/money.js?v=1"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/projects.css?v=48">
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
+</head>
+<body data-mobile-module="projects" data-mobile-page="projects-portfolio">
+    <?php include 'includes/header.php'; ?>
+    <?php /* The action row (#185): New moved here from the toolbar above the
+             list. It starts hidden; projects-portfolio.js shows it when the
+             list says this analyst may create projects (can_create). */
+          require_once __DIR__ . '/../includes/action_row.php';
+          renderActionRow(t('projects.title'), [array_merge(actionRowNew('', t('projects.portfolio.new_tip'), false, 'prjNew'), ['hidden' => true])], ['accent' => 'prj']); ?>
+
+    <div class="prj-layout">
+        <aside class="prj-sidebar">
+            <h3><?php echo htmlspecialchars(t('projects.portfolio.search')); ?></h3>
+            <input type="text" id="prjSearch" placeholder="<?php echo htmlspecialchars(t('projects.portfolio.search_ph')); ?>" autocomplete="off">
+
+            <h3><?php echo htmlspecialchars(t('projects.portfolio.views')); ?></h3>
+            <ul class="prj-views" id="prjViews">
+                <li data-view="live" class="active"><span><?php echo htmlspecialchars(t('projects.portfolio.view_live')); ?></span><b data-count="live"></b></li>
+                <li data-view="mine"><span><?php echo htmlspecialchars(t('projects.portfolio.view_mine')); ?></span><b data-count="mine"></b></li>
+                <li data-view="at_risk"><span><?php echo htmlspecialchars(t('projects.portfolio.view_at_risk')); ?></span><b data-count="at_risk"></b></li>
+                <li data-view="proposed"><span><?php echo htmlspecialchars(t('projects.portfolio.view_proposed')); ?></span><b data-count="proposed"></b></li>
+                <li data-view="approval"><span><?php echo htmlspecialchars(t('projects.portfolio.view_approval')); ?></span><b data-count="approval"></b></li>
+                <li data-view="on_hold"><span><?php echo htmlspecialchars(t('projects.portfolio.view_on_hold')); ?></span><b data-count="on_hold"></b></li>
+                <li data-view="finished"><span><?php echo htmlspecialchars(t('projects.portfolio.view_closed')); ?></span><b data-count="finished"></b></li>
+                <li data-view="all"><span><?php echo htmlspecialchars(t('projects.portfolio.view_all')); ?></span><b data-count="all"></b></li>
+            </ul>
+        </aside>
+
+        <main class="prj-main">
+            <div class="prj-tiles" id="prjTiles">
+                <div class="prj-tile"><span class="prj-tile-num" data-tile="live">-</span><span class="prj-tile-label"><?php echo htmlspecialchars(t('projects.portfolio.tile_live')); ?></span></div>
+                <div class="prj-tile warn"><span class="prj-tile-num" data-tile="at_risk">-</span><span class="prj-tile-label"><?php echo htmlspecialchars(t('projects.portfolio.tile_at_risk')); ?></span></div>
+                <div class="prj-tile"><span class="prj-tile-num" data-tile="due">-</span><span class="prj-tile-label"><?php echo htmlspecialchars(t('projects.portfolio.tile_due')); ?></span></div>
+                <div class="prj-tile bad"><span class="prj-tile-num" data-tile="overdue">-</span><span class="prj-tile-label"><?php echo htmlspecialchars(t('projects.portfolio.tile_overdue')); ?></span></div>
+            </div>
+
+            <div class="prj-toolbar">
+                <span class="prj-count" id="prjCount"></span>
+                <!-- 3.3.0: order and layout. The default order is Projects -> Settings -> General. -->
+                <div class="prj-toolbar-right">
+                    <label class="prj-sort"><span><?php echo htmlspecialchars(t('projects.portfolio.sort_label')); ?></span>
+                        <select id="prjSort">
+                            <option value="target"><?php echo htmlspecialchars(t('projects.portfolio.sort_target')); ?></option>
+                            <option value="priority"><?php echo htmlspecialchars(t('projects.portfolio.sort_priority')); ?></option>
+                            <option value="health"><?php echo htmlspecialchars(t('projects.portfolio.sort_health')); ?></option>
+                            <option value="name"><?php echo htmlspecialchars(t('projects.portfolio.sort_name')); ?></option>
+                        </select>
+                    </label>
+                    <div class="prj-seg prj-layout-seg" role="tablist" aria-label="<?php echo htmlspecialchars(t('projects.portfolio.layout')); ?>">
+                        <button type="button" data-layout="cards" class="active"><?php echo htmlspecialchars(t('projects.portfolio.layout_cards')); ?></button>
+                        <button type="button" data-layout="roadmap"><?php echo htmlspecialchars(t('projects.portfolio.layout_roadmap')); ?></button>
+                        <button type="button" data-layout="charts"><?php echo htmlspecialchars(t('projects.portfolio.layout_charts')); ?></button>
+                    </div>
+                    <!-- 3.3.0: the projects in the view as a spreadsheet - api/projects/export.php -->
+                    <details class="prj-export" id="prjExport">
+                        <summary title="<?php echo htmlspecialchars(t('projects.portfolio.export_hint')); ?>"><?php echo htmlspecialchars(t('projects.portfolio.export')); ?></summary>
+                        <div class="prj-export-menu">
+                            <button type="button" data-export="xlsx"><?php echo htmlspecialchars(t('projects.export.xlsx')); ?></button>
+                            <button type="button" data-export="csv"><?php echo htmlspecialchars(t('projects.export.csv')); ?></button>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <!-- How the live projects stand (3.3.0) - projects-portfolio.js -->
+            <div class="prj-hstrip-wrap" id="prjHealthStrip" hidden></div>
+
+            <div class="prj-grid" id="prjGrid" aria-live="polite"></div>
+            <div class="prj-roadmap" id="prjRoadmap" hidden></div>
+            <div class="prj-pcharts" id="prjCharts" hidden></div>
+
+            <div class="prj-empty" id="prjEmpty" hidden>
+                <div class="prj-empty-art" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                </div>
+                <h2><?php echo htmlspecialchars(t('projects.portfolio.empty_title')); ?></h2>
+                <p><?php echo htmlspecialchars(t('projects.portfolio.empty_body')); ?></p>
+                <button type="button" class="btn btn-primary prj-btn" id="prjEmptyNew"><?php echo htmlspecialchars(t('projects.portfolio.empty_cta')); ?></button>
+                <p class="prj-tutorial-link"><a href="tutorial.php"><?php echo htmlspecialchars(t('projects.tutorial.link')); ?></a></p>
+            </div>
+            <p class="prj-filtered-empty" id="prjFilteredEmpty" hidden><?php echo htmlspecialchars(t('projects.portfolio.empty_filtered')); ?></p>
+        </main>
+    </div>
+
+    <?php include 'includes/project_form.php'; ?>
+
+    <script src="../assets/js/projects.js?v=11"></script>
+    <script src="../assets/js/projects-charts.js?v=9"></script>
+    <script src="../assets/js/projects-portfolio.js?v=14"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
+</body>
+</html>

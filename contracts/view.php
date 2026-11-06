@@ -4,39 +4,75 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
+require_once '../includes/money.php';
 I18n::initFromSession();
+Tz::init();
+
+requireModuleAccess('contracts');
 
 $current_page = 'dashboard';
 $path_prefix = '../';
 $translationNamespaces = ['common', 'contracts'];
+// The domains renewed or billed under a contract (3.0.0) - Domains' data, so
+// only for analysts who can open Domains.
+$ctShowDomains = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'domains');
+$ctShowProjects = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'projects');   // 3.2.0
+// GH #217: a contract's equipment, tasks and calendar events belong to Assets, Tasks and
+// Calendar - hidden when the analyst cannot open that module or it is switched off.
+$ctShowAssets = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'assets');
+$ctShowTasks = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'tasks');
+$ctShowCalendar = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'calendar');
+if ($ctShowDomains) $translationNamespaces[] = 'domains';
 $contract_id = $_GET['id'] ?? null;
 
 if (!$contract_id) {
     header('Location: index.php');
     exit;
 }
+
+// The recent trail (#124). Server-side here, rather than the JS ping the other
+// modules use, because a contract IS its own page — opening one is a real
+// navigation with a real URL, so the moment it is recorded is this one.
+require_once '../includes/recent_trail.php';
+entityVisit('contract', (int) $contract_id);
+// The customer's name links to their People page (#153), for analysts who can open People.
+$peopleBase = analystCanAccessModule(connectToDatabase(), (int)$_SESSION['analyst_id'], 'people') ? BASE_URL . 'people/' : null;
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('contracts.detail.page_title')); ?></title>
+    <title><?php echo htmlspecialchars(pageTitle('contracts', t('contracts.detail.page_title'))); ?></title>
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
+    <?php echo Money::scriptTag(); ?>
+    <script src="../assets/js/money.js?v=1"></script>
+    <link rel="stylesheet" href="../assets/css/record-preview.css?v=1">
+    <script src="../assets/js/record-preview.js?v=1"></script>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
+    <link rel="stylesheet" href="../assets/css/domain-links.css?v=1">
+    <link rel="stylesheet" href="../assets/css/project-links.css?v=1">
     <style>
+        body { --accent: var(--con-accent, #f59e0b); }
         /* Full-screen layout with sidebar - matches contracts dashboard */
         .contracts-layout {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--app-bg, #f5f5f5);
         }
         .contracts-sidebar {
             width: 260px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface, #fff);
+            border-right: 1px solid var(--border, #ddd);
             padding: 20px;
             overflow-y: auto;
             flex-shrink: 0;
@@ -49,39 +85,39 @@ if (!$contract_id) {
 
         .sidebar-section { margin-bottom: 24px; }
         .sidebar-section h3 {
-            font-size: 14px; font-weight: 600; color: #333;
+            font-size: 14px; font-weight: 600; color: var(--text, #333);
             margin: 0 0 12px 0;
         }
         .sidebar-stat {
             display: flex; justify-content: space-between; align-items: center;
             padding: 10px 12px; border-radius: 6px;
-            font-size: 14px; color: #333; cursor: default; margin-bottom: 4px;
+            font-size: 14px; color: var(--text, #333); cursor: default; margin-bottom: 4px;
         }
         .sidebar-stat .stat-value { font-weight: 700; font-size: 16px; }
-        .sidebar-stat.warning .stat-value { color: #f59e0b; }
+        .sidebar-stat.warning .stat-value { color: var(--con-accent, #f59e0b); }
         .sidebar-links { display: flex; flex-direction: column; gap: 4px; }
         .sidebar-link {
             display: flex; align-items: center; gap: 10px;
             padding: 10px 12px; border-radius: 6px;
-            font-size: 14px; color: #333;
+            font-size: 14px; color: var(--text, #333);
             text-decoration: none; transition: all 0.15s;
         }
-        .sidebar-link:hover { background: #fff7ed; color: #f59e0b; }
+        .sidebar-link:hover { background: #fff7ed; color: var(--con-accent, #f59e0b); }
         .sidebar-link svg { width: 18px; height: 18px; flex-shrink: 0; }
         .sidebar-add-btn {
             display: block; width: 100%;
             padding: 10px 16px;
-            background: #f59e0b; color: white;
+            background: var(--con-accent, #f59e0b); color: #fff;
             border: none; border-radius: 6px;
             font-size: 14px; font-weight: 500;
             cursor: pointer; transition: background 0.2s;
             text-align: center; text-decoration: none;
             box-sizing: border-box;
         }
-        .sidebar-add-btn:hover { background: #d97706; }
+        .sidebar-add-btn:hover { background: var(--con-accent-hover, #d97706); }
 
         .contract-card {
-            background: #fff;
+            background: var(--surface, #fff);
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
             overflow: hidden;
@@ -89,25 +125,40 @@ if (!$contract_id) {
 
         .contract-card-header {
             padding: 24px 30px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft, #eee);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .contract-card-header h2 { margin: 0; font-size: 20px; color: #333; }
+        .contract-card-header h2 { margin: 0; font-size: 20px; color: var(--text, #333); }
 
         .contract-card-header .actions { display: flex; gap: 8px; }
+        /* 🔴 THE ICONS ARE HIDDEN BY DEFAULT, i.e. ON DESKTOP, AND THIS LINE IS
+           THE WHOLE REASON THE MARKUP IS SAFE TO ADD.
+
+           The spans exist purely so the mobile layer has something to show in
+           the bottom bar (LAYER 28j). The first version styled them here
+           instead of hiding them, which put emoji beside every button label on
+           the desktop screen — a change to desktop from a piece of mobile
+           work, which is precisely what the rollout's one hard rule exists to
+           prevent, and what makes every desktop screen need re-checking.
+
+           🔑 `mobile.css` is @media-only by design, so it CANNOT set a desktop
+           default — the wiki's "injected chrome must be hidden off-mobile"
+           corollary. Anything a mobile layer reveals therefore has to be
+           hidden at source, here, in the page's own stylesheet. */
+        .cv-act-icon { display: none; }
 
         .contract-card-header .btn {
             padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 500;
             text-decoration: none; cursor: pointer; transition: all 0.2s;
         }
 
-        .btn-edit-contract { background: #f59e0b; color: white; border: none; }
-        .btn-edit-contract:hover { background: #d97706; }
-        .btn-back { background: #e0e0e0; color: #333; border: none; }
-        .btn-back:hover { background: #d0d0d0; }
+        .btn-edit-contract { background: var(--con-accent, #f59e0b); color: #fff; border: none; }
+        .btn-edit-contract:hover { background: var(--con-accent-hover, #d97706); }
+        .btn-back { background: var(--surface-3, #e0e0e0); color: var(--text, #333); border: none; }
+        .btn-back:hover { background: var(--surface-hover, #d0d0d0); }
 
         .contract-details {
             padding: 30px;
@@ -120,7 +171,7 @@ if (!$contract_id) {
             display: block;
             font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: var(--text-dim, #888);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 6px;
@@ -128,14 +179,14 @@ if (!$contract_id) {
 
         .detail-group .value {
             font-size: 15px;
-            color: #333;
+            color: var(--text, #333);
         }
 
         .detail-group.full-width { grid-column: span 2; }
 
         .section-divider {
             grid-column: span 2;
-            border-top: 1px solid #eee;
+            border-top: 1px solid var(--border-soft, #eee);
             padding-top: 16px;
             margin-top: 4px;
         }
@@ -144,7 +195,7 @@ if (!$contract_id) {
             margin: 0;
             font-size: 13px;
             font-weight: 600;
-            color: #f59e0b;
+            color: var(--con-accent, #f59e0b);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -158,52 +209,90 @@ if (!$contract_id) {
         .status-badge.expiring { background: #fff3cd; color: #856404; }
 
         .bool-yes { color: #155724; font-weight: 500; }
-        .bool-no { color: #999; }
+        .bool-no { color: var(--text-dim, #999); }
 
-        .dms-link a { color: #f59e0b; text-decoration: none; word-break: break-all; }
+        .dms-link a { color: var(--con-accent, #f59e0b); text-decoration: none; word-break: break-all; }
         .dms-link a:hover { text-decoration: underline; }
 
-        .loading { text-align: center; padding: 60px; color: #999; }
+        .loading { text-align: center; padding: 60px; color: var(--text-dim, #999); }
 
-        .terms-view-tabs { display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; margin-top: 8px; }
+        .terms-view-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border, #e0e0e0); margin-top: 8px; }
         .terms-view-tab {
-            padding: 10px 20px; font-size: 13px; font-weight: 500; color: #666; cursor: pointer;
+            padding: 10px 20px; font-size: 13px; font-weight: 500; color: var(--text-muted, #666); cursor: pointer;
             background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s;
         }
-        .terms-view-tab:hover { color: #333; background: #f5f5f5; }
-        .terms-view-tab.active { color: #f59e0b; border-bottom-color: #f59e0b; font-weight: 600; }
+        .terms-view-tab:hover { color: var(--text, #333); background: var(--surface-hover, #f5f5f5); }
+        .terms-view-tab.active { color: var(--con-accent, #f59e0b); border-bottom-color: var(--con-accent, #f59e0b); font-weight: 600; }
         .terms-view-panel { display: none; padding: 20px 0; }
         .terms-view-panel.active { display: block; }
-        .terms-view-panel .rich-content { font-size: 14px; line-height: 1.6; color: #333; }
+        .terms-view-panel .rich-content { font-size: 14px; line-height: 1.6; color: var(--text, #333); }
+        /* ⚠️ The list-indent fix for authored terms lives in mobile.css
+           (LAYER 28l), NOT here, so it cannot touch the desktop render. The
+           underlying cause — inbox.css's global `* { padding: 0 }` stripping a
+           <ul>'s default indent — is present at every width, but on a desktop
+           the panel's 30px of padding absorbs the markers and nothing looks
+           wrong. See the note in 28l. */
         .terms-view-panel .rich-content table { border-collapse: collapse; width: 100%; }
-        .terms-view-panel .rich-content td, .terms-view-panel .rich-content th { border: 1px solid #ddd; padding: 8px; }
+        .terms-view-panel .rich-content td, .terms-view-panel .rich-content th { border: 1px solid var(--border, #ddd); padding: 8px; }
 
         .btn-create-task { background: #6366f1; color: white; border: none; }
         .btn-create-task:hover { background: #4f46e5; }
         .btn-create-event { background: #0ea5e9; color: white; border: none; }
         .btn-create-event:hover { background: #0284c7; }
+        .btn-equipment-report { background: #10b981; color: white; border: none; }
+        .btn-equipment-report:hover { background: #059669; }
+
+        /* The report menu. Three destinations for one report, so they are three
+           rows of equal weight rather than one primary action and two
+           afterthoughts - which of the three is right depends entirely on who
+           is asking for it. */
+        .cr-choice {
+            display: flex; align-items: flex-start; gap: 12px; width: 100%;
+            padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+            border: 1px solid var(--border, #ddd); border-radius: 8px;
+            background: var(--surface, #fff); text-align: left; font: inherit;
+            color: var(--text, #333); text-decoration: none;
+        }
+        .cr-choice:hover { background: var(--surface-hover, #f5f5f5); border-color: var(--con-accent, #f59e0b); }
+        .cr-choice-icon { flex-shrink: 0; color: var(--con-accent, #f59e0b); margin-top: 1px; }
+        .cr-choice-name { display: block; font-size: 13px; font-weight: 600; }
+        .cr-choice-desc { display: block; font-size: 12px; color: var(--text-muted, #666); line-height: 1.45; }
+        .cr-email-row { display: flex; gap: 8px; margin-top: 4px; }
+        .cr-email-row input {
+            flex: 1; padding: 8px 10px; font: inherit; font-size: 13px;
+            border: 1px solid var(--border, #ddd); border-radius: 6px;
+            background: var(--surface, #fff); color: var(--text, #333);
+        }
+        .cr-email-row input:focus { outline: none; border-color: var(--con-accent, #f59e0b); }
+        .cr-email-row button {
+            padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer;
+            font: inherit; font-size: 13px; font-weight: 500;
+            background: var(--con-accent, #f59e0b); color: #fff;
+        }
+        .cr-email-row button:disabled { opacity: .6; cursor: not-allowed; }
+        .cr-count { font-size: 12px; color: var(--text-muted, #666); margin: -4px 0 14px; }
 
         .related-list { padding: 0 30px 20px 30px; }
         .related-section { margin-bottom: 24px; }
         .related-section h3 {
             margin: 0 0 10px 0; font-size: 13px; font-weight: 600;
-            color: #f59e0b; text-transform: uppercase; letter-spacing: 0.5px;
-            padding-top: 16px; border-top: 1px solid #eee;
+            color: var(--con-accent, #f59e0b); text-transform: uppercase; letter-spacing: 0.5px;
+            padding-top: 16px; border-top: 1px solid var(--border-soft, #eee);
         }
-        .related-empty { color: #999; font-size: 13px; padding: 8px 0; }
+        .related-empty { color: var(--text-dim, #999); font-size: 13px; padding: 8px 0; }
         .related-item {
             display: flex; align-items: center; gap: 12px;
-            padding: 10px 0; border-bottom: 1px solid #f0f0f0;
+            padding: 10px 0; border-bottom: 1px solid var(--border-soft, #f0f0f0);
             font-size: 13px;
         }
         .related-item:last-child { border-bottom: none; }
-        .related-item a { color: #f59e0b; text-decoration: none; font-weight: 500; }
+        .related-item a { color: var(--con-accent, #f59e0b); text-decoration: none; font-weight: 500; }
         .related-item a:hover { text-decoration: underline; }
-        .related-item .meta { color: #666; }
-        .related-item .meta-sep { color: #ccc; margin: 0 4px; }
+        .related-item .meta { color: var(--text-muted, #666); }
+        .related-item .meta-sep { color: var(--text-faint, #ccc); margin: 0 4px; }
         .related-pill {
             display: inline-block; padding: 2px 8px; border-radius: 10px;
-            font-size: 11px; font-weight: 500; background: #eee; color: #333;
+            font-size: 11px; font-weight: 500; background: var(--surface-3, #eee); color: var(--text, #333);
         }
         .related-pill.todo { background: #e5e7eb; color: #374151; }
         .related-pill.in-progress { background: #fde68a; color: #92400e; }
@@ -212,6 +301,43 @@ if (!$contract_id) {
         .related-pill.high, .related-pill.urgent { background: #fee2e2; color: #991b1b; }
         .related-cat-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
 
+        /* Equipment covered by this contract (discussion #106). */
+        .related-section h3 { display: flex; align-items: center; justify-content: space-between; }
+        .related-add {
+            border: none; background: none; cursor: pointer; padding: 0;
+            font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0;
+            text-transform: none; color: var(--con-accent, #f59e0b);
+        }
+        .related-add:hover { text-decoration: underline; }
+        /* The name takes the room, the note takes what is left, and the meta
+           gets out of the way first - a location is the least useful thing on
+           the row once you already know which contract you are looking at. */
+        .related-item--asset > a { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .related-item--asset > .meta { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .asset-reference {
+            flex: 1 1 120px; min-width: 90px; margin-left: auto;
+            padding: 4px 8px; font-size: 12px; font-family: inherit;
+            border: 1px solid var(--border, #ddd); border-radius: 4px;
+            background: var(--surface, #fff); color: var(--text, #333);
+        }
+        .asset-reference:focus { outline: none; border-color: var(--con-accent, #f59e0b); }
+        .related-remove {
+            flex-shrink: 0; width: 22px; height: 22px; line-height: 1;
+            border: none; background: none; cursor: pointer;
+            font-size: 18px; color: var(--text-faint, #bbb); border-radius: 4px;
+        }
+        .related-remove:hover { background: var(--danger-bg, #fee2e2); color: var(--danger-text, #991b1b); }
+
+        .asset-pick-results { max-height: 320px; overflow-y: auto; }
+        .asset-pick {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            padding: 9px 10px; border: none; border-radius: 6px;
+            background: none; font: inherit; color: var(--text, #333);
+        }
+        .asset-pick:hover { background: var(--surface-hover, #f5f5f5); }
+        .asset-pick-name { display: block; font-size: 13px; font-weight: 500; }
+        .asset-pick-meta { display: block; font-size: 12px; color: var(--text-muted, #666); }
+
         /* Modal (namespaced to avoid clash with .modal in inbox.css) */
         .cv-modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.45);
@@ -219,53 +345,56 @@ if (!$contract_id) {
         }
         .cv-modal-overlay.active { display: flex; }
         .cv-modal {
-            background: #fff; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            background: var(--surface, #fff); border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
             width: 480px; max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); overflow: auto;
         }
         .cv-modal-header {
-            padding: 16px 20px; border-bottom: 1px solid #eee;
+            padding: 16px 20px; border-bottom: 1px solid var(--border-soft, #eee);
             display: flex; justify-content: space-between; align-items: center;
         }
-        .cv-modal-header h3 { margin: 0; font-size: 16px; color: #333; }
+        .cv-modal-header h3 { margin: 0; font-size: 16px; color: var(--text, #333); }
         .cv-modal-close {
             background: none; border: none; font-size: 22px; line-height: 1;
-            color: #999; cursor: pointer; padding: 0;
+            color: var(--text-dim, #999); cursor: pointer; padding: 0;
         }
-        .cv-modal-close:hover { color: #333; }
+        .cv-modal-close:hover { color: var(--text, #333); }
         .cv-modal-body { padding: 20px; }
         .cv-modal-body .form-group { margin-bottom: 14px; }
         .cv-modal-body label {
             display: block; margin-bottom: 6px; font-weight: 500;
-            font-size: 13px; color: #333;
+            font-size: 13px; color: var(--text, #333);
         }
         .cv-modal-body input, .cv-modal-body select, .cv-modal-body textarea {
-            width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px;
+            width: 100%; padding: 8px 10px; border: 1px solid var(--border, #ddd); border-radius: 4px;
             font-size: 13px; box-sizing: border-box; font-family: inherit;
         }
         .cv-modal-body textarea { height: 70px; resize: vertical; }
         .cv-modal-body input:focus, .cv-modal-body select:focus, .cv-modal-body textarea:focus {
-            outline: none; border-color: #f59e0b; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
+            outline: none; border-color: var(--con-accent, #f59e0b); box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
         }
         .cv-modal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .cv-modal-footer {
-            padding: 14px 20px; border-top: 1px solid #eee;
+            padding: 14px 20px; border-top: 1px solid var(--border-soft, #eee);
             display: flex; justify-content: flex-end; gap: 8px;
         }
         .cv-modal-footer .btn {
             padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 500;
             cursor: pointer; border: none; transition: all 0.2s;
         }
-        .cv-modal-footer .btn-primary { background: #f59e0b; color: white; }
-        .cv-modal-footer .btn-primary:hover { background: #d97706; }
+        .cv-modal-footer .btn-primary { background: var(--con-accent, #f59e0b); color: #fff; }
+        .cv-modal-footer .btn-primary:hover { background: var(--con-accent-hover, #d97706); }
         .cv-modal-footer .btn-primary:disabled { background: #fcd34d; cursor: not-allowed; }
-        .cv-modal-footer .btn-secondary { background: #e0e0e0; color: #333; }
-        .cv-modal-footer .btn-secondary:hover { background: #d0d0d0; }
+        .cv-modal-footer .btn-secondary { background: var(--surface-3, #e0e0e0); color: var(--text, #333); }
+        .cv-modal-footer .btn-secondary:hover { background: var(--surface-hover, #d0d0d0); }
+        [data-theme-mode="dark"] .sidebar-link:hover { background: #3a2e12; }
         .checkbox-row { display: flex; align-items: center; gap: 8px; }
         .checkbox-row input { width: auto; }
         .checkbox-row label { margin: 0; }
     </style>
+    <!-- Mobile layer: linked AFTER this page's own <style> so its @media rules win on ties. -->
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-module="contracts" data-mobile-page="contract-view">
     <?php include 'includes/header.php'; ?>
 
     <div class="contracts-layout">
@@ -336,7 +465,9 @@ if (!$contract_id) {
 
     <script>
         const API_BASE = '../api/contracts/';
+        const PEOPLE_BASE = <?php echo json_encode($peopleBase); ?>;
         const TASKS_API = '../api/tasks/';
+        const CONTRACTS_API = '../api/contracts/';
         const CALENDAR_API = '../api/calendar/';
         const contractId = <?php echo json_encode($contract_id); ?>;
         let currentContract = null;
@@ -372,6 +503,22 @@ if (!$contract_id) {
                     renderContract(data.contract);
                     loadAndRenderContractTerms();
                     loadRelatedItems();
+
+                    // The Edit page signposts here with #equipment. This page
+                    // builds its body in JavaScript, so by the time the section
+                    // exists the browser has long since given up trying to scroll
+                    // to it — a fragment link would open the page at the top and
+                    // look like the signpost was wrong. Do it ourselves.
+                    if (window.location.hash === '#equipment') {
+                        const target = document.getElementById('equipment');
+                        // Instant, not smooth: this stands in for what a fragment
+                        // link does natively, and that is a jump. A smooth scroll
+                        // here also could not be verified — it does not complete
+                        // under a headless browser's virtual clock, so the check
+                        // that this works at all would have had to be taken on
+                        // trust.
+                        if (target) target.scrollIntoView();
+                    }
                 } else {
                     document.getElementById('contractCard').innerHTML =
                         '<div class="loading" style="color:#d13438;">' + escapeHtml(window.t('contracts.detail.error_prefix')) + ' ' + escapeHtml(data.error) + '</div>';
@@ -382,21 +529,46 @@ if (!$contract_id) {
             }
         }
 
+        /*
+         * Each action below carries an icon span and a label span — the shape
+         * knowledge/index.php uses for its article action bar. On a phone
+         * LAYER 28j hides the labels and pins the row to the bottom of the
+         * screen, icon-only, where a thumb is; on a desktop the icons simply
+         * sit beside the words and nothing else changes.
+         *
+         * A "title" on EVERY one of them, and it is not decoration: hiding the
+         * label with display:none takes it out of the accessibility tree too,
+         * so the title becomes the button's only accessible name. Without it
+         * the phone bar is five unnamed buttons to a screen reader.
+         *
+         * NOTE the comment lives HERE and not inside the template below. It
+         * was written as an HTML comment inside that backtick template literal
+         * and it contained backticks of its own, which closed the string and
+         * took the whole <script> block with it — renderContract and
+         * loadContract both came out undefined and the page sat on "Loading
+         * contract..." for ever. A backtick in a comment is still a backtick.
+         */
         function renderContract(c) {
             const status = getContractStatus(c);
-            const contractValue = c.contract_value ? (c.currency || '') + ' ' + parseFloat(c.contract_value).toLocaleString('en-GB', {minimumFractionDigits: 2}) : '-';
+            // In the viewer's own format (GH #189); a value with no currency gets no symbol rather than a guessed one.
+            const contractValue = c.contract_value ? (c.currency ? Money.format(c.contract_value, c.currency) : Money.number(c.contract_value)) : '-';
 
             document.getElementById('contractCard').innerHTML = `
                 <div class="contract-card-header">
                     <h2>${escapeHtml(c.contract_number)} — ${escapeHtml(c.title)}</h2>
                     <div class="actions">
-                        <a href="index.php" class="btn btn-back">${escapeHtml(window.t('contracts.detail.back'))}</a>
-                        <button type="button" class="btn btn-create-task" onclick="openTaskModal()">${escapeHtml(window.t('contracts.detail.task'))}</button>
-                        <button type="button" class="btn btn-create-event" onclick="openEventModal()">${escapeHtml(window.t('contracts.detail.calendar'))}</button>
-                        <a href="edit.php?id=${c.id}" class="btn btn-edit-contract">${escapeHtml(window.t('contracts.actions.edit'))}</a>
+                        <a href="index.php" class="btn btn-back"><span class="cv-act-icon" aria-hidden="true">←</span><span class="cv-act-label">${escapeHtml(window.t('contracts.detail.back'))}</span></a>
+                        ${window.CT_SHOW_TASKS ? `<button type="button" class="btn btn-create-task" onclick="openTaskModal()"><span class="cv-act-icon" aria-hidden="true">✅</span><span class="cv-act-label">${escapeHtml(window.t('contracts.detail.task'))}</span></button>` : ''}
+                        ${window.CT_SHOW_CALENDAR ? `<button type="button" class="btn btn-create-event" onclick="openEventModal()"><span class="cv-act-icon" aria-hidden="true">📅</span><span class="cv-act-label">${escapeHtml(window.t('contracts.detail.calendar'))}</span></button>` : ''}
+                        ${window.CT_SHOW_ASSETS ? `<button type="button" class="btn btn-equipment-report" onclick="openReportModal()"><span class="cv-act-icon" aria-hidden="true">🖨️</span><span class="cv-act-label">${escapeHtml(window.t('contracts.report.button'))}</span></button>` : ''}<!-- GH #217: each button only while its module is on -->
+                        <a href="edit.php?id=${c.id}" class="btn btn-edit-contract"><span class="cv-act-icon" aria-hidden="true">✏️</span><span class="cv-act-label">${escapeHtml(window.t('contracts.actions.edit'))}</span></a>
                     </div>
                 </div>
                 <div class="contract-details">
+                    ${c.multi_company && c.company_name ? `<div class="detail-group full-width">
+                        <label>${escapeHtml(window.t('contracts.detail.company'))}</label>
+                        <div class="value">${escapeHtml(c.company_name)}</div>
+                    </div>` : ''}
                     <div class="detail-group">
                         <label>${escapeHtml(window.t('contracts.detail.contract_number'))}</label>
                         <div class="value">${escapeHtml(c.contract_number)}</div>
@@ -413,10 +585,13 @@ if (!$contract_id) {
                         <label>${escapeHtml(window.t('contracts.detail.description'))}</label>
                         <div class="value">${escapeHtml(c.description)}</div>
                     </div>` : ''}
-                    <div class="detail-group">
+                    ${c.party_type === 'customer' ? `<div class="detail-group">
+                        <label>${escapeHtml(window.t('contracts.party.customer'))}</label>
+                        <div class="value">${peopleLink('company.php', c.customer_tenant_id, c.customer_company_name)}${c.customer_company_name && c.customer_person_name ? '<br>' : ''}${c.customer_person_name ? peopleLink('person.php', c.customer_user_id, c.customer_person_name) + (c.customer_person_email ? ' <span style="color:var(--text-dim, #888);">' + escapeHtml(c.customer_person_email) + '</span>' : '') : ''}${!c.customer_company_name && !c.customer_person_name ? '-' : ''}</div>
+                    </div>` : `<div class="detail-group">
                         <label>${escapeHtml(window.t('contracts.detail.supplier'))}</label>
-                        <div class="value">${escapeHtml(c.supplier_name || '-')}${c.supplier_trading_name ? ' <span style="color:#888;">(t/a ' + escapeHtml(c.supplier_trading_name) + ')</span>' : ''}</div>
-                    </div>
+                        <div class="value">${escapeHtml(c.supplier_name || '-')}${c.supplier_trading_name ? ' <span style="color:var(--text-dim, #888);">(t/a ' + escapeHtml(c.supplier_trading_name) + ')</span>' : ''}</div>
+                    </div>`}
                     <div class="detail-group">
                         <label>${escapeHtml(window.t('contracts.detail.owner'))}</label>
                         <div class="value">${escapeHtml(c.owner_name || '-')}</div>
@@ -451,7 +626,7 @@ if (!$contract_id) {
                     </div>
                     <div class="detail-group">
                         <label>${escapeHtml(window.t('contracts.detail.cost_centre'))}</label>
-                        <div class="value">${escapeHtml(c.cost_centre || '-')}</div>
+                        <div class="value">${c.cost_centre_label ? escapeHtml(c.cost_centre_label) : (c.cost_centre ? escapeHtml(window.t('contracts.edit.cost_centre_previous', { text: c.cost_centre })) : '-')}</div>
                     </div>
                     <div class="detail-group">
                         <label>${escapeHtml(window.t('contracts.detail.dms_link'))}</label>
@@ -491,37 +666,71 @@ if (!$contract_id) {
                     </div>
                 </div>
                 <div class="related-list">
-                    <div class="related-section" id="relatedTasksSection">
+                    ${window.CT_SHOW_ASSETS ? `<div class="related-section" id="equipment">
+                        <h3>
+                            ${escapeHtml(window.t('contracts.detail.linked_assets'))}
+                            <button type="button" class="related-add" onclick="openAssetPicker()">${escapeHtml(window.t('contracts.detail.add_asset'))}</button>
+                        </h3>
+                        <div id="relatedAssetsList" class="related-empty">${escapeHtml(window.t('common.loading'))}</div>
+                    </div>` : ''}
+                    ${window.CT_SHOW_PROJECTS ? '<div class="related-section" id="relatedProjectsSection"><h3>' + escapeHtml(window.tf ? window.tf('projects.links_other.title', 'Projects') : 'Projects') + '</h3><div id="relatedProjectsList"></div></div>' : ''}
+                    ${window.CT_SHOW_DOMAINS ? '<div class="related-section" id="relatedDomainsSection"><h3>' + escapeHtml(window.t('domains.links.domains_title')) + '</h3><div id="relatedDomainsList"></div></div>' : ''}
+                    ${window.CT_SHOW_TASKS ? `<div class="related-section" id="relatedTasksSection">
                         <h3>${escapeHtml(window.t('contracts.detail.related_tasks'))}</h3>
                         <div id="relatedTasksList" class="related-empty">${escapeHtml(window.t('common.loading'))}</div>
-                    </div>
-                    <div class="related-section" id="relatedEventsSection">
+                    </div>` : ''}
+                    ${window.CT_SHOW_CALENDAR ? `<div class="related-section" id="relatedEventsSection">
                         <h3>${escapeHtml(window.t('contracts.detail.related_events'))}</h3>
                         <div id="relatedEventsList" class="related-empty">${escapeHtml(window.t('common.loading'))}</div>
-                    </div>
+                    </div>` : ''}
                 </div>
             `;
         }
 
+        /**
+         * The badge a contract shows. Kept identical to the copy in
+         * contracts/index.php - the list and the record must never disagree
+         * about what colour a contract is.
+         *
+         * 🔑 THE COLOUR COMES FROM THE DATES. THE WORDS COME FROM THE STATUS.
+         * See the full explanation on the copy in contracts/index.php. The
+         * short version: this used to paint any contract with a status green,
+         * so the shipped "Expiring Soon" status produced a GREEN badge reading
+         * "Expiring Soon", and only a contract with NO status could go amber.
+         *
+         * ⚠️ Never key on the status NAME - contract_statuses is editable in
+         * Settings and translated.
+         */
         function getContractStatus(c) {
             if (!c.is_active) return { class: 'expired', label: window.t('contracts.status.inactive') };
+
+            let cls   = 'active';
+            let label = window.t('contracts.status.active');
+
             if (c.contract_end) {
                 const end = new Date(c.contract_end);
                 const today = new Date(); today.setHours(0,0,0,0);
                 const daysLeft = Math.ceil((end - today) / (1000*60*60*24));
-                if (daysLeft < 0) return { class: 'expired', label: window.t('contracts.status.expired') };
-                if (c.contract_status_name) return { class: 'active', label: c.contract_status_name };
-                if (daysLeft <= 90) return { class: 'expiring', label: window.t('contracts.status.expiring') };
-                return { class: 'active', label: window.t('contracts.status.active') };
+                if (daysLeft < 0) {
+                    cls = 'expired';
+                    label = window.t('contracts.status.expired');
+                } else if (daysLeft <= 90) {
+                    cls = 'expiring';
+                    label = window.t('contracts.status.expiring');
+                }
             }
-            if (c.contract_status_name) return { class: 'active', label: c.contract_status_name };
-            return { class: 'active', label: window.t('contracts.status.active') };
+
+            // Past the end date the date is the whole truth, so the computed
+            // word wins over a status nobody remembered to change.
+            if (c.contract_status_name && cls !== 'expired') label = c.contract_status_name;
+
+            return { class: cls, label: label };
         }
 
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             const d = new Date(dateStr);
-            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            return fmtNaiveDate(d);
         }
 
         function formatBool(val) {
@@ -539,11 +748,25 @@ if (!$contract_id) {
             return labels[val] || val;
         }
 
+        /** " (Supplier: X)" or " (Customer: X)" for a task or event made from this contract (#153). */
+        // A name, linked to its People page when the reader can open People.
+        function peopleLink(page, id, name) {
+            if (!name) return '';
+            return PEOPLE_BASE && id ? '<a href="' + PEOPLE_BASE + page + '?id=' + encodeURIComponent(id) + '">' + escapeHtml(name) + '</a>' : escapeHtml(name);
+        }
+
+        function partySuffix(c) {
+            if (c.party_type === 'customer') {
+                return c.party_label ? ' ' + window.t('contracts.party.customer_suffix', { customer: c.party_label }) : '';
+            }
+            return c.supplier_name ? ' ' + window.t('contracts.detail.supplier_suffix', { supplier: c.supplier_name }) : '';
+        }
+
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Contract Terms Detail (read-only)
@@ -574,7 +797,7 @@ if (!$contract_id) {
                 ).join('');
 
                 const tabPanels = activeTabs.map((tab, i) =>
-                    `<div class="terms-view-panel ${i === 0 ? 'active' : ''}" id="viewTermPanel_${tab.id}"><div class="rich-content">${valueMap[tab.id] || '<span style="color:#999;">' + escapeHtml(window.t('contracts.detail.no_content')) + '</span>'}</div></div>`
+                    `<div class="terms-view-panel ${i === 0 ? 'active' : ''}" id="viewTermPanel_${tab.id}"><div class="rich-content">${valueMap[tab.id] || '<span style="color:var(--text-dim, #999);">' + escapeHtml(window.t('contracts.detail.no_content')) + '</span>'}</div></div>`
                 ).join('');
 
                 const termsHtml = `
@@ -604,8 +827,249 @@ if (!$contract_id) {
 
         // Related items
         async function loadRelatedItems() {
-            loadRelatedTasks();
-            loadRelatedEvents();
+            if (window.CT_SHOW_ASSETS) loadRelatedAssets();   // GH #217
+            if (window.CT_SHOW_DOMAINS && window.DomainLinks && currentContract) {
+                DomainLinks.mount(document.getElementById('relatedDomainsList'), { kind: 'contract', id: currentContract.id, base: window.CT_BASE, bare: true });
+            }
+            if (window.CT_SHOW_PROJECTS && window.ProjectLinks && currentContract) {
+                ProjectLinks.mount(document.getElementById('relatedProjectsList'), { kind: 'contract', id: currentContract.id, base: window.CT_BASE, bare: true });
+            }
+            if (window.CT_SHOW_TASKS) loadRelatedTasks();       // GH #217
+            if (window.CT_SHOW_CALENDAR) loadRelatedEvents();
+        }
+
+        // ── Equipment covered by this contract (discussion #106) ─────────────
+        //
+        // ⚠️ This list is filtered on the server to the companies the reader can
+        // reach, and it deliberately does NOT report how many were withheld. A
+        // count of what you cannot see is a leak of its own.
+        async function loadRelatedAssets() {
+            const list = document.getElementById('relatedAssetsList');
+            try {
+                const resp = await fetch(CONTRACTS_API + 'get_contract_assets.php?contract_id=' + contractId);
+                const data = await resp.json();
+                if (!data.success) {
+                    list.innerHTML = '<div class="related-empty">' + escapeHtml(window.t('contracts.detail.assets_load_failed')) + '</div>';
+                    return;
+                }
+                list.className = '';
+                if (!data.assets.length) {
+                    list.innerHTML = '<div class="related-empty">' + escapeHtml(window.t('contracts.detail.no_linked_assets')) + '</div>';
+                    return;
+                }
+                list.innerHTML = data.assets.map(a => `
+                    <div class="related-item related-item--asset">
+                        <a href="../asset-management/index.php?asset=${a.asset_id}">${escapeHtml(assetLabel(a))}</a>
+                        ${window.FreeITSMPreview ? window.FreeITSMPreview.badge('asset', a.asset_id) : ''}
+                        <span class="meta">
+                            ${a.type_name ? escapeHtml(a.type_name) : ''}
+                            ${a.type_name && a.location_name ? '<span class="meta-sep">•</span>' : ''}
+                            ${a.location_name ? escapeHtml(a.location_name) : ''}
+                        </span>
+                        <input type="text" class="asset-reference" value="${escapeHtml(a.reference || '')}"
+                               maxlength="190"
+                               placeholder="${escapeHtml(window.t('contracts.detail.asset_reference_placeholder'))}"
+                               onchange="saveAssetReference(${a.link_id}, this.value)">
+                        <button type="button" class="related-remove" title="${escapeHtml(window.t('contracts.detail.unlink_asset'))}"
+                                onclick="unlinkAsset(${a.link_id})">&times;</button>
+                    </div>`).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="related-empty">' + escapeHtml(window.t('contracts.detail.assets_load_failed')) + '</div>';
+            }
+        }
+
+        /**
+         * What to call a piece of equipment.
+         *
+         * A hostname is the usual answer and a SIM card does not have one, so
+         * the fallbacks matter: an asset tag, a serial, or the make and model.
+         * Falling through to a bare id would be a row nobody can identify.
+         */
+        function assetLabel(a) {
+            return a.hostname
+                || a.asset_tag
+                || a.service_tag
+                || [a.manufacturer, a.model].filter(Boolean).join(' ')
+                || ('#' + a.asset_id);
+        }
+
+        async function saveAssetReference(linkId, value) {
+            try {
+                await fetch(CONTRACTS_API + 'save_contract_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ link_id: linkId, reference: value })
+                });
+            } catch (e) { /* the field keeps what was typed; the next load corrects it */ }
+        }
+
+        async function unlinkAsset(linkId) {
+            // Says what it does. "Remove" next to a piece of equipment reads as
+            // "delete the equipment" to enough people to be worth a sentence.
+            const okToGo = typeof window.showConfirm === 'function'
+                ? await window.showConfirm({
+                      title: window.t('contracts.detail.unlink_asset'),
+                      message: window.t('contracts.detail.unlink_asset_message'),
+                      okLabel: window.t('contracts.detail.unlink_asset'), okClass: 'danger'
+                  })
+                : confirm(window.t('contracts.detail.unlink_asset_message'));
+            if (!okToGo) return;
+
+            try {
+                const resp = await fetch(CONTRACTS_API + 'delete_contract_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ link_id: linkId })
+                });
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error || window.t('contracts.detail.assets_load_failed'), 'error'); return; }
+                loadRelatedAssets();
+            } catch (e) {
+                showToast(window.t('contracts.detail.assets_load_failed'), 'error');
+            }
+        }
+
+        // ── The equipment report: one report, three ways out (Ed) ────────────
+        //
+        // ⚠️ All three show the SAME rows, and all three are filtered to what
+        // the person asking can see. A report is not a way around the company
+        // filter on the panel above.
+        //
+        // "PDF" means printing to one, as asset handover and the RFP preview
+        // already do. There is no PDF library in this stack, and adding one to
+        // lay out a six-column table would be a dependency to maintain forever
+        // in exchange for a button every browser already has.
+        function openReportModal() {
+            document.getElementById('reportPdf').href = 'equipment-report.php?id=' + contractId + '&print=1';
+            document.getElementById('reportEmailTo').value = '';
+            document.getElementById('reportEmailBtn').disabled = false;
+
+            // Say how many rows before they choose. An empty report emailed to a
+            // supplier is worse than not sending one, and this is the last
+            // moment anybody can notice.
+            const count = document.querySelectorAll('#equipment .related-item--asset').length;
+            document.getElementById('reportCount').textContent =
+                count ? window.t('contracts.report.count', { n: count })
+                      : window.t('contracts.report.count_none');
+
+            document.getElementById('reportModal').classList.add('active');
+        }
+
+        function closeReportModal() {
+            document.getElementById('reportModal').classList.remove('active');
+        }
+
+        async function downloadEquipmentCsv() {
+            try {
+                const resp = await fetch(CONTRACTS_API + 'get_contract_assets.php?contract_id=' + contractId);
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error || window.t('contracts.detail.assets_load_failed'), 'error'); return; }
+
+                const head = ['contracts.report.col_equipment', 'contracts.report.col_type',
+                              'contracts.report.col_serial', 'contracts.report.col_tag',
+                              'contracts.report.col_location', 'contracts.report.col_reference']
+                             .map(k => window.t(k));
+
+                // ⚠️ Every field is quoted and its own quotes doubled. A model
+                // name with a comma in it is not exotic, and an unquoted one
+                // silently shifts every column after it.
+                const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+                const rows = [head.map(cell).join(',')];
+                (data.assets || []).forEach(a => rows.push([
+                    assetLabel(a), a.type_name, a.service_tag, a.asset_tag, a.location_name, a.reference
+                ].map(cell).join(',')));
+
+                // The BOM is what makes Excel read UTF-8 rather than guessing at
+                // the local codepage and mangling every accented location name.
+                const blob = new Blob(['\uFEFF' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+                const url  = URL.createObjectURL(blob);
+                const a    = document.createElement('a');
+                a.href = url;
+                a.download = ((currentContract && currentContract.contract_number) || 'contract')
+                             .replace(/[^a-zA-Z0-9 _-]/g, '') + '-equipment.csv';
+                a.click();
+                URL.revokeObjectURL(url);
+                closeReportModal();
+            } catch (e) {
+                showToast(window.t('contracts.detail.assets_load_failed'), 'error');
+            }
+        }
+
+        async function emailEquipmentReport() {
+            const btn = document.getElementById('reportEmailBtn');
+            const to  = document.getElementById('reportEmailTo').value.trim();
+            btn.disabled = true;
+            try {
+                const resp = await fetch(CONTRACTS_API + 'email_equipment_report.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contract_id: contractId, to: to })
+                });
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error || window.t('contracts.report.email_failed'), 'error'); btn.disabled = false; return; }
+                showToast(window.t('contracts.report.email_sent', { email: data.sent_to }), 'success');
+                closeReportModal();
+            } catch (e) {
+                showToast(window.t('contracts.report.email_failed'), 'error');
+                btn.disabled = false;
+            }
+        }
+
+        // ── The picker ───────────────────────────────────────────────────────
+        let assetPickerTimer = null;
+
+        function openAssetPicker() {
+            document.getElementById('assetPickerModal').classList.add('active');
+            const box = document.getElementById('assetPickerSearch');
+            box.value = '';
+            box.focus();
+            searchLinkableAssets();
+        }
+
+        function closeAssetPicker() {
+            document.getElementById('assetPickerModal').classList.remove('active');
+        }
+
+        function assetPickerInput() {
+            clearTimeout(assetPickerTimer);
+            assetPickerTimer = setTimeout(searchLinkableAssets, 200);
+        }
+
+        async function searchLinkableAssets() {
+            const results = document.getElementById('assetPickerResults');
+            const q = document.getElementById('assetPickerSearch').value.trim();
+            try {
+                const resp = await fetch(CONTRACTS_API + 'search_contract_assets.php?contract_id=' + contractId
+                                         + '&q=' + encodeURIComponent(q));
+                const data = await resp.json();
+                if (!data.success || !data.assets.length) {
+                    results.innerHTML = '<div class="related-empty">' + escapeHtml(window.t('contracts.detail.no_assets_found')) + '</div>';
+                    return;
+                }
+                results.innerHTML = data.assets.map(a => `
+                    <button type="button" class="asset-pick" onclick="linkAsset(${a.asset_id})">
+                        <span class="asset-pick-name">${escapeHtml(assetLabel(a))}</span>
+                        <span class="asset-pick-meta">
+                            ${a.type_name ? escapeHtml(a.type_name) : ''}
+                            ${a.type_name && a.location_name ? ' • ' : ''}
+                            ${a.location_name ? escapeHtml(a.location_name) : ''}
+                        </span>
+                    </button>`).join('');
+            } catch (e) {
+                results.innerHTML = '<div class="related-empty">' + escapeHtml(window.t('contracts.detail.assets_load_failed')) + '</div>';
+            }
+        }
+
+        async function linkAsset(assetId) {
+            try {
+                const resp = await fetch(CONTRACTS_API + 'save_contract_asset.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contract_id: contractId, asset_id: assetId })
+                });
+                const data = await resp.json();
+                if (!data.success) { showToast(data.error || window.t('contracts.detail.assets_load_failed'), 'error'); return; }
+                closeAssetPicker();
+                loadRelatedAssets();
+            } catch (e) {
+                showToast(window.t('contracts.detail.assets_load_failed'), 'error');
+            }
         }
 
         async function loadRelatedTasks() {
@@ -672,8 +1136,8 @@ if (!$contract_id) {
         function formatDateTime(dtStr, allDay) {
             if (!dtStr) return '-';
             const d = new Date(dtStr.replace(' ', 'T'));
-            if (allDay) return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            if (allDay) return fmtNaiveDate(d);
+            return fmtNaiveDateTime(d);
         }
 
         // Modals
@@ -702,7 +1166,7 @@ if (!$contract_id) {
             const assigneeDefault = c.contract_owner_id || '';
 
             document.getElementById('taskTitle').value = titleDefault;
-            document.getElementById('taskDescription').value = window.t('contracts.detail.linked_description', { number: c.contract_number, title: c.title }) + (c.supplier_name ? ' ' + window.t('contracts.detail.supplier_suffix', { supplier: c.supplier_name }) : '');
+            document.getElementById('taskDescription').value = window.t('contracts.detail.linked_description', { number: c.contract_number, title: c.title }) + partySuffix(c);
             document.getElementById('taskDueDate').value = dueDefault ? dueDefault.substring(0, 10) : '';
             document.getElementById('taskPriority').value = 'Medium';
             document.getElementById('taskStatus').value = 'To Do';
@@ -777,7 +1241,7 @@ if (!$contract_id) {
             const titleDefault = `${c.contract_number} — ${c.title}`;
 
             document.getElementById('eventTitle').value = titleDefault;
-            document.getElementById('eventDescription').value = window.t('contracts.detail.linked_description', { number: c.contract_number, title: c.title }) + (c.supplier_name ? ' ' + window.t('contracts.detail.supplier_suffix', { supplier: c.supplier_name }) : '');
+            document.getElementById('eventDescription').value = window.t('contracts.detail.linked_description', { number: c.contract_number, title: c.title }) + partySuffix(c);
             document.getElementById('eventStart').value = dateDefault ? dateDefault.substring(0, 10) : '';
             document.getElementById('eventAllDay').checked = true;
             document.getElementById('eventLocation').value = '';
@@ -846,6 +1310,67 @@ if (!$contract_id) {
             }
         }
     </script>
+
+    <!-- Equipment report: the same report, three ways out (Ed) -->
+    <div class="cv-modal-overlay" id="reportModal">
+        <div class="cv-modal">
+            <div class="cv-modal-header">
+                <h3><?php echo htmlspecialchars(t('contracts.report.button')); ?></h3>
+            </div>
+            <div class="cv-modal-body">
+                <p class="cr-count" id="reportCount"></p>
+
+                <a class="cr-choice" id="reportPdf" target="_blank" rel="noopener">
+                    <svg class="cr-choice-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+                    <span>
+                        <span class="cr-choice-name"><?php echo htmlspecialchars(t('contracts.report.opt_pdf')); ?></span>
+                        <span class="cr-choice-desc"><?php echo htmlspecialchars(t('contracts.report.opt_pdf_desc')); ?></span>
+                    </span>
+                </a>
+
+                <button type="button" class="cr-choice" onclick="downloadEquipmentCsv()">
+                    <svg class="cr-choice-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                    <span>
+                        <span class="cr-choice-name"><?php echo htmlspecialchars(t('contracts.report.opt_csv')); ?></span>
+                        <span class="cr-choice-desc"><?php echo htmlspecialchars(t('contracts.report.opt_csv_desc')); ?></span>
+                    </span>
+                </button>
+
+                <div class="cr-choice" style="cursor:default;display:block;">
+                    <span class="cr-choice-name"><?php echo htmlspecialchars(t('contracts.report.opt_email')); ?></span>
+                    <span class="cr-choice-desc"><?php echo htmlspecialchars(t('contracts.report.opt_email_desc')); ?></span>
+                    <div class="cr-email-row">
+                        <input type="email" id="reportEmailTo" autocomplete="off"
+                               placeholder="<?php echo htmlspecialchars(t('contracts.report.email_placeholder')); ?>">
+                        <button type="button" id="reportEmailBtn" onclick="emailEquipmentReport()"><?php echo htmlspecialchars(t('contracts.report.send')); ?></button>
+                    </div>
+                </div>
+            </div>
+            <div class="cv-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeReportModal()"><?php echo htmlspecialchars(t('common.close')); ?></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link equipment to this contract (discussion #106) -->
+    <div class="cv-modal-overlay" id="assetPickerModal">
+        <div class="cv-modal">
+            <div class="cv-modal-header">
+                <h3><?php echo htmlspecialchars(t('contracts.detail.asset_picker_title')); ?></h3>
+            </div>
+            <div class="cv-modal-body">
+                <div class="form-group">
+                    <input type="text" id="assetPickerSearch" autocomplete="off"
+                           oninput="assetPickerInput()"
+                           placeholder="<?php echo htmlspecialchars(t('contracts.detail.asset_search_placeholder')); ?>">
+                </div>
+                <div id="assetPickerResults" class="asset-pick-results"></div>
+            </div>
+            <div class="cv-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeAssetPicker()"><?php echo htmlspecialchars(t('common.close')); ?></button>
+            </div>
+        </div>
+    </div>
 
     <!-- Create Task Modal -->
     <div class="cv-modal-overlay" id="taskModal">
@@ -944,5 +1469,9 @@ if (!$contract_id) {
             </div>
         </div>
     </div>
+    <script>window.CT_SHOW_DOMAINS = <?php echo $ctShowDomains ? 'true' : 'false'; ?>; window.CT_SHOW_PROJECTS = <?php echo $ctShowProjects ? 'true' : 'false'; ?>; /* GH #217 */ window.CT_SHOW_ASSETS = <?php echo $ctShowAssets ? 'true' : 'false'; ?>; window.CT_SHOW_TASKS = <?php echo $ctShowTasks ? 'true' : 'false'; ?>; window.CT_SHOW_CALENDAR = <?php echo $ctShowCalendar ? 'true' : 'false'; ?>; window.CT_BASE = <?php echo json_encode(BASE_URL); ?>;</script>
+    <script src="../assets/js/domain-links.js?v=2"></script>
+    <script src="../assets/js/project-links.js?v=1"></script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

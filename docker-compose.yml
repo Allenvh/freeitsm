@@ -16,6 +16,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-freeitsm}
       - FREEITSM_BASE_URL=${FREEITSM_BASE_URL:-http://localhost:8080}
       - ENCRYPTION_KEY_PATH=/var/www/encryption_keys/freeitsm.key
+      - FREEITSM_SCHEDULER=${FREEITSM_SCHEDULER:-1}
       - DEFAULT_IMAP_HOST=${DEFAULT_IMAP_HOST:-}
       - DEFAULT_IMAP_PORT=${DEFAULT_IMAP_PORT:-993}
       - DEFAULT_IMAP_ENCRYPTION=${DEFAULT_IMAP_ENCRYPTION:-ssl}
@@ -25,6 +26,8 @@ services:
     volumes:
       - attachments:/var/www/html/tickets/attachments
       - cm-attachments:/var/www/html/change-management/attachments
+      - files:/var/www/html/uploads/files
+      - tls:/var/www/tls
       - encryption-keys:/var/www/encryption_keys
 
   db:
@@ -117,6 +120,8 @@ services:
 
 
 volumes:
+  files:
+  tls:
   db-data:
   attachments:
   cm-attachments:

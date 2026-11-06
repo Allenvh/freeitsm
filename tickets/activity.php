@@ -4,13 +4,18 @@
  */
 session_start();
 require_once '../config.php';
+require_once '../includes/functions.php';
 require_once '../includes/i18n.php';
+require_once '../includes/theme.php';
+require_once '../includes/timezone.php';
 I18n::initFromSession();
+Tz::init();
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ../login.php');
+    header('Location: ../auth/login.php');
     exit;
 }
+requireModuleAccess('tickets');
 
 $analyst_name = $_SESSION['analyst_name'] ?? 'Analyst';
 $current_page = 'settings';
@@ -18,24 +23,26 @@ $path_prefix = '../';
 $translationNamespaces = ['common', 'tickets'];
 ?>
 <!DOCTYPE html>
-<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>">
+<html lang="<?php echo htmlspecialchars(I18n::getLocale()); ?>" data-theme="<?php echo htmlspecialchars(Theme::active()); ?>" data-theme-mode="<?php echo htmlspecialchars(Theme::mode()); ?>">
 <head>
+    <link rel="icon" type="image/svg+xml" href="<?php echo defined('BASE_URL') ? BASE_URL : '/'; ?>favicon.svg">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars(t('tickets.activity.page_title')); ?></title>
-    <link rel="stylesheet" href="../assets/css/inbox.css">
+    <title><?php echo htmlspecialchars(pageTitle('tickets', t('tickets.activity.page_title'))); ?></title>
+    <link rel="stylesheet" href="../assets/css/theme.css?v=27">
+    <link rel="stylesheet" href="../assets/css/inbox.css?v=79">
     <style>
         .activity-container {
             display: flex;
             height: calc(100vh - 48px);
-            background: #f5f5f5;
+            background: var(--surface-2);
         }
 
         /* Sidebar */
         .activity-sidebar {
             width: 280px;
-            background: white;
-            border-right: 1px solid #ddd;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
@@ -43,13 +50,13 @@ $translationNamespaces = ['common', 'tickets'];
 
         .sidebar-header {
             padding: 20px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft);
         }
 
         .sidebar-header h3 {
             font-size: 14px;
             font-weight: 600;
-            color: #333;
+            color: var(--text);
             margin: 0 0 12px 0;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -58,7 +65,7 @@ $translationNamespaces = ['common', 'tickets'];
         .sidebar-header .search-box input {
             width: 100%;
             padding: 8px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border); background: var(--surface); color: var(--text);
             border-radius: 4px;
             font-size: 13px;
             box-sizing: border-box;
@@ -66,7 +73,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         .sidebar-header .search-box input:focus {
             outline: none;
-            border-color: #0078d4;
+            border-color: var(--accent);
         }
 
         .mailbox-list {
@@ -81,16 +88,16 @@ $translationNamespaces = ['common', 'tickets'];
             padding: 10px 20px;
             cursor: pointer;
             font-size: 14px;
-            color: #333;
+            color: var(--text);
             transition: all 0.15s;
         }
 
         .mailbox-item:hover {
-            background: #e8f4fd;
+            background: var(--accent-soft);
         }
 
         .mailbox-item.active {
-            background: #0078d4;
+            background: var(--accent);
             color: white;
         }
 
@@ -104,7 +111,7 @@ $translationNamespaces = ['common', 'tickets'];
         .mailbox-item .mailbox-count {
             font-size: 12px;
             font-weight: 600;
-            background: rgba(0,0,0,0.08);
+            background: var(--shadow);
             padding: 2px 8px;
             border-radius: 10px;
             min-width: 24px;
@@ -118,14 +125,14 @@ $translationNamespaces = ['common', 'tickets'];
 
         .sidebar-footer {
             padding: 15px 20px;
-            border-top: 1px solid #eee;
+            border-top: 1px solid var(--border-soft);
         }
 
         .back-link {
             display: flex;
             align-items: center;
             gap: 6px;
-            color: #0078d4;
+            color: var(--accent);
             text-decoration: none;
             font-size: 13px;
         }
@@ -144,13 +151,13 @@ $translationNamespaces = ['common', 'tickets'];
 
         .activity-header {
             padding: 20px 30px 0;
-            background: #f5f5f5;
+            background: var(--surface-2);
         }
 
         .activity-header h2 {
             margin: 0 0 15px 0;
             font-size: 20px;
-            color: #333;
+            color: var(--text);
         }
 
         .activity-header .search-row {
@@ -162,14 +169,14 @@ $translationNamespaces = ['common', 'tickets'];
         .activity-header .search-row input {
             flex: 1;
             padding: 8px 12px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border); background: var(--surface); color: var(--text);
             border-radius: 4px;
             font-size: 13px;
         }
 
         .activity-header .search-row input:focus {
             outline: none;
-            border-color: #0078d4;
+            border-color: var(--accent);
         }
 
         .activity-table-wrap {
@@ -187,12 +194,12 @@ $translationNamespaces = ['common', 'tickets'];
         .activity-table-wrap thead th {
             position: sticky;
             top: 0;
-            background: #f5f5f5;
+            background: var(--surface-2);
             padding: 10px 12px;
             text-align: left;
             font-weight: 600;
-            color: #555;
-            border-bottom: 2px solid #ddd;
+            color: var(--text-muted);
+            border-bottom: 2px solid var(--border);
             white-space: nowrap;
         }
 
@@ -202,16 +209,16 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         .activity-table-wrap tbody tr:hover {
-            background: #e8f4fd;
+            background: var(--accent-soft);
         }
 
         .activity-table-wrap tbody tr.selected {
-            background: #d0e8f7;
+            background: var(--surface-hover);
         }
 
         .activity-table-wrap tbody td {
             padding: 10px 12px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft);
         }
 
         .activity-footer {
@@ -220,15 +227,15 @@ $translationNamespaces = ['common', 'tickets'];
             justify-content: space-between;
             align-items: center;
             font-size: 13px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            background: white;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            background: var(--surface);
         }
 
         /* Processing log panel */
         .log-panel {
-            border-top: 1px solid #ddd;
-            background: white;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
             max-height: 280px;
             display: flex;
             flex-direction: column;
@@ -239,7 +246,7 @@ $translationNamespaces = ['common', 'tickets'];
             justify-content: space-between;
             align-items: center;
             padding: 10px 30px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-soft);
         }
 
         .log-panel-header strong {
@@ -253,8 +260,8 @@ $translationNamespaces = ['common', 'tickets'];
         }
 
         .log-panel-body pre {
-            background: #f5f5f5;
-            border: 1px solid #ddd;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
             border-radius: 4px;
             padding: 12px;
             font-size: 12px;
@@ -266,8 +273,8 @@ $translationNamespaces = ['common', 'tickets'];
         .badge-imported {
             display: inline-block;
             padding: 2px 8px;
-            background: #d4edda;
-            color: #155724;
+            background: var(--success-bg);
+            color: var(--success-text);
             border-radius: 10px;
             font-size: 11px;
         }
@@ -275,8 +282,8 @@ $translationNamespaces = ['common', 'tickets'];
         .badge-rejected {
             display: inline-block;
             padding: 2px 8px;
-            background: #f8d7da;
-            color: #721c24;
+            background: var(--danger-bg);
+            color: var(--danger-text);
             border-radius: 10px;
             font-size: 11px;
         }
@@ -284,18 +291,19 @@ $translationNamespaces = ['common', 'tickets'];
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #999;
+            color: var(--text-faint);
         }
 
         .empty-state svg {
             width: 48px;
             height: 48px;
             margin-bottom: 15px;
-            stroke: #ccc;
+            stroke: var(--text-faint);
         }
     </style>
+    <link rel="stylesheet" href="../assets/css/mobile.css?v=196">
 </head>
-<body>
+<body data-mobile-page="tickets-activity">
     <?php include 'includes/header.php'; ?>
 
     <div class="activity-container">
@@ -361,7 +369,9 @@ $translationNamespaces = ['common', 'tickets'];
     </div>
 
     <script>window.translations = <?php echo json_encode(I18n::exportForJs($translationNamespaces), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE); ?>;</script>
-    <script src="../assets/js/i18n.js"></script>
+    <?php echo Tz::scriptTag(); ?>
+    <script src="../assets/js/tz.js?v=5"></script>
+    <script src="../assets/js/i18n.js?v=3"></script>
     <script>
         const API_BASE = '../api/tickets/';
         let mailboxes = [];
@@ -372,7 +382,7 @@ $translationNamespaces = ['common', 'tickets'];
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // Load mailboxes for sidebar
@@ -464,7 +474,7 @@ $translationNamespaces = ['common', 'tickets'];
             }
 
             const tbody = document.getElementById('activityBody');
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: #999;">' + escapeHtml(window.t('tickets.activity.loading')) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-faint);">' + escapeHtml(window.t('tickets.activity.loading')) + '</td></tr>';
 
             const search = document.getElementById('activitySearch').value;
 
@@ -481,7 +491,7 @@ $translationNamespaces = ['common', 'tickets'];
                 }
 
                 if (data.entries.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: #999;">' + escapeHtml(window.t('tickets.activity.no_activity')) + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-faint);">' + escapeHtml(window.t('tickets.activity.no_activity')) + '</td></tr>';
                     document.getElementById('activityCount').textContent = '';
                     document.getElementById('activityPagination').innerHTML = '';
                     return;
@@ -495,11 +505,18 @@ $translationNamespaces = ['common', 'tickets'];
                 window._logs = data.entries.map(e => e.processing_log || null);
 
                 tbody.innerHTML = data.entries.map((e, idx) => {
-                    const dt = new Date(e.created_datetime + 'Z').toLocaleString();
+                    const dt = fmtDateTime(e.created_datetime);
                     const badge = e.action === 'imported'
                         ? '<span class="badge-imported">' + escapeHtml(window.t('tickets.activity.badge_imported')) + '</span>'
                         : '<span class="badge-rejected">' + escapeHtml(window.t('tickets.activity.badge_rejected')) + '</span>';
-                    const from = escapeHtml(e.from_name ? e.from_name + ' <' + e.from_address + '>' : e.from_address);
+                    const fromAddr = (e.from_address || '').trim();
+                    const fromNm   = (e.from_name || '').trim();
+                    // A portal requester with no mailbox has a name and no address.
+                    // Plain + concatenation would render the literal text "null" here,
+                    // since this is not passed through escapeHtml first.
+                    const from = escapeHtml(
+                        fromNm && fromAddr ? fromNm + ' <' + fromAddr + '>' : (fromNm || fromAddr)
+                    );
                     return `<tr onclick="showLog(${idx})">
                         <td style="white-space: nowrap;">${dt}</td>
                         <td>${escapeHtml(mbName)}</td>
@@ -519,7 +536,7 @@ $translationNamespaces = ['common', 'tickets'];
 
         async function loadAllActivity() {
             const tbody = document.getElementById('activityBody');
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: #999;">' + escapeHtml(window.t('tickets.activity.loading')) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-faint);">' + escapeHtml(window.t('tickets.activity.loading')) + '</td></tr>';
 
             const search = document.getElementById('activitySearch').value;
 
@@ -547,7 +564,7 @@ $translationNamespaces = ['common', 'tickets'];
                 const entries = allEntries.slice(0, 100);
 
                 if (entries.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: #999;">' + escapeHtml(window.t('tickets.activity.no_activity')) + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-faint);">' + escapeHtml(window.t('tickets.activity.no_activity')) + '</td></tr>';
                     document.getElementById('activityCount').textContent = '';
                     document.getElementById('activityPagination').innerHTML = '';
                     return;
@@ -556,11 +573,18 @@ $translationNamespaces = ['common', 'tickets'];
                 window._logs = entries.map(e => e.processing_log || null);
 
                 tbody.innerHTML = entries.map((e, idx) => {
-                    const dt = new Date(e.created_datetime + 'Z').toLocaleString();
+                    const dt = fmtDateTime(e.created_datetime);
                     const badge = e.action === 'imported'
                         ? '<span class="badge-imported">' + escapeHtml(window.t('tickets.activity.badge_imported')) + '</span>'
                         : '<span class="badge-rejected">' + escapeHtml(window.t('tickets.activity.badge_rejected')) + '</span>';
-                    const from = escapeHtml(e.from_name ? e.from_name + ' <' + e.from_address + '>' : e.from_address);
+                    const fromAddr = (e.from_address || '').trim();
+                    const fromNm   = (e.from_name || '').trim();
+                    // A portal requester with no mailbox has a name and no address.
+                    // Plain + concatenation would render the literal text "null" here,
+                    // since this is not passed through escapeHtml first.
+                    const from = escapeHtml(
+                        fromNm && fromAddr ? fromNm + ' <' + fromAddr + '>' : (fromNm || fromAddr)
+                    );
                     return `<tr onclick="showLog(${idx})">
                         <td style="white-space: nowrap;">${dt}</td>
                         <td>${escapeHtml(e._mailbox_name || '')}</td>
@@ -655,5 +679,6 @@ $translationNamespaces = ['common', 'tickets'];
 
         init();
     </script>
+    <script src="../assets/js/mobile.js?v=83"></script>
 </body>
 </html>

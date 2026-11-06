@@ -10,6 +10,10 @@
 (function () {
     'use strict';
 
+    /**
+     * Translates a key under asset-management, returning the key itself when
+     * translations are not loaded.
+     */
     const tt = (k, p) => (window.t ? window.t('asset-management.' + k, p) : k);
 
     const COLUMNS = [
@@ -31,24 +35,154 @@
         { key: 'purchase_date',     label: tt('field.purchase_date'),       type: 'date',   defaultVisible: false, defaultOrder: 15 },
         { key: 'purchase_cost',     label: tt('table.col_cost'),            type: 'number', defaultVisible: false, defaultOrder: 16 },
         { key: 'supplier_name',     label: tt('field.supplier'),            type: 'string', defaultVisible: false, defaultOrder: 17 },
+        // GH #160: "CODE Name" of the cost centre it is charged to - sortable and filterable like any text column.
+        { key: 'cost_centre_label', label: tt('field.cost_centre'),         type: 'string', defaultVisible: false, defaultOrder: 17.5 },
         { key: 'warranty_expiry',   label: tt('field.warranty_expiry'),     type: 'date',   defaultVisible: false, defaultOrder: 18 },
+        // Sort by Lease ends to see what is due back first (3.5.0).
+        { key: 'lease_start',       label: tt('field.lease_start'),         type: 'date',   defaultVisible: false, defaultOrder: 18.1 },
+        { key: 'lease_expiry',      label: tt('field.lease_expiry'),        type: 'date',   defaultVisible: false, defaultOrder: 18.2 },
+        // When the inventory agent last reported (discussion #97).
+        //
+        // 🔑 SORTED, not filtered, is the point. The per-column filter is a list
+        // of distinct values, which a timestamp defeats — but sorting this
+        // column ascending puts the machines that stopped reporting at the top,
+        // which is the question people actually bring to it.
+        //
+        // ⚠️ `display`, not the raw value: these are stored UTC and the reader
+        // may be twelve hours from it. `type: 'date'` still sorts on the raw
+        // string, which is correct precisely because it is UTC.
+        //
+        // Last seen ships VISIBLE and first seen hidden: staleness is worth
+        // putting in front of people, an install date is worth having available.
+        // A saved view or a column layout from before this update keeps its own
+        // arrangement and gains these on the end — see applyColumnConfig().
+        { key: 'last_seen',         label: tt('field.last_seen'),           type: 'date',   defaultVisible: true,  defaultOrder: 19,
+          display: r => r.last_seen ? fmtDateTime(parseUTCDate(r.last_seen)) : tt('field.never_seen') },
+        { key: 'first_seen',        label: tt('field.first_seen'),          type: 'date',   defaultVisible: false, defaultOrder: 20,
+          display: r => r.first_seen ? fmtDateTime(parseUTCDate(r.first_seen)) : tt('field.never_seen') },
+        // Retired assets (they have left the estate): when and why. Filled only with
+        // "Show retired" on - the list a transfer to another organisation is made from.
+        { key: 'retired_datetime',  label: tt('retired.col_date'),          type: 'date',   defaultVisible: false, defaultOrder: 21,
+          display: r => r.retired_datetime ? fmtDateTime(parseUTCDate(r.retired_datetime)) : '' },
+        { key: 'retired_reason',    label: tt('retired.reason'),            type: 'string', defaultVisible: false, defaultOrder: 22,
+          display: r => r.retired_reason || '' },
     ];
+
+    /**
+     * Custom field columns (docs/design/flexible-asset-fields.md §8).
+     *
+     * Handed over by table.php as a global rather than fetched here: the shared
+     * engine boots on DOMContentLoaded, so an await before createDataTable()
+     * would mean the event had already fired and the table never built.
+     *
+     * Hidden by default. Somebody who ticked "offer as a column" said it should
+     * be AVAILABLE, not that everybody should have it forced on — the column
+     * picker is where it gets turned on, and each analyst's choice is already
+     * remembered.
+     */
+    (window.assetCustomColumns || []).forEach((c, i) => {
+        COLUMNS.push({
+            key: c.key,
+            label: c.label,
+            type: c.type,
+            defaultVisible: false,
+            defaultOrder: 100 + i,   // after every built-in, whatever gets added later
+        });
+    });
+
+    /**
+     * "Not seen in N days", arrived at from the Watchtower assets card (#97).
+     *
+     * 🔑 THE SAME RULE THE COUNT USED. includes/watchtower_queries.php counts
+     * `last_seen IS NOT NULL AND last_seen < now - 7 days` — a machine that has
+     * NEVER reported is deliberately not in that number, because it is not a
+     * machine that stopped, it is a television somebody typed in. Filtering
+     * differently here would land you on a list longer than the badge you
+     * clicked, which is the fastest way to stop trusting a dashboard.
+     *
+     * ⚠️ The banner is required, not decoration. A table quietly showing nine of
+     * five hundred assets is indistinguishable from a table showing all of them,
+     * and the way out has to be on screen.
+     */
+    function staleDaysFromUrl() {
+        const raw = new URLSearchParams(location.search).get('stale');
+        if (raw === null) return null;
+        const n = parseInt(raw, 10);
+        return Number.isFinite(n) && n > 0 && n <= 3650 ? n : null;
+    }
+
+    /**
+     * When the page was opened with ?stale=N, keeps only assets last seen more than N
+     * days ago (never-seen assets excluded, matching the Watchtower count) and shows the
+     * banner with a link back to all assets.
+     */
+    function applyStaleFilter(rows) {
+        const days = staleDaysFromUrl();
+        if (days === null) return rows;
+
+        const cutoff = Date.now() - days * 86400000;
+        const kept = rows.filter(r => {
+            if (!r.last_seen) return false;          // never reported — see above
+            const d = parseUTCDate(r.last_seen);
+            return d && !isNaN(d.getTime()) && d.getTime() < cutoff;
+        });
+
+        const notice = document.getElementById('assetStaleNotice');
+        if (notice) {
+            const key = kept.length === 1 ? 'table.stale_notice_one' : 'table.stale_notice';
+            const text = tt(key, { count: kept.length, days: days });
+            const href = location.pathname;
+            notice.innerHTML = '<span></span><a></a>';
+            notice.firstChild.textContent = text;
+            const link = notice.lastChild;
+            link.textContent = tt('table.stale_show_all');
+            link.href = href;
+            notice.hidden = false;
+            // .dt-layout is height:100% against .dt-page, so a banner above it
+            // pushes the table's bottom off the screen. Adjusted here rather
+            // than in data-table.css because three other tables share that rule
+            // and none of them has a banner.
+            const layout = document.querySelector('.dt-layout');
+            if (layout) {
+                layout.style.height = 'auto';
+                layout.style.flex = '1';
+                layout.style.minHeight = '0';
+            }
+        }
+        return kept;
+    }
 
     createDataTable({
         accent: '#0078d4',
         prefApi: '../api/system/',
         prefKey: 'asset_table_v1',
+        viewsKey: 'assets',   // saved views (#96); viewsApi is derived from prefApi
         noun: 'asset',
         exportName: 'assets',
         defaultSort: { key: 'hostname', dir: 'asc' },
         columns: COLUMNS,
-        onRowClick: row => { window.location.href = `index.php?asset=${row.id}`; },
+        // `asset_id`, NOT `asset` (issue #84). The split-pane view reads only
+        // `asset_id` — the spelling includes/entity_links.php declares canonical
+        // and the ticket inbox already uses — so `asset` opened the module and
+        // then sat there with nothing selected, which reads as "the asset failed
+        // to load" rather than as a bad link.
+        onRowClick: row => { window.location.href = `index.php?asset_id=${row.id}`; },
         pdf: { title: tt('nav.assets'), headFill: [0, 120, 212], logo: '../assets/images/CompanyLogo.png' },
 
         load: async () => {
-            const d = await fetch('../api/assets/get_assets.php').then(r => r.json());
+            // Retired assets only with the switch on - the same choice as the Assets list,
+            // remembered in this browser (asset-management/index.php).
+            let showRetired = false;
+            try { showRetired = localStorage.getItem('assets_show_retired') === '1'; } catch (e) {}
+            const d = await fetch('../api/assets/get_assets.php' + (showRetired ? '?include_retired=1' : '')).then(r => r.json());
             if (!d.success) { console.error('get_assets:', d.error); return []; }
-            return d.assets || [];
+            // GH #200 part D: the table shows and filters the mapped names ("HP"), never the
+            // spellings that came in ("HP Inc.", "Hewlett-Packard").
+            (d.assets || []).forEach(a => {
+                if (a.manufacturer_display !== undefined) a.manufacturer = a.manufacturer_display;
+                if (a.model_display !== undefined) a.model = a.model_display;
+            });
+            return applyStaleFilter(d.assets || []);
         },
     });
 })();

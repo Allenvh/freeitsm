@@ -8,7 +8,7 @@ $current_module = 'forms';
 $module_title = function_exists('t') ? t('forms.title') : 'Forms';
 
 if (!isset($_SESSION['analyst_id'])) {
-    header('Location: ' . BASE_URL . 'login.php');
+    header('Location: ' . BASE_URL . 'auth/login.php');
     exit;
 }
 
@@ -24,7 +24,9 @@ require_once $path_prefix . 'includes/waffle-menu.php';
         <?php renderWaffleMenuPanel($modules, $current_module, $path_prefix); ?>
         <span class="module-title"><?php echo htmlspecialchars($module_title); ?></span>
     </div>
+    <?php $formsNavFull = !isset($caFullAccess) || $caFullAccess;   // set by forms/approvals.php for an approver without Forms (#180) ?>
     <nav class="header-nav">
+        <?php if ($formsNavFull): ?>
         <a href="<?php echo BASE_URL; ?>forms/" class="nav-btn <?php echo $current_page === 'forms' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('forms.nav.forms') : 'Forms'); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -35,6 +37,15 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span><?php echo htmlspecialchars(function_exists('t') ? t('forms.nav.forms') : 'Forms'); ?></span>
         </a>
+        <?php endif; ?>
+        <a href="<?php echo BASE_URL; ?>forms/approvals.php" class="nav-btn <?php echo $current_page === 'approvals' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('forms.nav.approvals') : 'Approvals'); ?>">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                <polyline points="9 12 11 14 15 10"></polyline>
+            </svg>
+            <span><?php echo htmlspecialchars(function_exists('t') ? t('forms.nav.approvals') : 'Approvals'); ?></span>
+        </a>
+        <?php if ($formsNavFull): ?>
         <a href="<?php echo BASE_URL; ?>forms/settings/" class="nav-btn <?php echo $current_page === 'settings' ? 'active' : ''; ?>" title="<?php echo htmlspecialchars(function_exists('t') ? t('forms.nav.settings') : 'Settings'); ?>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
@@ -50,6 +61,7 @@ require_once $path_prefix . 'includes/waffle-menu.php';
             </svg>
             <span><?php echo htmlspecialchars(function_exists('t') ? t('forms.nav.help') : 'Help'); ?></span>
         </a>
+        <?php endif; ?>
     </nav>
     <?php renderHeaderRight($analyst_name, $path_prefix); ?>
 </div>

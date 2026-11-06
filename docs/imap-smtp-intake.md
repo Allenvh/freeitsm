@@ -1,3 +1,5 @@
+> **Historical fork documentation.** The full 4.10 upgrade replaces these custom screens and mail paths with upstream implementations. Use [the current upgrade guide](upstream-4.10-upgrade.md).
+
 # Generic IMAP/SMTP ticket intake
 
 FreeITSM now has a provider foundation for `imap_smtp` mailboxes alongside Microsoft Graph and Gmail. Passwords are encrypted with the existing FreeITSM encryption helper and should never be logged.

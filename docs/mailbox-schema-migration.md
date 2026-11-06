@@ -1,3 +1,5 @@
+> **Historical fork documentation.** The full 4.10 upgrade replaces these custom screens and mail paths with upstream implementations. Use [the current upgrade guide](upstream-4.10-upgrade.md).
+
 # Mailbox schema migration troubleshooting
 
 FreeITSM's canonical mailbox table is `target_mailboxes`. Older Microsoft Graph, Gmail, and Exchange-style mailbox records already live there, and the Mailboxes UI, OAuth callbacks, email intake workers, and reply senders should all use that table consistently.

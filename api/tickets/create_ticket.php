@@ -1,246 +1,149 @@
 <?php
 /**
- * API Endpoint: Create a new ticket manually
- * Creates a ticket and an initial "email" entry for display in the inbox
+ * API Endpoint: Create a new ticket manually.
+ * Thin UI adapter over TicketsService::createTicket — the initial email row,
+ * audit, and ticket.created workflow live there, shared with POST /api/v1/tickets.
+ * The acting company is the analyst's active tenant; a manual ticket auto-assigns
+ * to the creator unless another analyst is chosen.
  */
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/tenancy.php';
-require_once dirname(dirname(__DIR__)) . '/workflow/includes/engine.php';
+require_once '../../includes/services/tickets.php';
 
 header('Content-Type: application/json');
-
-// Check if user is logged in
-if (!isset($_SESSION['analyst_id'])) {
-    echo json_encode(['success' => false, 'error' => 'Not authenticated']);
-    exit;
-}
+if (!isset($_SESSION['analyst_id'])) { echo json_encode(['success' => false, 'error' => 'Not authenticated']); exit; }
+requireModuleAccessJson('tickets');
 
 $analystId = (int)$_SESSION['analyst_id'];
 $analystName = $_SESSION['analyst_name'] ?? 'Unknown';
 
-// Get POST data
 $input = json_decode(file_get_contents('php://input'), true);
+if (!$input) { echo json_encode(['success' => false, 'error' => 'Invalid request data']); exit; }
 
-if (!$input) {
-    echo json_encode(['success' => false, 'error' => 'Invalid request data']);
-    exit;
-}
-
-$fromName = trim($input['from_name'] ?? '');
+// Preserve the manual-create form's field-specific validation messages.
+$fromName  = trim($input['from_name'] ?? '');
 $fromEmail = trim($input['from_email'] ?? '');
-$subject = trim($input['subject'] ?? '');
-$body = trim($input['body'] ?? '');
-$departmentId = !empty($input['department_id']) ? (int)$input['department_id'] : null;
-$ticketTypeId = !empty($input['ticket_type_id']) ? (int)$input['ticket_type_id'] : null;
-$priority = $input['priority'] ?? 'Normal';
-$assignedAnalystId = !empty($input['assigned_analyst_id']) ? (int)$input['assigned_analyst_id'] : $analystId;
-// The mailbox replies will be sent FROM (optional). Stamped on the initial
-// email so the reply path can resolve a sender. Validated below against the
-// active company so a foreign company's pinned mailbox can't be chosen.
-$mailboxId = !empty($input['mailbox_id']) ? (int)$input['mailbox_id'] : null;
+$subject   = trim($input['subject'] ?? '');
+// A requester chosen from the picker (discussion #54). Either this OR a
+// name/email pair — the form sends one or the other, never both.
+$userId    = isset($input['user_id']) && (int)$input['user_id'] > 0 ? (int)$input['user_id'] : null;
 
-// Validate required fields
-if (empty($fromName)) {
-    echo json_encode(['success' => false, 'error' => 'Requester name is required']);
-    exit;
+if ($userId === null) {
+    if ($fromName === '')  { echo json_encode(['success' => false, 'error' => 'Requester name is required']); exit; }
+    if ($fromEmail === '') { echo json_encode(['success' => false, 'error' => 'Requester email is required']); exit; }
+    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) { echo json_encode(['success' => false, 'error' => 'Invalid email address']); exit; }
 }
-
-if (empty($fromEmail)) {
-    echo json_encode(['success' => false, 'error' => 'Requester email is required']);
-    exit;
-}
-
-if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
-    echo json_encode(['success' => false, 'error' => 'Invalid email address']);
-    exit;
-}
-
-if (empty($subject)) {
-    echo json_encode(['success' => false, 'error' => 'Subject is required']);
-    exit;
-}
+if ($subject === '')   { echo json_encode(['success' => false, 'error' => 'Subject is required']); exit; }
 
 try {
     $conn = connectToDatabase();
-    $conn->beginTransaction();
+    $ctx = ActorContext::fromSession($conn);
 
-    // Check if user exists with this email, create if not
-    $userId = null;
-    $userCheckSql = "SELECT id FROM users WHERE email = ?";
-    $userCheckStmt = $conn->prepare($userCheckSql);
-    $userCheckStmt->execute([$fromEmail]);
-    $existingUser = $userCheckStmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($existingUser) {
-        $userId = $existingUser['id'];
-    } else {
-        // Create new user
-        $createUserSql = "INSERT INTO users (email, display_name, created_at) VALUES (?, ?, UTC_TIMESTAMP())";
-        $createUserStmt = $conn->prepare($createUserSql);
-        $createUserStmt->execute([$fromEmail, $fromName]);
-        $userId = $conn->lastInsertId();
-    }
-
-    // Generate ticket number
-    $ticketNumber = generateTicketNumber($conn);
-
-    // Stamp the ticket with the analyst's active company (multi-tenancy).
-    // At N=1 this is simply the Default company.
+    // Normally the acting company is simply the active one. In the consolidated
+    // view (#1554) there is no single active company the analyst is looking at,
+    // so the form asks — and this is where the answer lands.
+    //
+    // ⚠️ A DROPDOWN IS NOT A CHECK, exactly as the requester note below says.
+    // `tenant_id` arrives in a JSON body and can be any integer, so it is
+    // verified against what this analyst may actually reach. Without that, an
+    // analyst scoped to one school could file a ticket into another's queue —
+    // and it would look entirely legitimate once it landed.
     $tenantId = getActiveTenantId($conn, $analystId);
-
-    // Validate the chosen mailbox: it must exist and, on a multi-tenant install,
-    // belong to the active company (pinned) or be shared intake (tenant_id NULL).
-    // This stops a foreign company's pinned mailbox being attached to the ticket.
-    if ($mailboxId !== null) {
-        $mbStmt = $conn->prepare("SELECT tenant_id FROM target_mailboxes WHERE id = ? AND is_active = 1");
-        $mbStmt->execute([$mailboxId]);
-        $mb = $mbStmt->fetch(PDO::FETCH_ASSOC);
-        $mbOk = (bool)$mb;
-        if ($mb && isMultiTenant($conn)) {
-            $mbOk = ($mb['tenant_id'] === null) || ((int)$mb['tenant_id'] === (int)$tenantId);
-        }
-        if (!$mbOk) {
-            $conn->rollBack();
-            echo json_encode(['success' => false, 'error' => 'The selected mailbox is not available for this company.']);
+    if (isActiveTenantAll($conn) && !empty($input['tenant_id'])) {
+        $wanted = (int) $input['tenant_id'];
+        if (!analystCanAccessTenant($conn, $analystId, $wanted)) {
+            echo json_encode(['success' => false, 'error' => 'You do not have access to that company']);
             exit;
         }
-    }
-
-    // Create the ticket and get the ID. Resolve status/priority names to ids via subselects.
-    $ticketSql = "INSERT INTO tickets (
-        tenant_id, ticket_number, subject, status_id, priority_id, department_id, ticket_type_id,
-        assigned_analyst_id, user_id, created_datetime, updated_datetime
-    ) VALUES (
-        ?, ?, ?,
-        (SELECT id FROM ticket_statuses   WHERE name = 'Open' LIMIT 1),
-        (SELECT id FROM ticket_priorities WHERE name = ? LIMIT 1),
-        ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
-    )";
-
-    $ticketStmt = $conn->prepare($ticketSql);
-    $ticketStmt->execute([
-        $tenantId,
-        $ticketNumber,
-        $subject,
-        $priority,
-        $departmentId,
-        $ticketTypeId,
-        $assignedAnalystId,
-        $userId,
-    ]);
-
-    $ticketId = $conn->lastInsertId();
-
-    // Create an initial "email" entry (this makes it appear in the inbox like other tickets)
-    // Direction is 'Manual' to indicate it was manually created
-    $bodyHtml = nl2br(htmlspecialchars($body));
-    $bodyPreview = substr(strip_tags($body), 0, 200);
-
-    $emailSql = "INSERT INTO emails (
-        mailbox_id, subject, from_address, from_name, to_recipients, received_datetime,
-        body_preview, body_content, body_type, has_attachments, importance,
-        is_read, ticket_id, is_initial, direction
-    ) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, 'html', 0, 'normal', 1, ?, 1, 'Manual')";
-
-    $emailStmt = $conn->prepare($emailSql);
-    $emailStmt->execute([
-        $mailboxId,  // send-from mailbox (NULL if none chosen — reply won't be sendable)
-        $subject,
-        $fromEmail,
-        $fromName,
-        $fromEmail,  // to_recipients = the requester
-        $bodyPreview,
-        $bodyHtml,
-        $ticketId
-    ]);
-
-    // Log the creation in ticket audit
-    $auditSql = "INSERT INTO ticket_audit (ticket_id, analyst_id, field_name, old_value, new_value, created_datetime)
-                 VALUES (?, ?, 'Ticket Created', NULL, CONCAT('Manual ticket created by ', ?), UTC_TIMESTAMP())";
-    $auditStmt = $conn->prepare($auditSql);
-    $auditStmt->execute([$ticketId, $analystId, $analystName]);
-
-    $conn->commit();
-
-    echo json_encode([
-        'success' => true,
-        'message' => 'Ticket created successfully',
-        'ticket_id' => $ticketId,
-        'ticket_number' => $ticketNumber
-    ]);
-
-    // Workflow engine: ticket.created. Read back the resolved status_id /
-    // priority_id (the INSERT used subselects on name) so the payload carries
-    // real ids — that's what condition fields like ticket.priority_id compare
-    // against. Engine swallows its own errors; outer try/catch is belt+braces.
-    try {
-        $readBack = $conn->prepare("SELECT status_id, priority_id FROM tickets WHERE id = ?");
-        $readBack->execute([$ticketId]);
-        $row = $readBack->fetch(PDO::FETCH_ASSOC) ?: [];
-
-        WorkflowEngine::dispatch('ticket.created', [
-            'ticket' => [
-                'id'                  => (int)$ticketId,
-                'subject'             => $subject,
-                'priority_id'         => isset($row['priority_id']) ? (int)$row['priority_id'] : null,
-                'status_id'           => isset($row['status_id'])   ? (int)$row['status_id']   : null,
-                'department_id'       => $departmentId,
-                'type_id'             => $ticketTypeId,
-                'assigned_analyst_id' => $assignedAnalystId,
-                'created_by'          => $analystId,
-                'requester_email'     => $fromEmail,
-            ],
-        ]);
-    } catch (Exception $wfEx) {
-        error_log('Workflow dispatch error in create_ticket: ' . $wfEx->getMessage());
-    }
-
-} catch (Exception $e) {
-    if (isset($conn)) {
-        $conn->rollBack();
-    }
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
-}
-
-/**
- * Generate a unique random ticket number (format: XXX-YYY-ZZZZZ)
- */
-function generateTicketNumber($conn) {
-    $maxAttempts = 10;
-    $attempt = 0;
-
-    while ($attempt < $maxAttempts) {
-        // Generate 3 random letters (A-Z)
-        $letters = chr(rand(65, 90)) . chr(rand(65, 90)) . chr(rand(65, 90));
-
-        // Generate 3 random numbers (0-9)
-        $numbers1 = rand(0, 9) . rand(0, 9) . rand(0, 9);
-
-        // Generate 5 random numbers (0-9)
-        $numbers2 = rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9);
-
-        // Build ticket number
-        $ticketNumber = $letters . '-' . $numbers1 . '-' . $numbers2;
-
-        // Check if it already exists
-        $checkSql = "SELECT COUNT(*) FROM tickets WHERE ticket_number = ?";
-        $checkStmt = $conn->prepare($checkSql);
-        $checkStmt->execute([$ticketNumber]);
-        $exists = $checkStmt->fetchColumn();
-
-        if (!$exists) {
-            return $ticketNumber;
+        $tenantId = $wanted;
+    } elseif (isActiveTenantAll($conn)) {
+        // GH #218: none chosen in the all-companies view. Before, this fell back to
+        // the active or first company - a guess the form alone was preventing. One
+        // reachable company is not ambiguous and is used, said in so many words;
+        // with several, the server refuses rather than guess.
+        $reachable = array_map('intval', getAccessibleTenantIds($conn, $analystId));
+        if (count($reachable) !== 1) {
+            echo json_encode(['success' => false, 'error' => 'Choose which company this ticket is for.']);
+            exit;
         }
-
-        $attempt++;
+        $tenantId = $reachable[0];
     }
 
-    throw new Exception('Failed to generate unique ticket number after ' . $maxAttempts . ' attempts');
-}
+    // ⚠️ A SCOPED LIST IS NOT A CHECK.
+    //
+    // The picker only offers requesters this analyst can reach, because
+    // get_users.php is company-filtered. That governs what is easy to choose,
+    // not what can be sent: user_id arrives in a JSON body and can be any
+    // integer. Without this line, an analyst scoped to one company could file a
+    // ticket against another company's contact by editing one number — which is
+    // the same shape as the S1/S2 findings, arriving fresh with a new feature
+    // rather than being inherited from an old one.
+    //
+    // Same refusal text as an id that does not exist: "not yours" and "not
+    // there" must stay indistinguishable.
+    if ($userId !== null && !analystCanAccessUser($conn, $analystId, $userId)) {
+        echo json_encode(['success' => false, 'error' => 'That requester was not found']);
+        exit;
+    }
 
-?>
+    // A typed address nobody has yet becomes a new requester in the company its
+    // domain maps to - so it gets the check save_user.php makes: you can only
+    // file someone into a company you can reach. Without it an analyst scoped to
+    // one company created people in another just by typing their address.
+    // Reported privately, October 2026. The isMultiTenant() short-circuit is
+    // load-bearing for the same reason as there (single-company installs have no
+    // analyst_tenant_access rows).
+    if ($userId === null && $fromEmail !== '' && isMultiTenant($conn)) {
+        $known = $conn->prepare("SELECT id FROM users WHERE email = ?");
+        $known->execute([strtolower(trim($fromEmail))]);
+        if ($known->fetchColumn() === false) {
+            $newTenant = resolveTenantForNewUser($conn, $fromEmail);
+            if ($newTenant !== null && !analystCanAccessTenant($conn, $analystId, (int)$newTenant)) {
+                echo json_encode(['success' => false, 'error' => 'You do not have access to that company']);
+                exit;
+            }
+        }
+    }
+
+    // Map the manual-create payload onto the service's canonical keys.
+    $in = [
+        'subject'             => $subject,
+        'description'         => $input['body'] ?? '',
+        'user_id'             => $userId,
+        'requester_email'     => $fromEmail,
+        'requester_name'      => $fromName,
+        'department_id'       => $input['department_id'] ?? null,
+        'ticket_type_id'      => $input['ticket_type_id'] ?? null,
+        'mailbox_id'          => $input['mailbox_id'] ?? null,
+        // Normal / Confidential, chosen on the new-ticket form (discussion #62).
+        'sensitivity'         => $input['sensitivity'] ?? null,
+    ];
+    // Only pass a priority if the form actually sent one. This used to default to
+    // the literal 'Normal', which the service resolves BY NAME and rejects with
+    // "Unknown priority: Normal" on any install that renamed it — so a hardcoded
+    // English fallback could fail the create outright (#79). No key = the
+    // service picks the configured default.
+    if (isset($input['priority']) && trim((string)$input['priority']) !== '') {
+        $in['priority'] = $input['priority'];
+    }
+    // Custom fields (#179). Passed only when the form sent them: the New ticket
+    // form always does, so the fields required when logging are enforced there;
+    // Morning checks' "raise a ticket" does not ask for them and is not refused.
+    if (array_key_exists('custom_fields', $input)) {
+        $in['custom_fields'] = is_array($input['custom_fields']) ? $input['custom_fields'] : [];
+    }
+    if (!empty($input['assigned_analyst_id'])) {
+        $in['assigned_analyst_id'] = (int)$input['assigned_analyst_id'];
+    }
+
+    $ticketId = TicketsService::createTicket($conn, $ctx, $tenantId, $in, $analystId, 'Manual ticket created by ' . $analystName);
+    $ticketNumber = $conn->query("SELECT ticket_number FROM tickets WHERE id = " . (int)$ticketId)->fetchColumn();
+
+    echo json_encode(['success' => true, 'message' => 'Ticket created successfully', 'ticket_id' => $ticketId, 'ticket_number' => $ticketNumber]);
+} catch (ServiceError $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+}

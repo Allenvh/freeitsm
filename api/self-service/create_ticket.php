@@ -6,6 +6,14 @@
 session_start(['read_and_close' => true]);
 require_once '../../config.php';
 require_once '../../includes/functions.php';
+require_once '../../includes/ticket_numbering.php';
+require_once '../../includes/tenancy.php';
+require_once '../../includes/html_sanitise.php';
+require_once '../../includes/ticket_recordings.php';
+require_once '../../includes/uploads.php';   // uploadStoreBytes() — see F1
+require_once '../../includes/service_context.php';
+require_once '../../includes/services/ticket_fields.php';   // custom fields (#179)
+require_once '../../includes/self_service_ticket_types.php';
 
 header('Content-Type: application/json');
 
@@ -26,6 +34,9 @@ $subject = trim($input['subject'] ?? '');
 $description = trim($input['description'] ?? '');
 $priority = $input['priority'] ?? 'Normal';
 $mailboxId = !empty($input['mailbox_id']) ? (int)$input['mailbox_id'] : null;
+// The requester's own "Confidential" tick (discussion #62). They can only ever
+// raise a ticket's sensitivity, never lower one - see includes/ticket_sensitivity.php.
+$wantsConfidential = !empty($input['confidential']);
 $inputAttachments = $input['attachments'] ?? [];
 $recordingIds = array_values(array_filter(array_map('intval', $input['recording_ids'] ?? [])));
 
@@ -34,17 +45,34 @@ if (empty($subject)) {
     exit;
 }
 
-$allowedPriorities = ['Low', 'Normal', 'High'];
-if (!in_array($priority, $allowedPriorities)) {
-    $priority = 'Normal';
-}
-
 try {
     $conn = connectToDatabase();
+
+    // Refuse the Confidential tick rather than drop it (discussion #62): before
+    // Database Verification it cannot be stored, and a requester who ticked it
+    // must never end up with a ticket they believe is confidential and is not.
+    require_once '../../includes/ticket_sensitivity.php';
+    if ($wantsConfidential && !ticketSensitivityReady($conn)) {
+        echo json_encode(['success' => false, 'error' => 'Confidential tickets are not available on this service desk yet. Please untick it, or contact the service desk directly.']);
+        exit;
+    }
+
+    // Validate the submitted priority against the CONFIGURED active priorities
+    // (not a hardcoded Low/Normal/High list) so custom priorities like
+    // Urgent/Critical are accepted (#40). Fall back to the default priority,
+    // then Normal, then the first available, if the submitted one isn't valid.
+    $activePrios = $conn->query("SELECT name, is_default FROM ticket_priorities WHERE is_active = 1")->fetchAll(PDO::FETCH_ASSOC);
+    $prioNames = array_column($activePrios, 'name');
+    if (!in_array($priority, $prioNames, true)) {
+        $default = '';
+        foreach ($activePrios as $p) { if ((int)$p['is_default'] === 1) { $default = $p['name']; break; } }
+        $priority = $default !== '' ? $default : (in_array('Normal', $prioNames, true) ? 'Normal' : ($prioNames[0] ?? 'Normal'));
+    }
+
     $conn->beginTransaction();
 
     // Get user details
-    $userStmt = $conn->prepare("SELECT email, display_name FROM users WHERE id = ?");
+    $userStmt = $conn->prepare("SELECT email, username, display_name, tenant_id FROM users WHERE id = ?");
     $userStmt->execute([$userId]);
     $user = $userStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -52,21 +80,103 @@ try {
         throw new Exception('User not found');
     }
 
-    $fromEmail = $user['email'];
-    $fromName = $user['display_name'] ?: $user['email'];
+    // NULL, not '': a directory requester with no mailbox genuinely has no
+    // address, and '' would look like an address everywhere downstream while
+    // being useless to reply to. The name carries the identity for these people,
+    // so it must never fall through to a blank.
+    $fromEmail = ($user['email'] !== null && $user['email'] !== '') ? $user['email'] : null;
+    $fromName  = $user['display_name'] ?: ($user['username'] ?: ($fromEmail ?: ('#' . $userId)));
 
-    // Generate unique ticket number
-    $ticketNumber = generateTicketNumber($conn);
+    // Which company does this ticket belong to? The portal has no mailbox and no
+    // sender to route on, so the answer is simply whose account raised it. A user
+    // with no company on file falls to NULL = triage, exactly as an email from an
+    // unrecognised domain does; a single-company install always gets Default so
+    // portal tickets aren't shaped differently from every other intake path.
+    $ticketTenantId = $user['tenant_id'] !== null
+        ? (int) $user['tenant_id']
+        : (isMultiTenant($conn) ? null : getDefaultTenantId($conn));
 
-    // Create ticket. Resolve status/priority names to ids via subselects.
+    // The mailbox (GH #172). ⚠️ RE-CHECKED HERE, like the category below: the
+    // dropdown only offers this user's company's mailboxes and shared ones, but
+    // a hand-posted id could otherwise pick another company's mailbox - and the
+    // ticket would then be answered from that company's address. One not offered
+    // is dropped, so the ticket is still raised and an analyst picks a mailbox.
+    if ($mailboxId !== null) {
+        require_once '../../includes/self_service_mailboxes.php';
+        if (!isset(selfServiceMailboxes($conn, $userId)[$mailboxId])) {
+            $mailboxId = null;
+        }
+    }
+
+    // The ticket type and the custom fields the requester was asked (#179).
+    // ⚠️ RE-CHECKED HERE, like the mailbox and the category: a type is accepted
+    // only if it is one this requester's company offers, and only the fields
+    // marked "Ask the requester" may be answered - a hand-posted key for an
+    // analyst-only field is refused, not quietly stored.
+    $ticketTypeId = null;
+    if (!empty($input['ticket_type_id'])) {
+        $wantedType = (int)$input['ticket_type_id'];
+        if (isset(selfServiceTicketTypes($conn, $ticketTenantId)[$wantedType])) {
+            $ticketTypeId = $wantedType;
+        }
+    }
+    $customDefs = TicketFieldsService::fieldsFor($conn, $ticketTenantId, $ticketTypeId, 'requester');
+    $customValues = TicketFieldsService::validate($conn, $customDefs,
+        is_array($input['custom_fields'] ?? null) ? $input['custom_fields'] : [], true);
+
+    // GH #230: the requester chose no type (or the portal does not ask), so the
+    // type rules / default may give it one. AFTER the custom fields above, which
+    // were asked for the type the requester chose - a rule never adds questions
+    // nobody saw. BEFORE the number, which can carry the type.
+    $ticketTypePick = null;
+    if ($ticketTypeId === null) {
+        require_once '../../includes/ticket_type_rules.php';
+        $ticketTypePick = ticketTypeAutoPick($conn, $ticketTenantId, [
+            'channel' => 'portal', 'mailbox_id' => $mailboxId, 'subject' => $subject, 'requester_email' => $fromEmail,
+        ]);
+        $ticketTypeId = $ticketTypePick['type_id'] ?? null;
+    }
+
+    // Generate unique ticket number - per type, where the numbering says so.
+    $ticketNumber = generateTicketNumber($conn, $ticketTenantId, $ticketTypeId);
+
+    // Create ticket. The status resolves to the CONFIGURED default rather than the
+    // literal name 'Open', which an admin may rename or translate (#79). The
+    // priority was already validated against the active list above.
+    // Category (#1540). NULL unless the field is switched on for this company AND
+    // the id posted is genuinely one this requester was entitled to pick.
+    //
+    // ⚠️ RE-CHECKED HERE, not trusted from the request — the same rule the asset
+    // list below is held to. The dropdown is already narrowed to portal-visible,
+    // active, untied categories, but a narrowed dropdown has never been a check:
+    // without this, a hand-posted id would let a requester file against an
+    // internal-only category they were never meant to see the existence of.
+    $categoryId = null;
+    if (!empty($input['category_id'])) {
+        $wanted = (int) $input['category_id'];
+        require_once '../../includes/tenant_settings.php';
+        require_once '../../includes/ticket_categories.php';
+        if (ticketCategoryOn($conn, $ticketTenantId)) {
+            $offered = ticketCategoriesResolved($conn, $ticketTenantId, ['activeOnly' => true, 'portalOnly' => true]);
+            if (isset($offered[$wanted]) && $offered[$wanted]['effective_type_id'] === null) {
+                $categoryId = $wanted;
+            }
+        }
+    }
+
+    // GH #218: a requester never chooses a department, so the company's default
+    // department (if any, and still active) is where the ticket starts.
+    require_once '../../includes/tenant_settings.php';
+    [$departmentId, $departmentNote] = ticketDepartmentForNewTicket($conn, $ticketTenantId !== null ? (int) $ticketTenantId : null, null);
+
     $ticketSql = "INSERT INTO tickets (
-        ticket_number, subject, status_id, priority_id,
-        user_id, created_datetime, updated_datetime
+        ticket_number, subject, status_id, priority_id, category_id, ticket_type_id,
+        user_id, tenant_id, department_id, created_datetime, updated_datetime
     ) VALUES (
         ?, ?,
-        (SELECT id FROM ticket_statuses   WHERE name = 'Open' LIMIT 1),
+        (SELECT id FROM ticket_statuses   WHERE is_active = 1 ORDER BY is_default DESC, display_order, id LIMIT 1),
         (SELECT id FROM ticket_priorities WHERE name = ? LIMIT 1),
-        ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+        ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )";
 
     $ticketStmt = $conn->prepare($ticketSql);
@@ -74,15 +184,70 @@ try {
         $ticketNumber,
         $subject,
         $priority,
+        $categoryId,
+        $ticketTypeId,
         $userId,
+        $ticketTenantId,
+        $departmentId,
     ]);
 
     $ticketId = $conn->lastInsertId();
+    ticketDepartmentNote($conn, (int) $ticketId, $departmentNote);
+    if ($ticketTypePick) ticketTypeAutoRecord($conn, (int)$ticketId, $ticketTypePick);
+
+    // The answers to the custom fields the requester was asked, already
+    // validated above. Audited like any other change, with no analyst behind it.
+    if ($customValues) {
+        TicketFieldsService::write($conn, new ActorContext(0, null, 'portal'), (int)$ticketId, $customDefs, $customValues);
+    }
+
+    // Equipment the user attached to the report (discussion #57).
+    //
+    // ⚠️ Re-checked here against users_assets rather than trusted from the
+    // request. The dropdown is scoped to the user's own kit, but a scoped list
+    // has never been a check — without this, any asset id posted by hand would
+    // be accepted, letting a portal user attach (and then read back the details
+    // of) equipment belonging to somebody else.
+    // GH #217: and not at all while Assets is switched off for the install.
+    if (!empty($input['asset_ids']) && is_array($input['asset_ids']) && moduleIsEnabled($conn, 'assets')) {
+        $assetIds = array_values(array_unique(array_filter(array_map('intval', $input['asset_ids']))));
+        if ($assetIds) {
+            $owns = $conn->prepare("SELECT 1 FROM users_assets WHERE user_id = ? AND asset_id = ?");
+            $link = $conn->prepare(
+                "INSERT INTO ticket_assets (ticket_id, asset_id, created_datetime, created_by_user_id)
+                 VALUES (?, ?, UTC_TIMESTAMP(), ?)"
+            );
+            foreach ($assetIds as $assetId) {
+                $owns->execute([$userId, $assetId]);
+                if (!$owns->fetchColumn()) continue;   // not theirs — silently ignored
+                try {
+                    $link->execute([$ticketId, $assetId, $userId]);
+                } catch (PDOException $pe) {
+                    if ($pe->errorInfo[1] != 1062) throw $pe;   // duplicate is fine
+                }
+            }
+        }
+    }
 
     // Create initial email entry
     $hasAttachments = !empty($inputAttachments) ? 1 : 0;
-    $bodyHtml = nl2br(htmlspecialchars($description));
-    $bodyPreview = substr(strip_tags($description), 0, 200);
+
+    // The new-ticket form is a rich-text editor, so the description arrives as
+    // HTML written by a CUSTOMER and is then read in the analyst's inbox. Clean
+    // it to an allow-list on the way in, so the payload never reaches the
+    // database and everything that later reads this row inherits the protection
+    // (the reading pane also cleans at render — this is the first line, not the
+    // only one).
+    $bodyHtml = sanitiseUserHtml($description);
+    if ($bodyHtml === '' && trim($description) !== '') {
+        // Not HTML after all (an older client, or plain text): escape it rather
+        // than lose what they wrote.
+        $bodyHtml = nl2br(htmlspecialchars($description, ENT_QUOTES, 'UTF-8'));
+    }
+    // Preview from the SANITISED body, never the raw input: strip_tags() removes
+    // tags but KEEPS their contents, so a <script> block in the raw description
+    // would spill its source into the preview as readable text.
+    $bodyPreview = substr(trim(preg_replace('/\s+/', ' ', strip_tags($bodyHtml))), 0, 200);
 
     $emailSql = "INSERT INTO emails (
         subject, from_address, from_name, to_recipients, received_datetime,
@@ -120,63 +285,71 @@ try {
              VALUES (?, ?, ?, ?, ?, 0, UTC_TIMESTAMP())"
         );
 
+        // ⚠️ The name and the declared type both come from the portal user. They
+        // used to be written into the web root as-is, minus path separators, so
+        // shell.php survived. uploadStoreBytes() checks the extension AND the bytes
+        // and names the stored file itself; the sender's name is kept for display
+        // only, and the type recorded is the one we detected.
+        $policy = attachmentRejectPolicy($conn);
+        $rejected = [];
+        $quarantined = [];
+        $storedAny = false;
+
         foreach ($inputAttachments as $att) {
-            $filename = preg_replace('/[^a-zA-Z0-9._\-]/', '_', $att['name'] ?? 'file');
             $fileData = base64_decode($att['content'] ?? '');
-            $fileSize = strlen($fileData);
+            $stored = uploadStoreBytes($fileData, (string)($att['name'] ?? 'file'), $emailDir, $policy, attachmentAllowedTypes($conn));
 
-            // Handle duplicate filenames
-            $savePath = $emailDir . '/' . $filename;
-            $counter = 1;
-            $info = pathinfo($filename);
-            while (file_exists($savePath)) {
-                $filename = $info['filename'] . '_' . $counter . '.' . ($info['extension'] ?? '');
-                $savePath = $emailDir . '/' . $filename;
-                $counter++;
+            if (!$stored['stored']) {
+                $rejected[] = ['name' => $stored['original_name'], 'reason' => $stored['reason']];
+                continue;
             }
+            if ($stored['quarantined']) {
+                $quarantined[] = ['name' => $stored['original_name'], 'reason' => $stored['reason']];
+            }
+            $storedAny = true;
 
-            file_put_contents($savePath, $fileData);
+            $relPath = $subdir . '/' . $emailId . '/' . $stored['stored_name'];
+            $attachStmt->execute([$emailId, $stored['original_name'], $stored['mime'], $relPath, $stored['size']]);
+        }
 
-            $relPath = $subdir . '/' . $emailId . '/' . $filename;
-            $contentType = $att['type'] ?? 'application/octet-stream';
-
-            $attachStmt->execute([$emailId, $filename, $contentType, $relPath, $fileSize]);
+        // Say so on the ticket rather than letting a file disappear between the
+        // customer pressing Send and an analyst reading it.
+        $notice = attachmentIngestNotice($rejected, $quarantined);
+        if ($notice !== '' || !$storedAny) {
+            $conn->prepare("UPDATE emails SET body_content = CONCAT(body_content, ?), has_attachments = ? WHERE id = ?")
+                 ->execute([$notice, $storedAny ? 1 : 0, $emailId]);
         }
     }
 
     $conn->commit();
 
-    // Claim any pending recordings this user uploaded for this ticket. File renames
-    // happen outside the transaction (filesystem ops aren't transactional anyway).
-    if (!empty($recordingIds)) {
-        $appRoot = realpath(__DIR__ . '/../../');
-        $ticketDir = $appRoot . DIRECTORY_SEPARATOR . 'recordings' . DIRECTORY_SEPARATOR . (int)$ticketId;
-        if (!is_dir($ticketDir)) {
-            @mkdir($ticketDir, 0755, true);
-        }
+    // Claim any pending recordings this user uploaded for this ticket. Shared
+    // with reply_ticket.php — see includes/ticket_recordings.php for the
+    // ownership guard. Deliberately AFTER the commit: the file moves are not
+    // transactional, and a recording that fails to move must not cost someone
+    // the ticket they just wrote.
+    //
+    // $emailId is left NULL here: these were recorded with the OPENING message,
+    // which is exactly what NULL means.
+    claimPendingRecordings($conn, $recordingIds, (int)$ticketId, $userId, null);
 
-        $placeholders = implode(',', array_fill(0, count($recordingIds), '?'));
-        $selSql = "SELECT id, filename, file_path FROM ticket_recordings
-                   WHERE id IN ($placeholders) AND ticket_id IS NULL AND recorded_by_user_id = ?";
-        $selStmt = $conn->prepare($selSql);
-        $selStmt->execute(array_merge($recordingIds, [$userId]));
-        $pending = $selStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $updStmt = $conn->prepare("UPDATE ticket_recordings SET ticket_id = ?, file_path = ? WHERE id = ?");
-        foreach ($pending as $rec) {
-            $srcAbs = $appRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rec['file_path']);
-            $dstAbs = $ticketDir . DIRECTORY_SEPARATOR . $rec['filename'];
-            $dstRel = 'recordings/' . (int)$ticketId . '/' . $rec['filename'];
-            if (is_file($srcAbs) && @rename($srcAbs, $dstAbs)) {
-                $updStmt->execute([(int)$ticketId, $dstRel, (int)$rec['id']]);
-            } else {
-                // File missing or rename failed — still claim the row so the recording
-                // is associated with the ticket; analyst can see it's broken in the UI
-                $updStmt->execute([(int)$ticketId, $rec['file_path'], (int)$rec['id']]);
-                error_log('create_ticket.php: failed to move recording ' . $rec['id'] . ' from ' . $srcAbs);
-            }
-        }
+    // Announce it. Until now this path dispatched NOTHING, so a ticket raised in
+    // the portal was invisible to every workflow with a ticket.created trigger
+    // and to the notification bell. See includes/ticket_events.php.
+    //
+    // Deliberately AFTER the commit, for the same reason the recordings claim is:
+    // a ticket that rolled back must never have announced itself. It also matters
+    // to the search indexer downstream, which cannot see uncommitted rows.
+    // Confidential - the requester's tick, or the mailbox they chose. Before the
+    // announcement, so nothing downstream ever sees this ticket as Normal.
+    require_once '../../includes/ticket_sensitivity.php';
+    if ($wantsConfidential) {
+        ticketSensitivityRaise($conn, (int)$ticketId, 'the requester asked for it when raising the ticket');
     }
+    ticketSensitivityApplyDefaults($conn, (int)$ticketId, $mailboxId);
+
+    require_once '../../includes/ticket_events.php';
+    ticketDispatchCreated($conn, (int)$ticketId, $userId, $fromEmail);
 
     echo json_encode([
         'success' => true,
@@ -194,19 +367,16 @@ try {
 /**
  * Generate a unique random ticket number (format: XXX-YYY-ZZZZZ)
  */
-function generateTicketNumber($conn) {
-    $maxAttempts = 10;
-    for ($i = 0; $i < $maxAttempts; $i++) {
-        $letters = chr(rand(65, 90)) . chr(rand(65, 90)) . chr(rand(65, 90));
-        $numbers1 = rand(0, 9) . rand(0, 9) . rand(0, 9);
-        $numbers2 = rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9) . rand(0, 9);
-        $ticketNumber = $letters . '-' . $numbers1 . '-' . $numbers2;
-
-        $stmt = $conn->prepare("SELECT COUNT(*) FROM tickets WHERE ticket_number = ?");
-        $stmt->execute([$ticketNumber]);
-        if (!$stmt->fetchColumn()) {
-            return $ticketNumber;
-        }
-    }
-    throw new Exception('Failed to generate unique ticket number');
+/**
+ * ⚠️ One of THREE copies of this, now all delegating to the single engine in
+ * includes/ticket_numbering.php (GH #71). Left as a wrapper rather than deleted
+ * so the call sites in this file keep reading naturally; the format, the
+ * counter and the uniqueness check all live in one place.
+ */
+function generateTicketNumber($conn, ?int $tenantId = null, ?int $typeId = null) {
+    // ⚠️ THE COMPANY MUST BE PASSED IN. Under per-company numbering the number
+    // carries that company's code and draws from its own counter, so numbering
+    // before working out whose ticket it is would put every portal ticket on the
+    // default company's sequence whatever the portal user's company is.
+    return TicketNumbering::next($conn, $typeId, $tenantId);
 }
