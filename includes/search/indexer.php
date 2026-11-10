@@ -89,7 +89,7 @@ function searchIndexTicket(PDO $conn, int $ticketId, int $maxBody = SEARCH_INDEX
     $counts['tickets']++;
 
     // 2. every message on the ticket
-    $eStmt = $conn->prepare("SELECT id, subject, body_content, received_datetime
+    $eStmt = $conn->prepare("SELECT id, subject, body_content, received_datetime, direction
                                FROM emails WHERE ticket_id = ?");
     $eStmt->execute([$ticketId]);
     foreach ($eStmt->fetchAll(PDO::FETCH_ASSOC) as $e) {
@@ -101,7 +101,7 @@ function searchIndexTicket(PDO $conn, int $ticketId, int $maxBody = SEARCH_INDEX
             'ticket_id'       => $ticketId,
             'tenant_id'       => $tenantId,
             'tenant_scope'    => $scope,
-            'is_internal'     => 0,
+            'is_internal'     => strtolower((string)($e['direction'] ?? '')) === 'historicalinternal' ? 1 : 0,
             'title'           => (string)($e['subject'] ?? ''),
             'body'            => $body,
             'source_datetime' => $e['received_datetime'],
@@ -161,7 +161,7 @@ function searchIndexTicketAttachments(PDO $conn, int $ticketId, ?int $tenantId, 
     // never documents, and a signature logo on every reply would otherwise be
     // "extracted" hundreds of times to produce nothing.
     $stmt = $conn->prepare(
-        "SELECT a.id, a.filename, a.file_path, a.file_size,
+        "SELECT a.id, a.filename, a.file_path, a.file_size, e.direction,
                 t.status AS text_status, t.extracted_text
            FROM email_attachments a
            JOIN emails e ON e.id = a.email_id
@@ -297,9 +297,8 @@ function searchIndexTicketAttachments(PDO $conn, int $ticketId, ?int $tenantId, 
             'ticket_id'       => $ticketId,
             'tenant_id'       => $tenantId,
             'tenant_scope'    => $scope,
-            // An attachment is as visible as the ticket it hangs off. It is not a
-            // note, so it is not internal-only.
-            'is_internal'     => 0,
+            // Historical archives retain their staff-only source visibility.
+            'is_internal'     => strtolower((string)($r['direction'] ?? '')) === 'historicalinternal' ? 1 : 0,
             'title'           => (string)$r['filename'],
             'body'            => $text,
             'source_datetime' => null,

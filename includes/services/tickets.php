@@ -78,9 +78,29 @@ class TicketsService
      * @param string $creationNote  the text of the 'Ticket Created' audit row, e.g. "Created via API (key: X)"
      * @param ?string $channel  how it arrived, for the type rules (TICKET_TYPE_CHANNELS); null = 'form' from
      *     the UI, 'api' otherwise. A parameter, never a key in $in, so an API caller cannot claim another channel.
+     * @param ?array $history CLI-admin-only UTC created_at/modified_at; joins a maintenance
+     *     transaction and suppresses creation events. NULL keeps ordinary UI/API behavior.
      */
-    public static function createTicket(PDO $conn, ActorContext $ctx, int $tenantId, array $in, ?int $defaultAnalystId, string $creationNote, ?string $channel = null): int
+    public static function createTicket(PDO $conn, ActorContext $ctx, int $tenantId, array $in, ?int $defaultAnalystId, string $creationNote, ?string $channel = null, ?array $history = null): int
     {
+        // An explicit service argument, NEVER read from the UI/API request body.
+        // Only a local administrator's maintenance importer may backdate creation.
+        if ($history !== null) {
+            if (PHP_SAPI !== 'cli' || !analystIsAdmin($conn, $ctx->actorId)) {
+                throw new ServiceError('forbidden', 'forbidden', 'Historical creation requires a local administrator maintenance command.');
+            }
+            foreach (['created_at','modified_at'] as $key) {
+                $value = $history[$key] ?? '';
+                $date = is_string($value) ? DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, new DateTimeZone('UTC')) : false;
+                if (!$date || $date->format('Y-m-d H:i:s') !== $value) {
+                    throw new ServiceError('validation', 'invalid_field', 'Historical dates must be valid UTC timestamps.');
+                }
+            }
+            if ($history['modified_at'] < $history['created_at'] || $history['modified_at'] > gmdate('Y-m-d H:i:s')) {
+                throw new ServiceError('validation', 'invalid_field', 'Historical dates are out of order or in the future.');
+            }
+        }
+        $ownsTransaction = $history === null || !$conn->inTransaction();
         $subject        = trim((string)($in['subject'] ?? ''));
         $description    = trim((string)($in['description'] ?? ''));
         $requesterEmail = strtolower(trim((string)($in['requester_email'] ?? '')));
@@ -220,7 +240,7 @@ class TicketsService
         }
 
         try {
-            $conn->beginTransaction();
+            if ($ownsTransaction) $conn->beginTransaction();
 
             if ($requesterUserId !== null) {
                 // Chosen from the picker. Confirm the row still exists — an id
@@ -276,11 +296,11 @@ class TicketsService
                     ticket_type_id, category_id, origin_id, assigned_team_id,
                     assigned_analyst_id, owner_id, user_id,
                     created_datetime, updated_datetime
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?,UTC_TIMESTAMP()), COALESCE(?,UTC_TIMESTAMP()))"
             )->execute([
                 $tenantId, $ticketNumber, $subject, $statusRes[0], $priorityRes[0], $departmentId,
                 $typeId, $categoryId, $originId, $teamId,
-                $analystId, $analystId, $userId,
+                $analystId, $analystId, $userId, $history['created_at'] ?? null, $history['modified_at'] ?? null,
             ]);
             $ticketId = (int)$conn->lastInsertId();
 
@@ -291,8 +311,8 @@ class TicketsService
                     mailbox_id, subject, from_address, from_name, to_recipients, received_datetime,
                     body_preview, body_content, body_type, has_attachments, importance,
                     is_read, ticket_id, is_initial, direction
-                ) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?, 'html', 0, 'normal', 1, ?, 1, 'Manual')"
-            )->execute([$mailboxId, $subject, $requesterEmail, $requesterName, $requesterEmail, $bodyPreview, $bodyHtml, $ticketId]);
+                ) VALUES (?, ?, ?, ?, ?, COALESCE(?,UTC_TIMESTAMP()), ?, ?, 'html', 0, 'normal', 1, ?, 1, 'Manual')"
+            )->execute([$mailboxId, $subject, $requesterEmail, $requesterName, $requesterEmail, $history['created_at'] ?? null, $bodyPreview, $bodyHtml, $ticketId]);
 
             self::auditWrite($conn, $ticketId, $ctx->actorId, 'Ticket Created', null, $creationNote);
             ticketDepartmentNote($conn, $ticketId, $departmentNote);
@@ -302,9 +322,9 @@ class TicketsService
                 TicketFieldsService::write($conn, $ctx, $ticketId, $customDefs, $customValues);
             }
 
-            $conn->commit();
+            if ($ownsTransaction) $conn->commit();
         } catch (Exception $e) {
-            if ($conn->inTransaction()) $conn->rollBack();
+            if ($ownsTransaction && $conn->inTransaction()) $conn->rollBack();
             throw $e;
         }
 
@@ -320,7 +340,7 @@ class TicketsService
         ticketSensitivityApplyDefaults($conn, $ticketId, $mailboxId !== null ? (int)$mailboxId : null);
 
         require_once dirname(__DIR__) . '/ticket_events.php';
-        ticketDispatchCreated($conn, (int)$ticketId, $ctx->actorId, $requesterEmail);
+        if ($history === null) ticketDispatchCreated($conn, (int)$ticketId, $ctx->actorId, $requesterEmail);
 
         return $ticketId;
     }

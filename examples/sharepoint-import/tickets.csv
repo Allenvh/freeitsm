@@ -1,0 +1,3 @@
+ID,Title,Description,Requester Email,Requester Name,Status,Priority,Department,Assigned To,Created
+101,Example access request,Please grant access to the application.,requester@example.test,Example Requester,Open,Normal,Helpdesk,Example Analyst,2026-10-01T09:00:00Z
+102,Example resolved issue,Original issue and resolution recorded here.,another@example.test,Another Requester,Closed,High,Helpdesk,,2026-10-02T10:30:00Z
