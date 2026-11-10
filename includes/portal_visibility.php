@@ -95,6 +95,7 @@ function portalThirdPartyPolicy(PDO $conn): string {
  * @return bool true = the requester's own conversation (always portal-visible)
  */
 function portalEmailInvolvesRequester(array $email, ?string $requesterEmail): bool {
+    if (strtolower((string)($email['direction'] ?? '')) === 'historicalinternal') return false;
     // Non-email channels: addressed by phone number / visitor id, never by the
     // requester's email. Judging them by address would hide their own chat.
     $channel = strtolower(trim((string)($email['channel'] ?? 'email')));
@@ -176,6 +177,11 @@ function portalAddressSet(string $raw): array {
  *         attachments — allow its attachments to be listed AND downloaded
  */
 function portalEmailVisibility(array $email, ?string $requesterEmail, string $policy): array {
+    // Migration archives were not necessarily shared with requesters in the source.
+    // This explicit staff-only marker overrides even "show third-party emails".
+    if (strtolower((string)($email['direction'] ?? '')) === 'historicalinternal') {
+        return ['visible'=>false,'attachments'=>false];
+    }
     if (portalEmailInvolvesRequester($email, $requesterEmail)) {
         return ['visible' => true, 'attachments' => true];
     }

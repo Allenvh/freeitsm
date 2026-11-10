@@ -1,0 +1,24 @@
+{
+  "source": "https://YOUR-TENANT.sharepoint.com/sites/Helpdesk/Lists/Tickets",
+  "description_format": "text",
+  "columns": {
+    "source_id": "ID",
+    "subject": "Title",
+    "description": "Description",
+    "requester_email": "Requester Email",
+    "requester_name": "Requester Name",
+    "status_id": "Status",
+    "priority_id": "Priority",
+    "department_id": "Department",
+    "assigned_analyst_id": "Assigned To",
+    "original_created_at": "Created"
+  },
+  "defaults": {"company_id": 1},
+  "values": {
+    "status_id": {"Open": 1, "Closed": 5},
+    "priority_id": {"Normal": 1, "High": 2},
+    "department_id": {"Helpdesk": 1},
+    "assigned_analyst_id": {"Example Analyst": 1}
+  },
+  "custom_fields": {}
+}

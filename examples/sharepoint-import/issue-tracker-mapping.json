@@ -1,0 +1,41 @@
+{
+  "source": "REPLACE_WITH_STABLE_SHAREPOINT_LIST_URL_OR_USE_THE_EXPORT_HELPER",
+  "year": 2026,
+  "year_column": "Created",
+  "description_format": "text",
+  "columns": {
+    "source_id": "ID",
+    "subject": "Title",
+    "description": "Issue description",
+    "requester_email": "Requester email",
+    "requester_name": "Issue logged by",
+    "assigned_analyst_email": "Assigned to email",
+    "status_id": "Status",
+    "priority_id": "Priority",
+    "ticket_type_id": "Issue Type",
+    "original_created_at": "Created",
+    "history": "Source comments"
+  },
+  "defaults": {"company_id": "Default"},
+  "values": {
+    "status_id": {
+      "Blocked": "Blocked", "In progress": "In progress", "Completed": "Completed",
+      "Duplicate": "Duplicate", "By design": "By design", "Won't fix": "Won't fix",
+      "New": "New", "On Hold": "On Hold", "TEST-NoAction needed": "TEST-NoAction needed"
+    },
+    "priority_id": {"Critical": "Critical", "High": "High", "Normal": "Normal", "Low": "Low"},
+    "ticket_type_id": {"Alert": "Alert", "Incident": "Incident", "Request": "Request", "Project": "Project", "Change": "Change"}
+  },
+  "metadata": {
+    "Original status": "Status", "Original issue type": "Issue Type",
+    "Resolution": "Resolution", "Original sign-off status (historical only)": "Sign-off status",
+    "Original approval status code (historical only)": "Approval status (source)",
+    "Date reported": "Date reported", "Original modification date": "Modified",
+    "Issue source": "Issue source", "Original creator email": "Created By email",
+    "Original assignee email": "Assigned to email", "Associated files in source": "Associated files",
+    "Original image metadata": "Images", "Original archived flag": "Archived (source)",
+    "SharePoint item URL": "SharePoint item URL"
+  },
+  "html_metadata": ["Resolution"],
+  "custom_fields": {}
+}
