@@ -143,6 +143,9 @@ define('ENCRYPTED_MAILBOX_COLUMNS', [
     // on the next verification run.
     'smtp_username',
     'smtp_password',
+    // Legacy fork mailboxes can retain this encrypted sender override even
+    // though the current editor only exposes target_mailbox.
+    'smtp_from_address',
     // The OAuth access + refresh tokens, as JSON. This column was missing from the
     // list, so azure_client_secret was encrypted while the tokens minted WITH it sat
     // in the next column in the clear. That inversion matters: a refresh token is
